@@ -272,7 +272,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const mainUrl = `https://github.com/${plugin.repo}/releases/latest/download/main.js`;
 		const mainResponse = await fetch(mainUrl);
 		const mainJs = await mainResponse.arrayBuffer();
-		await adapter.writeBinary(`${pluginPath}/main.js`, Buffer.from(mainJs));
+		const mainJsArray = new Uint8Array(mainJs);
+		await adapter.writeBinary(`${pluginPath}/main.js`, mainJsArray);
 
 		// Download styles.css if it exists
 		try {
@@ -1173,7 +1174,7 @@ class SessionCreationModal extends Modal {
       const endMonthMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:\s*(.+)/);
       const endDayMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*(.+)/);
       
-      if (endYearMatch && endMonthMatch && endDayMatch) {
+      if (endYearMatch?.[1] && endMonthMatch?.[1] && endDayMatch?.[1]) {
         return {
           endYear: endYearMatch[1].trim(),
           endMonth: endMonthMatch[1].trim(),
