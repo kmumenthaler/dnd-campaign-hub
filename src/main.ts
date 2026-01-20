@@ -17,6 +17,7 @@ interface DndCampaignHubSettings {
 	vaultPath: string;
 	currentCampaign: string;
 	hotkey: string;
+	pluginVersion: string;
 	defaultTemplates: {
 		campaign: string;
 		npc: string;
@@ -33,6 +34,7 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
 	vaultPath: "",
 	currentCampaign: "ttrpgs/Frozen Sick (SOLINA)",
 	hotkey: "Ctrl+Shift+M",
+	pluginVersion: "0.0.0",
 	defaultTemplates: {
 		campaign: "",
 		npc: "",
@@ -52,6 +54,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 		await this.loadSettings();
 
 		console.log("D&D Campaign Hub: Plugin loaded");
+
+		// Check for version updates
+		await this.checkForUpdates();
 
 		// Add the main command with configurable hotkey
 		this.addCommand({
@@ -125,6 +130,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 			},
 		});
 
+		this.addCommand({
+			id: "update-templates",
+			name: "Update D&D Hub Templates",
+			callback: () => this.updateTemplates(),
+		});
+
 		this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
 	}
 
@@ -134,6 +145,41 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	/**
+	 * Check if plugin has been updated and notify user
+	 */
+	async checkForUpdates() {
+		const manifest = this.manifest;
+		const currentVersion = manifest.version;
+		const savedVersion = this.settings.pluginVersion;
+
+		if (savedVersion !== currentVersion) {
+			// Plugin was updated
+			if (savedVersion !== "0.0.0") {
+				new Notice(`D&D Campaign Hub updated to v${currentVersion}! Use "Update D&D Hub Templates" to get the latest templates.`, 8000);
+			}
+			
+			// Update saved version
+			this.settings.pluginVersion = currentVersion;
+			await this.saveSettings();
+		}
+	}
+
+	/**
+	 * Update template files without affecting user data
+	 */
+	async updateTemplates() {
+		new Notice("Updating D&D Hub templates...");
+
+		try {
+			await this.createTemplateFiles();
+			new Notice("✅ Templates updated successfully!");
+		} catch (error) {
+			console.error("Failed to update templates:", error);
+			new Notice("❌ Failed to update templates. Check console for details.");
+		}
 	}
 
 	/**
@@ -381,11 +427,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 			try {
 				// Check if file already exists
 				const existingFile = this.app.vault.getAbstractFileByPath(path);
-				if (!existingFile) {
+				if (existingFile instanceof TFile) {
+					// Update existing template
+					await this.app.vault.modify(existingFile, content);
+				} else {
+					// Create new template
 					await this.app.vault.create(path, content);
 				}
 			} catch (error) {
-				console.error(`Failed to create template ${path}:`, error);
+				console.error(`Failed to create/update template ${path}:`, error);
 			}
 		}
 	}
