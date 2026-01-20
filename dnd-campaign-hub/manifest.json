@@ -1,0 +1,10 @@
+{
+  "id": "dnd-campaign-hub",
+  "name": "D&D Campaign Hub",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "A central hub for managing D&D campaigns, characters, and adventures in your Obsidian vault.",
+  "author": "Kevin Mumenthaler",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}

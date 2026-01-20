@@ -1,0 +1,10 @@
+{
+  "id": "dnd-session-transcription",
+  "name": "D&D Session Transcription",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Transcribe D&D session audio files to structured markdown notes using OpenAI Whisper and GPT",
+  "author": "Your Name",
+  "authorUrl": "",
+  "isDesktopOnly": true
+}

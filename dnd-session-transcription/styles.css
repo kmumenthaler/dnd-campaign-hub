@@ -1,0 +1,14 @@
+/* Plugin styles */
+
+.dnd-transcription-notice {
+  font-weight: 600;
+}
+
+.dnd-transcription-progress {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  padding: 4px 8px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  color: var(--text-accent);
+}
