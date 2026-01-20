@@ -171,19 +171,62 @@ export default class DndCampaignHubPlugin extends Plugin {
 	 * Update template files without affecting user data
 	 */
 	async updateTemplates() {
+		// Show confirmation modal first
+		new UpdateConfirmModal(this.app, this).open();
+	}
+
+	/**
+	 * Actually perform the template update after user confirmation
+	 */
+	async performTemplateUpdate() {
 		new Notice("Updating D&D Hub templates...");
 
 		try {
+			// Create backup of existing campaign files
+			await this.backupCampaignFiles();
+			
 			// Update template files in z_Templates
 			await this.createTemplateFiles();
 			
 			// Update existing World.md files in campaigns
 			await this.updateExistingCampaignFiles();
 			
-			new Notice("✅ Templates updated successfully!");
+			new Notice("✅ Templates updated successfully! Backups saved in z_Backups folder.");
 		} catch (error) {
 			console.error("Failed to update templates:", error);
 			new Notice("❌ Failed to update templates. Check console for details.");
+		}
+	}
+
+	/**
+	 * Create backups of all campaign World.md files before updating
+	 */
+	async backupCampaignFiles() {
+		const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
+		const backupFolder = `z_Backups/${timestamp}`;
+		
+		// Ensure backup folder exists
+		try {
+			await this.app.vault.createFolder(backupFolder);
+		} catch (error) {
+			// Folder might exist
+		}
+
+		// Find all World.md files in ttrpgs subfolders
+		const worldFiles = this.app.vault.getMarkdownFiles().filter(file => 
+			file.path.startsWith("ttrpgs/") && file.name === "World.md"
+		);
+
+		for (const worldFile of worldFiles) {
+			try {
+				const content = await this.app.vault.read(worldFile);
+				const campaignName = worldFile.path.split('/')[1];
+				const backupFileName = `${backupFolder}/${campaignName.replace(/[\/\\]/g, '_')}_World.md`;
+				
+				await this.app.vault.create(backupFileName, content);
+			} catch (error) {
+				console.error(`Failed to backup ${worldFile.path}:`, error);
+			}
 		}
 	}
 
@@ -439,6 +482,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			"z_Scripts",
 			"z_SessionTranscripts",
 			"z_Tables",
+			"z_Backups",
 			"ttrpgs"
 		];
 
@@ -859,6 +903,64 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
             new PurgeConfirmModal(this.app, this.plugin).open();
           })
       );
+  }
+}
+
+class UpdateConfirmModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+
+  constructor(app: App, plugin: DndCampaignHubPlugin) {
+    super(app);
+    this.plugin = plugin;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "🔄 Update D&D Hub Templates" });
+
+    contentEl.createEl("p", {
+      text: "This will update all template files and existing campaign World.md files with the latest version."
+    });
+
+    contentEl.createEl("h3", { text: "What will be updated:" });
+    const updateList = contentEl.createEl("ul");
+    updateList.createEl("li", { text: "Template files in z_Templates/" });
+    updateList.createEl("li", { text: "All campaign World.md files (buttons, dataviews, structure)" });
+
+    contentEl.createEl("h3", { text: "What will be preserved:" });
+    const preserveList = contentEl.createEl("ul");
+    preserveList.createEl("li", { text: "✅ Campaign frontmatter (name, dates, calendar settings)" });
+    preserveList.createEl("li", { text: "✅ User-written content in 'Truths about the campaign/world'" });
+    preserveList.createEl("li", { text: "✅ All NPCs, PCs, sessions, and other campaign files" });
+
+    contentEl.createEl("h3", { text: "⚠️ Important:" });
+    const warningList = contentEl.createEl("ul", { cls: "mod-warning" });
+    warningList.createEl("li", { text: "Automatic backups will be created in z_Backups/" });
+    warningList.createEl("li", { text: "Template updates may require manual cleanup if you heavily customized your files" });
+    warningList.createEl("li", { text: "Review the updated files after the process completes" });
+
+    const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
+
+    const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelBtn.addEventListener("click", () => {
+      this.close();
+    });
+
+    const confirmBtn = buttonContainer.createEl("button", {
+      text: "Update Templates",
+      cls: "mod-cta"
+    });
+    confirmBtn.addEventListener("click", async () => {
+      this.close();
+      await this.plugin.performTemplateUpdate();
+    });
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
   }
 }
 
