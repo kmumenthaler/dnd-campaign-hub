@@ -203,10 +203,125 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	/**
+	 * Install required community plugins
+	 */
+	async installRequiredPlugins() {
+		const requiredPlugins = [
+			{
+				id: "buttons",
+				name: "Buttons",
+				repo: "shabegom/buttons",
+				version: "0.5.1"
+			},
+			{
+				id: "dataview",
+				name: "Dataview", 
+				repo: "blacksmithgu/obsidian-dataview",
+				version: "0.5.66"
+			},
+			{
+				id: "calendarium",
+				name: "Calendarium",
+				repo: "javalent/calendarium",
+				version: "1.0.0-beta-32"
+			}
+		];
+
+		new Notice("Installing required plugins...");
+
+		for (const plugin of requiredPlugins) {
+			try {
+				await this.installPlugin(plugin);
+			} catch (error) {
+				console.error(`Failed to install ${plugin.name}:`, error);
+				new Notice(`Failed to install ${plugin.name}. Please install manually.`);
+			}
+		}
+
+		// Enable the plugins
+		await this.enablePlugins(requiredPlugins.map(p => p.id));
+
+		new Notice("Required plugins installed successfully!");
+	}
+
+	/**
+	 * Install a single plugin from GitHub
+	 */
+	async installPlugin(plugin: { id: string; name: string; repo: string; version: string }) {
+		const adapter = this.app.vault.adapter;
+		const pluginsFolder = `.obsidian/plugins`;
+		const pluginPath = `${pluginsFolder}/${plugin.id}`;
+
+		// Check if plugin already exists
+		const exists = await adapter.exists(pluginPath);
+		if (exists) {
+			console.log(`Plugin ${plugin.name} already installed`);
+			return;
+		}
+
+		// Create plugin directory
+		await adapter.mkdir(pluginPath);
+
+		// Download manifest.json
+		const manifestUrl = `https://raw.githubusercontent.com/${plugin.repo}/HEAD/manifest.json`;
+		const manifestResponse = await fetch(manifestUrl);
+		const manifest = await manifestResponse.text();
+		await adapter.write(`${pluginPath}/manifest.json`, manifest);
+
+		// Download main.js
+		const mainUrl = `https://github.com/${plugin.repo}/releases/latest/download/main.js`;
+		const mainResponse = await fetch(mainUrl);
+		const mainJs = await mainResponse.arrayBuffer();
+		await adapter.writeBinary(`${pluginPath}/main.js`, Buffer.from(mainJs));
+
+		// Download styles.css if it exists
+		try {
+			const stylesUrl = `https://github.com/${plugin.repo}/releases/latest/download/styles.css`;
+			const stylesResponse = await fetch(stylesUrl);
+			if (stylesResponse.ok) {
+				const styles = await stylesResponse.text();
+				await adapter.write(`${pluginPath}/styles.css`, styles);
+			}
+		} catch (error) {
+			// styles.css is optional
+		}
+
+		console.log(`Installed plugin: ${plugin.name}`);
+	}
+
+	/**
+	 * Enable plugins in community-plugins.json
+	 */
+	async enablePlugins(pluginIds: string[]) {
+		const adapter = this.app.vault.adapter;
+		const configPath = `.obsidian/community-plugins.json`;
+
+		let enabledPlugins: string[] = [];
+		
+		const exists = await adapter.exists(configPath);
+		if (exists) {
+			const content = await adapter.read(configPath);
+			enabledPlugins = JSON.parse(content);
+		}
+
+		// Add new plugins if not already enabled
+		for (const id of pluginIds) {
+			if (!enabledPlugins.includes(id)) {
+				enabledPlugins.push(id);
+			}
+		}
+
+		await adapter.write(configPath, JSON.stringify(enabledPlugins, null, 2));
+	}
+
+	/**
 	 * Initialize the vault with the required folder structure and templates
 	 */
 	async initializeVault() {
 		new Notice("Initializing D&D Campaign Hub vault structure...");
+
+		// Install required plugins first
+		await this.installRequiredPlugins();
 
 		// Create all required folders
 		const foldersToCreate = [
@@ -238,7 +353,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Configure plugin settings
 		await this.configurePluginSettings();
 
-		new Notice("Vault initialized successfully! You can now create campaigns.");
+		new Notice("Vault initialized successfully! Please reload Obsidian (Ctrl+R) to activate plugins.");
 	}
 
 	/**
