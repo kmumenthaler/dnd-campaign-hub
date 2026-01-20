@@ -1,0 +1,19 @@
+﻿{
+  "compilerOptions": {
+    "target": "ES2018",
+    "lib": ["ES2018", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "strict": true,
+    "noImplicitAny": true,
+    "noImplicitThis": true,
+    "useUnknownInCatchVariables": true,
+    "alwaysStrict": true,
+    "noUncheckedIndexedAccess": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node", "obsidian"]
+  },
+  "include": ["src/**/*.ts"]
+}
