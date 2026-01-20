@@ -188,7 +188,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Update template files in z_Templates
 			await this.createTemplateFiles();
 			
-			// Update existing World.md files in campaigns
+			// Update existing campaign files based on their templates
 			await this.updateExistingCampaignFiles();
 			
 			new Notice("✅ Templates updated successfully! Backups saved in z_Backups folder.");
@@ -199,7 +199,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	/**
-	 * Create backups of all campaign World.md files before updating
+	 * Create backups of all template-based campaign files before updating
 	 */
 	async backupCampaignFiles() {
 		const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
@@ -212,69 +212,158 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Folder might exist
 		}
 
-		// Find all World.md files in ttrpgs subfolders
-		const worldFiles = this.app.vault.getMarkdownFiles().filter(file => 
-			file.path.startsWith("ttrpgs/") && file.name === "World.md"
+		// Find all markdown files in ttrpgs folder (campaigns)
+		const campaignFiles = this.app.vault.getMarkdownFiles().filter(file => 
+			file.path.startsWith("ttrpgs/")
 		);
 
-		for (const worldFile of worldFiles) {
+		for (const file of campaignFiles) {
 			try {
-				const content = await this.app.vault.read(worldFile);
-				const campaignName = worldFile.path.split('/')[1];
-				const backupFileName = `${backupFolder}/${campaignName.replace(/[\/\\]/g, '_')}_World.md`;
+				const content = await this.app.vault.read(file);
+				const backupPath = file.path.replace(/\//g, '_').replace('ttrpgs_', '');
+				const backupFileName = `${backupFolder}/${backupPath}`;
 				
 				await this.app.vault.create(backupFileName, content);
 			} catch (error) {
-				console.error(`Failed to backup ${worldFile.path}:`, error);
+				console.error(`Failed to backup ${file.path}:`, error);
 			}
 		}
 	}
 
 	/**
-	 * Update existing campaign World.md files with new template content while preserving user data
+	 * Update existing campaign files with new template content while preserving user data
 	 */
 	async updateExistingCampaignFiles() {
-		// Find all World.md files in ttrpgs subfolders
-		const worldFiles = this.app.vault.getMarkdownFiles().filter(file => 
-			file.path.startsWith("ttrpgs/") && file.name === "World.md"
+		const campaignFiles = this.app.vault.getMarkdownFiles().filter(file => 
+			file.path.startsWith("ttrpgs/")
 		);
 
-		for (const worldFile of worldFiles) {
+		for (const file of campaignFiles) {
 			try {
-				const content = await this.app.vault.read(worldFile);
+				const content = await this.app.vault.read(file);
 				
-				// Extract frontmatter
-				const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
-				if (!frontmatterMatch) continue;
+				// Determine file type from frontmatter
+				const typeMatch = content.match(/^---\n[\s\S]*?type:\s*(.+?)\n[\s\S]*?---/);
+				if (!typeMatch) continue;
 				
-				const frontmatter = frontmatterMatch[0];
+				const fileType = typeMatch[1].trim();
 				
-				// Extract user content from "Truths about the campaign/world" section
-				const truthsMatch = content.match(/## Truths about the campaign\/world\n\n\*[^*]+\*\n\n([\s\S]*?)(?=\n## |\n*$)/);
-				const userTruths = truthsMatch ? truthsMatch[1].trim() : "-";
-				
-				// Get campaign name from path (e.g., "ttrpgs/My Campaign/World.md" -> "My Campaign")
-				const campaignName = worldFile.path.split('/')[1];
-				
-				// Build new content with preserved user data
-				let newContent = WORLD_TEMPLATE.replace(/{{CAMPAIGN_NAME}}/g, campaignName);
-				
-				// Replace the frontmatter with the user's existing frontmatter
-				newContent = newContent.replace(/^---\n[\s\S]*?\n---\n/, frontmatter);
-				
-				// Replace the truths section with user content
-				newContent = newContent.replace(
-					/(## Truths about the campaign\/world\n\n\*[^*]+\*\n\n)- /,
-					`$1${userTruths}\n`
-				);
-				
-				// Update the file
-				await this.app.vault.modify(worldFile, newContent);
-				
+				// Update based on file type
+				switch (fileType) {
+					case 'world':
+						await this.updateWorldFile(file, content);
+						break;
+					case 'npc':
+						await this.updateNpcFile(file, content);
+						break;
+					case 'player':
+						await this.updatePcFile(file, content);
+						break;
+					case 'adventure':
+						await this.updateAdventureFile(file, content);
+						break;
+					case 'session':
+					case 'session-gm':
+					case 'session-player':
+						await this.updateSessionFile(file, content);
+						break;
+					case 'faction':
+						await this.updateFactionFile(file, content);
+						break;
+					case 'item':
+						await this.updateItemFile(file, content);
+						break;
+					case 'spell':
+						await this.updateSpellFile(file, content);
+						break;
+				}
 			} catch (error) {
-				console.error(`Failed to update ${worldFile.path}:`, error);
+				console.error(`Failed to update ${file.path}:`, error);
 			}
 		}
+	}
+
+	/**
+	 * Update a World.md file
+	 */
+	async updateWorldFile(file: TFile, content: string) {
+		// Extract frontmatter
+		const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
+		if (!frontmatterMatch) return;
+		
+		const frontmatter = frontmatterMatch[0];
+		
+		// Extract user content from "Truths about the campaign/world" section
+		const truthsMatch = content.match(/## Truths about the campaign\/world\n\n\*[^*]+\*\n\n([\s\S]*?)(?=\n## |\n*$)/);
+		const userTruths = truthsMatch ? truthsMatch[1].trim() : "-";
+		
+		// Get campaign name from path
+		const campaignName = file.path.split('/')[1];
+		
+		// Build new content with preserved user data
+		let newContent = WORLD_TEMPLATE.replace(/{{CAMPAIGN_NAME}}/g, campaignName);
+		
+		// Replace the frontmatter with the user's existing frontmatter
+		newContent = newContent.replace(/^---\n[\s\S]*?\n---\n/, frontmatter);
+		
+		// Replace the truths section with user content
+		newContent = newContent.replace(
+			/(## Truths about the campaign\/world\n\n\*[^*]+\*\n\n)- /,
+			`$1${userTruths}\n`
+		);
+		
+		// Update the file
+		await this.app.vault.modify(file, newContent);
+	}
+
+	/**
+	 * Update template-based files (NPC, PC, Adventure, etc.) by preserving frontmatter
+	 */
+	async updateTemplateBasedFile(file: TFile, content: string, template: string) {
+		// Extract frontmatter
+		const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
+		if (!frontmatterMatch) return;
+		
+		const frontmatter = frontmatterMatch[0];
+		
+		// Replace frontmatter in template with user's frontmatter
+		let newContent = template.replace(/^---\n[\s\S]*?\n---\n/, frontmatter);
+		
+		// Update the file
+		await this.app.vault.modify(file, newContent);
+	}
+
+	async updateNpcFile(file: TFile, content: string) {
+		await this.updateTemplateBasedFile(file, content, NPC_TEMPLATE);
+	}
+
+	async updatePcFile(file: TFile, content: string) {
+		await this.updateTemplateBasedFile(file, content, PC_TEMPLATE);
+	}
+
+	async updateAdventureFile(file: TFile, content: string) {
+		await this.updateTemplateBasedFile(file, content, ADVENTURE_TEMPLATE);
+	}
+
+	async updateSessionFile(file: TFile, content: string) {
+		// Determine if it's GM or Player session
+		const roleMatch = content.match(/role:\s*(.+)/);
+		const role = roleMatch ? roleMatch[1].trim() : 'gm';
+		
+		const template = role === 'player' ? SESSION_PLAYER_TEMPLATE : SESSION_GM_TEMPLATE;
+		await this.updateTemplateBasedFile(file, content, template);
+	}
+
+	async updateFactionFile(file: TFile, content: string) {
+		await this.updateTemplateBasedFile(file, content, FACTION_TEMPLATE);
+	}
+
+	async updateItemFile(file: TFile, content: string) {
+		await this.updateTemplateBasedFile(file, content, ITEM_TEMPLATE);
+	}
+
+	async updateSpellFile(file: TFile, content: string) {
+		await this.updateTemplateBasedFile(file, content, SPELL_TEMPLATE);
 	}
 
 	/**
