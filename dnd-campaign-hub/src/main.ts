@@ -1,4 +1,4 @@
-﻿import { App, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
+﻿import { App, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, requestUrl } from "obsidian";
 import {
 	WORLD_TEMPLATE,
 	SESSION_GM_TEMPLATE,
@@ -262,27 +262,26 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Create plugin directory
 		await adapter.mkdir(pluginPath);
 
-		// Download manifest.json
+		// Download manifest.json using Obsidian's requestUrl to bypass CORS
 		const manifestUrl = `https://raw.githubusercontent.com/${plugin.repo}/HEAD/manifest.json`;
-		const manifestResponse = await fetch(manifestUrl);
-		const manifest = await manifestResponse.text();
+		const manifestResponse = await requestUrl({ url: manifestUrl });
+		const manifest = manifestResponse.text;
 		await adapter.write(`${pluginPath}/manifest.json`, manifest);
 
 		// Download main.js
 		const mainUrl = `https://github.com/${plugin.repo}/releases/latest/download/main.js`;
-		const mainResponse = await fetch(mainUrl);
-		const mainJs = await mainResponse.arrayBuffer();
-		const mainJsArray = new Uint8Array(mainJs);
+		const mainResponse = await requestUrl({ 
+			url: mainUrl,
+			method: 'GET'
+		});
+		const mainJsArray = new Uint8Array(mainResponse.arrayBuffer);
 		await adapter.writeBinary(`${pluginPath}/main.js`, mainJsArray);
 
 		// Download styles.css if it exists
 		try {
 			const stylesUrl = `https://github.com/${plugin.repo}/releases/latest/download/styles.css`;
-			const stylesResponse = await fetch(stylesUrl);
-			if (stylesResponse.ok) {
-				const styles = await stylesResponse.text();
-				await adapter.write(`${pluginPath}/styles.css`, styles);
-			}
+			const stylesResponse = await requestUrl({ url: stylesUrl });
+			await adapter.write(`${pluginPath}/styles.css`, stylesResponse.text);
 		} catch (error) {
 			// styles.css is optional
 		}
