@@ -174,11 +174,63 @@ export default class DndCampaignHubPlugin extends Plugin {
 		new Notice("Updating D&D Hub templates...");
 
 		try {
+			// Update template files in z_Templates
 			await this.createTemplateFiles();
+			
+			// Update existing World.md files in campaigns
+			await this.updateExistingCampaignFiles();
+			
 			new Notice("✅ Templates updated successfully!");
 		} catch (error) {
 			console.error("Failed to update templates:", error);
 			new Notice("❌ Failed to update templates. Check console for details.");
+		}
+	}
+
+	/**
+	 * Update existing campaign World.md files with new template content while preserving user data
+	 */
+	async updateExistingCampaignFiles() {
+		// Find all World.md files in ttrpgs subfolders
+		const worldFiles = this.app.vault.getMarkdownFiles().filter(file => 
+			file.path.startsWith("ttrpgs/") && file.name === "World.md"
+		);
+
+		for (const worldFile of worldFiles) {
+			try {
+				const content = await this.app.vault.read(worldFile);
+				
+				// Extract frontmatter
+				const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
+				if (!frontmatterMatch) continue;
+				
+				const frontmatter = frontmatterMatch[0];
+				
+				// Extract user content from "Truths about the campaign/world" section
+				const truthsMatch = content.match(/## Truths about the campaign\/world\n\n\*[^*]+\*\n\n([\s\S]*?)(?=\n## |\n*$)/);
+				const userTruths = truthsMatch ? truthsMatch[1].trim() : "-";
+				
+				// Get campaign name from path (e.g., "ttrpgs/My Campaign/World.md" -> "My Campaign")
+				const campaignName = worldFile.path.split('/')[1];
+				
+				// Build new content with preserved user data
+				let newContent = WORLD_TEMPLATE.replace(/{{CAMPAIGN_NAME}}/g, campaignName);
+				
+				// Replace the frontmatter with the user's existing frontmatter
+				newContent = newContent.replace(/^---\n[\s\S]*?\n---\n/, frontmatter);
+				
+				// Replace the truths section with user content
+				newContent = newContent.replace(
+					/(## Truths about the campaign\/world\n\n\*[^*]+\*\n\n)- /,
+					`$1${userTruths}\n`
+				);
+				
+				// Update the file
+				await this.app.vault.modify(worldFile, newContent);
+				
+			} catch (error) {
+				console.error(`Failed to update ${worldFile.path}:`, error);
+			}
 		}
 	}
 
