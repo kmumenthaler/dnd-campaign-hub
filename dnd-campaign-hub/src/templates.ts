@@ -61,6 +61,13 @@ action D&D Campaign Hub: Create New PC
 \`\`\`
 ^button-new-pc
 
+\`\`\`button
+name Create New Faction
+type command
+action D&D Campaign Hub: Create New Faction
+\`\`\`
+^button-new-faction
+
 \`\`\`dataview
 table summary as "Summary" from "ttrpgs/{{CAMPAIGN_NAME}}"
 where contains(type,"session")
