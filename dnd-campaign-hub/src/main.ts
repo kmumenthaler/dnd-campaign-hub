@@ -217,13 +217,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 				id: "dataview",
 				name: "Dataview", 
 				repo: "blacksmithgu/obsidian-dataview",
-				version: "0.5.66"
+				version: "0.5.68"
 			},
 			{
 				id: "calendarium",
 				name: "Calendarium",
 				repo: "javalent/calendarium",
-				version: "1.0.0-beta-32"
+				version: "2.1.0"
 			}
 		];
 
@@ -238,10 +238,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 		}
 
-		// Enable the plugins
+		// Enable the plugins programmatically
 		await this.enablePlugins(requiredPlugins.map(p => p.id));
 
-		new Notice("Required plugins installed successfully!");
+		new Notice("Required plugins installed! Reloading...");
+		
+		// Reload Obsidian to activate plugins
+		setTimeout(() => {
+			(this.app as any).commands.executeCommandById('app:reload');
+		}, 1500);
 	}
 
 	/**
@@ -268,8 +273,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const manifest = manifestResponse.text;
 		await adapter.write(`${pluginPath}/manifest.json`, manifest);
 
-		// Download main.js
-		const mainUrl = `https://github.com/${plugin.repo}/releases/latest/download/main.js`;
+		// Download main.js from specific version
+		const mainUrl = `https://github.com/${plugin.repo}/releases/download/${plugin.version}/main.js`;
 		const mainResponse = await requestUrl({ 
 			url: mainUrl,
 			method: 'GET'
@@ -279,7 +284,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 		// Download styles.css if it exists
 		try {
-			const stylesUrl = `https://github.com/${plugin.repo}/releases/latest/download/styles.css`;
+			const stylesUrl = `https://github.com/${plugin.repo}/releases/download/${plugin.version}/styles.css`;
 			const stylesResponse = await requestUrl({ url: stylesUrl });
 			await adapter.write(`${pluginPath}/styles.css`, stylesResponse.text);
 		} catch (error) {
