@@ -73,7 +73,31 @@ export default class DndCampaignHubPlugin extends Plugin {
       ],
     });
 
-    // Add commands for creating different D&D elements
+    this.addCommand({
+      id: "initialize-dnd-hub",
+      name: "Initialize D&D Campaign Hub",
+      callback: async () => {
+        if (this.isVaultInitialized()) {
+          new Notice("D&D Campaign Hub is already initialized in this vault.");
+          return;
+        }
+        await this.initializeVault();
+      },
+    });
+
+    this.addCommand({
+      id: "update-dnd-hub-templates",
+      name: "Update D&D Hub Templates",
+      callback: () => {
+        if (!this.isVaultInitialized()) {
+          new Notice("Initialize D&D Campaign Hub before updating templates.");
+          return;
+        }
+        this.updateTemplates();
+      },
+    });
+
+    // Add commands for the features available in the preview release
     this.addCommand({
       id: "create-campaign",
       name: "Create New Campaign",
@@ -81,65 +105,9 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "create-npc",
-      name: "Create New NPC",
-      callback: () => this.createNpc(),
-    });
-
-    this.addCommand({
-      id: "create-pc",
-      name: "Create New Player Character",
-      callback: () => this.createPc(),
-    });
-
-    this.addCommand({
-      id: "create-adventure",
-      name: "Create New Adventure",
-      callback: () => this.createAdventure(),
-    });
-
-    this.addCommand({
       id: "create-session",
       name: "Create New Session",
       callback: () => this.createSession(),
-    });
-
-    this.addCommand({
-      id: "create-item",
-      name: "Create New Item",
-      callback: () => this.createItem(),
-    });
-
-    this.addCommand({
-      id: "create-spell",
-      name: "Create New Spell",
-      callback: () => this.createSpell(),
-    });
-
-    this.addCommand({
-      id: "create-faction",
-      name: "Create New Faction",
-      callback: () => this.createFaction(),
-    });
-
-    this.addCommand({
-      id: "purge-vault",
-      name: "Purge D&D Campaign Hub from Vault",
-      callback: () => {
-        new PurgeConfirmModal(this.app, this).open();
-      },
-    });
-
-    this.addCommand({
-      id: "update-templates",
-      name: "Update D&D Hub Templates",
-      callback: () => this.updateTemplates(),
-    });
-
-    this.addCommand({
-      id: "check-dnd-hub-dependencies",
-      name: "Check D&D Hub Dependencies",
-      callback: () => this.showDependencyModal(true),
     });
 
     this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
@@ -1260,56 +1228,20 @@ class DndHubModal extends Modal {
       return;
     }
 
-    // Quick Actions Section
-    contentEl.createEl("h2", { text: "Quick Create" });
+        // Quick Actions Section
+        contentEl.createEl("h2", { text: "Quick Actions" });
 
-    const quickActionsContainer = contentEl.createDiv({ cls: "dnd-hub-quick-actions" });
+        const quickActionsContainer = contentEl.createDiv({ cls: "dnd-hub-quick-actions" });
 
-    this.createActionButton(quickActionsContainer, "🎲 New Campaign", () => {
-      this.close();
-      this.plugin.createCampaign();
-    });
+        this.createActionButton(quickActionsContainer, "🎲 New Campaign", () => {
+          this.close();
+          this.plugin.createCampaign();
+        });
 
-    this.createActionButton(quickActionsContainer, "👤 New NPC", () => {
-      this.close();
-      this.plugin.createNpc();
-    });
-
-    this.createActionButton(quickActionsContainer, "🛡️ New PC", () => {
-      this.close();
-      this.plugin.createPc();
-    });
-
-    this.createActionButton(quickActionsContainer, "🗺️ New Adventure", () => {
-      this.close();
-      this.plugin.createAdventure();
-    });
-
-    this.createActionButton(quickActionsContainer, "📜 New Session", () => {
-      this.close();
-      this.plugin.createSession();
-    });
-
-    this.createActionButton(quickActionsContainer, "⚔️ New Item", () => {
-      this.close();
-      this.plugin.createItem();
-    });
-
-    this.createActionButton(quickActionsContainer, "✨ New Spell", () => {
-      this.close();
-      this.plugin.createSpell();
-    });
-
-    this.createActionButton(quickActionsContainer, "🏛️ New Faction", () => {
-      this.close();
-      this.plugin.createFaction();
-    });
-
-    // Browse Section
-    contentEl.createEl("h2", { text: "Browse Vault" });
-
-    const browseContainer = contentEl.createDiv({ cls: "dnd-hub-browse" });
-
+        contentEl.createEl("p", {
+          text: "Create sessions from a campaign's World note or via the 'Create New Session' command. NPCs, PCs, adventures, and more builders are coming soon.",
+          cls: "dnd-hub-info",
+        });
     this.createBrowseButton(browseContainer, "📁 Campaigns", "Campaigns");
     this.createBrowseButton(browseContainer, "👥 NPCs", "NPCs");
     this.createBrowseButton(browseContainer, "🛡️ PCs", "PCs");
@@ -2065,31 +1997,26 @@ class CampaignCreationModal extends Modal {
     // Try to trigger the appropriate calendar creation command
     const commands = {
       quick: "calendarium:open-quick-creator",
-      full: "calendarium:open-creator", 
+      full: "calendarium:open-creator",
       import: "calendarium:import-calendar"
     };
 
     const commandId = commands[type];
-    
-    // Use a small delay to ensure settings are open
+
     setTimeout(() => {
-      // Try to execute the command
       (this.app as any).commands?.executeCommandById(commandId);
     }, 100);
 
     new Notice("After creating your calendar, use 'Create Campaign' again to select it.");
   }
 
-  dayDropdown: any = null;
-
-  getAvailableCalendars(): Array<{id: string, name: string}> {
-    // Try to get calendars from Calendarium plugin
+  getAvailableCalendars(): Array<{ id: string; name: string }> {
     const calendariumPlugin = (this.app as any).plugins?.plugins?.calendarium;
     if (calendariumPlugin && calendariumPlugin.data?.calendars) {
-      const calendars = calendariumPlugin.data.calendars;
-      return Object.keys(calendars).map(id => ({
-        id: id,
-        name: calendars[id].name || id
+      const calendars = calendariumPlugin.data.calendars as Record<string, { name?: string }>;
+      return Object.keys(calendars).map((id) => ({
+        id,
+        name: calendars[id].name || id,
       }));
     }
     return [];
@@ -2110,7 +2037,6 @@ class CampaignCreationModal extends Modal {
     new Notice(`Creating campaign "${campaignName}"...`);
 
     try {
-      // Create campaign folder structure
       const campaignFolders = [
         campaignPath,
         `${campaignPath}/NPCs`,
@@ -2127,7 +2053,6 @@ class CampaignCreationModal extends Modal {
         await this.plugin.ensureFolderExists(folder);
       }
 
-      // Create World.md from template
       const worldTemplate = this.app.vault.getAbstractFileByPath("z_Templates/world.md");
       let worldContent: string;
 
@@ -2137,7 +2062,6 @@ class CampaignCreationModal extends Modal {
         worldContent = WORLD_TEMPLATE;
       }
 
-      // Replace placeholders with actual data
       worldContent = worldContent
         .replace(/world: $/m, `world: ${campaignName}`)
         .replace(/campaign: $/m, `campaign: ${campaignName}`)
@@ -2145,15 +2069,14 @@ class CampaignCreationModal extends Modal {
         .replace(/system:$/m, `system: ${this.system}`)
         .replace(/fc-calendar: $/m, `fc-calendar: ${this.calendarName}`)
         .replace(/fc-date:\s*\n\s*year:\s*$/m, `fc-date:\n  year: ${this.startYear}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*)month:\s*$/m, `$1month: ${this.startMonth}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:\s*$/m, `$1day: ${this.startDay}`)
+        .replace(/(fc-date:\s*\n\s*year:.+\n\s*)month:\s*$/m, `$1month: ${this.startMonth}`)
+        .replace(/(fc-date:\s*\n\s*year:.+\n\s*month:.+\n\s*)day:\s*$/m, `$1day: ${this.startDay}`)
         .replace(/# The World of Your Campaign/g, `# The World of ${campaignName}`)
         .replace(/{{CAMPAIGN_NAME}}/g, campaignName);
 
       const worldFilePath = `${campaignPath}/World.md`;
       await this.app.vault.create(worldFilePath, worldContent);
 
-      // Create initial House Rules file if GM
       if (this.role === "GM") {
         const houseRulesContent = `---
 type: rules
@@ -2177,11 +2100,9 @@ campaign: ${campaignName}
         await this.app.vault.create(`${campaignPath}/House Rules.md`, houseRulesContent);
       }
 
-      // Update current campaign setting
       this.plugin.settings.currentCampaign = campaignPath;
       await this.plugin.saveSettings();
 
-      // Open World.md
       await this.app.workspace.openLinkText(worldFilePath, "", true);
 
       new Notice(`✅ Campaign "${campaignName}" created successfully!`);

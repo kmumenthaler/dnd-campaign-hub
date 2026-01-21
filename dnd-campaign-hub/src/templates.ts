@@ -38,7 +38,7 @@ SORT name ASC
 
 ## Sessions
 
-*Create new sessions using the buttons below or the command palette (Ctrl/Cmd+P → "Create New Session").*
+*Create new sessions using the button below or the command palette (Ctrl/Cmd+P → "Create New Session").*
 
 \`\`\`button
 name Create New Session
@@ -46,20 +46,6 @@ type command
 action D&D Campaign Hub: Create New Session
 \`\`\`
 ^button-new-session
-
-\`\`\`button
-name Create New NPC
-type command
-action D&D Campaign Hub: Create New NPC
-\`\`\`
-^button-new-npc
-
-\`\`\`button
-name Create New PC
-type command
-action D&D Campaign Hub: Create New PC
-\`\`\`
-^button-new-pc
 
 \`\`\`dataview
 table summary as "Summary" from "ttrpgs/{{CAMPAIGN_NAME}}"
