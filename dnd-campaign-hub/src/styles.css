@@ -50,6 +50,49 @@
   border-color: var(--interactive-accent);
 }
 
+/* Dependency Modal Styles */
+.dnd-dependency-list {
+  margin: 15px 0;
+}
+
+.dnd-dependency-list h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.dnd-dependency-list ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+.dnd-dependency-list ul li {
+  padding: 6px 12px;
+  margin: 4px 0;
+  background-color: var(--background-secondary);
+  border-radius: 4px;
+  border-left: 3px solid var(--interactive-accent);
+}
+
+.dnd-dependency-instructions {
+  background-color: var(--background-secondary);
+  padding: 15px;
+  border-radius: 6px;
+  margin: 15px 0;
+}
+
+.dnd-dependency-instructions p {
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.dnd-dependency-note {
+  font-style: italic;
+  color: var(--text-muted);
+  margin-top: 15px !important;
+}
+
 .dnd-modal-buttons button.mod-cta:hover {
   background-color: var(--interactive-accent-hover);
 }

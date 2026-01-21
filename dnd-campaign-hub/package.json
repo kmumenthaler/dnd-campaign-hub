@@ -1,12 +1,35 @@
 ﻿{
   "name": "dnd-campaign-hub",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "description": "A comprehensive Obsidian plugin for managing tabletop campaigns with smart templates and automation.",
   "private": true,
   "type": "module",
+  "license": "MIT",
+  "author": "Kevin Mumenthaler",
+  "homepage": "https://github.com/kevinmumenthaler/dnd-campaign-hub#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kevinmumenthaler/dnd-campaign-hub.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kevinmumenthaler/dnd-campaign-hub/issues"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "dnd",
+    "ttrpg",
+    "campaign",
+    "gm-tools"
+  ],
   "scripts": {
     "dev": "node esbuild.config.mjs --watch",
     "build": "node esbuild.config.mjs",
-    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\""
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "package": "npm run clean && npm run build"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "devDependencies": {
     "@types/node": "^20.12.12",
