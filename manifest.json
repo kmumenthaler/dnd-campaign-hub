@@ -1,7 +1,7 @@
 {
   "id": "dnd-campaign-hub",
   "name": "D&D Campaign Hub",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "minAppVersion": "1.5.0",
   "description": "A comprehensive plugin for managing D&D campaigns with session tracking, NPC management, calendar integration, and smart templates.",
   "author": "Kevin Mumenthaler",
