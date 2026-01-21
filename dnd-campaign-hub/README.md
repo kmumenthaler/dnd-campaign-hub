@@ -2,6 +2,10 @@
 
 A comprehensive Obsidian plugin for managing D&D (or any TTRPG) campaigns with integrated calendars, session tracking, NPC management, and more.
 
+> **⚠️ Project Status: Early Preview**
+>
+> The core workflows are still under active construction and may change without notice. Expect breaking changes, incomplete features, and missing polish while the project matures. Feedback and issue reports are very welcome during this incubation phase!
+
 ## Features
 
 ### 🎲 Campaign Management
