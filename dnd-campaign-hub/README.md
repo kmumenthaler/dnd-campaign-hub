@@ -162,26 +162,6 @@ src/
   styles.css       # Plugin styles
 ```
 
-## Release Checklist
-
-1. Update `manifest.json`, `package.json`, and `versions.json` with the new version and minimum Obsidian version.
-2. Run `npm run package` to clean the `dist/` folder and rebuild production assets.
-3. Verify that `dist/` now contains `manifest.json`, `main.js`, `styles.css`, and `versions.json`.
-4. Zip the contents of `dist/` (not the folder itself) into `dnd-campaign-hub-<version>.zip`.
-5. Commit the version bump, create a tag such as `v1.0.0`, and push to GitHub.
-6. Draft a GitHub release attaching the zip file and upload the standalone `manifest.json` as required by the Obsidian Community submission form.
-
-## Required Files for Community Review
-
-The archive you upload to GitHub Releases and to the Obsidian Community Plugin submission must contain only these files:
-
-- `manifest.json`
-- `main.js`
-- `styles.css`
-- `versions.json`
-
-Running `npm run package` ensures these files are produced in `dist/` and stay in sync with the source code.
-
 ## Customization
 
 ### Templates
