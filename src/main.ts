@@ -73,7 +73,19 @@ export default class DndCampaignHubPlugin extends Plugin {
       ],
     });
 
-    // Add commands for creating different D&D elements
+    this.addCommand({
+      id: "initialize-dnd-hub",
+      name: "Initialize D&D Campaign Hub",
+      callback: async () => {
+        if (this.isVaultInitialized()) {
+          new Notice("D&D Campaign Hub is already initialized in this vault.");
+          return;
+        }
+        await this.initializeVault();
+      },
+    });
+
+    // Add commands for the features available in the preview release
     this.addCommand({
       id: "create-campaign",
       name: "Create New Campaign",
@@ -81,65 +93,9 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "create-npc",
-      name: "Create New NPC",
-      callback: () => this.createNpc(),
-    });
-
-    this.addCommand({
-      id: "create-pc",
-      name: "Create New Player Character",
-      callback: () => this.createPc(),
-    });
-
-    this.addCommand({
-      id: "create-adventure",
-      name: "Create New Adventure",
-      callback: () => this.createAdventure(),
-    });
-
-    this.addCommand({
       id: "create-session",
       name: "Create New Session",
       callback: () => this.createSession(),
-    });
-
-    this.addCommand({
-      id: "create-item",
-      name: "Create New Item",
-      callback: () => this.createItem(),
-    });
-
-    this.addCommand({
-      id: "create-spell",
-      name: "Create New Spell",
-      callback: () => this.createSpell(),
-    });
-
-    this.addCommand({
-      id: "create-faction",
-      name: "Create New Faction",
-      callback: () => this.createFaction(),
-    });
-
-    this.addCommand({
-      id: "purge-vault",
-      name: "Purge D&D Campaign Hub from Vault",
-      callback: () => {
-        new PurgeConfirmModal(this.app, this).open();
-      },
-    });
-
-    this.addCommand({
-      id: "update-templates",
-      name: "Update D&D Hub Templates",
-      callback: () => this.updateTemplates(),
-    });
-
-    this.addCommand({
-      id: "check-dnd-hub-dependencies",
-      name: "Check D&D Hub Dependencies",
-      callback: () => this.showDependencyModal(true),
     });
 
     this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
@@ -1261,7 +1217,7 @@ class DndHubModal extends Modal {
     }
 
     // Quick Actions Section
-    contentEl.createEl("h2", { text: "Quick Create" });
+    contentEl.createEl("h2", { text: "Quick Actions" });
 
     const quickActionsContainer = contentEl.createDiv({ cls: "dnd-hub-quick-actions" });
 
@@ -1270,54 +1226,15 @@ class DndHubModal extends Modal {
       this.plugin.createCampaign();
     });
 
-    this.createActionButton(quickActionsContainer, "👤 New NPC", () => {
-      this.close();
-      this.plugin.createNpc();
-    });
-
-    this.createActionButton(quickActionsContainer, "🛡️ New PC", () => {
-      this.close();
-      this.plugin.createPc();
-    });
-
-    this.createActionButton(quickActionsContainer, "🗺️ New Adventure", () => {
-      this.close();
-      this.plugin.createAdventure();
-    });
-
     this.createActionButton(quickActionsContainer, "📜 New Session", () => {
       this.close();
       this.plugin.createSession();
     });
 
-    this.createActionButton(quickActionsContainer, "⚔️ New Item", () => {
-      this.close();
-      this.plugin.createItem();
+    contentEl.createEl("p", {
+      text: "NPCs, PCs, adventures, and more builders are coming soon.",
+      cls: "dnd-hub-info",
     });
-
-    this.createActionButton(quickActionsContainer, "✨ New Spell", () => {
-      this.close();
-      this.plugin.createSpell();
-    });
-
-    this.createActionButton(quickActionsContainer, "🏛️ New Faction", () => {
-      this.close();
-      this.plugin.createFaction();
-    });
-
-    // Browse Section
-    contentEl.createEl("h2", { text: "Browse Vault" });
-
-    const browseContainer = contentEl.createDiv({ cls: "dnd-hub-browse" });
-
-    this.createBrowseButton(browseContainer, "📁 Campaigns", "Campaigns");
-    this.createBrowseButton(browseContainer, "👥 NPCs", "NPCs");
-    this.createBrowseButton(browseContainer, "🛡️ PCs", "PCs");
-    this.createBrowseButton(browseContainer, "🗺️ Adventures", "Adventures");
-    this.createBrowseButton(browseContainer, "📜 Sessions", "Sessions");
-    this.createBrowseButton(browseContainer, "⚔️ Items", "Items");
-    this.createBrowseButton(browseContainer, "✨ Spells", "Spells");
-    this.createBrowseButton(browseContainer, "🏛️ Factions", "Factions");
   }
 
   createActionButton(container: Element, text: string, callback: () => void) {
