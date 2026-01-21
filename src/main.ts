@@ -1,143 +1,149 @@
 ﻿import { App, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, requestUrl } from "obsidian";
 import {
-	WORLD_TEMPLATE,
-	SESSION_GM_TEMPLATE,
-	SESSION_PLAYER_TEMPLATE,
-	NPC_TEMPLATE,
-	PC_TEMPLATE,
-	ADVENTURE_TEMPLATE,
-	FACTION_TEMPLATE,
-	ITEM_TEMPLATE,
-	SPELL_TEMPLATE,
-	CAMPAIGN_TEMPLATE,
-	SESSION_DEFAULT_TEMPLATE
+  WORLD_TEMPLATE,
+  SESSION_GM_TEMPLATE,
+  SESSION_PLAYER_TEMPLATE,
+  NPC_TEMPLATE,
+  PC_TEMPLATE,
+  ADVENTURE_TEMPLATE,
+  FACTION_TEMPLATE,
+  ITEM_TEMPLATE,
+  SPELL_TEMPLATE,
+  CAMPAIGN_TEMPLATE,
+  SESSION_DEFAULT_TEMPLATE
 } from "./templates";
 
 interface DndCampaignHubSettings {
-	vaultPath: string;
-	currentCampaign: string;
-	hotkey: string;
-	pluginVersion: string;
-	defaultTemplates: {
-		campaign: string;
-		npc: string;
-		pc: string;
-		adventure: string;
-		item: string;
-		spell: string;
-		faction: string;
-		session: string;
-	};
+  vaultPath: string;
+  currentCampaign: string;
+  hotkey: string;
+  pluginVersion: string;
+  defaultTemplates: {
+    campaign: string;
+    npc: string;
+    pc: string;
+    adventure: string;
+    item: string;
+    spell: string;
+    faction: string;
+    session: string;
+  };
 }
 
 const DEFAULT_SETTINGS: DndCampaignHubSettings = {
-	vaultPath: "",
-	currentCampaign: "ttrpgs/Frozen Sick (SOLINA)",
-	hotkey: "Ctrl+Shift+M",
-	pluginVersion: "0.0.0",
-	defaultTemplates: {
-		campaign: "",
-		npc: "",
-		pc: "",
-		adventure: "",
-		item: "",
-		spell: "",
-		faction: "",
-		session: "",
-	},
+  vaultPath: "",
+  currentCampaign: "ttrpgs/Frozen Sick (SOLINA)",
+  hotkey: "Ctrl+Shift+M",
+  pluginVersion: "0.0.0",
+  defaultTemplates: {
+    campaign: "",
+    npc: "",
+    pc: "",
+    adventure: "",
+    item: "",
+    spell: "",
+    faction: "",
+    session: "",
+  },
 };
 
 export default class DndCampaignHubPlugin extends Plugin {
-	settings!: DndCampaignHubSettings;
+  settings!: DndCampaignHubSettings;
 
-	async onload() {
-		await this.loadSettings();
+  async onload() {
+    await this.loadSettings();
 
-		console.log("D&D Campaign Hub: Plugin loaded");
+    console.log("D&D Campaign Hub: Plugin loaded");
 
-		// Check for version updates
-		await this.checkForUpdates();
+    // Check for version updates
+    await this.checkForUpdates();
 
-		// Add the main command with configurable hotkey
-		this.addCommand({
-			id: "open-dnd-hub",
-			name: "Open D&D Campaign Hub",
-			callback: () => {
-				new DndHubModal(this.app, this).open();
-			},
-			hotkeys: [
-				{
-					modifiers: ["Ctrl", "Shift"],
-					key: "M",
-				},
-			],
-		});
+    // Add the main command with configurable hotkey
+    this.addCommand({
+      id: "open-dnd-hub",
+      name: "Open D&D Campaign Hub",
+      callback: () => {
+        new DndHubModal(this.app, this).open();
+      },
+      hotkeys: [
+        {
+          modifiers: ["Ctrl", "Shift"],
+          key: "M",
+        },
+      ],
+    });
 
-		// Add commands for creating different D&D elements
-		this.addCommand({
-			id: "create-campaign",
-			name: "Create New Campaign",
-			callback: () => this.createCampaign(),
-		});
+    // Add commands for creating different D&D elements
+    this.addCommand({
+      id: "create-campaign",
+      name: "Create New Campaign",
+      callback: () => this.createCampaign(),
+    });
 
-		this.addCommand({
-			id: "create-npc",
-			name: "Create New NPC",
-			callback: () => this.createNpc(),
-		});
+    this.addCommand({
+      id: "create-npc",
+      name: "Create New NPC",
+      callback: () => this.createNpc(),
+    });
 
-		this.addCommand({
-			id: "create-pc",
-			name: "Create New Player Character",
-			callback: () => this.createPc(),
-		});
+    this.addCommand({
+      id: "create-pc",
+      name: "Create New Player Character",
+      callback: () => this.createPc(),
+    });
 
-		this.addCommand({
-			id: "create-adventure",
-			name: "Create New Adventure",
-			callback: () => this.createAdventure(),
-		});
+    this.addCommand({
+      id: "create-adventure",
+      name: "Create New Adventure",
+      callback: () => this.createAdventure(),
+    });
 
-		this.addCommand({
-			id: "create-session",
-			name: "Create New Session",
-			callback: () => this.createSession(),
-		});
+    this.addCommand({
+      id: "create-session",
+      name: "Create New Session",
+      callback: () => this.createSession(),
+    });
 
-		this.addCommand({
-			id: "create-item",
-			name: "Create New Item",
-			callback: () => this.createItem(),
-		});
+    this.addCommand({
+      id: "create-item",
+      name: "Create New Item",
+      callback: () => this.createItem(),
+    });
 
-		this.addCommand({
-			id: "create-spell",
-			name: "Create New Spell",
-			callback: () => this.createSpell(),
-		});
+    this.addCommand({
+      id: "create-spell",
+      name: "Create New Spell",
+      callback: () => this.createSpell(),
+    });
 
-		this.addCommand({
-			id: "create-faction",
-			name: "Create New Faction",
-			callback: () => this.createFaction(),
-		});
+    this.addCommand({
+      id: "create-faction",
+      name: "Create New Faction",
+      callback: () => this.createFaction(),
+    });
 
-		this.addCommand({
-			id: "purge-vault",
-			name: "Purge D&D Campaign Hub from Vault",
-			callback: () => {
-				new PurgeConfirmModal(this.app, this).open();
-			},
-		});
+    this.addCommand({
+      id: "purge-vault",
+      name: "Purge D&D Campaign Hub from Vault",
+      callback: () => {
+        new PurgeConfirmModal(this.app, this).open();
+      },
+    });
 
-		this.addCommand({
-			id: "update-templates",
-			name: "Update D&D Hub Templates",
-			callback: () => this.updateTemplates(),
-		});
+    this.addCommand({
+      id: "update-templates",
+      name: "Update D&D Hub Templates",
+      callback: () => this.updateTemplates(),
+    });
 
-		this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
-	}
+    this.addCommand({
+      id: "check-dnd-hub-dependencies",
+      name: "Check D&D Hub Dependencies",
+      callback: () => this.showDependencyModal(true),
+    });
+
+    this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
+  }
 
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -391,10 +397,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 		});
 	}
 
-	/**
-	 * Purge all D&D Campaign Hub files and folders from the vault
-	 */
-	async purgeVault() {
+  /**
+   * Purge all D&D Campaign Hub files and folders from the vault
+   */
+  async purgeVault() {
 		const foldersToRemove = [
 			"z_Templates",
 			"z_Assets",
@@ -432,131 +438,176 @@ export default class DndCampaignHubPlugin extends Plugin {
 		}
 	}
 
-	/**
-	 * Install required community plugins
-	 */
-	async installRequiredPlugins() {
-		const requiredPlugins = [
-			{
-				id: "buttons",
-				name: "Buttons",
-				repo: "shabegom/buttons",
-				version: "0.5.1"
-			},
-			{
-				id: "dataview",
-				name: "Dataview", 
-				repo: "blacksmithgu/obsidian-dataview",
-				version: "0.5.68"
-			},
-			{
-				id: "calendarium",
-				name: "Calendarium",
-				repo: "javalent/calendarium",
-				version: "2.1.0"
-			}
-		];
+  /**
+   * Install required community plugins
+   */
+  async installRequiredPlugins() {
+    const requiredPlugins = [
+      {
+        id: "buttons",
+        name: "Buttons",
+        repo: "shabegom/buttons",
+        version: "0.5.1"
+      },
+      {
+        id: "dataview",
+        name: "Dataview",
+        repo: "blacksmithgu/obsidian-dataview",
+        version: "0.5.68"
+      },
+      {
+        id: "calendarium",
+        name: "Calendarium",
+        repo: "javalent/calendarium",
+        version: "2.1.0"
+      }
+    ];
 
-		new Notice("Installing required plugins...");
+    new Notice("Installing required plugins...");
 
-		for (const plugin of requiredPlugins) {
-			try {
-				await this.installPlugin(plugin);
-			} catch (error) {
-				console.error(`Failed to install ${plugin.name}:`, error);
-				new Notice(`Failed to install ${plugin.name}. Please install manually.`);
-			}
-		}
+    for (const plugin of requiredPlugins) {
+      try {
+        await this.installPlugin(plugin);
+      } catch (error) {
+        console.error(`Failed to install ${plugin.name}:`, error);
+        new Notice(`Failed to install ${plugin.name}. Please install manually.`);
+      }
+    }
 
-		// Enable the plugins programmatically
-		await this.enablePlugins(requiredPlugins.map(p => p.id));
+    // Enable the plugins programmatically
+    await this.enablePlugins(requiredPlugins.map(p => p.id));
 
-		new Notice("Required plugins installed! Reloading...");
-		
-		// Reload Obsidian to activate plugins
-		setTimeout(() => {
-			(this.app as any).commands.executeCommandById('app:reload');
-		}, 1500);
-	}
+    new Notice("Required plugins installed! Reloading...");
 
-	/**
-	 * Install a single plugin from GitHub
-	 */
-	async installPlugin(plugin: { id: string; name: string; repo: string; version: string }) {
-		const adapter = this.app.vault.adapter;
-		const pluginsFolder = `.obsidian/plugins`;
-		const pluginPath = `${pluginsFolder}/${plugin.id}`;
+    // Reload Obsidian to activate plugins
+    setTimeout(() => {
+      (this.app as any).commands.executeCommandById('app:reload');
+    }, 1500);
+  }
 
-		// Check if plugin already exists
-		const exists = await adapter.exists(pluginPath);
-		if (exists) {
-			console.log(`Plugin ${plugin.name} already installed`);
-			return;
-		}
+  /**
+   * Install a single plugin from GitHub
+   */
+  async installPlugin(plugin: { id: string; name: string; repo: string; version: string }) {
+    const adapter = this.app.vault.adapter;
+    const pluginsFolder = `.obsidian/plugins`;
+    const pluginPath = `${pluginsFolder}/${plugin.id}`;
 
-		// Create plugin directory
-		await adapter.mkdir(pluginPath);
+    // Check if plugin already exists
+    const exists = await adapter.exists(pluginPath);
+    if (exists) {
+      console.log(`Plugin ${plugin.name} already installed`);
+      return;
+    }
 
-		// Download manifest.json using Obsidian's requestUrl to bypass CORS
-		const manifestUrl = `https://raw.githubusercontent.com/${plugin.repo}/HEAD/manifest.json`;
-		const manifestResponse = await requestUrl({ url: manifestUrl });
-		const manifest = manifestResponse.text;
-		await adapter.write(`${pluginPath}/manifest.json`, manifest);
+    // Create plugin directory
+    await adapter.mkdir(pluginPath);
 
-		// Download main.js from specific version
-		const mainUrl = `https://github.com/${plugin.repo}/releases/download/${plugin.version}/main.js`;
-		const mainResponse = await requestUrl({ 
-			url: mainUrl,
-			method: 'GET'
-		});
-		const mainJsArray = new Uint8Array(mainResponse.arrayBuffer);
-		await adapter.writeBinary(`${pluginPath}/main.js`, mainJsArray);
+    // Download manifest.json using Obsidian's requestUrl to bypass CORS
+    const manifestUrl = `https://raw.githubusercontent.com/${plugin.repo}/HEAD/manifest.json`;
+    const manifestResponse = await requestUrl({ url: manifestUrl });
+    const manifest = manifestResponse.text;
+    await adapter.write(`${pluginPath}/manifest.json`, manifest);
 
-		// Download styles.css if it exists
-		try {
-			const stylesUrl = `https://github.com/${plugin.repo}/releases/download/${plugin.version}/styles.css`;
-			const stylesResponse = await requestUrl({ url: stylesUrl });
-			await adapter.write(`${pluginPath}/styles.css`, stylesResponse.text);
-		} catch (error) {
-			// styles.css is optional
-		}
+    // Download main.js from specific version
+    const mainUrl = `https://github.com/${plugin.repo}/releases/download/${plugin.version}/main.js`;
+    const mainResponse = await requestUrl({
+      url: mainUrl,
+      method: 'GET'
+    });
+    const mainJsArray = new Uint8Array(mainResponse.arrayBuffer);
+    await adapter.writeBinary(`${pluginPath}/main.js`, mainJsArray);
 
-		console.log(`Installed plugin: ${plugin.name}`);
-	}
+    // Download styles.css if it exists
+    try {
+      const stylesUrl = `https://github.com/${plugin.repo}/releases/download/${plugin.version}/styles.css`;
+      const stylesResponse = await requestUrl({ url: stylesUrl });
+      await adapter.write(`${pluginPath}/styles.css`, stylesResponse.text);
+    } catch (error) {
+      // styles.css is optional
+    }
 
-	/**
-	 * Enable plugins in community-plugins.json
-	 */
-	async enablePlugins(pluginIds: string[]) {
-		const adapter = this.app.vault.adapter;
-		const configPath = `.obsidian/community-plugins.json`;
+    console.log(`Installed plugin: ${plugin.name}`);
+  }
 
-		let enabledPlugins: string[] = [];
-		
-		const exists = await adapter.exists(configPath);
-		if (exists) {
-			const content = await adapter.read(configPath);
-			enabledPlugins = JSON.parse(content);
-		}
+  /**
+   * Enable plugins in community-plugins.json
+   */
+  async enablePlugins(pluginIds: string[]) {
+    const adapter = this.app.vault.adapter;
+    const configPath = `.obsidian/community-plugins.json`;
 
-		// Add new plugins if not already enabled
-		for (const id of pluginIds) {
-			if (!enabledPlugins.includes(id)) {
-				enabledPlugins.push(id);
-			}
-		}
+    let enabledPlugins: string[] = [];
 
-		await adapter.write(configPath, JSON.stringify(enabledPlugins, null, 2));
-	}
+    const exists = await adapter.exists(configPath);
+    if (exists) {
+      const content = await adapter.read(configPath);
+      enabledPlugins = JSON.parse(content);
+    }
+
+    // Add new plugins if not already enabled
+    for (const id of pluginIds) {
+      if (!enabledPlugins.includes(id)) {
+        enabledPlugins.push(id);
+      }
+    }
+
+    await adapter.write(configPath, JSON.stringify(enabledPlugins, null, 2));
+  }
+
+  /**
+   * Check if required dependencies are installed
+   */
+  async checkDependencies(): Promise<{ missing: string[]; installed: string[] }> {
+    const requiredPlugins = [
+      { id: "buttons", name: "Buttons" },
+      { id: "dataview", name: "Dataview" },
+      { id: "calendarium", name: "Calendarium" }
+    ];
+
+    const installed: string[] = [];
+    const missing: string[] = [];
+    const enabledPlugins: Set<string> = (this.app as any).plugins?.enabledPlugins ?? new Set();
+
+    for (const plugin of requiredPlugins) {
+      if (enabledPlugins.has(plugin.id)) {
+        installed.push(plugin.name);
+      } else {
+        missing.push(plugin.name);
+      }
+    }
+
+    return { missing, installed };
+  }
+
+  /**
+   * Show dependency status to user. Returns dependency summary for caller reuse.
+   */
+  async showDependencyModal(force = false, silentWhenSatisfied = false): Promise<{ missing: string[]; installed: string[] }> {
+    const deps = await this.checkDependencies();
+    if (deps.missing.length > 0 || force) {
+      new DependencyModal(this.app, deps).open();
+    } else if (!silentWhenSatisfied) {
+      new Notice("All required D&D Campaign Hub plugins are already installed.");
+    }
+
+    return deps;
+  }
 
 	/**
 	 * Initialize the vault with the required folder structure and templates
 	 */
-	async initializeVault() {
-		new Notice("Initializing D&D Campaign Hub vault structure...");
+  async initializeVault() {
+    new Notice("Initializing D&D Campaign Hub vault structure...");
 
-		// Install required plugins first
-		await this.installRequiredPlugins();
+    // Install required plugins first
+    await this.installRequiredPlugins();
+
+    // Verify dependencies before continuing
+    const deps = await this.showDependencyModal(false, true);
+    if (deps.missing.length > 0) {
+      return;
+    }
 
 		// Create all required folders
 		const foldersToCreate = [
@@ -2145,6 +2196,86 @@ campaign: ${campaignName}
     contentEl.empty();
   }
 }
+
+/**
+ * Modal to inform users about missing plugin dependencies
+ */
+class DependencyModal extends Modal {
+  dependencies: { missing: string[]; installed: string[] };
+
+  constructor(app: App, dependencies: { missing: string[]; installed: string[] }) {
+    super(app);
+    this.dependencies = dependencies;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "⚠️ Missing Plugin Dependencies" });
+
+    contentEl.createEl("p", {
+      text: "D&D Campaign Hub requires the following community plugins to work properly:"
+    });
+
+    // Show missing plugins
+    if (this.dependencies.missing.length > 0) {
+      const missingList = contentEl.createEl("div", { cls: "dnd-dependency-list" });
+      missingList.createEl("h3", { text: "❌ Missing:" });
+      const ul = missingList.createEl("ul");
+      this.dependencies.missing.forEach(plugin => {
+        ul.createEl("li", { text: plugin });
+      });
+    }
+
+    // Show installed plugins
+    if (this.dependencies.installed.length > 0) {
+      const installedList = contentEl.createEl("div", { cls: "dnd-dependency-list" });
+      installedList.createEl("h3", { text: "✅ Installed:" });
+      const ul = installedList.createEl("ul");
+      this.dependencies.installed.forEach(plugin => {
+        ul.createEl("li", { text: plugin });
+      });
+    }
+
+    contentEl.createEl("h3", { text: "📦 How to Install" });
+    const instructions = contentEl.createEl("div", { cls: "dnd-dependency-instructions" });
+    instructions.createEl("p", { text: "1. Open Settings → Community Plugins" });
+    instructions.createEl("p", { text: "2. Click 'Browse' to open the plugin browser" });
+    instructions.createEl("p", { text: "3. Search for and install the missing plugins" });
+    instructions.createEl("p", { text: "4. Enable each plugin after installation" });
+    instructions.createEl("p", { text: "5. Return to D&D Campaign Hub and try again" });
+
+    contentEl.createEl("p", { 
+      text: "💡 These plugins add buttons, tables, and calendar features that make your campaigns interactive and organized.",
+      cls: "dnd-dependency-note"
+    });
+
+    // Buttons
+    const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
+
+    const settingsButton = buttonContainer.createEl("button", {
+      text: "Open Settings",
+      cls: "mod-cta"
+    });
+    settingsButton.addEventListener("click", () => {
+      (this.app as any).setting.open();
+      (this.app as any).setting.openTabById('community-plugins');
+      this.close();
+    });
+
+    const closeButton = buttonContainer.createEl("button", { text: "Close" });
+    closeButton.addEventListener("click", () => {
+      this.close();
+    });
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
 class CalendarDateInputModal extends Modal {
   calendarData: any;
   year: string;

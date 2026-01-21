@@ -9,6 +9,7 @@ mkdirSync(outdir, { recursive: true });
 const copyStatic = () => {
   copyFileSync("manifest.json", `${outdir}/manifest.json`);
   copyFileSync("src/styles.css", `${outdir}/styles.css`);
+  copyFileSync("versions.json", `${outdir}/versions.json`);
 };
 
 const buildOnce = async () => {
