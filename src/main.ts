@@ -85,6 +85,18 @@ export default class DndCampaignHubPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: "update-dnd-hub-templates",
+      name: "Update D&D Hub Templates",
+      callback: () => {
+        if (!this.isVaultInitialized()) {
+          new Notice("Initialize D&D Campaign Hub before updating templates.");
+          return;
+        }
+        this.updateTemplates();
+      },
+    });
+
     // Add commands for the features available in the preview release
     this.addCommand({
       id: "create-campaign",
@@ -1226,13 +1238,8 @@ class DndHubModal extends Modal {
       this.plugin.createCampaign();
     });
 
-    this.createActionButton(quickActionsContainer, "📜 New Session", () => {
-      this.close();
-      this.plugin.createSession();
-    });
-
     contentEl.createEl("p", {
-      text: "NPCs, PCs, adventures, and more builders are coming soon.",
+      text: "Create sessions from a campaign's World note or via the 'Create New Session' command. NPCs, PCs, adventures, and more builders are coming soon.",
       cls: "dnd-hub-info",
     });
   }
