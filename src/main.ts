@@ -1378,8 +1378,8 @@ class SessionCreationModal extends Modal {
     
     if (worldFile instanceof TFile) {
       const worldContent = await this.app.vault.read(worldFile);
-      const calendarMatch = worldContent.match(/fc-calendar:\s*(.+)/);
-      if (calendarMatch && calendarMatch[1]) {
+      const calendarMatch = worldContent.match(/^fc-calendar:\s*([^\r\n]\w*)$/m);
+      if (calendarMatch && calendarMatch[1] && calendarMatch[1].trim()) {
         this.calendar = calendarMatch[1].trim();
         // Get calendar data from Calendarium - search by name
         const calendariumPlugin = (this.app as any).plugins?.plugins?.calendarium;
@@ -1407,9 +1407,9 @@ class SessionCreationModal extends Modal {
       // No previous session, use campaign start date
       if (worldFile instanceof TFile) {
         const worldContent = await this.app.vault.read(worldFile);
-        const yearMatch = worldContent.match(/fc-date:\s*\n\s*year:\s*(.+)/);
-        const monthMatch = worldContent.match(/fc-date:\s*\n\s*year:.*\n\s*month:\s*(.+)/);
-        const dayMatch = worldContent.match(/fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*(.+)/);
+        const yearMatch = worldContent.match(/fc-date:\s*\n\s*year:\s*([^\r\n]\w*)$/m);
+        const monthMatch = worldContent.match(/fc-date:\s*\n\s*year:.*\n\s*month:\s*([^\r\n]\w*)$/m);
+        const dayMatch = worldContent.match(/fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*([^\r\n]\w*)$/m);
         
         if (yearMatch && yearMatch[1]) this.startYear = yearMatch[1].trim();
         if (monthMatch && monthMatch[1]) this.startMonth = monthMatch[1].trim();
@@ -1448,9 +1448,9 @@ class SessionCreationModal extends Modal {
       const lastSession = sortedFiles[0] as TFile;
       const content = await this.app.vault.read(lastSession);
       
-      const endYearMatch = content.match(/fc-end:\s*\n\s*year:\s*(.+)/);
-      const endMonthMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:\s*(.+)/);
-      const endDayMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*(.+)/);
+      const endYearMatch = content.match(/fc-end:\s*\n\s*year:\s*([^\r\n]+)/);
+      const endMonthMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:\s*([^\r\n]+)/);
+      const endDayMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*([^\r\n]+)/);
       
       if (endYearMatch?.[1] && endMonthMatch?.[1] && endDayMatch?.[1]) {
         return {
