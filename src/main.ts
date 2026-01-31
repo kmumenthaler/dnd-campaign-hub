@@ -1362,6 +1362,13 @@ class SessionCreationModal extends Modal {
     super(app);
     this.plugin = plugin;
     this.sessionDate = new Date().toISOString().split('T')[0] || "";
+    // Initialize with safe defaults immediately
+    this.startYear = "1";
+    this.startMonth = "1";
+    this.startDay = "1";
+    this.endYear = "1";
+    this.endMonth = "1";
+    this.endDay = "1";
   }
 
   async loadCalendarData() {
@@ -1659,23 +1666,33 @@ class SessionCreationModal extends Modal {
       const fileName = `${nextNumber.toString().padStart(3, '0')}_${dateStr}.md`;
       const filePath = `${campaignPath}/${fileName}`;
 
+      // Ensure all values have defaults
+      const safeLocation = this.location || "";
+      const safeCalendar = this.calendar || "";
+      const safeStartYear = this.startYear || "1";
+      const safeStartMonth = this.startMonth || "1";
+      const safeStartDay = this.startDay || "1";
+      const safeEndYear = this.endYear || "1";
+      const safeEndMonth = this.endMonth || "1";
+      const safeEndDay = this.endDay || "1";
+
       // Build the complete frontmatter instead of trying to replace parts
       const frontmatter = `---
 type: session
 campaign: ${campaignName}
 world: ${campaignName}
 sessionNum: ${nextNumber}
-location: ${this.location}
+location: ${safeLocation}
 date: ${this.sessionDate}
-fc-calendar: ${this.calendar}
+fc-calendar: ${safeCalendar}
 fc-date:
-  year: ${this.startYear}
-  month: ${this.startMonth}
-  day: ${this.startDay}
+  year: ${safeStartYear}
+  month: ${safeStartMonth}
+  day: ${safeStartDay}
 fc-end:
-  year: ${this.endYear}
-  month: ${this.endMonth}
-  day: ${this.endDay}
+  year: ${safeEndYear}
+  month: ${safeEndMonth}
+  day: ${safeEndDay}
 long_rest: false
 short_rest: false
 summary: ""
