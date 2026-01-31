@@ -1660,27 +1660,27 @@ class SessionCreationModal extends Modal {
       const fileName = `${nextNumber.toString().padStart(3, '0')}_${dateStr}.md`;
       const filePath = `${campaignPath}/${fileName}`;
 
-      // Replace placeholders in template
+      // Replace placeholders in template - do simple field replacements first
       sessionContent = sessionContent
-        .replace(/campaign: $/m, `campaign: ${campaignName}`)
-        .replace(/world: $/m, `world: ${campaignName}`)
-        .replace(/sessionNum: $/m, `sessionNum: ${nextNumber}`)
-        .replace(/location: $/m, `location: ${this.location}`)
-        .replace(/date: $/m, `date: ${this.sessionDate}`)
-        .replace(/fc-calendar: $/m, `fc-calendar: ${this.calendar}`)
-        .replace(/# Session\s*$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
+        .replace(/^campaign: $/m, `campaign: ${campaignName}`)
+        .replace(/^world: $/m, `world: ${campaignName}`)
+        .replace(/^sessionNum: $/m, `sessionNum: ${nextNumber}`)
+        .replace(/^location: $/m, `location: ${this.location}`)
+        .replace(/^date: $/m, `date: ${this.sessionDate}`)
+        .replace(/^fc-calendar: $/m, `fc-calendar: ${this.calendar}`)
+        .replace(/^# Session\s*$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
 
-      // Replace fc-date (start date) - need to match the nested structure
-      sessionContent = sessionContent
-        .replace(/fc-date:\s*\n\s*year:\s*$/m, `fc-date:\n  year: ${this.startYear}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*)month:\s*$/m, `$1month: ${this.startMonth}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:\s*$/m, `$1day: ${this.startDay}`);
+      // Replace fc-date block (start date) - match the exact template structure
+      sessionContent = sessionContent.replace(
+        /fc-date: \n  year: \n  month: \n  day: /m,
+        `fc-date:\n  year: ${this.startYear}\n  month: ${this.startMonth}\n  day: ${this.startDay}\n`
+      );
 
-      // Replace fc-end (end date) - need to match the nested structure
-      sessionContent = sessionContent
-        .replace(/fc-end:\s*\n\s*year:\s*$/m, `fc-end:\n  year: ${this.endYear}`)
-        .replace(/(fc-end:\s*\n\s*year:.*\n\s*)month:\s*$/m, `$1month: ${this.endMonth}`)
-        .replace(/(fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:\s*$/m, `$1day: ${this.endDay}`);
+      // Replace fc-end block (end date) - match the exact template structure
+      sessionContent = sessionContent.replace(
+        /fc-end: \n  year: \n  month: \n  day: /m,
+        `fc-end:\n  year: ${this.endYear}\n  month: ${this.endMonth}\n  day: ${this.endDay}\n`
+      );
       // Create the file
       await this.app.vault.create(filePath, sessionContent);
 
@@ -2068,9 +2068,8 @@ class CampaignCreationModal extends Modal {
         .replace(/role: player$/m, `role: ${this.role}`)
         .replace(/system:$/m, `system: ${this.system}`)
         .replace(/fc-calendar: $/m, `fc-calendar: ${this.calendarName}`)
-        .replace(/fc-date:\s*\n\s*year:\s*$/m, `fc-date:\n  year: ${this.startYear}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*)month:\s*$/m, `$1month: ${this.startMonth}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:\s*$/m, `$1day: ${this.startDay}`)
+        .replace(/fc-date: \n  year: \n  month: \n  day: /m, 
+          `fc-date:\n  year: ${this.startYear}\n  month: ${this.startMonth}\n  day: ${this.startDay}\n`)
         .replace(/# The World of Your Campaign/g, `# The World of ${campaignName}`)
         .replace(/{{CAMPAIGN_NAME}}/g, campaignName);
 
