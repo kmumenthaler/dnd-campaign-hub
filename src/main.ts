@@ -1661,12 +1661,12 @@ class SessionCreationModal extends Modal {
 
       // Replace placeholders in template - do simple field replacements first
       sessionContent = sessionContent
-        .replace(/^campaign: $/m, `campaign: ${campaignName}`)
-        .replace(/^world: $/m, `world: ${campaignName}`)
-        .replace(/^sessionNum: $/m, `sessionNum: ${nextNumber}`)
-        .replace(/^location: $/m, `location: ${this.location}`)
-        .replace(/^date: $/m, `date: ${this.sessionDate}`)
-        .replace(/^fc-calendar: $/m, `fc-calendar: ${this.calendar}`)
+        .replace(/^campaign: *$/m, `campaign: ${campaignName}`)
+        .replace(/^world: *$/m, `world: ${campaignName}`)
+        .replace(/^sessionNum: *$/m, `sessionNum: ${nextNumber}`)
+        .replace(/^location: *$/m, `location: ${this.location}`)
+        .replace(/^date: *$/m, `date: ${this.sessionDate}`)
+        .replace(/^fc-calendar: *$/m, `fc-calendar: ${this.calendar}`)
         .replace(/^# Session\s*$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
 
       // Replace fc-date block (start date) - match the exact template structure with optional trailing spaces
