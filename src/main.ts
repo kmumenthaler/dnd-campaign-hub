@@ -218,7 +218,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				
 				// Determine file type from frontmatter
 				const typeMatch = content.match(/^---\n[\s\S]*?type:\s*(.+?)\n[\s\S]*?---/);
-				if (!typeMatch) continue;
+				if (!typeMatch || !typeMatch[1]) continue;
 				
 				const fileType = typeMatch[1].trim();
 				
@@ -269,13 +269,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 		
 		// Extract user content from "Truths about the campaign/world" section
 		const truthsMatch = content.match(/## Truths about the campaign\/world\n\n\*[^*]+\*\n\n([\s\S]*?)(?=\n## |\n*$)/);
-		const userTruths = truthsMatch ? truthsMatch[1].trim() : "-";
+		const userTruths = (truthsMatch && truthsMatch[1]) ? truthsMatch[1].trim() : "-";
 		
 		// Get campaign name from path
 		const campaignName = file.path.split('/')[1];
 		
 		// Build new content with preserved user data
-		let newContent = WORLD_TEMPLATE.replace(/{{CAMPAIGN_NAME}}/g, campaignName);
+		let newContent = WORLD_TEMPLATE.replace(/{{CAMPAIGN_NAME}}/g, campaignName || '');
 		
 		// Replace the frontmatter with the user's existing frontmatter
 		newContent = newContent.replace(/^---\n[\s\S]*?\n---\n/, frontmatter);
@@ -322,7 +322,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async updateSessionFile(file: TFile, content: string) {
 		// Determine if it's GM or Player session
 		const roleMatch = content.match(/role:\s*(.+)/);
-		const role = roleMatch ? roleMatch[1].trim() : 'gm';
+		const role = (roleMatch && roleMatch[1]) ? roleMatch[1].trim() : 'gm';
 		
 		const template = role === 'player' ? SESSION_PLAYER_TEMPLATE : SESSION_GM_TEMPLATE;
 		await this.updateTemplateBasedFile(file, content, template);
@@ -483,8 +483,7 @@ export default class DndCampaignHubPlugin extends Plugin {
       url: mainUrl,
       method: 'GET'
     });
-    const mainJsArray = new Uint8Array(mainResponse.arrayBuffer);
-    await adapter.writeBinary(`${pluginPath}/main.js`, mainJsArray);
+    await adapter.writeBinary(`${pluginPath}/main.js`, mainResponse.arrayBuffer);
 
     // Download styles.css if it exists
     try {
