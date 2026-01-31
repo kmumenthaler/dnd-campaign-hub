@@ -1669,16 +1669,16 @@ class SessionCreationModal extends Modal {
         .replace(/^fc-calendar: $/m, `fc-calendar: ${this.calendar}`)
         .replace(/^# Session\s*$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
 
-      // Replace fc-date block (start date) - match the exact template structure
+      // Replace fc-date block (start date) - match the exact template structure with optional trailing spaces
       sessionContent = sessionContent.replace(
-        /fc-date: \n  year: \n  month: \n  day: /m,
-        `fc-date:\n  year: ${this.startYear}\n  month: ${this.startMonth}\n  day: ${this.startDay}\n`
+        /fc-date: *\n  year: *\n  month: *\n  day: */m,
+        `fc-date:\n  year: ${this.startYear}\n  month: ${this.startMonth}\n  day: ${this.startDay}`
       );
 
-      // Replace fc-end block (end date) - match the exact template structure
+      // Replace fc-end block (end date) - match the exact template structure with optional trailing spaces
       sessionContent = sessionContent.replace(
-        /fc-end: \n  year: \n  month: \n  day: /m,
-        `fc-end:\n  year: ${this.endYear}\n  month: ${this.endMonth}\n  day: ${this.endDay}\n`
+        /fc-end: *\n  year: *\n  month: *\n  day: */m,
+        `fc-end:\n  year: ${this.endYear}\n  month: ${this.endMonth}\n  day: ${this.endDay}`
       );
       // Create the file
       await this.app.vault.create(filePath, sessionContent);
