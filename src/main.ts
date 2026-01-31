@@ -73,7 +73,31 @@ export default class DndCampaignHubPlugin extends Plugin {
       ],
     });
 
-    // Add commands for creating different D&D elements
+    this.addCommand({
+      id: "initialize-dnd-hub",
+      name: "Initialize D&D Campaign Hub",
+      callback: async () => {
+        if (this.isVaultInitialized()) {
+          new Notice("D&D Campaign Hub is already initialized in this vault.");
+          return;
+        }
+        await this.initializeVault();
+      },
+    });
+
+    this.addCommand({
+      id: "update-dnd-hub-templates",
+      name: "Update D&D Hub Templates",
+      callback: () => {
+        if (!this.isVaultInitialized()) {
+          new Notice("Initialize D&D Campaign Hub before updating templates.");
+          return;
+        }
+        this.updateTemplates();
+      },
+    });
+
+    // Add commands for the features available in the preview release
     this.addCommand({
       id: "create-campaign",
       name: "Create New Campaign",
@@ -81,65 +105,9 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "create-npc",
-      name: "Create New NPC",
-      callback: () => this.createNpc(),
-    });
-
-    this.addCommand({
-      id: "create-pc",
-      name: "Create New Player Character",
-      callback: () => this.createPc(),
-    });
-
-    this.addCommand({
-      id: "create-adventure",
-      name: "Create New Adventure",
-      callback: () => this.createAdventure(),
-    });
-
-    this.addCommand({
       id: "create-session",
       name: "Create New Session",
       callback: () => this.createSession(),
-    });
-
-    this.addCommand({
-      id: "create-item",
-      name: "Create New Item",
-      callback: () => this.createItem(),
-    });
-
-    this.addCommand({
-      id: "create-spell",
-      name: "Create New Spell",
-      callback: () => this.createSpell(),
-    });
-
-    this.addCommand({
-      id: "create-faction",
-      name: "Create New Faction",
-      callback: () => this.createFaction(),
-    });
-
-    this.addCommand({
-      id: "purge-vault",
-      name: "Purge D&D Campaign Hub from Vault",
-      callback: () => {
-        new PurgeConfirmModal(this.app, this).open();
-      },
-    });
-
-    this.addCommand({
-      id: "update-templates",
-      name: "Update D&D Hub Templates",
-      callback: () => this.updateTemplates(),
-    });
-
-    this.addCommand({
-      id: "check-dnd-hub-dependencies",
-      name: "Check D&D Hub Dependencies",
-      callback: () => this.showDependencyModal(true),
     });
 
     this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
@@ -250,7 +218,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				
 				// Determine file type from frontmatter
 				const typeMatch = content.match(/^---\n[\s\S]*?type:\s*(.+?)\n[\s\S]*?---/);
-				if (!typeMatch) continue;
+				if (!typeMatch || !typeMatch[1]) continue;
 				
 				const fileType = typeMatch[1].trim();
 				
@@ -301,13 +269,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 		
 		// Extract user content from "Truths about the campaign/world" section
 		const truthsMatch = content.match(/## Truths about the campaign\/world\n\n\*[^*]+\*\n\n([\s\S]*?)(?=\n## |\n*$)/);
-		const userTruths = truthsMatch ? truthsMatch[1].trim() : "-";
+		const userTruths = (truthsMatch && truthsMatch[1]) ? truthsMatch[1].trim() : "-";
 		
 		// Get campaign name from path
 		const campaignName = file.path.split('/')[1];
 		
 		// Build new content with preserved user data
-		let newContent = WORLD_TEMPLATE.replace(/{{CAMPAIGN_NAME}}/g, campaignName);
+		let newContent = WORLD_TEMPLATE.replace(/{{CAMPAIGN_NAME}}/g, campaignName || '');
 		
 		// Replace the frontmatter with the user's existing frontmatter
 		newContent = newContent.replace(/^---\n[\s\S]*?\n---\n/, frontmatter);
@@ -354,7 +322,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async updateSessionFile(file: TFile, content: string) {
 		// Determine if it's GM or Player session
 		const roleMatch = content.match(/role:\s*(.+)/);
-		const role = roleMatch ? roleMatch[1].trim() : 'gm';
+		const role = (roleMatch && roleMatch[1]) ? roleMatch[1].trim() : 'gm';
 		
 		const template = role === 'player' ? SESSION_PLAYER_TEMPLATE : SESSION_GM_TEMPLATE;
 		await this.updateTemplateBasedFile(file, content, template);
@@ -515,8 +483,7 @@ export default class DndCampaignHubPlugin extends Plugin {
       url: mainUrl,
       method: 'GET'
     });
-    const mainJsArray = new Uint8Array(mainResponse.arrayBuffer);
-    await adapter.writeBinary(`${pluginPath}/main.js`, mainJsArray);
+    await adapter.writeBinary(`${pluginPath}/main.js`, mainResponse.arrayBuffer);
 
     // Download styles.css if it exists
     try {
@@ -1261,7 +1228,7 @@ class DndHubModal extends Modal {
     }
 
     // Quick Actions Section
-    contentEl.createEl("h2", { text: "Quick Create" });
+    contentEl.createEl("h2", { text: "Quick Actions" });
 
     const quickActionsContainer = contentEl.createDiv({ cls: "dnd-hub-quick-actions" });
 
@@ -1270,54 +1237,10 @@ class DndHubModal extends Modal {
       this.plugin.createCampaign();
     });
 
-    this.createActionButton(quickActionsContainer, "👤 New NPC", () => {
-      this.close();
-      this.plugin.createNpc();
+    contentEl.createEl("p", {
+      text: "Create sessions from a campaign's World note or via the 'Create New Session' command. NPCs, PCs, adventures, and more builders are coming soon.",
+      cls: "dnd-hub-info",
     });
-
-    this.createActionButton(quickActionsContainer, "🛡️ New PC", () => {
-      this.close();
-      this.plugin.createPc();
-    });
-
-    this.createActionButton(quickActionsContainer, "🗺️ New Adventure", () => {
-      this.close();
-      this.plugin.createAdventure();
-    });
-
-    this.createActionButton(quickActionsContainer, "📜 New Session", () => {
-      this.close();
-      this.plugin.createSession();
-    });
-
-    this.createActionButton(quickActionsContainer, "⚔️ New Item", () => {
-      this.close();
-      this.plugin.createItem();
-    });
-
-    this.createActionButton(quickActionsContainer, "✨ New Spell", () => {
-      this.close();
-      this.plugin.createSpell();
-    });
-
-    this.createActionButton(quickActionsContainer, "🏛️ New Faction", () => {
-      this.close();
-      this.plugin.createFaction();
-    });
-
-    // Browse Section
-    contentEl.createEl("h2", { text: "Browse Vault" });
-
-    const browseContainer = contentEl.createDiv({ cls: "dnd-hub-browse" });
-
-    this.createBrowseButton(browseContainer, "📁 Campaigns", "Campaigns");
-    this.createBrowseButton(browseContainer, "👥 NPCs", "NPCs");
-    this.createBrowseButton(browseContainer, "🛡️ PCs", "PCs");
-    this.createBrowseButton(browseContainer, "🗺️ Adventures", "Adventures");
-    this.createBrowseButton(browseContainer, "📜 Sessions", "Sessions");
-    this.createBrowseButton(browseContainer, "⚔️ Items", "Items");
-    this.createBrowseButton(browseContainer, "✨ Spells", "Spells");
-    this.createBrowseButton(browseContainer, "🏛️ Factions", "Factions");
   }
 
   createActionButton(container: Element, text: string, callback: () => void) {
@@ -1439,6 +1362,13 @@ class SessionCreationModal extends Modal {
     super(app);
     this.plugin = plugin;
     this.sessionDate = new Date().toISOString().split('T')[0] || "";
+    // Initialize with safe defaults immediately
+    this.startYear = "1";
+    this.startMonth = "1";
+    this.startDay = "1";
+    this.endYear = "1";
+    this.endMonth = "1";
+    this.endDay = "1";
   }
 
   async loadCalendarData() {
@@ -1448,8 +1378,8 @@ class SessionCreationModal extends Modal {
     
     if (worldFile instanceof TFile) {
       const worldContent = await this.app.vault.read(worldFile);
-      const calendarMatch = worldContent.match(/fc-calendar:\s*(.+)/);
-      if (calendarMatch && calendarMatch[1]) {
+      const calendarMatch = worldContent.match(/^fc-calendar:\s*([^\r\n]\w*)$/m);
+      if (calendarMatch && calendarMatch[1] && calendarMatch[1].trim()) {
         this.calendar = calendarMatch[1].trim();
         // Get calendar data from Calendarium - search by name
         const calendariumPlugin = (this.app as any).plugins?.plugins?.calendarium;
@@ -1477,9 +1407,9 @@ class SessionCreationModal extends Modal {
       // No previous session, use campaign start date
       if (worldFile instanceof TFile) {
         const worldContent = await this.app.vault.read(worldFile);
-        const yearMatch = worldContent.match(/fc-date:\s*\n\s*year:\s*(.+)/);
-        const monthMatch = worldContent.match(/fc-date:\s*\n\s*year:.*\n\s*month:\s*(.+)/);
-        const dayMatch = worldContent.match(/fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*(.+)/);
+        const yearMatch = worldContent.match(/fc-date:\s*\n\s*year:\s*([^\r\n]\w*)$/m);
+        const monthMatch = worldContent.match(/fc-date:\s*\n\s*year:.*\n\s*month:\s*([^\r\n]\w*)$/m);
+        const dayMatch = worldContent.match(/fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*([^\r\n]\w*)$/m);
         
         if (yearMatch && yearMatch[1]) this.startYear = yearMatch[1].trim();
         if (monthMatch && monthMatch[1]) this.startMonth = monthMatch[1].trim();
@@ -1518,9 +1448,9 @@ class SessionCreationModal extends Modal {
       const lastSession = sortedFiles[0] as TFile;
       const content = await this.app.vault.read(lastSession);
       
-      const endYearMatch = content.match(/fc-end:\s*\n\s*year:\s*(.+)/);
-      const endMonthMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:\s*(.+)/);
-      const endDayMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*(.+)/);
+      const endYearMatch = content.match(/fc-end:\s*\n\s*year:\s*([^\r\n]+)/);
+      const endMonthMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:\s*([^\r\n]+)/);
+      const endDayMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*([^\r\n]+)/);
       
       if (endYearMatch?.[1] && endMonthMatch?.[1] && endDayMatch?.[1]) {
         return {
@@ -1736,27 +1666,46 @@ class SessionCreationModal extends Modal {
       const fileName = `${nextNumber.toString().padStart(3, '0')}_${dateStr}.md`;
       const filePath = `${campaignPath}/${fileName}`;
 
-      // Replace placeholders in template
-      sessionContent = sessionContent
-        .replace(/campaign: $/m, `campaign: ${campaignName}`)
-        .replace(/world: $/m, `world: ${campaignName}`)
-        .replace(/sessionNum: $/m, `sessionNum: ${nextNumber}`)
-        .replace(/location: $/m, `location: ${this.location}`)
-        .replace(/date: $/m, `date: ${this.sessionDate}`)
-        .replace(/fc-calendar: $/m, `fc-calendar: ${this.calendar}`)
-        .replace(/# Session\s*$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
+      // Ensure all values have defaults
+      const safeLocation = this.location || "";
+      const safeCalendar = this.calendar || "";
+      const safeStartYear = this.startYear || "1";
+      const safeStartMonth = this.startMonth || "1";
+      const safeStartDay = this.startDay || "1";
+      const safeEndYear = this.endYear || "1";
+      const safeEndMonth = this.endMonth || "1";
+      const safeEndDay = this.endDay || "1";
 
-      // Replace fc-date (start date) - need to match the nested structure
-      sessionContent = sessionContent
-        .replace(/fc-date:\s*\n\s*year:\s*$/m, `fc-date:\n  year: ${this.startYear}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*)month:\s*$/m, `$1month: ${this.startMonth}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:\s*$/m, `$1day: ${this.startDay}`);
+      // Build the complete frontmatter instead of trying to replace parts
+      const frontmatter = `---
+type: session
+campaign: ${campaignName}
+world: ${campaignName}
+sessionNum: ${nextNumber}
+location: ${safeLocation}
+date: ${this.sessionDate}
+fc-calendar: ${safeCalendar}
+fc-date:
+  year: ${safeStartYear}
+  month: ${safeStartMonth}
+  day: ${safeStartDay}
+fc-end:
+  year: ${safeEndYear}
+  month: ${safeEndMonth}
+  day: ${safeEndDay}
+long_rest: false
+short_rest: false
+summary: ""
+tags: inbox
+art: ""
+---`;
 
-      // Replace fc-end (end date) - need to match the nested structure
-      sessionContent = sessionContent
-        .replace(/fc-end:\s*\n\s*year:\s*$/m, `fc-end:\n  year: ${this.endYear}`)
-        .replace(/(fc-end:\s*\n\s*year:.*\n\s*)month:\s*$/m, `$1month: ${this.endMonth}`)
-        .replace(/(fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:\s*$/m, `$1day: ${this.endDay}`);
+      // Replace the entire frontmatter block
+      sessionContent = sessionContent.replace(/^---\n[\s\S]*?\n---/, frontmatter);
+      
+      // Replace the title
+      sessionContent = sessionContent.replace(/^# Session.*$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
+      
       // Create the file
       await this.app.vault.create(filePath, sessionContent);
 
@@ -2144,9 +2093,8 @@ class CampaignCreationModal extends Modal {
         .replace(/role: player$/m, `role: ${this.role}`)
         .replace(/system:$/m, `system: ${this.system}`)
         .replace(/fc-calendar: $/m, `fc-calendar: ${this.calendarName}`)
-        .replace(/fc-date:\s*\n\s*year:\s*$/m, `fc-date:\n  year: ${this.startYear}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*)month:\s*$/m, `$1month: ${this.startMonth}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:\s*$/m, `$1day: ${this.startDay}`)
+        .replace(/fc-date: \n  year: \n  month: \n  day: /m, 
+          `fc-date:\n  year: ${this.startYear}\n  month: ${this.startMonth}\n  day: ${this.startDay}\n`)
         .replace(/# The World of Your Campaign/g, `# The World of ${campaignName}`)
         .replace(/{{CAMPAIGN_NAME}}/g, campaignName);
 
