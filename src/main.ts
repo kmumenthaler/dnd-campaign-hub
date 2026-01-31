@@ -1659,26 +1659,26 @@ class SessionCreationModal extends Modal {
       const fileName = `${nextNumber.toString().padStart(3, '0')}_${dateStr}.md`;
       const filePath = `${campaignPath}/${fileName}`;
 
-      // Replace placeholders in template - do simple field replacements first
+      // Replace placeholders in template - match entire line content after colon
       sessionContent = sessionContent
-        .replace(/^campaign: *$/m, `campaign: ${campaignName}`)
-        .replace(/^world: *$/m, `world: ${campaignName}`)
-        .replace(/^sessionNum: *$/m, `sessionNum: ${nextNumber}`)
-        .replace(/^location: *$/m, `location: ${this.location}`)
-        .replace(/^date: *$/m, `date: ${this.sessionDate}`)
-        .replace(/^fc-calendar: *$/m, `fc-calendar: ${this.calendar}`)
-        .replace(/^# Session\s*$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
+        .replace(/^campaign:.*$/m, `campaign: ${campaignName}`)
+        .replace(/^world:.*$/m, `world: ${campaignName}`)
+        .replace(/^sessionNum:.*$/m, `sessionNum: ${nextNumber}`)
+        .replace(/^location:.*$/m, `location: ${this.location}`)
+        .replace(/^date:.*$/m, `date: ${this.sessionDate}`)
+        .replace(/^fc-calendar:.*$/m, `fc-calendar: ${this.calendar}`)
+        .replace(/^# Session.*$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
 
-      // Replace fc-date block (start date) - match the exact template structure with optional trailing spaces
+      // Replace fc-date block (start date) - match the YAML block structure
       sessionContent = sessionContent.replace(
-        /fc-date: *\n  year: *\n  month: *\n  day: */m,
-        `fc-date:\n  year: ${this.startYear}\n  month: ${this.startMonth}\n  day: ${this.startDay}`
+        /fc-date:\s*\n(\s+)year:.*\n(\s+)month:.*\n(\s+)day:.*/,
+        `fc-date:\n$1year: ${this.startYear}\n$2month: ${this.startMonth}\n$3day: ${this.startDay}`
       );
 
-      // Replace fc-end block (end date) - match the exact template structure with optional trailing spaces
+      // Replace fc-end block (end date) - match the YAML block structure
       sessionContent = sessionContent.replace(
-        /fc-end: *\n  year: *\n  month: *\n  day: */m,
-        `fc-end:\n  year: ${this.endYear}\n  month: ${this.endMonth}\n  day: ${this.endDay}`
+        /fc-end:\s*\n(\s+)year:.*\n(\s+)month:.*\n(\s+)day:.*/,
+        `fc-end:\n$1year: ${this.endYear}\n$2month: ${this.endMonth}\n$3day: ${this.endDay}`
       );
       // Create the file
       await this.app.vault.create(filePath, sessionContent);
