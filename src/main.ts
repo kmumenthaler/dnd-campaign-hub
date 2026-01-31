@@ -1659,27 +1659,36 @@ class SessionCreationModal extends Modal {
       const fileName = `${nextNumber.toString().padStart(3, '0')}_${dateStr}.md`;
       const filePath = `${campaignPath}/${fileName}`;
 
-      // Replace placeholders in template - match entire line content after colon
-      sessionContent = sessionContent
-        .replace(/^campaign:.*$/m, `campaign: ${campaignName}`)
-        .replace(/^world:.*$/m, `world: ${campaignName}`)
-        .replace(/^sessionNum:.*$/m, `sessionNum: ${nextNumber}`)
-        .replace(/^location:.*$/m, `location: ${this.location}`)
-        .replace(/^date:.*$/m, `date: ${this.sessionDate}`)
-        .replace(/^fc-calendar:.*$/m, `fc-calendar: ${this.calendar}`)
-        .replace(/^# Session.*$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
+      // Build the complete frontmatter instead of trying to replace parts
+      const frontmatter = `---
+type: session
+campaign: ${campaignName}
+world: ${campaignName}
+sessionNum: ${nextNumber}
+location: ${this.location}
+date: ${this.sessionDate}
+fc-calendar: ${this.calendar}
+fc-date:
+  year: ${this.startYear}
+  month: ${this.startMonth}
+  day: ${this.startDay}
+fc-end:
+  year: ${this.endYear}
+  month: ${this.endMonth}
+  day: ${this.endDay}
+long_rest: false
+short_rest: false
+summary: ""
+tags: inbox
+art: ""
+---`;
 
-      // Replace fc-date block (start date) - match the YAML block structure
-      sessionContent = sessionContent.replace(
-        /fc-date:\s*\n(\s+)year:.*\n(\s+)month:.*\n(\s+)day:.*/,
-        `fc-date:\n$1year: ${this.startYear}\n$2month: ${this.startMonth}\n$3day: ${this.startDay}`
-      );
-
-      // Replace fc-end block (end date) - match the YAML block structure
-      sessionContent = sessionContent.replace(
-        /fc-end:\s*\n(\s+)year:.*\n(\s+)month:.*\n(\s+)day:.*/,
-        `fc-end:\n$1year: ${this.endYear}\n$2month: ${this.endMonth}\n$3day: ${this.endDay}`
-      );
+      // Replace the entire frontmatter block
+      sessionContent = sessionContent.replace(/^---\n[\s\S]*?\n---/, frontmatter);
+      
+      // Replace the title
+      sessionContent = sessionContent.replace(/^# Session.*$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
+      
       // Create the file
       await this.app.vault.create(filePath, sessionContent);
 
