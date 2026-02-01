@@ -6,6 +6,7 @@ import {
   NPC_TEMPLATE,
   PC_TEMPLATE,
   ADVENTURE_TEMPLATE,
+  SCENE_TEMPLATE,
   FACTION_TEMPLATE,
   ITEM_TEMPLATE,
   SPELL_TEMPLATE,
@@ -2944,6 +2945,8 @@ class AdventureCreationModal extends Modal {
   levelFrom = "1";
   levelTo = "3";
   expectedSessions = "3";
+  useFolderStructure = false;
+  isGM = false;
 
   constructor(app: App, plugin: DndCampaignHubPlugin) {
     super(app);
@@ -2951,11 +2954,25 @@ class AdventureCreationModal extends Modal {
     this.campaign = plugin.settings.currentCampaign;
   }
 
-  onOpen() {
+  async onOpen() {
     const { contentEl } = this;
     contentEl.empty();
 
     contentEl.createEl("h2", { text: "🗺️ Create New Adventure" });
+
+    // Check GM status first
+    await this.checkCampaignRole();
+
+    if (!this.isGM) {
+      contentEl.createEl("p", {
+        text: "⚠️ Only GMs can create adventures. This campaign is set to player mode.",
+        cls: "mod-warning"
+      });
+      
+      const closeBtn = contentEl.createEl("button", { text: "Close" });
+      closeBtn.addEventListener("click", () => this.close());
+      return;
+    }
 
     contentEl.createEl("p", {
       text: "Plan a compelling multi-session adventure with a 3-act structure.",
@@ -3051,6 +3068,20 @@ class AdventureCreationModal extends Modal {
         text.inputEl.style.width = "80px";
       });
 
+    contentEl.createEl("h3", { text: "📁 Structure Options" });
+
+    // Folder Structure Toggle
+    new Setting(contentEl)
+      .setName("Create full folder structure with Acts")
+      .setDesc("Organize scenes into separate Act folders (recommended for 3+ session adventures)")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.useFolderStructure)
+          .onChange((value) => {
+            this.useFolderStructure = value;
+          })
+      );
+
     // Buttons
     const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
 
@@ -3075,6 +3106,17 @@ class AdventureCreationModal extends Modal {
     });
   }
 
+  async checkCampaignRole() {
+    const worldFile = this.app.vault.getAbstractFileByPath(`${this.campaign}/World.md`);
+    if (worldFile instanceof TFile) {
+      const worldContent = await this.app.vault.read(worldFile);
+      const roleMatch = worldContent.match(/^role:\s*([^\r\n]\w*)$/m);
+      if (roleMatch && roleMatch[1]) {
+        this.isGM = roleMatch[1].toLowerCase() === 'gm';
+      }
+    }
+  }
+
   getAllCampaigns(): Array<{ path: string; name: string }> {
     const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
     const campaigns: Array<{ path: string; name: string }> = [];
@@ -3095,12 +3137,12 @@ class AdventureCreationModal extends Modal {
 
   async createAdventureFile() {
     const campaignName = this.campaign.split('/').pop() || "Unknown";
-    const adventurePath = `${this.campaign}/Adventures`;
+    const baseAdventurePath = `${this.campaign}/Adventures`;
     
     new Notice(`Creating Adventure "${this.adventureName}"...`);
 
     try {
-      await this.plugin.ensureFolderExists(adventurePath);
+      await this.plugin.ensureFolderExists(baseAdventurePath);
 
       // Get world info from campaign World.md
       const worldFile = this.app.vault.getAbstractFileByPath(`${this.campaign}/World.md`);
@@ -3114,22 +3156,57 @@ class AdventureCreationModal extends Modal {
         }
       }
 
-      // Get Adventure template
-      const templatePath = "z_Templates/Frontmatter - Adventure.md";
-      const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
-      let adventureContent: string;
+      // Determine folder structure
+      let adventureFolder: string;
+      let mainNotePath: string;
+      let scenesBasePath: string;
 
-      if (templateFile instanceof TFile) {
-        adventureContent = await this.app.vault.read(templateFile);
+      if (this.useFolderStructure) {
+        // Full folder structure: Adventures/Adventure Name/Adventure Name.md
+        adventureFolder = `${baseAdventurePath}/${this.adventureName}`;
+        await this.plugin.ensureFolderExists(adventureFolder);
+        mainNotePath = `${adventureFolder}/${this.adventureName}.md`;
+        scenesBasePath = adventureFolder; // Acts will be subfolders here
       } else {
-        adventureContent = ADVENTURE_TEMPLATE;
+        // Flat structure: Adventures/Adventure Name.md with Scenes subfolder
+        mainNotePath = `${baseAdventurePath}/${this.adventureName}.md`;
+        scenesBasePath = `${baseAdventurePath}/${this.adventureName} - Scenes`;
+        await this.plugin.ensureFolderExists(scenesBasePath);
       }
 
       // Get current date
       const currentDate = new Date().toISOString().split('T')[0];
 
-      // Build complete frontmatter
-      const frontmatter = `---
+      // Create main adventure note
+      await this.createMainAdventureNote(mainNotePath, campaignName, worldName, currentDate);
+
+      // Create scene notes
+      await this.createSceneNotes(scenesBasePath, campaignName, worldName, currentDate);
+
+      // Open the main adventure file
+      await this.app.workspace.openLinkText(mainNotePath, "", true);
+
+      new Notice(`✅ Adventure "${this.adventureName}" created with 9 scenes!`);
+    } catch (error) {
+      new Notice(`❌ Error creating Adventure: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("Adventure creation error:", error);
+    }
+  }
+
+  async createMainAdventureNote(filePath: string, campaignName: string, worldName: string, currentDate: string) {
+    // Get Adventure template
+    const templatePath = "z_Templates/Frontmatter - Adventure.md";
+    const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
+    let adventureContent: string;
+
+    if (templateFile instanceof TFile) {
+      adventureContent = await this.app.vault.read(templateFile);
+    } else {
+      adventureContent = ADVENTURE_TEMPLATE;
+    }
+
+    // Build complete frontmatter
+    const frontmatter = `---
 type: adventure
 name: ${this.adventureName}
 campaign: ${campaignName}
@@ -3142,32 +3219,70 @@ sessions: []
 date: ${currentDate}
 ---`;
 
-      // Replace the frontmatter
-      adventureContent = adventureContent.replace(/^---\n[\s\S]*?\n---/, frontmatter);
+    // Replace the frontmatter
+    adventureContent = adventureContent.replace(/^---\n[\s\S]*?\n---/, frontmatter);
+    
+    // Replace template placeholders
+    adventureContent = adventureContent
+      .replace(/# <% tp\.frontmatter\.name %>/g, `# ${this.adventureName}`)
+      .replace(/<% tp\.frontmatter\.name %>/g, this.adventureName)
+      .replace(/{{ADVENTURE_NAME}}/g, this.adventureName)
+      .replace(/{{CAMPAIGN_NAME}}/g, campaignName)
+      .replace(/{{LEVEL_RANGE}}/g, `${this.levelFrom}-${this.levelTo}`)
+      .replace(/{{EXPECTED_SESSIONS}}/g, this.expectedSessions)
+      .replace(/{{THE_PROBLEM}}/g, this.theProblem || "_[What urgent situation demands heroes?]_")
+      .replace(/<% tp\.frontmatter\.level_range %>/g, `${this.levelFrom}-${this.levelTo}`)
+      .replace(/<% tp\.frontmatter\.expected_sessions %>/g, this.expectedSessions)
+      .replace(/<% tp\.frontmatter\.current_act %>/g, "1");
+
+    await this.app.vault.create(filePath, adventureContent);
+  }
+
+  async createSceneNotes(basePath: string, campaignName: string, worldName: string, currentDate: string) {
+    const scenes = [
+      { act: 1, num: 1, name: "Opening Hook", duration: "15min", type: "social", difficulty: "easy" },
+      { act: 1, num: 2, name: "Investigation", duration: "30min", type: "exploration", difficulty: "medium" },
+      { act: 1, num: 3, name: "First Confrontation", duration: "45min", type: "combat", difficulty: "medium" },
+      { act: 2, num: 4, name: "Complication Arises", duration: "20min", type: "social", difficulty: "medium" },
+      { act: 2, num: 5, name: "Major Challenge", duration: "40min", type: "combat", difficulty: "hard" },
+      { act: 2, num: 6, name: "Critical Choice", duration: "30min", type: "social", difficulty: "hard" },
+      { act: 3, num: 7, name: "Preparation", duration: "20min", type: "exploration", difficulty: "medium" },
+      { act: 3, num: 8, name: "Climactic Battle", duration: "60min", type: "combat", difficulty: "deadly" },
+      { act: 3, num: 9, name: "Resolution", duration: "10min", type: "social", difficulty: "easy" }
+    ];
+
+    for (const scene of scenes) {
+      let scenePath: string;
       
-      // Replace template placeholders
-      adventureContent = adventureContent
-        .replace(/# <% tp\.frontmatter\.name %>/g, `# ${this.adventureName}`)
-        .replace(/<% tp\.frontmatter\.name %>/g, this.adventureName)
-        .replace(/{{ADVENTURE_NAME}}/g, this.adventureName)
-        .replace(/{{CAMPAIGN_NAME}}/g, campaignName)
-        .replace(/{{LEVEL_RANGE}}/g, `${this.levelFrom}-${this.levelTo}`)
-        .replace(/{{EXPECTED_SESSIONS}}/g, this.expectedSessions)
-        .replace(/{{THE_PROBLEM}}/g, this.theProblem || "_[What urgent situation demands heroes?]_")
-        .replace(/<% tp\.frontmatter\.level_range %>/g, `${this.levelFrom}-${this.levelTo}`)
-        .replace(/<% tp\.frontmatter\.expected_sessions %>/g, this.expectedSessions);
+      if (this.useFolderStructure) {
+        // Create Act folders
+        const actName = scene.act === 1 ? "Act 1 - Setup" : scene.act === 2 ? "Act 2 - Rising Action" : "Act 3 - Climax";
+        const actFolder = `${basePath}/${actName}`;
+        await this.plugin.ensureFolderExists(actFolder);
+        scenePath = `${actFolder}/Scene ${scene.num} - ${scene.name}.md`;
+      } else {
+        // Flat structure
+        scenePath = `${basePath}/Scene ${scene.num} - ${scene.name}.md`;
+      }
 
-      const filePath = `${adventurePath}/${this.adventureName}.md`;
-      await this.app.vault.create(filePath, adventureContent);
-
-      // Open the file
-      await this.app.workspace.openLinkText(filePath, "", true);
-
-      new Notice(`✅ Adventure "${this.adventureName}" created successfully!`);
-    } catch (error) {
-      new Notice(`❌ Error creating Adventure: ${error instanceof Error ? error.message : String(error)}`);
-      console.error("Adventure creation error:", error);
+      await this.createSceneNote(scenePath, scene, campaignName, worldName, currentDate);
     }
+  }
+
+  async createSceneNote(filePath: string, scene: any, campaignName: string, worldName: string, currentDate: string) {
+    const sceneContent = SCENE_TEMPLATE
+      .replace(/{{SCENE_NUMBER}}/g, scene.num.toString())
+      .replace(/{{SCENE_NAME}}/g, scene.name)
+      .replace(/{{ADVENTURE_NAME}}/g, this.adventureName)
+      .replace(/{{ACT_NUMBER}}/g, scene.act.toString())
+      .replace(/{{DURATION}}/g, scene.duration)
+      .replace(/{{SCENE_TYPE}}/g, scene.type)
+      .replace(/{{DIFFICULTY}}/g, scene.difficulty)
+      .replace(/{{CAMPAIGN_NAME}}/g, campaignName)
+      .replace(/{{WORLD_NAME}}/g, worldName)
+      .replace(/{{DATE}}/g, currentDate);
+
+    await this.app.vault.create(filePath, sceneContent);
   }
 
   onClose() {

@@ -514,8 +514,8 @@ date:
 # <% tp.frontmatter.name %>
 
 **Status:** 🎬 Planning  
-**Level:** <% tp.frontmatter.level_range %> | **Current Act:** <% tp.frontmatter.current_act %> of 3  
-**Expected Sessions:** <% tp.frontmatter.expected_sessions %>  
+**Level:** {{LEVEL_RANGE}} | **Current Act:** 1 of 3  
+**Expected Sessions:** {{EXPECTED_SESSIONS}}  
 **Sessions Played:** 
 
 ## The Problem
@@ -525,6 +525,40 @@ date:
 ## The Hook
 
 *How do the PCs learn about this and get involved?*
+
+---
+
+## Scene Checklist
+
+### Act 1: Setup & Inciting Incident
+**Goal:** Introduce the problem and get PCs invested
+
+- [ ] [[Scene 1 - Opening Hook]]  
+  \`15min | social | easy\`
+- [ ] [[Scene 2 - Investigation]]  
+  \`30min | exploration | medium\`
+- [ ] [[Scene 3 - First Confrontation]]  
+  \`45min | combat | medium\`
+
+### Act 2: Rising Action & Confrontation
+**Goal:** PCs face obstacles, stakes escalate
+
+- [ ] [[Scene 4 - Complication Arises]]  
+  \`20min | social | medium\`
+- [ ] [[Scene 5 - Major Challenge]]  
+  \`40min | combat | hard\`
+- [ ] [[Scene 6 - Critical Choice]]  
+  \`30min | social | hard\`
+
+### Act 3: Climax & Resolution
+**Goal:** Final confrontation and aftermath
+
+- [ ] [[Scene 7 - Preparation]]  
+  \`20min | exploration | medium\`
+- [ ] [[Scene 8 - Climactic Battle]]  
+  \`60min | combat | deadly\`
+- [ ] [[Scene 9 - Resolution]]  
+  \`10min | social | easy\`
 
 ---
 
@@ -684,6 +718,110 @@ What if PCs go off-script?
 **Success:** What happens if PCs succeed?
 
 **Failure:** What happens if they fail or give up?
+`;
+
+export const SCENE_TEMPLATE = `---
+type: scene
+adventure: "{{ADVENTURE_NAME}}"
+campaign: "{{CAMPAIGN_NAME}}"
+world: "{{WORLD_NAME}}"
+act: {{ACT_NUMBER}}
+scene_number: {{SCENE_NUMBER}}
+duration: {{DURATION}}
+scene_type: {{SCENE_TYPE}}
+difficulty: {{DIFFICULTY}}
+status: planned
+date: {{DATE}}
+---
+
+# Scene {{SCENE_NUMBER}}: {{SCENE_NAME}}
+
+**Duration:** {{DURATION}} | **Type:** {{SCENE_TYPE}} | **Difficulty:** {{DIFFICULTY}}  
+**Act:** {{ACT_NUMBER}} | **Adventure:** [[{{ADVENTURE_NAME}}]]
+
+---
+
+## Scene Goal
+
+*What should happen in this scene?*
+
+
+
+## Read-Aloud Text
+
+> *Boxed text to read to players when the scene begins*
+
+
+
+## Key Elements
+
+- Important detail 1
+- Important detail 2
+- Important detail 3
+
+---
+
+## Encounters
+
+### Social Encounter
+
+**NPCs Present:**
+- [[NPC Name]] - Role, motivation, what they want
+
+**Skill Checks:**
+- Persuasion DC 12: 
+- Insight DC 15: 
+- Investigation DC 13: 
+
+**Possible Outcomes:**
+- Success: 
+- Failure: 
+
+### Combat Encounter
+
+**Enemies:** *Link to Initiative Tracker*
+- Creature 1 (CR X) x2
+- Creature 2 (CR Y) x1
+
+**Tactics:**
+- Round 1: 
+- If bloodied: 
+- Retreat condition: 
+
+**Battlefield:**
+- Map: ![[map.jpg]]
+- Terrain features: 
+- Hazards: 
+- Cover: 
+
+---
+
+## What Players Might Do
+
+- **Option 1:** If PCs do X → Y happens
+- **Option 2:** If PCs do A → B happens
+- **Option 3:** If PCs try Z → Result
+
+---
+
+## Treasure & Rewards
+
+- [ ] Gold: 
+- [ ] Item: 
+- [ ] XP: 
+- [ ] Information: 
+
+---
+
+## What Actually Happened
+
+**Session:** [[Session X]]  
+**Date:** 
+
+*GM fills this during/after session*
+
+
+
 `;
 
 export const FACTION_TEMPLATE = `---
