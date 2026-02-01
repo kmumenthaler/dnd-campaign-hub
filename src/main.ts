@@ -1184,10 +1184,25 @@ class DndHubModal extends Modal {
           this.plugin.createCampaign();
         });
 
-        contentEl.createEl("p", {
-          text: "Create sessions from a campaign's World note or via the 'Create New Session' command. NPCs, PCs, adventures, and more builders are coming soon.",
-          cls: "dnd-hub-info",
-        });
+    this.createActionButton(quickActionsContainer, "👤 New NPC", () => {
+      this.close();
+      this.plugin.createNpc();
+    });
+
+    this.createActionButton(quickActionsContainer, "🛡️ New PC", () => {
+      this.close();
+      this.plugin.createPc();
+    });
+
+    this.createActionButton(quickActionsContainer, "🏛️ New Faction", () => {
+      this.close();
+      this.plugin.createFaction();
+    });
+
+    contentEl.createEl("p", {
+      text: "Create sessions from a campaign's World note or via the 'Create New Session' command.",
+      cls: "dnd-hub-info",
+    });
 
     // Browse Vault Section
     contentEl.createEl("h2", { text: "Browse Vault" });

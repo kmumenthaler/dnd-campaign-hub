@@ -93,9 +93,24 @@ SORT sessionNum ASC
 
 ## Factions
 
+*Manage factions, organizations, and groups that shape your world.*
+
+\`\`\`button
+name Create New Faction
+type command
+action D&D Campaign Hub: Create New Faction
+\`\`\`
+^button-new-faction
+
 \`\`\`dataview
-TABLE description as "Description" from "ttrpgs/{{CAMPAIGN_NAME}}"
-WHERE contains(lower(type),"faction")
+TABLE WITHOUT ID
+  link(file.path, name) AS "Name",
+  default(main_goal, "—") AS "Main Goal",
+  default(size, "—") AS "Size",
+  default(reputation, "—") AS "Reputation"
+FROM "ttrpgs/{{CAMPAIGN_NAME}}/Factions"
+WHERE type = "faction"
+SORT name ASC
 \`\`\`
 
 ## Custom rules
@@ -496,31 +511,68 @@ Adventure conclusion and outcomes.
 
 export const FACTION_TEMPLATE = `---
 type: faction
-alignment: 
+name: 
+campaign: 
+world: 
+main_goal: ""
+pursuit_method: ""
 leader: 
-headquarters: 
-influence: 
-status: active
+size: 
+resources: ""
+reputation: ""
+territories: ""
+allies: ""
+enemies: ""
+active_problem: ""
+date: 
 ---
 
-# Faction
+# <% tp.frontmatter.name %>
 
-## Description
-Faction description and goals.
+## 🎯 Core Engine
 
-## Leadership
-- [[Leader]]
-- Key members
+### What do they want?
+<% tp.frontmatter.main_goal %>
 
-## Influence
-Areas where the faction has power.
+### How do they pursue it?
+<% tp.frontmatter.pursuit_method %>
 
-## Relationships
-- Allies: 
-- Enemies: 
+## 📋 Details
 
-## Current Activities
-What the faction is currently doing.
+**Leader:** <% tp.frontmatter.leader %>
+
+**Size & Influence:** <% tp.frontmatter.size %>
+
+**Resources:**
+<% tp.frontmatter.resources %>
+
+**Reputation:**
+<% tp.frontmatter.reputation %>
+
+## 🗺️ Territories & Operations
+
+<% tp.frontmatter.territories %>
+
+## 🤝 Relationships
+
+### Allies
+<% tp.frontmatter.allies %>
+
+### Enemies
+<% tp.frontmatter.enemies %>
+
+## ⚠️ Current Situation
+
+**Active Problem:**
+<% tp.frontmatter.active_problem %>
+
+## Members & Key Figures
+
+- 
+
+## History & Origins
+
+## Notes
 `;
 
 export const ITEM_TEMPLATE = `---
