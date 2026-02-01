@@ -2975,8 +2975,10 @@ class AdventureCreationModal extends Modal {
     }
 
     // Default to first GM campaign
-    this.campaign = allCampaigns[0].path;
-    this.isGM = true;
+    if (allCampaigns.length > 0) {
+      this.campaign = allCampaigns[0].path;
+      this.isGM = true;
+    }
 
     contentEl.createEl("p", {
       text: "Plan a compelling multi-session adventure with a 3-act structure.",
@@ -3178,10 +3180,10 @@ class AdventureCreationModal extends Modal {
       const currentDate = new Date().toISOString().split('T')[0];
 
       // Create main adventure note
-      await this.createMainAdventureNote(mainNotePath, campaignName, worldName, currentDate);
+      await this.createMainAdventureNote(mainNotePath, campaignName || "Unknown", worldName, currentDate);
 
       // Create scene notes
-      await this.createSceneNotes(scenesBasePath, campaignName, worldName, currentDate);
+      await this.createSceneNotes(scenesBasePath, campaignName || "Unknown", worldName, currentDate);
 
       // Open the main adventure file
       await this.app.workspace.openLinkText(mainNotePath, "", true);
