@@ -113,6 +113,29 @@ WHERE type = "faction"
 SORT name ASC
 \`\`\`
 
+## Adventures
+
+*Track multi-session story arcs and adventures.*
+
+\`\`\`button
+name Create New Adventure
+type command
+action D&D Campaign Hub: Create New Adventure
+\`\`\`
+^button-new-adventure
+
+\`\`\`dataview
+TABLE WITHOUT ID
+  link(file.path, name) AS "Name",
+  level_range AS "Level",
+  status AS "Status",
+  current_act + "/3" AS "Act",
+  length(sessions) AS "Sessions"
+FROM "ttrpgs/{{CAMPAIGN_NAME}}/Adventures"
+WHERE type = "adventure"
+SORT file.ctime DESC
+\`\`\`
+
 ## Custom rules
 
 - [[Character options]]
@@ -477,36 +500,190 @@ date:
 
 export const ADVENTURE_TEMPLATE = `---
 type: adventure
+name: 
 campaign: 
+world: 
+status: planning
 level_range: 
-status: planned
+current_act: 1
+expected_sessions: 3
+sessions: []
+date: 
 ---
 
-# Adventure
+# <% tp.frontmatter.name %>
 
-## Overview
-Adventure summary and objectives.
+**Status:** 🎬 Planning  
+**Level:** <% tp.frontmatter.level_range %> | **Current Act:** <% tp.frontmatter.current_act %> of 3  
+**Expected Sessions:** <% tp.frontmatter.expected_sessions %>  
+**Sessions Played:** 
 
-## Key Locations
-- [[Location 1]]
-- [[Location 2]]
+## The Problem
 
-## NPCs
-- [[NPC 1]]
-- [[NPC 2]]
+{{THE_PROBLEM}}
 
-## Encounters
-### Encounter 1
-- Description
-- Monsters: 
-- Treasure: 
+## The Hook
 
-## Plot Hooks
-- Hook 1
-- Hook 2
+*How do the PCs learn about this and get involved?*
 
-## Resolution
-Adventure conclusion and outcomes.
+---
+
+## Act 1: Setup & Inciting Incident
+
+**Goal:** Introduce the problem and get PCs invested  
+**Expected Duration:** ~90 minutes
+
+### Scenes
+
+- [ ] **Scene 1:** Opening Hook  
+  \`duration: 15min\` \`type: social\` \`difficulty: easy\`
+  
+- [ ] **Scene 2:** Investigation/Discovery  
+  \`duration: 30min\` \`type: exploration\` \`difficulty: medium\`
+  
+- [ ] **Scene 3:** First Confrontation  
+  \`duration: 45min\` \`type: combat\` \`difficulty: medium\`
+
+**Sessions:**   
+**What Happened:**
+- 
+
+---
+
+## Act 2: Rising Action & Confrontation
+
+**Goal:** PCs face obstacles, stakes escalate  
+**Expected Duration:** ~90 minutes
+
+### Scenes
+
+- [ ] **Scene 4:** Complication Arises  
+  \`duration: 20min\` \`type: social\` \`difficulty: medium\`
+  
+- [ ] **Scene 5:** Major Challenge  
+  \`duration: 40min\` \`type: combat\` \`difficulty: hard\`
+  
+- [ ] **Scene 6:** Critical Choice  
+  \`duration: 30min\` \`type: social\` \`difficulty: hard\`
+
+**Sessions:**   
+**What Happened:**
+- 
+
+---
+
+## Act 3: Climax & Resolution
+
+**Goal:** Final confrontation and aftermath  
+**Expected Duration:** ~90 minutes
+
+### Scenes
+
+- [ ] **Scene 7:** Preparation for Finale  
+  \`duration: 20min\` \`type: exploration\` \`difficulty: medium\`
+  
+- [ ] **Scene 8:** Climactic Battle  
+  \`duration: 60min\` \`type: combat\` \`difficulty: deadly\`
+  
+- [ ] **Scene 9:** Resolution & Aftermath  
+  \`duration: 10min\` \`type: social\` \`difficulty: easy\`
+
+**Sessions:**   
+**What Happened:**
+- 
+
+---
+
+## Encounters & Creatures
+
+**For Initiative Tracker Plugin:**  
+Link creatures from \`z_Beastiarity/\` folder
+
+### Act 1 Encounters
+
+- [ ] Scene 3: [Encounter Name] - CR ?, [# creatures]
+  - Link: 
+
+### Act 2 Encounters
+
+- [ ] Scene 5: [Encounter Name] - CR ?, [# creatures]
+  - Link: 
+
+### Act 3 Encounters
+
+- [ ] Scene 8: [Climactic Battle] - CR ?, [# creatures]
+  - Link: 
+
+---
+
+## Key NPCs
+
+\`\`\`button
+name Create New NPC for Adventure
+type command
+action D&D Campaign Hub: Create New NPC
+\`\`\`
+
+\`\`\`dataview
+TABLE WITHOUT ID
+  link(file.path, name) AS "Name",
+  motivation AS "Wants",
+  location AS "Location"
+FROM "ttrpgs/{{CAMPAIGN_NAME}}/NPCs"
+WHERE contains(file.outlinks, this.file.link)
+SORT name ASC
+\`\`\`
+
+---
+
+## Locations & Maps
+
+**Primary Locations:**
+
+1. **Location Name**
+   - Description
+   - Key features
+   - Map: ![[map-image.jpg|400]] or [[Canvas Map]]
+
+---
+
+## Treasure & Rewards
+
+**By Act:**
+- Act 1: 
+- Act 2: 
+- Act 3: 
+
+**XP Milestones:**
+- Total XP: 
+- Level up at: 
+
+---
+
+## GM Prep Notes
+
+### Session Pacing
+- Act 1: Session 1 (scenes 1-3)
+- Act 2: Session 2 (scenes 4-6)  
+- Act 3: Session 3 (scenes 7-9)
+
+### Backup Plans
+What if PCs go off-script?
+
+### Secrets & Clues
+- [ ] Clue 1
+- [ ] Clue 2
+- [ ] Clue 3
+- [ ] Clue 4
+- [ ] Clue 5
+- [ ] Secret 1
+- [ ] Secret 2
+- [ ] Secret 3
+
+### Resolution Options
+**Success:** What happens if PCs succeed?
+
+**Failure:** What happens if they fail or give up?
 `;
 
 export const FACTION_TEMPLATE = `---

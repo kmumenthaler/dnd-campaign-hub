@@ -104,6 +104,12 @@ export default class DndCampaignHubPlugin extends Plugin {
       callback: () => this.createFaction(),
     });
 
+    this.addCommand({
+      id: "create-adventure",
+      name: "Create New Adventure",
+      callback: () => this.createAdventure(),
+    });
+
     this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
   }
 
@@ -699,18 +705,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	async createAdventure() {
-		const adventureName = await this.promptForName("Adventure");
-		if (!adventureName) return;
-
-		const adventurePath = `${this.settings.currentCampaign}/Adventures/${adventureName}`;
-		await this.ensureFolderExists(adventurePath);
-
-		const template = this.getDefaultAdventureTemplate();
-		const filePath = `${adventurePath}/${adventureName}.md`;
-
-		await this.app.vault.create(filePath, template);
-		await this.app.workspace.openLinkText(filePath, "", true);
-		new Notice(`Adventure "${adventureName}" created!`);
+		// Open Adventure creation modal
+		new AdventureCreationModal(this.app, this).open();
 	}
 
 	async createSession() {
@@ -1197,6 +1193,11 @@ class DndHubModal extends Modal {
     this.createActionButton(quickActionsContainer, "🏛️ New Faction", () => {
       this.close();
       this.plugin.createFaction();
+    });
+
+    this.createActionButton(quickActionsContainer, "🗺️ New Adventure", () => {
+      this.close();
+      this.plugin.createAdventure();
     });
 
     contentEl.createEl("p", {
@@ -2934,6 +2935,247 @@ class CalendarDateInputModal extends Modal {
     contentEl.empty();
   }
 }
+
+class AdventureCreationModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  adventureName = "";
+  campaign = "";
+  theProblem = "";
+  levelFrom = "1";
+  levelTo = "3";
+  expectedSessions = "3";
+
+  constructor(app: App, plugin: DndCampaignHubPlugin) {
+    super(app);
+    this.plugin = plugin;
+    this.campaign = plugin.settings.currentCampaign;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "🗺️ Create New Adventure" });
+
+    contentEl.createEl("p", {
+      text: "Plan a compelling multi-session adventure with a 3-act structure.",
+      cls: "setting-item-description"
+    });
+
+    // Adventure Name
+    new Setting(contentEl)
+      .setName("Adventure Name")
+      .setDesc("What is this adventure called?")
+      .addText((text) => {
+        text
+          .setPlaceholder("e.g., The Sunless Citadel, Murder in Baldur's Gate")
+          .onChange((value) => {
+            this.adventureName = value;
+          });
+        text.inputEl.focus();
+      });
+
+    // Campaign Selection
+    const campaigns = this.getAllCampaigns();
+    new Setting(contentEl)
+      .setName("Campaign")
+      .setDesc("Which campaign does this adventure belong to?")
+      .addDropdown((dropdown) => {
+        campaigns.forEach(campaign => {
+          dropdown.addOption(campaign.path, campaign.name);
+        });
+        dropdown.setValue(this.campaign)
+          .onChange((value) => {
+            this.campaign = value;
+          });
+      });
+
+    contentEl.createEl("h3", { text: "📖 Core Adventure" });
+
+    // The Problem
+    new Setting(contentEl)
+      .setName("The Problem")
+      .setDesc("What urgent situation demands heroes? (2-3 sentences)")
+      .addTextArea((text) => {
+        text
+          .setPlaceholder("e.g., A kobold tribe has taken over an ancient citadel and is terrorizing nearby settlements. The mayor desperately needs heroes to stop the raids before the town is abandoned.")
+          .onChange((value) => {
+            this.theProblem = value;
+          });
+        text.inputEl.rows = 4;
+      });
+
+    contentEl.createEl("h3", { text: "⚙️ Adventure Parameters" });
+
+    // Level Range
+    const levelSetting = new Setting(contentEl)
+      .setName("Target Level Range")
+      .setDesc("What character levels is this adventure designed for?");
+
+    levelSetting.addText((text) => {
+      text
+        .setPlaceholder("1")
+        .setValue(this.levelFrom)
+        .onChange((value) => {
+          this.levelFrom = value;
+        });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "60px";
+    });
+
+    levelSetting.controlEl.createSpan({ text: " to ", cls: "dnd-level-separator" });
+
+    levelSetting.addText((text) => {
+      text
+        .setPlaceholder("3")
+        .setValue(this.levelTo)
+        .onChange((value) => {
+          this.levelTo = value;
+        });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "60px";
+    });
+
+    // Expected Sessions
+    new Setting(contentEl)
+      .setName("Expected Sessions")
+      .setDesc("How many sessions do you expect this adventure to take?")
+      .addText((text) => {
+        text
+          .setPlaceholder("3")
+          .setValue(this.expectedSessions)
+          .onChange((value) => {
+            this.expectedSessions = value;
+          });
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "80px";
+      });
+
+    // Buttons
+    const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
+
+    const cancelButton = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelButton.addEventListener("click", () => {
+      this.close();
+    });
+
+    const createButton = buttonContainer.createEl("button", {
+      text: "Create Adventure",
+      cls: "mod-cta",
+    });
+
+    createButton.addEventListener("click", async () => {
+      if (!this.adventureName.trim()) {
+        new Notice("Please enter an adventure name!");
+        return;
+      }
+
+      this.close();
+      await this.createAdventureFile();
+    });
+  }
+
+  getAllCampaigns(): Array<{ path: string; name: string }> {
+    const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
+    const campaigns: Array<{ path: string; name: string }> = [];
+
+    if (ttrpgsFolder instanceof TFolder) {
+      ttrpgsFolder.children.forEach((child) => {
+        if (child instanceof TFolder) {
+          campaigns.push({
+            path: child.path,
+            name: child.name
+          });
+        }
+      });
+    }
+
+    return campaigns;
+  }
+
+  async createAdventureFile() {
+    const campaignName = this.campaign.split('/').pop() || "Unknown";
+    const adventurePath = `${this.campaign}/Adventures`;
+    
+    new Notice(`Creating Adventure "${this.adventureName}"...`);
+
+    try {
+      await this.plugin.ensureFolderExists(adventurePath);
+
+      // Get world info from campaign World.md
+      const worldFile = this.app.vault.getAbstractFileByPath(`${this.campaign}/World.md`);
+      let worldName = campaignName;
+      
+      if (worldFile instanceof TFile) {
+        const worldContent = await this.app.vault.read(worldFile);
+        const worldMatch = worldContent.match(/^world:\s*([^\r\n]+)$/m);
+        if (worldMatch && worldMatch[1] && worldMatch[1].trim()) {
+          worldName = worldMatch[1].trim();
+        }
+      }
+
+      // Get Adventure template
+      const templatePath = "z_Templates/Frontmatter - Adventure.md";
+      const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
+      let adventureContent: string;
+
+      if (templateFile instanceof TFile) {
+        adventureContent = await this.app.vault.read(templateFile);
+      } else {
+        adventureContent = ADVENTURE_TEMPLATE;
+      }
+
+      // Get current date
+      const currentDate = new Date().toISOString().split('T')[0];
+
+      // Build complete frontmatter
+      const frontmatter = `---
+type: adventure
+name: ${this.adventureName}
+campaign: ${campaignName}
+world: ${worldName}
+status: planning
+level_range: ${this.levelFrom}-${this.levelTo}
+current_act: 1
+expected_sessions: ${this.expectedSessions}
+sessions: []
+date: ${currentDate}
+---`;
+
+      // Replace the frontmatter
+      adventureContent = adventureContent.replace(/^---\n[\s\S]*?\n---/, frontmatter);
+      
+      // Replace template placeholders
+      adventureContent = adventureContent
+        .replace(/# <% tp\.frontmatter\.name %>/g, `# ${this.adventureName}`)
+        .replace(/<% tp\.frontmatter\.name %>/g, this.adventureName)
+        .replace(/{{ADVENTURE_NAME}}/g, this.adventureName)
+        .replace(/{{CAMPAIGN_NAME}}/g, campaignName)
+        .replace(/{{LEVEL_RANGE}}/g, `${this.levelFrom}-${this.levelTo}`)
+        .replace(/{{EXPECTED_SESSIONS}}/g, this.expectedSessions)
+        .replace(/{{THE_PROBLEM}}/g, this.theProblem || "_[What urgent situation demands heroes?]_")
+        .replace(/<% tp\.frontmatter\.level_range %>/g, `${this.levelFrom}-${this.levelTo}`)
+        .replace(/<% tp\.frontmatter\.expected_sessions %>/g, this.expectedSessions);
+
+      const filePath = `${adventurePath}/${this.adventureName}.md`;
+      await this.app.vault.create(filePath, adventureContent);
+
+      // Open the file
+      await this.app.workspace.openLinkText(filePath, "", true);
+
+      new Notice(`✅ Adventure "${this.adventureName}" created successfully!`);
+    } catch (error) {
+      new Notice(`❌ Error creating Adventure: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("Adventure creation error:", error);
+    }
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
 class FactionCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
   factionName = "";
