@@ -2960,12 +2960,12 @@ class AdventureCreationModal extends Modal {
 
     contentEl.createEl("h2", { text: "🗺️ Create New Adventure" });
 
-    // Check GM status first
-    await this.checkCampaignRole();
+    // Get all campaigns and filter for GM ones
+    const allCampaigns = await this.getAllGMCampaigns();
 
-    if (!this.isGM) {
+    if (allCampaigns.length === 0) {
       contentEl.createEl("p", {
-        text: "⚠️ Only GMs can create adventures. This campaign is set to player mode.",
+        text: "⚠️ Only GMs can create adventures. You don't have any campaigns where you are set as GM (role: gm in World.md).",
         cls: "mod-warning"
       });
       
@@ -2973,6 +2973,10 @@ class AdventureCreationModal extends Modal {
       closeBtn.addEventListener("click", () => this.close());
       return;
     }
+
+    // Default to first GM campaign
+    this.campaign = allCampaigns[0].path;
+    this.isGM = true;
 
     contentEl.createEl("p", {
       text: "Plan a compelling multi-session adventure with a 3-act structure.",
@@ -2992,13 +2996,12 @@ class AdventureCreationModal extends Modal {
         text.inputEl.focus();
       });
 
-    // Campaign Selection
-    const campaigns = this.getAllCampaigns();
+    // Campaign Selection (only GM campaigns)
     new Setting(contentEl)
       .setName("Campaign")
       .setDesc("Which campaign does this adventure belong to?")
       .addDropdown((dropdown) => {
-        campaigns.forEach(campaign => {
+        allCampaigns.forEach(campaign => {
           dropdown.addOption(campaign.path, campaign.name);
         });
         dropdown.setValue(this.campaign)
@@ -3106,33 +3109,30 @@ class AdventureCreationModal extends Modal {
     });
   }
 
-  async checkCampaignRole() {
-    const worldFile = this.app.vault.getAbstractFileByPath(`${this.campaign}/World.md`);
-    if (worldFile instanceof TFile) {
-      const worldContent = await this.app.vault.read(worldFile);
-      const roleMatch = worldContent.match(/^role:\s*([^\r\n]\w*)$/m);
-      if (roleMatch && roleMatch[1]) {
-        this.isGM = roleMatch[1].toLowerCase() === 'gm';
-      }
-    }
-  }
-
-  getAllCampaigns(): Array<{ path: string; name: string }> {
+  async getAllGMCampaigns(): Promise<Array<{ path: string; name: string }>> {
     const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
-    const campaigns: Array<{ path: string; name: string }> = [];
+    const gmCampaigns: Array<{ path: string; name: string }> = [];
 
     if (ttrpgsFolder instanceof TFolder) {
-      ttrpgsFolder.children.forEach((child) => {
+      for (const child of ttrpgsFolder.children) {
         if (child instanceof TFolder) {
-          campaigns.push({
-            path: child.path,
-            name: child.name
-          });
+          // Check if this campaign has role: gm
+          const worldFile = this.app.vault.getAbstractFileByPath(`${child.path}/World.md`);
+          if (worldFile instanceof TFile) {
+            const worldContent = await this.app.vault.read(worldFile);
+            const roleMatch = worldContent.match(/^role:\s*([^\r\n]\w*)$/m);
+            if (roleMatch && roleMatch[1] && roleMatch[1].toLowerCase() === 'gm') {
+              gmCampaigns.push({
+                path: child.path,
+                name: child.name
+              });
+            }
+          }
         }
-      });
+      }
     }
 
-    return campaigns;
+    return gmCampaigns;
   }
 
   async createAdventureFile() {
