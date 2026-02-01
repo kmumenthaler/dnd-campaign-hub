@@ -1,6 +1,6 @@
 ﻿{
   "name": "dnd-campaign-hub",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "A comprehensive Obsidian plugin for managing tabletop campaigns with smart templates and automation.",
   "private": true,
   "type": "module",

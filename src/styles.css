@@ -96,3 +96,82 @@
 .dnd-modal-buttons button.mod-cta:hover {
   background-color: var(--interactive-accent-hover);
 }
+
+/* Settings - Dependency Status Styles */
+.dnd-dependencies-container {
+  background-color: var(--background-secondary);
+  border-radius: 8px;
+  padding: 15px;
+  margin: 15px 0;
+}
+
+.dnd-dependency-status {
+  margin-bottom: 15px;
+  padding: 12px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.dnd-status-success {
+  background-color: rgba(46, 160, 67, 0.15);
+  color: var(--text-success);
+  border: 1px solid rgba(46, 160, 67, 0.3);
+}
+
+.dnd-status-warning {
+  background-color: rgba(229, 153, 56, 0.15);
+  color: var(--text-warning);
+  border: 1px solid rgba(229, 153, 56, 0.3);
+}
+
+.dnd-plugins-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.dnd-plugin-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  background-color: var(--background-primary);
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.dnd-plugin-status-icon {
+  font-size: 16px;
+  min-width: 20px;
+}
+
+.dnd-plugin-installed {
+  flex: 1;
+  color: var(--text-normal);
+  font-weight: 500;
+}
+
+.dnd-plugin-missing {
+  flex: 1;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.dnd-plugin-row button {
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
+/* About Container */
+.dnd-about-container {
+  background-color: var(--background-secondary);
+  border-radius: 6px;
+  padding: 15px;
+  margin: 15px 0;
+}
+
+.dnd-about-container p {
+  margin: 8px 0;
+  color: var(--text-muted);
+}

@@ -14,37 +14,13 @@ import {
 } from "./templates";
 
 interface DndCampaignHubSettings {
-  vaultPath: string;
   currentCampaign: string;
-  hotkey: string;
   pluginVersion: string;
-  defaultTemplates: {
-    campaign: string;
-    npc: string;
-    pc: string;
-    adventure: string;
-    item: string;
-    spell: string;
-    faction: string;
-    session: string;
-  };
 }
 
 const DEFAULT_SETTINGS: DndCampaignHubSettings = {
-  vaultPath: "",
   currentCampaign: "ttrpgs/Frozen Sick (SOLINA)",
-  hotkey: "Ctrl+Shift+M",
   pluginVersion: "0.0.0",
-  defaultTemplates: {
-    campaign: "",
-    npc: "",
-    pc: "",
-    adventure: "",
-    item: "",
-    spell: "",
-    faction: "",
-    session: "",
-  },
 };
 
 export default class DndCampaignHubPlugin extends Plugin {
@@ -108,6 +84,12 @@ export default class DndCampaignHubPlugin extends Plugin {
       id: "create-session",
       name: "Create New Session",
       callback: () => this.createSession(),
+    });
+
+    this.addCommand({
+      id: "create-npc",
+      name: "Create New NPC",
+      callback: () => this.createNpc(),
     });
 
     this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
@@ -272,10 +254,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const userTruths = (truthsMatch && truthsMatch[1]) ? truthsMatch[1].trim() : "-";
 		
 		// Get campaign name from path
-		const campaignName = file.path.split('/')[1];
+		const campaignName = file.path.split('/')[1] || '';
 		
 		// Build new content with preserved user data
-		let newContent = WORLD_TEMPLATE.replace(/{{CAMPAIGN_NAME}}/g, campaignName || '');
+		let newContent = WORLD_TEMPLATE.replace(/{{CAMPAIGN_NAME}}/g, campaignName);
 		
 		// Replace the frontmatter with the user's existing frontmatter
 		newContent = newContent.replace(/^---\n[\s\S]*?\n---\n/, frontmatter);
@@ -483,7 +465,8 @@ export default class DndCampaignHubPlugin extends Plugin {
       url: mainUrl,
       method: 'GET'
     });
-    await adapter.writeBinary(`${pluginPath}/main.js`, mainResponse.arrayBuffer);
+    const mainJsArray = new Uint8Array(mainResponse.arrayBuffer);
+    await adapter.writeBinary(`${pluginPath}/main.js`, mainJsArray.buffer);
 
     // Download styles.css if it exists
     try {
@@ -529,7 +512,8 @@ export default class DndCampaignHubPlugin extends Plugin {
     const requiredPlugins = [
       { id: "buttons", name: "Buttons" },
       { id: "dataview", name: "Dataview" },
-      { id: "calendarium", name: "Calendarium" }
+      { id: "calendarium", name: "Calendarium" },
+      { id: "templater-obsidian", name: "Templater" }
     ];
 
     const installed: string[] = [];
@@ -686,18 +670,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	async createNpc() {
-		const npcName = await this.promptForName("NPC");
-		if (!npcName) return;
-
-		const npcPath = `${this.settings.currentCampaign}/NPCs/${npcName}`;
-		await this.ensureFolderExists(npcPath);
-
-		const template = this.settings.defaultTemplates.npc || this.getDefaultNpcTemplate();
-		const filePath = `${npcPath}/${npcName}.md`;
-
-		await this.app.vault.create(filePath, template);
-		await this.app.workspace.openLinkText(filePath, "", true);
-		new Notice(`NPC "${npcName}" created!`);
+		// Check dependencies first
+		const deps = await this.checkDependencies();
+		if (deps.missing.length > 0) {
+			new DependencyModal(this.app, deps).open();
+			return;
+		}
+		
+		// Open NPC creation modal instead of simple name prompt
+		new NPCCreationModal(this.app, this).open();
 	}
 
 	async createPc() {
@@ -707,7 +688,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const pcPath = `${this.settings.currentCampaign}/PCs/${pcName}`;
 		await this.ensureFolderExists(pcPath);
 
-		const template = this.settings.defaultTemplates.pc || this.getDefaultPcTemplate();
+		const template = this.getDefaultPcTemplate();
 		const filePath = `${pcPath}/${pcName}.md`;
 
 		await this.app.vault.create(filePath, template);
@@ -722,7 +703,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const adventurePath = `${this.settings.currentCampaign}/Adventures/${adventureName}`;
 		await this.ensureFolderExists(adventurePath);
 
-		const template = this.settings.defaultTemplates.adventure || this.getDefaultAdventureTemplate();
+		const template = this.getDefaultAdventureTemplate();
 		const filePath = `${adventurePath}/${adventureName}.md`;
 
 		await this.app.vault.create(filePath, template);
@@ -742,7 +723,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const itemPath = `${this.settings.currentCampaign}/Items/${itemName}`;
 		await this.ensureFolderExists(itemPath);
 
-		const template = this.settings.defaultTemplates.item || this.getDefaultItemTemplate();
+		const template = this.getDefaultItemTemplate();
 		const filePath = `${itemPath}/${itemName}.md`;
 
 		await this.app.vault.create(filePath, template);
@@ -757,7 +738,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const spellPath = `${this.settings.currentCampaign}/Spells/${spellName}`;
 		await this.ensureFolderExists(spellPath);
 
-		const template = this.settings.defaultTemplates.spell || this.getDefaultSpellTemplate();
+		const template = this.getDefaultSpellTemplate();
 		const filePath = `${spellPath}/${spellName}.md`;
 
 		await this.app.vault.create(filePath, template);
@@ -772,7 +753,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const factionPath = `${this.settings.currentCampaign}/Factions/${factionName}`;
 		await this.ensureFolderExists(factionPath);
 
-		const template = this.settings.defaultTemplates.faction || this.getDefaultFactionTemplate();
+		const template = this.getDefaultFactionTemplate();
 		const filePath = `${factionPath}/${factionName}.md`;
 
 		await this.app.vault.create(filePath, template);
@@ -847,27 +828,25 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  display(): void {
+  async display(): Promise<void> {
     const { containerEl } = this;
 
     containerEl.empty();
 
-    new Setting(containerEl)
-      .setName("D&D Vault Path")
-      .setDesc("Path to your D&D vault (relative to Obsidian vault root)")
-      .addText((text) =>
-        text
-          .setPlaceholder("My Vault")
-          .setValue(this.plugin.settings.vaultPath)
-          .onChange(async (value) => {
-            this.plugin.settings.vaultPath = value;
-            await this.plugin.saveSettings();
-          })
-      );
+    containerEl.createEl("h2", { text: "D&D Campaign Hub Settings" });
+
+    // Plugin Dependencies Section
+    containerEl.createEl("h3", { text: "📦 Plugin Dependencies" });
+    
+    const depsContainer = containerEl.createDiv({ cls: "dnd-dependencies-container" });
+    await this.displayDependencyStatus(depsContainer);
+
+    // Campaign Settings
+    containerEl.createEl("h3", { text: "⚙️ Campaign Settings" });
 
     new Setting(containerEl)
       .setName("Current Campaign")
-      .setDesc("Path to the current active campaign (relative to vault root)")
+      .setDesc("The currently active campaign for quick access")
       .addText((text) =>
         text
           .setPlaceholder("ttrpgs/Campaign Name")
@@ -878,122 +857,26 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
           })
       );
 
+    // About Section
+    containerEl.createEl("h3", { text: "ℹ️ About" });
+    
+    const aboutContainer = containerEl.createDiv({ cls: "dnd-about-container" });
+    aboutContainer.createEl("p", { 
+      text: `D&D Campaign Hub v${this.plugin.manifest.version}` 
+    });
+    aboutContainer.createEl("p", { 
+      text: "A comprehensive plugin for managing D&D campaigns in Obsidian." 
+    });
+    
     new Setting(containerEl)
-      .setName("Hotkey")
-      .setDesc("Hotkey to open the D&D Hub (currently Ctrl+Shift+M)")
-      .addText((text) =>
-        text
-          .setPlaceholder("Ctrl+Shift+M")
-          .setValue(this.plugin.settings.hotkey)
-          .onChange(async (value) => {
-            this.plugin.settings.hotkey = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    containerEl.createEl("h3", { text: "Default Templates" });
-
-    new Setting(containerEl)
-      .setName("Campaign Template")
-      .setDesc("Default template for new campaigns")
-      .addTextArea((text) =>
-        text
-          .setPlaceholder("Enter campaign template...")
-          .setValue(this.plugin.settings.defaultTemplates.campaign)
-          .onChange(async (value) => {
-            this.plugin.settings.defaultTemplates.campaign = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("NPC Template")
-      .setDesc("Default template for new NPCs")
-      .addTextArea((text) =>
-        text
-          .setPlaceholder("Enter NPC template...")
-          .setValue(this.plugin.settings.defaultTemplates.npc)
-          .onChange(async (value) => {
-            this.plugin.settings.defaultTemplates.npc = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("PC Template")
-      .setDesc("Default template for new player characters")
-      .addTextArea((text) =>
-        text
-          .setPlaceholder("Enter PC template...")
-          .setValue(this.plugin.settings.defaultTemplates.pc)
-          .onChange(async (value) => {
-            this.plugin.settings.defaultTemplates.pc = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Adventure Template")
-      .setDesc("Default template for new adventures")
-      .addTextArea((text) =>
-        text
-          .setPlaceholder("Enter adventure template...")
-          .setValue(this.plugin.settings.defaultTemplates.adventure)
-          .onChange(async (value) => {
-            this.plugin.settings.defaultTemplates.adventure = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Session Template")
-      .setDesc("Default template for new sessions")
-      .addTextArea((text) =>
-        text
-          .setPlaceholder("Enter session template...")
-          .setValue(this.plugin.settings.defaultTemplates.session)
-          .onChange(async (value) => {
-            this.plugin.settings.defaultTemplates.session = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Item Template")
-      .setDesc("Default template for new items")
-      .addTextArea((text) =>
-        text
-          .setPlaceholder("Enter item template...")
-          .setValue(this.plugin.settings.defaultTemplates.item)
-          .onChange(async (value) => {
-            this.plugin.settings.defaultTemplates.item = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Spell Template")
-      .setDesc("Default template for new spells")
-      .addTextArea((text) =>
-        text
-          .setPlaceholder("Enter spell template...")
-          .setValue(this.plugin.settings.defaultTemplates.spell)
-          .onChange(async (value) => {
-            this.plugin.settings.defaultTemplates.spell = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Faction Template")
-      .setDesc("Default template for new factions")
-      .addTextArea((text) =>
-        text
-          .setPlaceholder("Enter faction template...")
-          .setValue(this.plugin.settings.defaultTemplates.faction)
-          .onChange(async (value) => {
-            this.plugin.settings.defaultTemplates.faction = value;
-            await this.plugin.saveSettings();
+      .setName("Update Templates")
+      .setDesc("Update all campaign templates to the latest version (with backup)")
+      .addButton((button) =>
+        button
+          .setButtonText("Update Templates")
+          .setCta()
+          .onClick(async () => {
+            this.plugin.updateTemplates();
           })
       );
 
@@ -1008,6 +891,78 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
           .setWarning()
           .onClick(async () => {
             new PurgeConfirmModal(this.app, this.plugin).open();
+          })
+      );
+  }
+
+  async displayDependencyStatus(container: HTMLElement): Promise<void> {
+    container.empty();
+
+    const deps = await this.plugin.checkDependencies();
+    const allInstalled = deps.missing.length === 0;
+
+    // Status indicator
+    const statusContainer = container.createDiv({ cls: "dnd-dependency-status" });
+    
+    if (allInstalled) {
+      statusContainer.createEl("div", { 
+        text: "✅ All dependencies installed and ready!",
+        cls: "dnd-status-success"
+      });
+    } else {
+      statusContainer.createEl("div", { 
+        text: `⚠️ ${deps.missing.length} dependency plugin(s) missing`,
+        cls: "dnd-status-warning"
+      });
+    }
+
+    // Detailed plugin list
+    const pluginsContainer = container.createDiv({ cls: "dnd-plugins-list" });
+    
+    const requiredPlugins = [
+      { id: "buttons", name: "Buttons", url: "obsidian://show-plugin?id=buttons" },
+      { id: "dataview", name: "Dataview", url: "obsidian://show-plugin?id=dataview" },
+      { id: "calendarium", name: "Calendarium", url: "obsidian://show-plugin?id=calendarium" },
+      { id: "templater-obsidian", name: "Templater", url: "obsidian://show-plugin?id=templater-obsidian" }
+    ];
+
+    for (const plugin of requiredPlugins) {
+      const isInstalled = deps.installed.includes(plugin.name);
+      
+      const pluginRow = pluginsContainer.createDiv({ cls: "dnd-plugin-row" });
+      
+      const statusIcon = pluginRow.createEl("span", { 
+        text: isInstalled ? "✅" : "❌",
+        cls: "dnd-plugin-status-icon"
+      });
+      
+      const pluginName = pluginRow.createEl("span", { 
+        text: plugin.name,
+        cls: isInstalled ? "dnd-plugin-installed" : "dnd-plugin-missing"
+      });
+      
+      if (!isInstalled) {
+        const installButton = pluginRow.createEl("button", {
+          text: "Install",
+          cls: "mod-cta"
+        });
+        installButton.addEventListener("click", () => {
+          // Open Obsidian's plugin browser directly to this plugin
+          window.open(plugin.url, "_blank");
+        });
+      }
+    }
+
+    // Refresh button
+    new Setting(container)
+      .setName("Refresh Status")
+      .setDesc("Check dependency status again")
+      .addButton((button) =>
+        button
+          .setButtonText("Refresh")
+          .onClick(async () => {
+            await this.displayDependencyStatus(container);
+            new Notice("Dependency status refreshed!");
           })
       );
   }
@@ -1227,20 +1182,33 @@ class DndHubModal extends Modal {
       return;
     }
 
-    // Quick Actions Section
-    contentEl.createEl("h2", { text: "Quick Actions" });
+        // Quick Actions Section
+        contentEl.createEl("h2", { text: "Quick Actions" });
 
-    const quickActionsContainer = contentEl.createDiv({ cls: "dnd-hub-quick-actions" });
+        const quickActionsContainer = contentEl.createDiv({ cls: "dnd-hub-quick-actions" });
 
-    this.createActionButton(quickActionsContainer, "🎲 New Campaign", () => {
-      this.close();
-      this.plugin.createCampaign();
-    });
+        this.createActionButton(quickActionsContainer, "🎲 New Campaign", () => {
+          this.close();
+          this.plugin.createCampaign();
+        });
 
-    contentEl.createEl("p", {
-      text: "Create sessions from a campaign's World note or via the 'Create New Session' command. NPCs, PCs, adventures, and more builders are coming soon.",
-      cls: "dnd-hub-info",
-    });
+        contentEl.createEl("p", {
+          text: "Create sessions from a campaign's World note or via the 'Create New Session' command. NPCs, PCs, adventures, and more builders are coming soon.",
+          cls: "dnd-hub-info",
+        });
+
+    // Browse Vault Section
+    contentEl.createEl("h2", { text: "Browse Vault" });
+    const browseContainer = contentEl.createDiv({ cls: "dnd-hub-browse" });
+
+    this.createBrowseButton(browseContainer, "📁 Campaigns", "Campaigns");
+    this.createBrowseButton(browseContainer, "👥 NPCs", "NPCs");
+    this.createBrowseButton(browseContainer, "🛡️ PCs", "PCs");
+    this.createBrowseButton(browseContainer, "🗺️ Adventures", "Adventures");
+    this.createBrowseButton(browseContainer, "📜 Sessions", "Sessions");
+    this.createBrowseButton(browseContainer, "⚔️ Items", "Items");
+    this.createBrowseButton(browseContainer, "✨ Spells", "Spells");
+    this.createBrowseButton(browseContainer, "🏛️ Factions", "Factions");
   }
 
   createActionButton(container: Element, text: string, callback: () => void) {
@@ -1342,6 +1310,247 @@ class NamePromptModal extends Modal {
   }
 }
 
+class NPCCreationModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  npcName = "";
+  campaign = "";
+  motivation = "";
+  pursuit = "";
+  physicalDetail = "";
+  speechPattern = "";
+  activeProblem = "";
+
+  constructor(app: App, plugin: DndCampaignHubPlugin) {
+    super(app);
+    this.plugin = plugin;
+    this.campaign = plugin.settings.currentCampaign;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "👤 Create New NPC" });
+
+    contentEl.createEl("p", {
+      text: "Build your NPC's core engine with these essential questions.",
+      cls: "setting-item-description"
+    });
+
+    // NPC Name
+    new Setting(contentEl)
+      .setName("NPC Name")
+      .setDesc("What is this character's name?")
+      .addText((text) => {
+        text
+          .setPlaceholder("e.g., Gundren Rockseeker")
+          .onChange((value) => {
+            this.npcName = value;
+          });
+        text.inputEl.focus();
+      });
+
+    // Campaign Selection
+    const campaigns = this.getAllCampaigns();
+    new Setting(contentEl)
+      .setName("Campaign")
+      .setDesc("Which campaign does this NPC belong to?")
+      .addDropdown((dropdown) => {
+        campaigns.forEach(campaign => {
+          dropdown.addOption(campaign.path, campaign.name);
+        });
+        dropdown.setValue(this.campaign)
+          .onChange((value) => {
+            this.campaign = value;
+          });
+      });
+
+    contentEl.createEl("h3", { text: "🎭 Core NPC Engine" });
+
+    // Motivation: What do they want?
+    new Setting(contentEl)
+      .setName("What do they want?")
+      .setDesc("The NPC's primary motivation or goal")
+      .addTextArea((text) => {
+        text
+          .setPlaceholder("e.g., To reclaim their family's mine from goblin invaders")
+          .onChange((value) => {
+            this.motivation = value;
+          });
+        text.inputEl.rows = 3;
+      });
+
+    // Pursuit: How do they pursue it?
+    new Setting(contentEl)
+      .setName("How do they pursue it?")
+      .setDesc("Their methods, approach, or behavior in achieving their goal")
+      .addTextArea((text) => {
+        text
+          .setPlaceholder("e.g., By hiring adventurers and offering generous rewards")
+          .onChange((value) => {
+            this.pursuit = value;
+          });
+        text.inputEl.rows = 3;
+      });
+
+    contentEl.createEl("h3", { text: "🎨 Character Details" });
+
+    // Physical Detail
+    new Setting(contentEl)
+      .setName("Physical Detail")
+      .setDesc("A memorable physical characteristic or appearance note")
+      .addTextArea((text) => {
+        text
+          .setPlaceholder("e.g., Scarred hands from years of mining, always wears a bronze pendant")
+          .onChange((value) => {
+            this.physicalDetail = value;
+          });
+        text.inputEl.rows = 2;
+      });
+
+    // Speech Pattern
+    new Setting(contentEl)
+      .setName("Speech Pattern")
+      .setDesc("How do they speak? Any quirks, accents, or mannerisms?")
+      .addTextArea((text) => {
+        text
+          .setPlaceholder("e.g., Gruff but warm, often uses mining metaphors")
+          .onChange((value) => {
+            this.speechPattern = value;
+          });
+        text.inputEl.rows = 2;
+      });
+
+    contentEl.createEl("h3", { text: "⚠️ Current Situation" });
+
+    // Active Problem
+    new Setting(contentEl)
+      .setName("Active Problem")
+      .setDesc("What problem or conflict is this NPC currently facing?")
+      .addTextArea((text) => {
+        text
+          .setPlaceholder("e.g., Captured by goblins while traveling to Phandalin")
+          .onChange((value) => {
+            this.activeProblem = value;
+          });
+        text.inputEl.rows = 3;
+      });
+
+    // Buttons
+    const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
+
+    const cancelButton = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelButton.addEventListener("click", () => {
+      this.close();
+    });
+
+    const createButton = buttonContainer.createEl("button", {
+      text: "Create NPC",
+      cls: "mod-cta",
+    });
+
+    createButton.addEventListener("click", async () => {
+      if (!this.npcName.trim()) {
+        new Notice("Please enter an NPC name!");
+        return;
+      }
+
+      this.close();
+      await this.createNPCFile();
+    });
+  }
+
+  getAllCampaigns(): Array<{ path: string; name: string }> {
+    const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
+    const campaigns: Array<{ path: string; name: string }> = [];
+
+    if (ttrpgsFolder instanceof TFolder) {
+      ttrpgsFolder.children.forEach((child) => {
+        if (child instanceof TFolder) {
+          campaigns.push({
+            path: child.path,
+            name: child.name
+          });
+        }
+      });
+    }
+
+    return campaigns;
+  }
+
+  async createNPCFile() {
+    const campaignName = this.campaign.split('/').pop() || "Unknown";
+    const npcPath = `${this.campaign}/NPCs`;
+    
+    new Notice(`Creating NPC "${this.npcName}"...`);
+
+    try {
+      await this.plugin.ensureFolderExists(npcPath);
+
+      // Get world info from campaign World.md
+      const worldFile = this.app.vault.getAbstractFileByPath(`${this.campaign}/World.md`);
+      let worldName = campaignName;
+      
+      if (worldFile instanceof TFile) {
+        const worldContent = await this.app.vault.read(worldFile);
+        const worldMatch = worldContent.match(/^world:\s*(.+)$/m);
+        if (worldMatch && worldMatch[1]) {
+          worldName = worldMatch[1].trim();
+        }
+      }
+
+      // Get NPC template
+      const templatePath = "z_Templates/npc.md";
+      const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
+      let npcContent: string;
+
+      if (templateFile instanceof TFile) {
+        npcContent = await this.app.vault.read(templateFile);
+      } else {
+        npcContent = NPC_TEMPLATE;
+      }
+
+      // Get current date
+      const currentDate = new Date().toISOString().split('T')[0];
+
+      // Replace placeholders in template - both frontmatter and content
+      npcContent = npcContent
+        .replace(/name: $/m, `name: ${this.npcName}`)
+        .replace(/world: $/m, `world: ${worldName}`)
+        .replace(/campaign: $/m, `campaign: ${campaignName}`)
+        .replace(/date: $/m, `date: ${currentDate}`)
+        .replace(/motivation: $/m, `motivation: "${this.motivation}"`)
+        .replace(/pursuit: $/m, `pursuit: "${this.pursuit}"`)
+        .replace(/physical_detail: $/m, `physical_detail: "${this.physicalDetail}"`)
+        .replace(/speech_pattern: $/m, `speech_pattern: "${this.speechPattern}"`)
+        .replace(/active_problem: $/m, `active_problem: "${this.activeProblem}"`)
+        .replace(/# <% tp\.frontmatter\.name %>/g, `# ${this.npcName}`)
+        .replace(/<% tp\.frontmatter\.name %>/g, this.npcName)
+        .replace(/<% tp\.frontmatter\.motivation %>/g, this.motivation)
+        .replace(/<% tp\.frontmatter\.pursuit %>/g, this.pursuit)
+        .replace(/<% tp\.frontmatter\.active_problem %>/g, this.activeProblem)
+        .replace(/<% tp\.frontmatter\.physical_detail %>/g, this.physicalDetail)
+        .replace(/<% tp\.frontmatter\.speech_pattern %>/g, this.speechPattern);
+
+      const filePath = `${npcPath}/${this.npcName}.md`;
+      await this.app.vault.create(filePath, npcContent);
+
+      // Open the file
+      await this.app.workspace.openLinkText(filePath, "", true);
+
+      new Notice(`✅ NPC "${this.npcName}" created successfully!`);
+    } catch (error) {
+      new Notice(`❌ Error creating NPC: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("NPC creation error:", error);
+    }
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
 class SessionCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
   sessionTitle = "";
@@ -1362,13 +1571,6 @@ class SessionCreationModal extends Modal {
     super(app);
     this.plugin = plugin;
     this.sessionDate = new Date().toISOString().split('T')[0] || "";
-    // Initialize with safe defaults immediately
-    this.startYear = "1";
-    this.startMonth = "1";
-    this.startDay = "1";
-    this.endYear = "1";
-    this.endMonth = "1";
-    this.endDay = "1";
   }
 
   async loadCalendarData() {
@@ -1378,8 +1580,8 @@ class SessionCreationModal extends Modal {
     
     if (worldFile instanceof TFile) {
       const worldContent = await this.app.vault.read(worldFile);
-      const calendarMatch = worldContent.match(/^fc-calendar:\s*([^\r\n]\w*)$/m);
-      if (calendarMatch && calendarMatch[1] && calendarMatch[1].trim()) {
+      const calendarMatch = worldContent.match(/fc-calendar:\s*([^\r\n]\w*)$/m);
+      if (calendarMatch && calendarMatch[1]) {
         this.calendar = calendarMatch[1].trim();
         // Get calendar data from Calendarium - search by name
         const calendariumPlugin = (this.app as any).plugins?.plugins?.calendarium;
@@ -1448,9 +1650,9 @@ class SessionCreationModal extends Modal {
       const lastSession = sortedFiles[0] as TFile;
       const content = await this.app.vault.read(lastSession);
       
-      const endYearMatch = content.match(/fc-end:\s*\n\s*year:\s*([^\r\n]+)/);
-      const endMonthMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:\s*([^\r\n]+)/);
-      const endDayMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*([^\r\n]+)/);
+      const endYearMatch = content.match(/fc-end:\s*\n\s*year:\s*(.+)/);
+      const endMonthMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:\s*(.+)/);
+      const endDayMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*(.+)/);
       
       if (endYearMatch?.[1] && endMonthMatch?.[1] && endDayMatch?.[1]) {
         return {
@@ -1666,46 +1868,27 @@ class SessionCreationModal extends Modal {
       const fileName = `${nextNumber.toString().padStart(3, '0')}_${dateStr}.md`;
       const filePath = `${campaignPath}/${fileName}`;
 
-      // Ensure all values have defaults
-      const safeLocation = this.location || "";
-      const safeCalendar = this.calendar || "";
-      const safeStartYear = this.startYear || "1";
-      const safeStartMonth = this.startMonth || "1";
-      const safeStartDay = this.startDay || "1";
-      const safeEndYear = this.endYear || "1";
-      const safeEndMonth = this.endMonth || "1";
-      const safeEndDay = this.endDay || "1";
+      // Replace placeholders in template using proper regex patterns
+      sessionContent = sessionContent
+        .replace(/campaign:\s*([^\r\n]\w*)$/m, `campaign: ${campaignName}`)
+        .replace(/world:\s*([^\r\n]\w*)$/m, `world: ${campaignName}`)
+        .replace(/sessionNum:\s*([^\r\n]\w*)$/m, `sessionNum: ${nextNumber}`)
+        .replace(/location:\s*([^\r\n]\w*)$/m, `location: ${this.location}`)
+        .replace(/date:\s*([^\r\n]\w*)$/m, `date: ${this.sessionDate}`)
+        .replace(/fc-calendar:\s*([^\r\n]\w*)$/m, `fc-calendar: ${this.calendar}`)
+        .replace(/# Session\s*([^\r\n]\w*)$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
 
-      // Build the complete frontmatter instead of trying to replace parts
-      const frontmatter = `---
-type: session
-campaign: ${campaignName}
-world: ${campaignName}
-sessionNum: ${nextNumber}
-location: ${safeLocation}
-date: ${this.sessionDate}
-fc-calendar: ${safeCalendar}
-fc-date:
-  year: ${safeStartYear}
-  month: ${safeStartMonth}
-  day: ${safeStartDay}
-fc-end:
-  year: ${safeEndYear}
-  month: ${safeEndMonth}
-  day: ${safeEndDay}
-long_rest: false
-short_rest: false
-summary: ""
-tags: inbox
-art: ""
----`;
+      // Replace fc-date (start date) - need to match the nested structure
+      sessionContent = sessionContent
+        .replace(/fc-date:\s*\n\s*year:\s*([^\r\n]\w*)$/m, `fc-date:\n  year: ${this.startYear}`)
+        .replace(/(fc-date:\s*\n\s*year:.*\n\s*)month:\s*([^\r\n]\w*)$/m, `$1month: ${this.startMonth}`)
+        .replace(/(fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:\s*([^\r\n]\w*)$/m, `$1day: ${this.startDay}`);
 
-      // Replace the entire frontmatter block
-      sessionContent = sessionContent.replace(/^---\n[\s\S]*?\n---/, frontmatter);
-      
-      // Replace the title
-      sessionContent = sessionContent.replace(/^# Session.*$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
-      
+      // Replace fc-end (end date) - need to match the nested structure
+      sessionContent = sessionContent
+        .replace(/fc-end:\s*\n\s*year:\s*([^\r\n]\w*)$/m, `fc-end:\n  year: ${this.endYear}`)
+        .replace(/(fc-end:\s*\n\s*year:.*\n\s*)month:\s*([^\r\n]\w*)$/m, `$1month: ${this.endMonth}`)
+        .replace(/(fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:\s*([^\r\n]\w*)$/m, `$1day: ${this.endDay}`);
       // Create the file
       await this.app.vault.create(filePath, sessionContent);
 
@@ -2014,31 +2197,26 @@ class CampaignCreationModal extends Modal {
     // Try to trigger the appropriate calendar creation command
     const commands = {
       quick: "calendarium:open-quick-creator",
-      full: "calendarium:open-creator", 
+      full: "calendarium:open-creator",
       import: "calendarium:import-calendar"
     };
 
     const commandId = commands[type];
-    
-    // Use a small delay to ensure settings are open
+
     setTimeout(() => {
-      // Try to execute the command
       (this.app as any).commands?.executeCommandById(commandId);
     }, 100);
 
     new Notice("After creating your calendar, use 'Create Campaign' again to select it.");
   }
 
-  dayDropdown: any = null;
-
-  getAvailableCalendars(): Array<{id: string, name: string}> {
-    // Try to get calendars from Calendarium plugin
+  getAvailableCalendars(): Array<{ id: string; name: string }> {
     const calendariumPlugin = (this.app as any).plugins?.plugins?.calendarium;
     if (calendariumPlugin && calendariumPlugin.data?.calendars) {
-      const calendars = calendariumPlugin.data.calendars;
-      return Object.keys(calendars).map(id => ({
-        id: id,
-        name: calendars[id].name || id
+      const calendars = calendariumPlugin.data.calendars as Record<string, { name?: string }>;
+      return Object.keys(calendars).map((id) => ({
+        id,
+        name: calendars[id]?.name || id,
       }));
     }
     return [];
@@ -2059,7 +2237,6 @@ class CampaignCreationModal extends Modal {
     new Notice(`Creating campaign "${campaignName}"...`);
 
     try {
-      // Create campaign folder structure
       const campaignFolders = [
         campaignPath,
         `${campaignPath}/NPCs`,
@@ -2076,7 +2253,6 @@ class CampaignCreationModal extends Modal {
         await this.plugin.ensureFolderExists(folder);
       }
 
-      // Create World.md from template
       const worldTemplate = this.app.vault.getAbstractFileByPath("z_Templates/world.md");
       let worldContent: string;
 
@@ -2086,22 +2262,21 @@ class CampaignCreationModal extends Modal {
         worldContent = WORLD_TEMPLATE;
       }
 
-      // Replace placeholders with actual data
       worldContent = worldContent
         .replace(/world: $/m, `world: ${campaignName}`)
         .replace(/campaign: $/m, `campaign: ${campaignName}`)
         .replace(/role: player$/m, `role: ${this.role}`)
         .replace(/system:$/m, `system: ${this.system}`)
-        .replace(/fc-calendar: $/m, `fc-calendar: ${this.calendarName}`)
-        .replace(/fc-date: \n  year: \n  month: \n  day: /m, 
-          `fc-date:\n  year: ${this.startYear}\n  month: ${this.startMonth}\n  day: ${this.startDay}\n`)
+        .replace(/fc-calendar:\s*([^\r\n]\w*)$/m, `fc-calendar: ${this.calendarName}`)
+        .replace(/fc-date:\s*\n\s*year:\s*([^\r\n]\w*)$/m, `fc-date:\n  year: ${this.startYear}`)
+        .replace(/(fc-date:\s*\n\s*year:.+\n\s*)month:\s*([^\r\n]\w*)$/m, `$1month: ${this.startMonth}`)
+        .replace(/(fc-date:\s*\n\s*year:.+\n\s*month:.+\n\s*)day:\s*([^\r\n]\w*)$/m, `$1day: ${this.startDay}`)
         .replace(/# The World of Your Campaign/g, `# The World of ${campaignName}`)
         .replace(/{{CAMPAIGN_NAME}}/g, campaignName);
 
       const worldFilePath = `${campaignPath}/World.md`;
       await this.app.vault.create(worldFilePath, worldContent);
 
-      // Create initial House Rules file if GM
       if (this.role === "GM") {
         const houseRulesContent = `---
 type: rules
@@ -2125,11 +2300,9 @@ campaign: ${campaignName}
         await this.app.vault.create(`${campaignPath}/House Rules.md`, houseRulesContent);
       }
 
-      // Update current campaign setting
       this.plugin.settings.currentCampaign = campaignPath;
       await this.plugin.saveSettings();
 
-      // Open World.md
       await this.app.workspace.openLinkText(worldFilePath, "", true);
 
       new Notice(`✅ Campaign "${campaignName}" created successfully!`);

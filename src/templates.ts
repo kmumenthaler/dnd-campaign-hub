@@ -26,13 +26,36 @@ TABLE WITHOUT ID
   class + choice(subclass, " (" + subclass + ")", "") AS "Class",
   level AS "Level",
   number(ac) AS "AC",
-  (hp + "/" + default(hp_max, "?")) + choice(default(thp, 0) > 0, " (" + thp + " THP)", "") AS "HP",
+  (hp + "/" + default(hp_max, "?")) + choice(default(thp, 0) > 0, " (+" + thp + " THP)", "") AS "HP",
   default(init_bonus, 0) AS "Initiative",
   default(speed, 30) AS "Speed",
   default(passive_perception, "?") AS "PP",
   choice(readonlyUrl, "[DDB](" + readonlyUrl + ")", "—") AS "D&D Beyond"
 FROM "ttrpgs/{{CAMPAIGN_NAME}}/PCs"
 WHERE type = "player"
+SORT name ASC
+\`\`\`
+
+## NPCs
+
+*Track non-player characters, allies, enemies, and everyone in between.*
+
+\`\`\`button
+name Create New NPC
+type command
+action D&D Campaign Hub: Create New NPC
+\`\`\`
+^button-new-npc
+
+\`\`\`dataview
+TABLE WITHOUT ID
+  link(file.path, name) AS "Name",
+  default(race, "—") AS "Race",
+  default(location, "—") AS "Location",
+  default(faction, "—") AS "Faction",
+  default(motivation, "—") AS "Wants"
+FROM "ttrpgs/{{CAMPAIGN_NAME}}/NPCs"
+WHERE type = "npc"
 SORT name ASC
 \`\`\`
 
@@ -185,18 +208,34 @@ art: ""
 export const NPC_TEMPLATE = `---
 type: npc
 name: 
-age: 
-faction: 
-location: 
 world: 
 campaign: 
 date: 
-description: 
+tags: 
+  - npc
+  - inbox
+
+# Core NPC Engine
+motivation: 
+pursuit: 
+physical_detail: 
+speech_pattern: 
+active_problem: 
+
+# Additional Details (fill in later)
+age: 
 race: 
 gender: 
+pronouns: 
+faction: 
+location: 
+occupation: 
 class: 
-character-role: 
-condition: 
+character_role: 
+condition: alive
+status: active
+
+# Extended Information
 appearance: 
 personality: 
 background: 
@@ -205,31 +244,110 @@ weaknesses:
 behavior: 
 statblock: ""
 notes: []
-tags: ["NPC"]
 ---
 
-# NPC Name
+# <% tp.frontmatter.name %>
 
-## Description
-Physical description and personality.
+> [!abstract]- Quick Reference
+> **Motivation:** <% tp.frontmatter.motivation %>  
+> **Methods:** <% tp.frontmatter.pursuit %>  
+> **Problem:** <% tp.frontmatter.active_problem %>
 
-## Background
-History and motivations.
+## 🎭 Core Engine
 
-## Stats
-- **STR**: 
-- **DEX**: 
-- **CON**: 
-- **INT**: 
-- **WIS**: 
-- **CHA**: 
+### What They Want
+<% tp.frontmatter.motivation %>
 
-## Abilities
-- Ability 1
-- Ability 2
+### How They Pursue It
+<% tp.frontmatter.pursuit %>
 
-## Relationships
-- [[Related Character]]
+### Active Problem
+<% tp.frontmatter.active_problem %>
+
+---
+
+## 🎨 Character Details
+
+### Physical Detail
+<% tp.frontmatter.physical_detail %>
+
+### Speech Pattern
+<% tp.frontmatter.speech_pattern %>
+
+---
+
+## 📝 Extended Information
+
+### Appearance
+*Add detailed physical description here*
+
+### Personality Traits
+*Key personality characteristics*
+
+- 
+- 
+- 
+
+### Background
+*History, origins, and formative experiences*
+
+
+
+### Abilities & Strengths
+- 
+- 
+
+### Weaknesses & Flaws
+- 
+- 
+
+---
+
+## 🎲 Game Information
+
+### Stats & Combat
+\`\`\`statblock
+# Leave empty or add stat block here
+\`\`\`
+
+### Role in Story
+*How does this NPC fit into the campaign?*
+
+
+
+---
+
+## 🔗 Relationships
+
+### Allies & Friends
+- 
+
+### Enemies & Rivals
+- 
+
+### Faction Ties
+- 
+
+---
+
+## 🗒️ Session Notes
+
+### First Appearance
+
+
+### Key Interactions
+
+
+### Development Arc
+
+
+---
+
+## 📌 GM Notes
+
+*Private notes, plot hooks, secrets*
+
+
 `;
 
 export const PC_TEMPLATE = `---

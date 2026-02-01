@@ -4,20 +4,37 @@ A comprehensive Obsidian plugin for managing D&D (or any TTRPG) campaigns with i
 
 > **⚠️ Project Status: Early Preview**
 >
-> The plugin is still in active incubation. Expect breaking changes, incomplete features, and rapid iteration until the first stable release ships. Issues and suggestions are very welcome!
+> The core workflows are still under active construction and may change without notice. Expect breaking changes, incomplete features, and missing polish while the project matures. Feedback and issue reports are very welcome during this incubation phase!
 
-## Features (Preview)
+## Features
 
-### ✅ Available Today
-- **Vault Initialization**: Creates the entire hub structure (ttrpgs/, z_* folders) and installs required community plugins so you can hit the ground running.
-- **Campaign Creator**: Guided modal for spinning up a new campaign, including optional calendar linkage for future session tracking.
-- **Session Creator**: Generates numbered session notes with real-world and in-world dates, pulling continuity data from your last session or campaign start.
+### 🎲 Campaign Management
+- **Initialize Campaign Structure**: Automatically create organized folders for NPCs, PCs, sessions, adventures, items, spells, and factions
+- **Multiple Campaign Support**: Manage multiple campaigns in the same vault
+- **Smart Templates**: Pre-configured templates for all campaign elements
+- **Seamless Updates**: Template updates preserve your data while adding new features
 
-### 🔭 Coming Soon
-- NPC, PC, faction, item, spell, and adventure creators.
-- Browse view for jumping directly to folders from the hub.
-- Template update assistant and dependency health checks.
-- Vault purge utilities and advanced automation.
+### 📅 Session Tracking
+- **Numbered Sessions**: Auto-incrementing session numbers with date stamps
+- **GM & Player Views**: Different session templates for Game Masters and Players
+- **Calendar Integration**: Track in-game dates with Calendarium support
+- **Location Tracking**: Organize sessions by where they take place
+
+### 👥 Character & NPC Management
+- **NPC Templates**: Organized templates for tracking NPCs, motivations, and relationships
+- **PC Templates**: Player character sheets with stats, backstory, and development
+- **Faction System**: Track organizations, their goals, and relationships
+
+### 🗺️ World Building
+- **Campaign Truths**: Define fundamental truths about your world
+- **Adventure Tracking**: Organize story arcs and quests
+- **Item Database**: Catalog magical items and equipment
+- **Spell Repository**: Document spells and magical effects
+
+### 🔄 Version Management
+- **Automatic Updates**: Get notified when templates are updated
+- **Safe Backups**: Automatic backups before applying template updates
+- **Data Preservation**: Your content is preserved during updates
 
 ## Installation
 
@@ -38,8 +55,10 @@ A comprehensive Obsidian plugin for managing D&D (or any TTRPG) campaigns with i
 D&D Campaign Hub requires these community plugins for full functionality:
 
 - **[Buttons](https://github.com/shabegom/buttons)** - Interactive buttons for creating campaign elements
+- **[Buttons](https://github.com/shabegom/buttons)** - Interactive buttons for creating campaign elements
 - **[Dataview](https://github.com/blacksmithgu/obsidian-dataview)** - Dynamic tables and queries for organizing data
 - **[Calendarium](https://github.com/javalent/calendarium)** - Fantasy calendar integration for tracking in-game dates
+- **[Templater](https://github.com/SilentVoid13/Templater)** - Template engine for dynamic content in NPC and other files
 
 The plugin will prompt you to install these dependencies if they're missing.
 
@@ -69,10 +88,12 @@ The plugin will prompt you to install these dependencies if they're missing.
 
 Access these via the Command Palette (`Ctrl/Cmd + P`):
 
-- **Open D&D Campaign Hub** – Launch the modal dashboard
-- **Initialize D&D Campaign Hub** – Create the folder structure and install required plugins
-- **Create New D&D Campaign** – Start a new campaign workspace
-- **Create New Session** – Generate the next numbered session note
+- **Initialize D&D Campaign Hub** - Set up vault structure and templates
+- **Create New D&D Campaign** - Start a new campaign
+- **Switch D&D Campaign** - Switch between campaigns
+- **Update D&D Hub Templates** - Apply template updates (with backup)
+- **Check D&D Hub Dependencies** - Verify required community plugins are installed
+- **Purge D&D Campaign Hub** - Remove all plugin data (use with caution)
 
 ## Template Structure
 
@@ -106,6 +127,22 @@ z_Templates/            # Reusable templates
 z_Backups/              # Automatic backups from updates
   YYYY-MM-DDTHH-MM-SS/
 ```
+
+## Updating Templates
+
+When the plugin is updated, you'll see a notification. To apply template updates:
+
+1. Run command: **Update D&D Hub Templates**
+2. Review what will be updated
+3. Click **Update Templates**
+4. Your data is preserved, backups are created automatically
+
+Template updates:
+- ✅ Preserve all frontmatter (metadata)
+- ✅ Preserve user-written content
+- ✅ Create timestamped backups
+- ✅ Update template structure and features
+- ✅ Replace placeholders with your campaign data
 
 ## Development
 
