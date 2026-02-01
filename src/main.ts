@@ -92,6 +92,12 @@ export default class DndCampaignHubPlugin extends Plugin {
       callback: () => this.createNpc(),
     });
 
+    this.addCommand({
+      id: "create-pc",
+      name: "Create New PC",
+      callback: () => this.createPc(),
+    });
+
     this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
   }
 
@@ -682,18 +688,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	async createPc() {
-		const pcName = await this.promptForName("Player Character");
-		if (!pcName) return;
-
-		const pcPath = `${this.settings.currentCampaign}/PCs/${pcName}`;
-		await this.ensureFolderExists(pcPath);
-
-		const template = this.getDefaultPcTemplate();
-		const filePath = `${pcPath}/${pcName}.md`;
-
-		await this.app.vault.create(filePath, template);
-		await this.app.workspace.openLinkText(filePath, "", true);
-		new Notice(`Player Character "${pcName}" created!`);
+		// Open PC creation modal
+		new PCCreationModal(this.app, this).open();
 	}
 
 	async createAdventure() {
@@ -1307,6 +1303,429 @@ class NamePromptModal extends Modal {
 
   onClose() {
     this.resolve(null);
+  }
+}
+
+class PCCreationModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  pcName = "";
+  playerName = "";
+  campaign = "";
+  classes: string[] = [""];
+  level = "1";
+  hpCurrent = "";
+  hpMax = "";
+  ac = "10";
+  initBonus = "0";
+  speed = "30";
+  characterSheetUrl = "";
+  characterSheetPdf = "";
+  isGM = false;
+
+  constructor(app: App, plugin: DndCampaignHubPlugin) {
+    super(app);
+    this.plugin = plugin;
+    this.campaign = plugin.settings.currentCampaign;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "🛡️ Create New Player Character" });
+
+    contentEl.createEl("p", {
+      text: "Create a new player character with detailed stats and information.",
+      cls: "setting-item-description"
+    });
+
+    // Campaign Selection
+    const campaigns = this.getAllCampaigns();
+    const campaignSetting = new Setting(contentEl)
+      .setName("Campaign")
+      .setDesc("Which campaign does this PC belong to?")
+      .addDropdown((dropdown) => {
+        campaigns.forEach(campaign => {
+          dropdown.addOption(campaign.path, campaign.name);
+        });
+        dropdown.setValue(this.campaign)
+          .onChange(async (value) => {
+            this.campaign = value;
+            await this.checkCampaignRole();
+            this.refresh();
+          });
+      });
+
+    // Check initial role
+    this.checkCampaignRole().then(() => {
+      this.buildForm(contentEl);
+    });
+  }
+
+  async checkCampaignRole() {
+    const worldFile = this.app.vault.getAbstractFileByPath(`${this.campaign}/World.md`);
+    if (worldFile instanceof TFile) {
+      const worldContent = await this.app.vault.read(worldFile);
+      const roleMatch = worldContent.match(/^role:\s*([^\r\n]\w*)$/m);
+      if (roleMatch && roleMatch[1]) {
+        this.isGM = roleMatch[1].toLowerCase() === 'gm';
+      }
+    }
+  }
+
+  buildForm(contentEl: HTMLElement) {
+    // Clear existing form content (keep header and campaign selection)
+    const children = Array.from(contentEl.children);
+    for (let i = children.length - 1; i >= 3; i--) {
+      children[i]?.remove();
+    }
+
+    // PC Name
+    new Setting(contentEl)
+      .setName("Character Name")
+      .setDesc("The name of the player character")
+      .addText((text) => {
+        text
+          .setPlaceholder("e.g., Gandalf the Grey")
+          .setValue(this.pcName)
+          .onChange((value) => {
+            this.pcName = value;
+          });
+        if (!this.pcName) text.inputEl.focus();
+      });
+
+    // Player Name
+    new Setting(contentEl)
+      .setName("Player Name")
+      .setDesc("Who plays this character?")
+      .addText((text) =>
+        text
+          .setPlaceholder("e.g., John Smith")
+          .setValue(this.playerName)
+          .onChange((value) => {
+            this.playerName = value;
+          })
+      );
+
+    // GM-only fields
+    if (this.isGM) {
+      contentEl.createEl("h3", { text: "⚔️ Character Stats" });
+
+      // Class (with multiple class support)
+      const classContainer = contentEl.createDiv({ cls: "dnd-class-container" });
+      
+      const updateClassInputs = () => {
+        classContainer.empty();
+        this.classes.forEach((cls, index) => {
+          new Setting(classContainer)
+            .setName(index === 0 ? "Class" : `Class ${index + 1}`)
+            .setDesc(index === 0 ? "Character class(es)" : "Additional class for multiclassing")
+            .addText((text) => {
+              text
+                .setPlaceholder("e.g., Fighter, Wizard")
+                .setValue(cls)
+                .onChange((value) => {
+                  this.classes[index] = value;
+                });
+              text.inputEl.style.width = "200px";
+            })
+            .addButton((button) => {
+              if (index === this.classes.length - 1) {
+                button
+                  .setButtonText("+")
+                  .setTooltip("Add another class (multiclassing)")
+                  .onClick(() => {
+                    this.classes.push("");
+                    updateClassInputs();
+                  });
+              } else {
+                button
+                  .setButtonText("−")
+                  .setTooltip("Remove this class")
+                  .setWarning()
+                  .onClick(() => {
+                    this.classes.splice(index, 1);
+                    updateClassInputs();
+                  });
+              }
+            });
+        });
+      };
+
+      updateClassInputs();
+
+      // Level
+      new Setting(contentEl)
+        .setName("Level")
+        .setDesc("Character level")
+        .addText((text) => {
+          text
+            .setPlaceholder("1")
+            .setValue(this.level)
+            .onChange((value) => {
+              this.level = value;
+            });
+          text.inputEl.type = "number";
+          text.inputEl.style.width = "80px";
+        });
+
+      // HP
+      const hpSetting = new Setting(contentEl)
+        .setName("Hit Points")
+        .setDesc("Current HP / Max HP");
+
+      hpSetting.addText((text) => {
+        text
+          .setPlaceholder("Current")
+          .setValue(this.hpCurrent)
+          .onChange((value) => {
+            this.hpCurrent = value;
+          });
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "80px";
+      });
+
+      hpSetting.controlEl.createSpan({ text: " / ", cls: "dnd-hp-separator" });
+
+      hpSetting.addText((text) => {
+        text
+          .setPlaceholder("Max")
+          .setValue(this.hpMax)
+          .onChange((value) => {
+            this.hpMax = value;
+          });
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "80px";
+      });
+
+      // AC
+      new Setting(contentEl)
+        .setName("Armor Class (AC)")
+        .setDesc("Character's AC")
+        .addText((text) => {
+          text
+            .setPlaceholder("10")
+            .setValue(this.ac)
+            .onChange((value) => {
+              this.ac = value;
+            });
+          text.inputEl.type = "number";
+          text.inputEl.style.width = "80px";
+        });
+
+      // Initiative Modifier
+      new Setting(contentEl)
+        .setName("Initiative Modifier")
+        .setDesc("Bonus or penalty to initiative rolls")
+        .addText((text) => {
+          text
+            .setPlaceholder("+0")
+            .setValue(this.initBonus)
+            .onChange((value) => {
+              this.initBonus = value;
+            });
+          text.inputEl.style.width = "80px";
+        });
+
+      // Speed
+      new Setting(contentEl)
+        .setName("Speed")
+        .setDesc("Movement speed in feet")
+        .addText((text) => {
+          text
+            .setPlaceholder("30")
+            .setValue(this.speed)
+            .onChange((value) => {
+              this.speed = value;
+            });
+          text.inputEl.type = "number";
+          text.inputEl.style.width = "80px";
+        });
+    }
+
+    // Character Sheet Links (for both GM and Player)
+    contentEl.createEl("h3", { text: "📄 Character Sheet" });
+
+    new Setting(contentEl)
+      .setName("Digital Character Sheet Link")
+      .setDesc("Optional: Link to D&D Beyond, Roll20, or other digital sheet")
+      .addText((text) =>
+        text
+          .setPlaceholder("https://www.dndbeyond.com/characters/...")
+          .setValue(this.characterSheetUrl)
+          .onChange((value) => {
+            this.characterSheetUrl = value;
+          })
+      );
+
+    new Setting(contentEl)
+      .setName("Character Sheet PDF")
+      .setDesc("Optional: Upload or link to a PDF character sheet")
+      .addButton((button) =>
+        button
+          .setButtonText("📎 Attach PDF")
+          .onClick(async () => {
+            new Notice("PDF upload: Please manually add the PDF to your vault and reference it in the note.");
+            // In a full implementation, this could trigger file picker
+          })
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("Path to PDF in vault or external link")
+          .setValue(this.characterSheetPdf)
+          .onChange((value) => {
+            this.characterSheetPdf = value;
+          })
+      );
+
+    // Buttons
+    const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
+
+    const cancelButton = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelButton.addEventListener("click", () => {
+      this.close();
+    });
+
+    const createButton = buttonContainer.createEl("button", {
+      text: "Create PC",
+      cls: "mod-cta",
+    });
+
+    createButton.addEventListener("click", async () => {
+      if (!this.pcName.trim()) {
+        new Notice("Please enter a character name!");
+        return;
+      }
+
+      this.close();
+      await this.createPCFile();
+    });
+  }
+
+  refresh() {
+    const { contentEl } = this;
+    this.buildForm(contentEl);
+  }
+
+  getAllCampaigns(): Array<{ path: string; name: string }> {
+    const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
+    const campaigns: Array<{ path: string; name: string }> = [];
+
+    if (ttrpgsFolder instanceof TFolder) {
+      ttrpgsFolder.children.forEach((child) => {
+        if (child instanceof TFolder) {
+          campaigns.push({
+            path: child.path,
+            name: child.name
+          });
+        }
+      });
+    }
+
+    return campaigns;
+  }
+
+  async createPCFile() {
+    const campaignName = this.campaign.split('/').pop() || "Unknown";
+    const pcPath = `${this.campaign}/PCs`;
+    
+    new Notice(`Creating PC "${this.pcName}"...`);
+
+    try {
+      await this.plugin.ensureFolderExists(pcPath);
+
+      // Get world info from campaign World.md
+      const worldFile = this.app.vault.getAbstractFileByPath(`${this.campaign}/World.md`);
+      let worldName = campaignName;
+      
+      if (worldFile instanceof TFile) {
+        const worldContent = await this.app.vault.read(worldFile);
+        const worldMatch = worldContent.match(/^world:\s*([^\r\n]\w*)$/m);
+        if (worldMatch && worldMatch[1] && worldMatch[1].trim()) {
+          worldName = worldMatch[1].trim();
+        }
+      }
+
+      // Get PC template
+      const templatePath = "z_Templates/Frontmatter - Player Character.md";
+      const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
+      let pcContent: string;
+
+      if (templateFile instanceof TFile) {
+        pcContent = await this.app.vault.read(templateFile);
+      } else {
+        pcContent = PC_TEMPLATE;
+      }
+
+      // Get current date
+      const currentDate = new Date().toISOString().split('T')[0];
+
+      // Combine classes into a single string
+      const classString = this.classes.filter(c => c.trim()).join("/");
+
+      // Build complete frontmatter
+      const frontmatter = `---
+type: player
+name: ${this.pcName}
+player: ${this.playerName}
+campaign: ${campaignName}
+world: ${worldName}
+race: 
+class: ${classString}
+subclass: 
+level: ${this.level}
+hp: ${this.hpCurrent || "0"}
+hp_max: ${this.hpMax || "0"}
+thp: 0
+ac: ${this.ac}
+init_bonus: ${this.initBonus}
+speed: ${this.speed}
+passive_perception: 10
+background: 
+alignment: 
+experience: 0
+readonlyUrl: ${this.characterSheetUrl}
+characterSheetPdf: ${this.characterSheetPdf}
+date: ${currentDate}
+---`;
+
+      // Replace the frontmatter
+      pcContent = pcContent.replace(/^---\n[\s\S]*?\n---/, frontmatter);
+      
+      // Replace the title
+      pcContent = pcContent.replace(/# <% tp\.frontmatter\.name %>/, `# ${this.pcName}`);
+
+      // Replace template references with actual values
+      pcContent = pcContent
+        .replace(/<% tp\.frontmatter\.name %>/g, this.pcName)
+        .replace(/<% tp\.frontmatter\.class %>/g, classString)
+        .replace(/<% tp\.frontmatter\.level %>/g, this.level)
+        .replace(/<% tp\.frontmatter\.hp %>/g, this.hpCurrent || "0")
+        .replace(/<% tp\.frontmatter\.hp_max %>/g, this.hpMax || "0")
+        .replace(/<% tp\.frontmatter\.ac %>/g, this.ac)
+        .replace(/<% tp\.frontmatter\.init_bonus %>/g, this.initBonus)
+        .replace(/<% tp\.frontmatter\.speed %>/g, this.speed)
+        .replace(/<% tp\.frontmatter\.readonlyUrl \? "\[Digital Character Sheet\]\(" \+ tp\.frontmatter\.readonlyUrl \+ "\)" : "_No digital sheet linked_" %>/g, 
+          this.characterSheetUrl ? `[Digital Character Sheet](${this.characterSheetUrl})` : "_No digital sheet linked_")
+        .replace(/<% tp\.frontmatter\.characterSheetPdf \? "\[\[" \+ tp\.frontmatter\.characterSheetPdf \+ "\|Character Sheet PDF\]\]" : "_No PDF uploaded_" %>/g,
+          this.characterSheetPdf ? `[[${this.characterSheetPdf}|Character Sheet PDF]]` : "_No PDF uploaded_");
+
+      const filePath = `${pcPath}/${this.pcName}.md`;
+      await this.app.vault.create(filePath, pcContent);
+
+      // Open the file
+      await this.app.workspace.openLinkText(filePath, "", true);
+
+      new Notice(`✅ PC "${this.pcName}" created successfully!`);
+    } catch (error) {
+      new Notice(`❌ Error creating PC: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("PC creation error:", error);
+    }
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
   }
 }
 

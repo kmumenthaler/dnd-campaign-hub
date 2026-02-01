@@ -20,6 +20,15 @@ fc-date:
 
 ## Player Characters
 
+*Manage player characters in your campaign.*
+
+\`\`\`button
+name Create New PC
+type command
+action D&D Campaign Hub: Create New PC
+\`\`\`
+^button-new-pc
+
 \`\`\`dataview
 TABLE WITHOUT ID
   link(file.path, name) AS "Name",
@@ -351,25 +360,58 @@ notes: []
 `;
 
 export const PC_TEMPLATE = `---
-type: pc
+type: player
+name: 
 player: 
+campaign: 
+world: 
 race: 
 class: 
+subclass: 
 level: 1
+hp: 0
+hp_max: 0
+thp: 0
+ac: 10
+init_bonus: 0
+speed: 30
+passive_perception: 10
 background: 
 alignment: 
 experience: 0
+readonlyUrl: 
+characterSheetPdf: 
+date: 
 ---
 
-# Player Character
+# <% tp.frontmatter.name %>
+
+> [!info] Quick Stats
+> **Class:** <% tp.frontmatter.class %> <% tp.frontmatter.level %>  
+> **HP:** <% tp.frontmatter.hp %>/<% tp.frontmatter.hp_max %>  
+> **AC:** <% tp.frontmatter.ac %> | **Initiative:** +<% tp.frontmatter.init_bonus %> | **Speed:** <% tp.frontmatter.speed %> ft.
+
+## Character Sheet Links
+
+<% tp.frontmatter.readonlyUrl ? "[Digital Character Sheet](" + tp.frontmatter.readonlyUrl + ")" : "_No digital sheet linked_" %>
+
+<% tp.frontmatter.characterSheetPdf ? "[[" + tp.frontmatter.characterSheetPdf + "|Character Sheet PDF]]" : "_No PDF uploaded_" %>
 
 ## Description
-Physical description and personality.
+
+*Physical appearance and personality traits*
+
+
 
 ## Background
-Character backstory.
 
-## Stats
+*Character history and backstory*
+
+
+
+## Stats & Abilities
+
+### Ability Scores
 - **STR**:  ( + )
 - **DEX**:  ( + )
 - **CON**:  ( + )
@@ -377,17 +419,45 @@ Character backstory.
 - **WIS**:  ( + )
 - **CHA**:  ( + )
 
-## Skills
-- Skill 1: 
-- Skill 2: 
+### Proficiencies
+**Saving Throws:** 
+**Skills:** 
+**Languages:** 
+**Tools:** 
 
-## Equipment
-- Item 1
-- Item 2
+## Combat
 
-## Spells
-- Cantrip 1
-- Cantrip 2
+### Attacks & Actions
+
+
+
+
+### Spells
+
+
+
+
+## Equipment & Inventory
+
+
+
+
+## Features & Traits
+
+
+
+
+## Notes & Development
+
+### Character Goals
+
+
+### Relationships
+
+
+### Session Notes
+
+
 `;
 
 export const ADVENTURE_TEMPLATE = `---
