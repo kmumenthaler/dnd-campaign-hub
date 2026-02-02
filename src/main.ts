@@ -4255,8 +4255,9 @@ class SceneCreationModal extends Modal {
     // === VAULT CREATURE SELECTION ===
     const vaultCreatureSection = builderContainer.createDiv({ cls: "dnd-add-creature-vault" });
     
-    let selectedCreaturePath = "";
+    let selectedCreature: { name: string; path: string; hp: number; ac: number; cr?: string } | null = null;
     let vaultCreatureCount = "1";
+    let searchResults: HTMLElement | null = null;
     
     // Load creatures from vault
     const vaultCreatures = await this.loadAllCreatures();
@@ -4264,18 +4265,89 @@ class SceneCreationModal extends Modal {
     if (vaultCreatures.length > 0) {
       const vaultCreatureSetting = new Setting(vaultCreatureSection)
         .setName("Add from Vault")
-        .setDesc(`Select a creature from z_Beastiarity (${vaultCreatures.length} found)`);
+        .setDesc(`Search and select creatures from your vault (${vaultCreatures.length} available)`);
       
-      // Creature dropdown
-      vaultCreatureSetting.addDropdown(dropdown => {
-        dropdown.addOption("", "— Select creature —");
-        vaultCreatures.forEach(creature => {
-          const label = creature.cr 
-            ? `${creature.name} (CR ${creature.cr}, HP ${creature.hp}, AC ${creature.ac})`
-            : `${creature.name} (HP ${creature.hp}, AC ${creature.ac})`;
-          dropdown.addOption(creature.path, label);
+      // Create search input container
+      const searchContainer = vaultCreatureSetting.controlEl.createDiv({ cls: "dnd-creature-search-container" });
+      
+      const searchInput = searchContainer.createEl("input", {
+        type: "text",
+        placeholder: "Search creatures...",
+        cls: "dnd-creature-search-input"
+      });
+      
+      // Search results container
+      searchResults = searchContainer.createDiv({ cls: "dnd-creature-search-results" });
+      searchResults.style.display = "none";
+      
+      // Filter and display results
+      const showSearchResults = (query: string) => {
+        if (!searchResults) return;
+        
+        if (!query || query.length < 2) {
+          searchResults.style.display = "none";
+          return;
+        }
+        
+        const queryLower = query.toLowerCase();
+        const filtered = vaultCreatures.filter(c => 
+          c.name.toLowerCase().includes(queryLower)
+        ).slice(0, 10); // Limit to 10 results
+        
+        searchResults.empty();
+        
+        if (filtered.length === 0) {
+          searchResults.createEl("div", {
+            text: "No creatures found",
+            cls: "dnd-creature-search-no-results"
+          });
+          searchResults.style.display = "block";
+          return;
+        }
+        
+        filtered.forEach(creature => {
+          const resultEl = searchResults!.createDiv({ cls: "dnd-creature-search-result" });
+          
+          const nameEl = resultEl.createDiv({ cls: "dnd-creature-search-result-name" });
+          nameEl.setText(creature.name);
+          
+          const statsEl = resultEl.createDiv({ cls: "dnd-creature-search-result-stats" });
+          const statsParts: string[] = [];
+          if (creature.cr) statsParts.push(`CR ${creature.cr}`);
+          statsParts.push(`HP ${creature.hp}`);
+          statsParts.push(`AC ${creature.ac}`);
+          statsEl.setText(statsParts.join(" | "));
+          
+          resultEl.addEventListener("click", () => {
+            selectedCreature = creature;
+            searchInput.value = creature.name;
+            searchResults!.style.display = "none";
+          });
         });
-        dropdown.onChange(value => selectedCreaturePath = value);
+        
+        searchResults.style.display = "block";
+      };
+      
+      // Search input events
+      searchInput.addEventListener("input", (e) => {
+        const target = e.target as HTMLInputElement;
+        showSearchResults(target.value);
+      });
+      
+      searchInput.addEventListener("focus", (e) => {
+        const target = e.target as HTMLInputElement;
+        if (target.value.length >= 2) {
+          showSearchResults(target.value);
+        }
+      });
+      
+      // Close search results when clicking outside
+      searchInput.addEventListener("blur", () => {
+        setTimeout(() => {
+          if (searchResults) {
+            searchResults.style.display = "none";
+          }
+        }, 200);
       });
       
       // Count input
@@ -4292,27 +4364,25 @@ class SceneCreationModal extends Modal {
         .setButtonText("Add")
         .setCta()
         .onClick(() => {
-          if (!selectedCreaturePath) {
-            new Notice("Please select a creature!");
-            return;
-          }
-          
-          const creature = vaultCreatures.find(c => c.path === selectedCreaturePath);
-          if (!creature) {
-            new Notice("Creature not found!");
+          if (!selectedCreature) {
+            new Notice("Please search and select a creature first!");
             return;
           }
           
           this.addCreature({
-            name: creature.name,
+            name: selectedCreature.name,
             count: parseInt(vaultCreatureCount) || 1,
-            hp: creature.hp,
-            ac: creature.ac,
-            cr: creature.cr,
+            hp: selectedCreature.hp,
+            ac: selectedCreature.ac,
+            cr: selectedCreature.cr,
             source: "vault"
           });
           
-          new Notice(`Added ${vaultCreatureCount}x ${creature.name}`);
+          new Notice(`Added ${vaultCreatureCount}x ${selectedCreature.name}`);
+          
+          // Clear search
+          searchInput.value = "";
+          selectedCreature = null;
         }));
     } else {
       vaultCreatureSection.createEl("p", {

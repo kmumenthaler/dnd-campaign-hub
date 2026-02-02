@@ -269,6 +269,83 @@
 .dnd-add-creature-vault .setting-item {
   border: none;
   padding-top: 0;
+  flex-wrap: wrap;
+}
+
+.dnd-add-creature-vault .setting-item-info {
+  min-width: 200px;
+  max-width: 100%;
+  flex-basis: 100%;
+  margin-bottom: 8px;
+}
+
+.dnd-add-creature-vault .setting-item-control {
+  flex-grow: 1;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+/* Creature search input styling */
+.dnd-creature-search-container {
+  position: relative;
+  flex-grow: 1;
+  max-width: 300px;
+}
+
+.dnd-creature-search-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.dnd-creature-search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  z-index: 1000;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.dnd-creature-search-result {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.dnd-creature-search-result:last-child {
+  border-bottom: none;
+}
+
+.dnd-creature-search-result:hover {
+  background: var(--background-modifier-hover);
+}
+
+.dnd-creature-search-result-name {
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.dnd-creature-search-result-stats {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.dnd-creature-search-no-results {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 /* Manual creature entry */
@@ -280,4 +357,18 @@
 .dnd-add-creature-manual .setting-item {
   border-top: 1px solid var(--background-modifier-border);
   padding-top: 15px;
+  flex-wrap: wrap;
+}
+
+.dnd-add-creature-manual .setting-item-info {
+  min-width: 200px;
+  max-width: 100%;
+  flex-basis: 100%;
+  margin-bottom: 8px;
+}
+
+.dnd-add-creature-manual .setting-item-control {
+  flex-grow: 1;
+  justify-content: flex-start;
+  gap: 8px;
 }
