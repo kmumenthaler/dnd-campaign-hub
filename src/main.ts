@@ -444,6 +444,12 @@ export default class DndCampaignHubPlugin extends Plugin {
         name: "Calendarium",
         repo: "javalent/calendarium",
         version: "2.1.0"
+      },
+      {
+        id: "initiative-tracker",
+        name: "Initiative Tracker",
+        repo: "javalent/initiative-tracker",
+        version: "9.2.5"
       }
     ];
 
@@ -542,7 +548,8 @@ export default class DndCampaignHubPlugin extends Plugin {
       { id: "buttons", name: "Buttons" },
       { id: "dataview", name: "Dataview" },
       { id: "calendarium", name: "Calendarium" },
-      { id: "templater-obsidian", name: "Templater" }
+      { id: "templater-obsidian", name: "Templater" },
+      { id: "initiative-tracker", name: "Initiative Tracker" }
     ];
 
     const installed: string[] = [];
@@ -945,7 +952,8 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
       { id: "buttons", name: "Buttons", url: "obsidian://show-plugin?id=buttons" },
       { id: "dataview", name: "Dataview", url: "obsidian://show-plugin?id=dataview" },
       { id: "calendarium", name: "Calendarium", url: "obsidian://show-plugin?id=calendarium" },
-      { id: "templater-obsidian", name: "Templater", url: "obsidian://show-plugin?id=templater-obsidian" }
+      { id: "templater-obsidian", name: "Templater", url: "obsidian://show-plugin?id=templater-obsidian" },
+      { id: "initiative-tracker", name: "Initiative Tracker", url: "obsidian://show-plugin?id=initiative-tracker" }
     ];
 
     for (const plugin of requiredPlugins) {
