@@ -4262,6 +4262,8 @@ class SceneCreationModal extends Modal {
     // Load creatures from vault
     const vaultCreatures = await this.loadAllCreatures();
     
+    console.log("Loaded creatures:", vaultCreatures.length, vaultCreatures.slice(0, 3).map(c => c.name));
+    
     if (vaultCreatures.length > 0) {
       const vaultCreatureSetting = new Setting(vaultCreatureSection)
         .setName("Add from Vault")
@@ -4282,7 +4284,11 @@ class SceneCreationModal extends Modal {
       
       // Filter and display results
       const showSearchResults = (query: string) => {
-        if (!searchResults) return;
+        console.log("showSearchResults called with:", query);
+        if (!searchResults) {
+          console.log("No searchResults element!");
+          return;
+        }
         
         if (!query || query.length < 2) {
           searchResults.style.display = "none";
@@ -4293,6 +4299,8 @@ class SceneCreationModal extends Modal {
         const filtered = vaultCreatures.filter(c => 
           c.name.toLowerCase().includes(queryLower)
         ).slice(0, 10); // Limit to 10 results
+        
+        console.log("Filtered results:", filtered.length, filtered.map(c => c.name));
         
         searchResults.empty();
         
@@ -4318,10 +4326,15 @@ class SceneCreationModal extends Modal {
           statsParts.push(`AC ${creature.ac}`);
           statsEl.setText(statsParts.join(" | "));
           
-          resultEl.addEventListener("click", () => {
+          resultEl.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log("Creature clicked:", creature.name);
             selectedCreature = creature;
             searchInput.value = creature.name;
-            searchResults!.style.display = "none";
+            if (searchResults) {
+              searchResults.style.display = "none";
+            }
           });
         });
         
@@ -4331,6 +4344,7 @@ class SceneCreationModal extends Modal {
       // Search input events
       searchInput.addEventListener("input", (e) => {
         const target = e.target as HTMLInputElement;
+        console.log("Input event:", target.value);
         showSearchResults(target.value);
       });
       
@@ -4341,13 +4355,20 @@ class SceneCreationModal extends Modal {
         }
       });
       
+      searchInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && selectedCreature) {
+          e.preventDefault();
+          // Trigger add button
+        }
+      });
+      
       // Close search results when clicking outside
       searchInput.addEventListener("blur", () => {
         setTimeout(() => {
           if (searchResults) {
             searchResults.style.display = "none";
           }
-        }, 200);
+        }, 250); // Increased timeout to ensure click registers
       });
       
       // Count input
