@@ -237,8 +237,11 @@ if (adventureLink) {
     }
   }
 } else {
-  dv.paragraph("*No adventure linked. Link an adventure in frontmatter or create one:*");
-  const createAdvBtn = dv.el('button', '🗺️ Create Adventure for This Session');
+  dv.paragraph("*No adventure linked to this session.*");
+  dv.paragraph("To link an adventure, add it to the frontmatter:");
+  dv.paragraph(\`\\\`\\\`\\\`yaml\\nadventure: "[[Your Adventure Name]]"\\n\\\`\\\`\\\`\`);
+  dv.paragraph("Or create a new adventure:");
+  const createAdvBtn = dv.el('button', '🗺️ Create Adventure');
   createAdvBtn.className = 'mod-cta';
   createAdvBtn.style.marginTop = '10px';
   createAdvBtn.onclick = () => {

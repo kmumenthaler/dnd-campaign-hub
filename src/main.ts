@@ -1200,6 +1200,7 @@ class DndHubModal extends Modal {
 
     // Check if vault is initialized
     if (!this.plugin.isVaultInitialized()) {
+      console.log("DND Hub: Vault not initialized, showing init UI");
       this.showInitializationUI(contentEl);
       return;
     }
@@ -1207,12 +1208,14 @@ class DndHubModal extends Modal {
     // Check if any campaigns exist
     const campaigns = this.plugin.getAllCampaigns();
     const hasCampaigns = campaigns.length > 0;
+    console.log("DND Hub: Found", campaigns.length, "campaigns. hasCampaigns:", hasCampaigns);
 
     // Quick Actions Section
     contentEl.createEl("h2", { text: "Quick Actions" });
 
     const quickActionsContainer = contentEl.createDiv({ cls: "dnd-hub-quick-actions" });
 
+    console.log("DND Hub: Creating 'New Campaign' button");
     this.createActionButton(quickActionsContainer, "🎲 New Campaign", () => {
       this.close();
       this.plugin.createCampaign();
