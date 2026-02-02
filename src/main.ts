@@ -3911,7 +3911,8 @@ date: ${currentDate}
       .replace(/{{WORLD}}/g, worldName)
       .replace(/{{DATE}}/g, currentDate)
       .replace(/{{TRACKER_ENCOUNTER}}/g, "")
-      .replace(/{{ENCOUNTER_CREATURES}}/g, "[]");
+      .replace(/{{ENCOUNTER_CREATURES}}/g, "[]")
+      .replace(/{{ENCOUNTER_DIFFICULTY}}/g, "null");
 
     await this.app.vault.create(filePath, sceneContent);
   }
@@ -3948,6 +3949,7 @@ class SceneCreationModal extends Modal {
   
   // UI state
   encounterSection: HTMLElement | null = null;
+  difficultyContainer: HTMLElement | null = null;
   creatureListContainer: HTMLElement | null = null;
 
   constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string) {
@@ -4378,6 +4380,23 @@ class SceneCreationModal extends Modal {
       ? JSON.stringify(this.creatures) 
       : "[]";
     
+    // Calculate encounter difficulty if creatures exist
+    let encounterDifficultyJson = "null";
+    if (this.creatures.length > 0) {
+      const diffResult = await this.calculateEncounterDifficulty();
+      encounterDifficultyJson = JSON.stringify({
+        difficulty: diffResult.analysis.difficulty,
+        roundsToDefeat: diffResult.analysis.roundsToDefeatEnemies,
+        survivalRatio: Math.round(diffResult.analysis.survivalRatio * 100) / 100,
+        partyHP: diffResult.partyStats.totalHP,
+        partyEffectiveDPR: Math.round(diffResult.analysis.partyEffectiveDPR),
+        enemyHP: diffResult.enemyStats.totalHP,
+        enemyEffectiveDPR: Math.round(diffResult.analysis.enemyEffectiveDPR),
+        enemyCount: diffResult.enemyStats.creatureCount,
+        partyCount: diffResult.partyStats.memberCount
+      });
+    }
+    
     const sceneContent = SCENE_TEMPLATE
       .replace(/{{SCENE_NUMBER}}/g, scene.num.toString())
       .replace(/{{SCENE_NAME}}/g, scene.name)
@@ -4390,7 +4409,8 @@ class SceneCreationModal extends Modal {
       .replace(/{{WORLD}}/g, worldName)
       .replace(/{{DATE}}/g, currentDate)
       .replace(/{{TRACKER_ENCOUNTER}}/g, trackerEncounter)
-      .replace(/{{ENCOUNTER_CREATURES}}/g, encounterCreaturesJson);
+      .replace(/{{ENCOUNTER_CREATURES}}/g, encounterCreaturesJson)
+      .replace(/{{ENCOUNTER_DIFFICULTY}}/g, encounterDifficultyJson);
 
     await this.app.vault.create(filePath, sceneContent);
   }
@@ -4741,6 +4761,11 @@ class SceneCreationModal extends Modal {
         this.showEncounterBuilderFields();
       }));
     
+    // === ENCOUNTER DIFFICULTY CALCULATOR ===
+    builderContainer.createEl("h4", { text: "⚔️ Encounter Difficulty" });
+    this.difficultyContainer = builderContainer.createDiv({ cls: "dnd-difficulty-container" });
+    await this.updateDifficultyCalculation();
+    
     // Info text
     builderContainer.createEl("p", {
       text: "💡 Tip: Select creatures from your vault or add custom enemies on the fly. You can edit stats later in Initiative Tracker.",
@@ -4801,6 +4826,478 @@ class SceneCreationModal extends Modal {
         this.removeCreature(index);
       });
     });
+    
+    // Update difficulty calculation after creature list changes
+    this.updateDifficultyCalculation();
+  }
+
+  /**
+   * CR to combat stats mapping (D&D 5e approximations)
+   * Returns: { dpr, attackBonus, ac, hp }
+   */
+  getCRStats(cr: string | undefined): { dpr: number; attackBonus: number; ac: number; hp: number } {
+    const crNum = this.parseCR(cr);
+    
+    // Based on D&D 5e DMG Monster Statistics by CR table
+    const crTable: { [key: number]: { dpr: number; attackBonus: number; ac: number; hp: number } } = {
+      0:    { dpr: 1,   attackBonus: 3,  ac: 13, hp: 6 },
+      0.125:{ dpr: 3,   attackBonus: 3,  ac: 13, hp: 21 },
+      0.25: { dpr: 5,   attackBonus: 3,  ac: 13, hp: 43 },
+      0.5:  { dpr: 7,   attackBonus: 3,  ac: 13, hp: 60 },
+      1:    { dpr: 12,  attackBonus: 3,  ac: 13, hp: 78 },
+      2:    { dpr: 18,  attackBonus: 3,  ac: 13, hp: 93 },
+      3:    { dpr: 24,  attackBonus: 4,  ac: 13, hp: 108 },
+      4:    { dpr: 30,  attackBonus: 5,  ac: 14, hp: 123 },
+      5:    { dpr: 36,  attackBonus: 6,  ac: 15, hp: 138 },
+      6:    { dpr: 42,  attackBonus: 6,  ac: 15, hp: 153 },
+      7:    { dpr: 48,  attackBonus: 6,  ac: 15, hp: 168 },
+      8:    { dpr: 54,  attackBonus: 7,  ac: 16, hp: 183 },
+      9:    { dpr: 60,  attackBonus: 7,  ac: 16, hp: 198 },
+      10:   { dpr: 66,  attackBonus: 7,  ac: 17, hp: 213 },
+      11:   { dpr: 72,  attackBonus: 8,  ac: 17, hp: 228 },
+      12:   { dpr: 78,  attackBonus: 8,  ac: 17, hp: 243 },
+      13:   { dpr: 84,  attackBonus: 8,  ac: 18, hp: 258 },
+      14:   { dpr: 90,  attackBonus: 8,  ac: 18, hp: 273 },
+      15:   { dpr: 96,  attackBonus: 8,  ac: 18, hp: 288 },
+      16:   { dpr: 102, attackBonus: 9,  ac: 18, hp: 303 },
+      17:   { dpr: 108, attackBonus: 10, ac: 19, hp: 318 },
+      18:   { dpr: 114, attackBonus: 10, ac: 19, hp: 333 },
+      19:   { dpr: 120, attackBonus: 10, ac: 19, hp: 348 },
+      20:   { dpr: 132, attackBonus: 10, ac: 19, hp: 378 },
+      21:   { dpr: 150, attackBonus: 11, ac: 19, hp: 423 },
+      22:   { dpr: 168, attackBonus: 11, ac: 19, hp: 468 },
+      23:   { dpr: 186, attackBonus: 11, ac: 19, hp: 513 },
+      24:   { dpr: 204, attackBonus: 12, ac: 19, hp: 558 },
+      25:   { dpr: 222, attackBonus: 12, ac: 19, hp: 603 },
+      26:   { dpr: 240, attackBonus: 12, ac: 19, hp: 648 },
+      27:   { dpr: 258, attackBonus: 13, ac: 19, hp: 693 },
+      28:   { dpr: 276, attackBonus: 13, ac: 19, hp: 738 },
+      29:   { dpr: 294, attackBonus: 13, ac: 19, hp: 783 },
+      30:   { dpr: 312, attackBonus: 14, ac: 19, hp: 850 }
+    };
+    
+    // Find closest CR
+    const crValues = Object.keys(crTable).map(Number).sort((a, b) => a - b);
+    let closestCR = 0;
+    for (const cv of crValues) {
+      if (cv <= crNum) closestCR = cv;
+      else break;
+    }
+    
+    const defaultStats = { dpr: 1, attackBonus: 3, ac: 13, hp: 6 };
+    return crTable[closestCR] ?? defaultStats;
+  }
+
+  /**
+   * Player level to combat stats mapping (D&D 5e approximations)
+   * Returns: { dpr, attackBonus, ac, hp }
+   */
+  getLevelStats(level: number): { dpr: number; attackBonus: number; ac: number; hp: number } {
+    // Average PC stats by level (assuming typical builds)
+    const levelTable: { [key: number]: { dpr: number; attackBonus: number; ac: number; hp: number } } = {
+      1:  { dpr: 10,  attackBonus: 5, ac: 14, hp: 12 },
+      2:  { dpr: 12,  attackBonus: 5, ac: 14, hp: 18 },
+      3:  { dpr: 15,  attackBonus: 5, ac: 15, hp: 24 },
+      4:  { dpr: 18,  attackBonus: 6, ac: 16, hp: 32 },
+      5:  { dpr: 25,  attackBonus: 7, ac: 16, hp: 40 },
+      6:  { dpr: 28,  attackBonus: 7, ac: 17, hp: 48 },
+      7:  { dpr: 32,  attackBonus: 7, ac: 17, hp: 56 },
+      8:  { dpr: 36,  attackBonus: 8, ac: 17, hp: 64 },
+      9:  { dpr: 40,  attackBonus: 8, ac: 18, hp: 72 },
+      10: { dpr: 44,  attackBonus: 8, ac: 18, hp: 80 },
+      11: { dpr: 50,  attackBonus: 9, ac: 18, hp: 90 },
+      12: { dpr: 54,  attackBonus: 9, ac: 18, hp: 100 },
+      13: { dpr: 58,  attackBonus: 9, ac: 19, hp: 110 },
+      14: { dpr: 62,  attackBonus: 10, ac: 19, hp: 120 },
+      15: { dpr: 66,  attackBonus: 10, ac: 19, hp: 130 },
+      16: { dpr: 70,  attackBonus: 10, ac: 19, hp: 140 },
+      17: { dpr: 76,  attackBonus: 11, ac: 19, hp: 150 },
+      18: { dpr: 80,  attackBonus: 11, ac: 19, hp: 160 },
+      19: { dpr: 84,  attackBonus: 11, ac: 19, hp: 170 },
+      20: { dpr: 90,  attackBonus: 11, ac: 20, hp: 180 }
+    };
+    
+    const clampedLevel = Math.min(20, Math.max(1, level));
+    const defaultStats = { dpr: 10, attackBonus: 5, ac: 14, hp: 12 };
+    return levelTable[clampedLevel] ?? defaultStats;
+  }
+
+  /**
+   * Parse CR string to numeric value
+   */
+  parseCR(cr: string | undefined): number {
+    if (!cr) return 0;
+    
+    const crStr = cr.toString().trim().toLowerCase();
+    
+    // Handle fractions
+    if (crStr === "1/8") return 0.125;
+    if (crStr === "1/4") return 0.25;
+    if (crStr === "1/2") return 0.5;
+    
+    const parsed = parseFloat(crStr);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+
+  /**
+   * Calculate hit probability (bounded between 5% and 95%)
+   */
+  calculateHitChance(attackBonus: number, targetAC: number): number {
+    // Need to roll (targetAC - attackBonus) or higher on d20
+    // Nat 1 always misses, Nat 20 always hits
+    const neededRoll = targetAC - attackBonus;
+    const successChance = (21 - neededRoll) / 20;
+    return Math.min(0.95, Math.max(0.05, successChance));
+  }
+
+  /**
+   * Calculate expected damage per round considering hit chance
+   */
+  calculateEffectiveDPR(baseDPR: number, hitChance: number): number {
+    return baseDPR * hitChance;
+  }
+
+  /**
+   * Calculate rounds to defeat a group (HP pool / effective DPR)
+   */
+  calculateRoundsToDefeat(totalHP: number, effectiveDPR: number): number {
+    if (effectiveDPR <= 0) return Infinity;
+    return Math.ceil(totalHP / effectiveDPR);
+  }
+
+  /**
+   * Get party members from Initiative Tracker for difficulty calculation
+   */
+  async getPartyForDifficulty(): Promise<Array<{ name: string; hp: number; ac: number; level: number }>> {
+    const partyMembers: Array<{ name: string; hp: number; ac: number; level: number }> = [];
+    
+    try {
+      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+      if (!initiativePlugin?.data) return partyMembers;
+      
+      // Get campaign name from adventure path
+      const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
+      if (!(adventureFile instanceof TFile)) return partyMembers;
+      
+      const adventureContent = await this.app.vault.read(adventureFile);
+      const campaignMatch = adventureContent.match(/^campaign:\s*([^\r\n]+)$/m);
+      const campaignName = (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
+      
+      // Find the campaign's party
+      const partyName = `${campaignName} Party`;
+      const party = initiativePlugin.data.parties?.find((p: any) => p.name === partyName);
+      
+      if (!party?.players) return partyMembers;
+      
+      // Get player details
+      for (const playerName of party.players) {
+        const player = initiativePlugin.data.players?.find((p: any) => p.name === playerName);
+        if (player) {
+          partyMembers.push({
+            name: player.name || "Unknown",
+            hp: player.hp || player.currentMaxHP || 20,
+            ac: player.ac || player.currentAC || 14,
+            level: player.level || 1
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error getting party for difficulty:", error);
+    }
+    
+    return partyMembers;
+  }
+
+  /**
+   * Calculate comprehensive encounter difficulty
+   */
+  async calculateEncounterDifficulty(): Promise<{
+    enemyStats: {
+      totalHP: number;
+      avgAC: number;
+      totalDPR: number;
+      avgAttackBonus: number;
+      creatureCount: number;
+    };
+    partyStats: {
+      totalHP: number;
+      avgAC: number;
+      totalDPR: number;
+      avgAttackBonus: number;
+      memberCount: number;
+      avgLevel: number;
+    };
+    analysis: {
+      partyHitChance: number;
+      enemyHitChance: number;
+      partyEffectiveDPR: number;
+      enemyEffectiveDPR: number;
+      roundsToDefeatEnemies: number;
+      roundsToDefeatParty: number;
+      survivalRatio: number;
+      difficulty: "Trivial" | "Easy" | "Medium" | "Hard" | "Deadly" | "TPK Risk";
+      difficultyColor: string;
+      summary: string;
+    };
+  }> {
+    // Calculate enemy stats
+    let enemyTotalHP = 0;
+    let enemyTotalAC = 0;
+    let enemyTotalDPR = 0;
+    let enemyTotalAttackBonus = 0;
+    let enemyCount = 0;
+    
+    for (const creature of this.creatures) {
+      const crStats = this.getCRStats(creature.cr);
+      const count = creature.count || 1;
+      
+      // Use actual HP/AC if provided, otherwise use CR-based estimates
+      const hp = creature.hp || crStats.hp;
+      const ac = creature.ac || crStats.ac;
+      
+      enemyTotalHP += hp * count;
+      enemyTotalAC += ac * count;
+      enemyTotalDPR += crStats.dpr * count;
+      enemyTotalAttackBonus += crStats.attackBonus * count;
+      enemyCount += count;
+    }
+    
+    const avgEnemyAC = enemyCount > 0 ? enemyTotalAC / enemyCount : 13;
+    const avgEnemyAttackBonus = enemyCount > 0 ? enemyTotalAttackBonus / enemyCount : 3;
+    
+    // Get party stats
+    const partyMembers = await this.getPartyForDifficulty();
+    
+    let partyTotalHP = 0;
+    let partyTotalAC = 0;
+    let partyTotalDPR = 0;
+    let partyTotalAttackBonus = 0;
+    let totalLevel = 0;
+    
+    for (const member of partyMembers) {
+      const levelStats = this.getLevelStats(member.level);
+      
+      // Use actual HP/AC if available, otherwise use level-based estimates
+      partyTotalHP += member.hp || levelStats.hp;
+      partyTotalAC += member.ac || levelStats.ac;
+      partyTotalDPR += levelStats.dpr;
+      partyTotalAttackBonus += levelStats.attackBonus;
+      totalLevel += member.level;
+    }
+    
+    const memberCount = partyMembers.length || 1;
+    const avgPartyAC = partyTotalAC / memberCount;
+    const avgPartyAttackBonus = partyTotalAttackBonus / memberCount;
+    const avgLevel = totalLevel / memberCount;
+    
+    // If no party members found, use defaults for a level 3 party of 4
+    if (partyMembers.length === 0) {
+      const defaultStats = this.getLevelStats(3);
+      partyTotalHP = defaultStats.hp * 4;
+      partyTotalDPR = defaultStats.dpr * 4;
+    }
+    
+    // Calculate hit chances
+    const partyHitChance = this.calculateHitChance(avgPartyAttackBonus, avgEnemyAC);
+    const enemyHitChance = this.calculateHitChance(avgEnemyAttackBonus, avgPartyAC);
+    
+    // Calculate effective DPR (considering hit chance)
+    const partyEffectiveDPR = this.calculateEffectiveDPR(partyTotalDPR, partyHitChance);
+    const enemyEffectiveDPR = this.calculateEffectiveDPR(enemyTotalDPR, enemyHitChance);
+    
+    // Calculate rounds to defeat
+    const roundsToDefeatEnemies = this.calculateRoundsToDefeat(enemyTotalHP, partyEffectiveDPR);
+    const roundsToDefeatParty = this.calculateRoundsToDefeat(partyTotalHP, enemyEffectiveDPR);
+    
+    // Survival ratio: how many more rounds the party can survive vs enemies
+    const survivalRatio = roundsToDefeatParty / roundsToDefeatEnemies;
+    
+    // Determine difficulty based on survival ratio and rounds
+    let difficulty: "Trivial" | "Easy" | "Medium" | "Hard" | "Deadly" | "TPK Risk";
+    let difficultyColor: string;
+    
+    if (survivalRatio >= 4 || roundsToDefeatEnemies <= 1) {
+      difficulty = "Trivial";
+      difficultyColor = "#888888";
+    } else if (survivalRatio >= 2.5) {
+      difficulty = "Easy";
+      difficultyColor = "#00aa00";
+    } else if (survivalRatio >= 1.5) {
+      difficulty = "Medium";
+      difficultyColor = "#aaaa00";
+    } else if (survivalRatio >= 1.0) {
+      difficulty = "Hard";
+      difficultyColor = "#ff8800";
+    } else if (survivalRatio >= 0.6) {
+      difficulty = "Deadly";
+      difficultyColor = "#ff0000";
+    } else {
+      difficulty = "TPK Risk";
+      difficultyColor = "#880000";
+    }
+    
+    // Generate summary
+    let summary = "";
+    if (enemyCount === 0) {
+      summary = "Add creatures to calculate difficulty.";
+    } else if (partyMembers.length === 0) {
+      summary = `⚠️ No party found. Using default 4-player party (Level 3).\n`;
+      summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}.`;
+    } else {
+      summary = `Party of ${memberCount} (Avg Lvl ${avgLevel.toFixed(1)}) vs ${enemyCount} creature${enemyCount !== 1 ? 's' : ''}.\n`;
+      summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}.`;
+      
+      if (difficulty === "TPK Risk") {
+        summary += "\n⚠️ HIGH RISK: Party may not survive this encounter!";
+      } else if (difficulty === "Deadly") {
+        summary += "\n⚠️ Deadly encounter - expect possible character deaths.";
+      }
+    }
+    
+    return {
+      enemyStats: {
+        totalHP: enemyTotalHP,
+        avgAC: avgEnemyAC,
+        totalDPR: enemyTotalDPR,
+        avgAttackBonus: avgEnemyAttackBonus,
+        creatureCount: enemyCount
+      },
+      partyStats: {
+        totalHP: partyTotalHP,
+        avgAC: avgPartyAC,
+        totalDPR: partyTotalDPR,
+        avgAttackBonus: avgPartyAttackBonus,
+        memberCount: memberCount,
+        avgLevel: avgLevel
+      },
+      analysis: {
+        partyHitChance,
+        enemyHitChance,
+        partyEffectiveDPR,
+        enemyEffectiveDPR,
+        roundsToDefeatEnemies,
+        roundsToDefeatParty,
+        survivalRatio,
+        difficulty,
+        difficultyColor,
+        summary
+      }
+    };
+  }
+
+  /**
+   * Update and render the difficulty calculation display
+   */
+  async updateDifficultyCalculation() {
+    if (!this.difficultyContainer) return;
+    
+    this.difficultyContainer.empty();
+    
+    if (this.creatures.length === 0) {
+      this.difficultyContainer.createEl("p", {
+        text: "Add creatures to see encounter difficulty analysis.",
+        cls: "setting-item-description"
+      });
+      return;
+    }
+    
+    // Show loading
+    const loadingEl = this.difficultyContainer.createEl("p", { text: "Calculating difficulty..." });
+    
+    const result = await this.calculateEncounterDifficulty();
+    
+    loadingEl.remove();
+    
+    // Create difficulty display
+    const difficultyCard = this.difficultyContainer.createDiv({ cls: "dnd-difficulty-card" });
+    
+    // Header with difficulty rating
+    const header = difficultyCard.createDiv({ cls: "dnd-difficulty-header" });
+    
+    const difficultyBadge = header.createEl("span", {
+      text: result.analysis.difficulty,
+      cls: "dnd-difficulty-badge"
+    });
+    difficultyBadge.style.backgroundColor = result.analysis.difficultyColor;
+    difficultyBadge.style.color = "#ffffff";
+    difficultyBadge.style.padding = "4px 12px";
+    difficultyBadge.style.borderRadius = "12px";
+    difficultyBadge.style.fontWeight = "bold";
+    difficultyBadge.style.fontSize = "14px";
+    
+    const roundsEstimate = header.createEl("span", {
+      text: ` ~${result.analysis.roundsToDefeatEnemies} round${result.analysis.roundsToDefeatEnemies !== 1 ? 's' : ''}`,
+      cls: "dnd-rounds-estimate"
+    });
+    roundsEstimate.style.marginLeft = "10px";
+    roundsEstimate.style.opacity = "0.8";
+    
+    // Stats comparison grid
+    const statsGrid = difficultyCard.createDiv({ cls: "dnd-difficulty-stats-grid" });
+    statsGrid.style.display = "grid";
+    statsGrid.style.gridTemplateColumns = "1fr 1fr";
+    statsGrid.style.gap = "15px";
+    statsGrid.style.marginTop = "15px";
+    
+    // Party stats
+    const partyCol = statsGrid.createDiv({ cls: "dnd-stats-column" });
+    partyCol.createEl("h5", { text: `⚔️ Party (${result.partyStats.memberCount})` });
+    const partyStats = partyCol.createDiv();
+    partyStats.innerHTML = `
+      <div>HP Pool: <strong>${result.partyStats.totalHP}</strong></div>
+      <div>Avg AC: <strong>${result.partyStats.avgAC.toFixed(0)}</strong></div>
+      <div>Total DPR: <strong>${result.partyStats.totalDPR.toFixed(0)}</strong></div>
+      <div>Hit Chance: <strong>${(result.analysis.partyHitChance * 100).toFixed(0)}%</strong></div>
+      <div>Effective DPR: <strong>${result.analysis.partyEffectiveDPR.toFixed(0)}</strong></div>
+    `;
+    
+    // Enemy stats
+    const enemyCol = statsGrid.createDiv({ cls: "dnd-stats-column" });
+    enemyCol.createEl("h5", { text: `👹 Enemies (${result.enemyStats.creatureCount})` });
+    const enemyStats = enemyCol.createDiv();
+    enemyStats.innerHTML = `
+      <div>HP Pool: <strong>${result.enemyStats.totalHP}</strong></div>
+      <div>Avg AC: <strong>${result.enemyStats.avgAC.toFixed(0)}</strong></div>
+      <div>Total DPR: <strong>${result.enemyStats.totalDPR.toFixed(0)}</strong></div>
+      <div>Hit Chance: <strong>${(result.analysis.enemyHitChance * 100).toFixed(0)}%</strong></div>
+      <div>Effective DPR: <strong>${result.analysis.enemyEffectiveDPR.toFixed(0)}</strong></div>
+    `;
+    
+    // Analysis summary
+    const analysisSummary = difficultyCard.createDiv({ cls: "dnd-difficulty-analysis" });
+    analysisSummary.style.marginTop = "15px";
+    analysisSummary.style.padding = "10px";
+    analysisSummary.style.backgroundColor = "var(--background-secondary)";
+    analysisSummary.style.borderRadius = "6px";
+    analysisSummary.style.fontSize = "12px";
+    
+    // Calculate damage over 3 rounds
+    const partyDamage3Rounds = result.analysis.partyEffectiveDPR * 3;
+    const enemyDamage3Rounds = result.analysis.enemyEffectiveDPR * 3;
+    const partyHPAfter3 = Math.max(0, result.partyStats.totalHP - enemyDamage3Rounds);
+    const enemyHPAfter3 = Math.max(0, result.enemyStats.totalHP - partyDamage3Rounds);
+    
+    analysisSummary.innerHTML = `
+      <div style="margin-bottom: 8px;"><strong>📊 3-Round Analysis:</strong></div>
+      <div>Party deals: <strong>${partyDamage3Rounds.toFixed(0)}</strong> damage → Enemies at <strong>${enemyHPAfter3.toFixed(0)}</strong> HP (${((enemyHPAfter3 / result.enemyStats.totalHP) * 100).toFixed(0)}%)</div>
+      <div>Enemies deal: <strong>${enemyDamage3Rounds.toFixed(0)}</strong> damage → Party at <strong>${partyHPAfter3.toFixed(0)}</strong> HP (${((partyHPAfter3 / result.partyStats.totalHP) * 100).toFixed(0)}%)</div>
+      <div style="margin-top: 8px; opacity: 0.8;">
+        Survival Ratio: ${result.analysis.survivalRatio.toFixed(2)} 
+        (Party can survive ${result.analysis.roundsToDefeatParty} rounds, enemies survive ${result.analysis.roundsToDefeatEnemies} rounds)
+      </div>
+    `;
+    
+    // Warning for no party
+    if (result.partyStats.memberCount === 0 || (await this.getPartyForDifficulty()).length === 0) {
+      const warningEl = difficultyCard.createDiv({ cls: "dnd-difficulty-warning" });
+      warningEl.style.marginTop = "10px";
+      warningEl.style.padding = "8px";
+      warningEl.style.backgroundColor = "#ff880033";
+      warningEl.style.borderRadius = "4px";
+      warningEl.style.fontSize = "12px";
+      warningEl.innerHTML = `⚠️ <strong>No party registered!</strong> Using default estimates for 4 Level-3 PCs. 
+        <br>Register PCs via "Create PC" to get accurate calculations.`;
+    }
   }
 
   /**
@@ -5013,7 +5510,7 @@ class SceneCreationModal extends Modal {
           
           // Determine name and display based on useColorNames setting
           let creatureName = c.name;
-          let displayName = "";
+          let displayName = c.name;  // Default to creature name
           
           if (this.useColorNames && c.count > 1) {
             const colorIndex = i % colors.length;
@@ -5025,7 +5522,7 @@ class SceneCreationModal extends Modal {
           
           const creature = {
             name: creatureName,  // Unique name with color to prevent auto-numbering
-            display: displayName,  // Display name (empty for default, or colored name)
+            display: displayName,  // Display name (always has a value now)
             initiative: 0,
             static: false,
             modifier: 0,  // Initiative modifier

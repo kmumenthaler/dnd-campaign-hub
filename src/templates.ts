@@ -721,7 +721,7 @@ if (allScenes.length === 0) {
 
 export const SCENE_TEMPLATE = `---
 type: scene
-template_version: 1.2.0
+template_version: 1.3.0
 adventure: "{{ADVENTURE_NAME}}"
 campaign: "{{CAMPAIGN}}"
 world: "{{WORLD}}"
@@ -733,6 +733,7 @@ difficulty: {{DIFFICULTY}}
 status: planned
 tracker_encounter: {{TRACKER_ENCOUNTER}}
 encounter_creatures: {{ENCOUNTER_CREATURES}}
+encounter_difficulty: {{ENCOUNTER_DIFFICULTY}}
 date: {{DATE}}
 ---
 
@@ -784,9 +785,52 @@ date: {{DATE}}
 \`\`\`dataviewjs
 const trackerEncounter = dv.current().tracker_encounter;
 const encounterCreatures = dv.current().encounter_creatures;
+const encounterDifficulty = dv.current().encounter_difficulty;
+
+// Display calculated difficulty if available
+if (encounterDifficulty && encounterDifficulty.difficulty) {
+  const diffColors = {
+    "Trivial": "#888888",
+    "Easy": "#00aa00",
+    "Medium": "#aaaa00",
+    "Hard": "#ff8800",
+    "Deadly": "#ff0000",
+    "TPK Risk": "#880000"
+  };
+  const color = diffColors[encounterDifficulty.difficulty] || "#888888";
+  
+  const diffCard = dv.el('div', '');
+  diffCard.style.cssText = 'background: var(--background-secondary); border-radius: 8px; padding: 12px; margin-bottom: 15px; border-left: 4px solid ' + color;
+  
+  // Header with badge
+  const header = dv.el('div', '', { container: diffCard });
+  header.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 10px;';
+  
+  const badge = dv.el('span', encounterDifficulty.difficulty, { container: header });
+  badge.style.cssText = 'background: ' + color + '; color: white; padding: 4px 12px; border-radius: 12px; font-weight: bold; font-size: 14px;';
+  
+  const rounds = dv.el('span', '~' + encounterDifficulty.roundsToDefeat + ' rounds', { container: header });
+  rounds.style.cssText = 'opacity: 0.8;';
+  
+  // Stats grid
+  const grid = dv.el('div', '', { container: diffCard });
+  grid.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 12px;';
+  
+  // Party column
+  const partyCol = dv.el('div', '', { container: grid });
+  dv.el('strong', '⚔️ Party', { container: partyCol });
+  dv.el('div', 'HP Pool: ' + encounterDifficulty.partyHP, { container: partyCol });
+  dv.el('div', 'Effective DPR: ' + encounterDifficulty.partyEffectiveDPR, { container: partyCol });
+  
+  // Enemy column
+  const enemyCol = dv.el('div', '', { container: grid });
+  dv.el('strong', '👹 Enemies (' + encounterDifficulty.enemyCount + ')', { container: enemyCol });
+  dv.el('div', 'HP Pool: ' + encounterDifficulty.enemyHP, { container: enemyCol });
+  dv.el('div', 'Effective DPR: ' + encounterDifficulty.enemyEffectiveDPR, { container: enemyCol });
+}
 
 if (trackerEncounter && trackerEncounter !== "") {
-  dv.header(3, "⚔️ " + trackerEncounter);
+  dv.header(4, "⚔️ " + trackerEncounter);
   
   // Display creature list
   if (encounterCreatures && Array.isArray(encounterCreatures) && encounterCreatures.length > 0) {
