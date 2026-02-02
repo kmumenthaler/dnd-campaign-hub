@@ -822,6 +822,24 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// This is a placeholder - in actual use, this would be the filename
 		return "New Entity";
 	}
+
+	getAllCampaigns(): Array<{ path: string; name: string }> {
+		const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
+		const campaigns: Array<{ path: string; name: string }> = [];
+
+		if (ttrpgsFolder instanceof TFolder) {
+			ttrpgsFolder.children.forEach((child) => {
+				if (child instanceof TFolder) {
+					campaigns.push({
+						path: child.path,
+						name: child.name
+					});
+				}
+			});
+		}
+
+		return campaigns;
+	}
 }
 
 class DndCampaignHubSettingTab extends PluginSettingTab {
