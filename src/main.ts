@@ -5078,23 +5078,36 @@ class SceneCreationModal extends Modal {
       const levelStats = this.getLevelStats(member.level);
       
       // Use actual HP/AC if available, otherwise use level-based estimates
-      partyTotalHP += member.hp || levelStats.hp;
-      partyTotalAC += member.ac || levelStats.ac;
+      // Ensure numeric conversion to prevent string concatenation bugs
+      const memberHP = Number(member.hp) || 0;
+      const memberAC = Number(member.ac) || 0;
+      
+      partyTotalHP += memberHP > 0 ? memberHP : levelStats.hp;
+      partyTotalAC += memberAC > 0 ? memberAC : levelStats.ac;
       partyTotalDPR += levelStats.dpr;
       partyTotalAttackBonus += levelStats.attackBonus;
       totalLevel += member.level;
     }
     
-    const memberCount = partyMembers.length || 1;
-    const avgPartyAC = partyTotalAC / memberCount;
-    const avgPartyAttackBonus = partyTotalAttackBonus / memberCount;
-    const avgLevel = totalLevel / memberCount;
+    const memberCount = partyMembers.length;
     
-    // If no party members found, use defaults for a level 3 party of 4
-    if (partyMembers.length === 0) {
+    // Calculate averages with proper fallbacks
+    let avgPartyAC: number;
+    let avgPartyAttackBonus: number;
+    let avgLevel: number;
+    
+    if (memberCount > 0) {
+      avgPartyAC = partyTotalAC / memberCount;
+      avgPartyAttackBonus = partyTotalAttackBonus / memberCount;
+      avgLevel = totalLevel / memberCount;
+    } else {
+      // Use defaults for a level 3 party of 4
       const defaultStats = this.getLevelStats(3);
       partyTotalHP = defaultStats.hp * 4;
       partyTotalDPR = defaultStats.dpr * 4;
+      avgPartyAC = defaultStats.ac;
+      avgPartyAttackBonus = defaultStats.attackBonus;
+      avgLevel = 3;
     }
     
     // Calculate hit chances
