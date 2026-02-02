@@ -2178,7 +2178,9 @@ date: ${currentDate}
       const playerId = this.generatePlayerId();
       
       // Parse initiative modifier - handle both "+2" and "2" formats
+      console.log("Raw initBonus value:", this.initBonus);
       const initMod = parseInt(this.initBonus.replace(/[^-\d]/g, '')) || 0;
+      console.log("Parsed initiative modifier:", initMod);
       
       // Parse HP values
       const currentHP = parseInt(this.hpCurrent) || parseInt(this.hpMax) || 1;
@@ -2205,8 +2207,8 @@ date: ${currentDate}
         ac: armorClass,
         currentAC: armorClass,
         level: charLevel,
-        path: pcFilePath,
-        note: `${this.classes.filter(c => c.trim()).join("/")} - Player: ${this.playerName}`,
+        path: pcFilePath,  // Link to PC note in vault
+        note: pcFilePath,  // Also used for "Link to Note" display
         player: true,
         marker: "default",
         status: [],
@@ -2216,6 +2218,8 @@ date: ${currentDate}
         friendly: true,
         rollHP: false
       };
+      
+      console.log("Player data to save:", JSON.stringify(playerData, null, 2));
 
       // Initialize players array if it doesn't exist
       if (!initiativePlugin.data.players) {
