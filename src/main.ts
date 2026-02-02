@@ -3607,11 +3607,15 @@ class SceneCreationModal extends Modal {
       }
 
       // Check which structure is being used
-      const flatScenesFolder = `${adventureFolder.path}/${adventureFile.basename} - Scenes`;
-      const folderScenesPath = `${adventureFolder.path}/${adventureFile.basename}`;
+      // Flat structure: Adventures/Adventure Name.md with "Adventure Name - Scenes" folder
+      // Folder structure: Adventures/Adventure Name/Adventure Name.md with scenes in that folder (or Act subfolders)
       
+      const flatScenesFolder = `${adventureFolder.path}/${adventureFile.basename} - Scenes`;
       const flatExists = this.app.vault.getAbstractFileByPath(flatScenesFolder) instanceof TFolder;
-      const folderExists = this.app.vault.getAbstractFileByPath(folderScenesPath) instanceof TFolder;
+      
+      // For folder structure, check if we're in a dedicated adventure folder
+      // (i.e., adventure file has same name as its parent folder)
+      const isFolderStructure = adventureFolder.name === adventureFile.basename;
 
       let scenePath: string;
       let usesActFolders = false;
@@ -3619,19 +3623,33 @@ class SceneCreationModal extends Modal {
       if (flatExists) {
         // Flat structure
         scenePath = `${flatScenesFolder}/Scene ${sceneNum} - ${this.sceneName}.md`;
-      } else if (folderExists) {
-        // Folder structure - check for Act folders
+      } else if (isFolderStructure) {
+        // Folder structure - scenes go in the adventure folder or act subfolders
+      } else if (isFolderStructure) {
+        // Folder structure - scenes go in the adventure folder or act subfolders
         const actFolderName = this.act === "1" ? "Act 1 - Setup" : 
                               this.act === "2" ? "Act 2 - Rising Action" : "Act 3 - Climax";
-        const actFolderPath = `${folderScenesPath}/${actFolderName}`;
+        const actFolderPath = `${adventureFolder.path}/${actFolderName}`;
         const actFolder = this.app.vault.getAbstractFileByPath(actFolderPath);
         
         if (actFolder instanceof TFolder) {
           usesActFolders = true;
           scenePath = `${actFolderPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
         } else {
-          // No act folders, scenes directly in adventure folder
-          scenePath = `${folderScenesPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
+          // Check if ANY act folders exist - if so, this is act-based structure
+          const act1Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 1 - Setup`) instanceof TFolder;
+          const act2Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 2 - Rising Action`) instanceof TFolder;
+          const act3Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 3 - Climax`) instanceof TFolder;
+          
+          if (act1Exists || act2Exists || act3Exists) {
+            // Act-based structure - create the missing act folder
+            usesActFolders = true;
+            await this.plugin.ensureFolderExists(actFolderPath);
+            scenePath = `${actFolderPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
+          } else {
+            // No act folders, scenes directly in adventure folder
+            scenePath = `${adventureFolder.path}/Scene ${sceneNum} - ${this.sceneName}.md`;
+          }
         }
       } else {
         new Notice("❌ Could not determine scene folder structure!");
