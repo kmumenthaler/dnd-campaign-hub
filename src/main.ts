@@ -3688,8 +3688,8 @@ class SceneCreationModal extends Modal {
       const adventureContent = await this.app.vault.read(adventureFile);
       const campaignMatch = adventureContent.match(/^campaign:\s*([^\r\n]+)$/m);
       const worldMatch = adventureContent.match(/^world:\s*([^\r\n]+)$/m);
-      const campaignName = campaignMatch?.[1]?.trim() || "Unknown";
-      const worldName = worldMatch?.[1]?.trim() || campaignName;
+      const campaignName = (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
+      const worldName = (worldMatch?.[1]?.trim() || campaignName).replace(/^["']|["']$/g, '');
 
       // Determine folder structure
       const adventureFolder = adventureFile.parent;
