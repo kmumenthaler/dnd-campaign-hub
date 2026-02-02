@@ -724,6 +724,7 @@ duration: {{DURATION}}
 scene_type: {{TYPE}}
 difficulty: {{DIFFICULTY}}
 status: planned
+tracker_encounter: 
 date: {{DATE}}
 ---
 
@@ -772,7 +773,25 @@ date: {{DATE}}
 
 ### Combat Encounter
 
-**Enemies:** *Link to Initiative Tracker*
+\`\`\`dataviewjs
+const trackerEncounter = dv.current().tracker_encounter;
+if (trackerEncounter) {
+  dv.paragraph(\`**Initiative Tracker:** \${trackerEncounter}\`);
+  const openBtn = dv.el('button', '⚔️ Open in Initiative Tracker');
+  openBtn.className = 'mod-cta';
+  openBtn.style.marginRight = '10px';
+  openBtn.onclick = () => {
+    app.commands.executeCommandById('initiative-tracker:open-tracker');
+  };
+} else {
+  dv.paragraph("*💡 Tip: Use the Initiative Tracker plugin to manage this combat*");
+  dv.paragraph("1. Open Initiative Tracker (Ctrl+P → 'Open Initiative Tracker')");
+  dv.paragraph("2. Create an encounter with your creatures");
+  dv.paragraph("3. Save it and add the encounter name to the frontmatter field: \`tracker_encounter\`");
+}
+\`\`\`
+
+**Enemies:**
 - Creature 1 (CR X) x2
 - Creature 2 (CR Y) x1
 
