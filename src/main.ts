@@ -2158,11 +2158,27 @@ date: ${currentDate}
         return;
       }
 
+      // Initialize players array if it doesn't exist
+      if (!initiativePlugin.data.players) {
+        initiativePlugin.data.players = [];
+      }
+
+      // Check if player already exists (by name or path)
+      const existingPlayer = initiativePlugin.data.players.find((p: any) => 
+        p.name === this.pcName || p.path === pcFilePath
+      );
+      
+      if (existingPlayer) {
+        new Notice(`⚠️ ${this.pcName} already registered in Initiative Tracker. Skipping duplicate registration.`);
+        console.log("Player already exists:", existingPlayer);
+        return;
+      }
+
       // Generate unique ID for the player
       const playerId = this.generatePlayerId();
       
-      // Parse initiative modifier
-      const initMod = parseInt(this.initBonus) || 0;
+      // Parse initiative modifier - handle both "+2" and "2" formats
+      const initMod = parseInt(this.initBonus.replace(/[^-\d]/g, '')) || 0;
       
       // Parse HP values
       const currentHP = parseInt(this.hpCurrent) || parseInt(this.hpMax) || 1;
@@ -2219,8 +2235,13 @@ date: ${currentDate}
       }
       
       const party = initiativePlugin.data.parties.find((p: any) => p.id === partyId);
-      if (party && !party.players.includes(playerId)) {
-        party.players.push(playerId);
+      if (party && !party.players.includes(this.pcName)) {
+        // Party.players stores player NAMES, not IDs
+        party.players.push(this.pcName);
+        
+        // Clean up any orphaned entries (names that don't exist in players array)
+        const validPlayerNames = new Set(initiativePlugin.data.players.map((p: any) => p.name));
+        party.players = party.players.filter((name: string) => validPlayerNames.has(name));
       }
 
       // Save Initiative Tracker settings
