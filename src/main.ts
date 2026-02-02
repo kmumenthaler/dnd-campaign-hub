@@ -3385,10 +3385,10 @@ date: ${currentDate}
       .replace(/{{ADVENTURE_NAME}}/g, this.adventureName)
       .replace(/{{ACT_NUMBER}}/g, scene.act.toString())
       .replace(/{{DURATION}}/g, scene.duration)
-      .replace(/{{SCENE_TYPE}}/g, scene.type)
+      .replace(/{{TYPE}}/g, scene.type)
       .replace(/{{DIFFICULTY}}/g, scene.difficulty)
-      .replace(/{{CAMPAIGN_NAME}}/g, campaignName)
-      .replace(/{{WORLD_NAME}}/g, worldName)
+      .replace(/{{CAMPAIGN}}/g, campaignName)
+      .replace(/{{WORLD}}/g, worldName)
       .replace(/{{DATE}}/g, currentDate);
 
     await this.app.vault.create(filePath, sceneContent);
