@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
 
 export default class DndCampaignHubPlugin extends Plugin {
   settings!: DndCampaignHubSettings;
+  SessionCreationModal = SessionCreationModal;
 
   async onload() {
     await this.loadSettings();
@@ -1999,6 +2000,7 @@ class SessionCreationModal extends Modal {
   sessionTitle = "";
   sessionDate: string;
   location = "";
+  adventurePath = "";
   useCustomDate = false;
   calendar = "";
   startYear = "";
@@ -2010,10 +2012,43 @@ class SessionCreationModal extends Modal {
   selectedCalendarData: any = null;
   endDayDropdown: any = null;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string) {
     super(app);
     this.plugin = plugin;
     this.sessionDate = new Date().toISOString().split('T')[0] || "";
+    if (adventurePath) {
+      this.adventurePath = adventurePath;
+    }
+  }
+
+  async getAllAdventures(): Promise<Array<{ path: string; name: string }>> {
+    const adventures: Array<{ path: string; name: string }> = [];
+    const campaignPath = this.plugin.settings.currentCampaign;
+    
+    const adventuresFolder = this.app.vault.getAbstractFileByPath(`${campaignPath}/Adventures`);
+    
+    if (adventuresFolder instanceof TFolder) {
+      for (const item of adventuresFolder.children) {
+        if (item instanceof TFile && item.extension === 'md') {
+          // Adventure file directly in Adventures folder (flat structure)
+          adventures.push({
+            path: item.path,
+            name: item.basename
+          });
+        } else if (item instanceof TFolder) {
+          // Adventure folder with main note inside (folder structure)
+          const mainFile = this.app.vault.getAbstractFileByPath(`${item.path}/${item.name}.md`);
+          if (mainFile instanceof TFile) {
+            adventures.push({
+              path: mainFile.path,
+              name: item.name
+            });
+          }
+        }
+      }
+    }
+
+    return adventures;
   }
 
   async loadCalendarData() {
@@ -2146,6 +2181,24 @@ class SessionCreationModal extends Modal {
           });
         text.inputEl.focus();
       });
+
+    // Adventure Selection
+    const adventures = await this.getAllAdventures();
+    if (adventures.length > 0) {
+      new Setting(contentEl)
+        .setName("Adventure")
+        .setDesc("Link this session to an adventure (optional)")
+        .addDropdown(dropdown => {
+          dropdown.addOption("", "-- None --");
+          adventures.forEach(adv => {
+            dropdown.addOption(adv.path, adv.name);
+          });
+          dropdown.setValue(this.adventurePath);
+          dropdown.onChange(value => {
+            this.adventurePath = value;
+          });
+        });
+    }
 
     // Session Date (real world)
     new Setting(contentEl)
@@ -2315,6 +2368,7 @@ class SessionCreationModal extends Modal {
       sessionContent = sessionContent
         .replace(/campaign:\s*([^\r\n]\w*)$/m, `campaign: ${campaignName}`)
         .replace(/world:\s*([^\r\n]\w*)$/m, `world: ${campaignName}`)
+        .replace(/adventure:\s*([^\r\n]\w*)$/m, `adventure: ${this.adventurePath ? `"[[${this.adventurePath}]]"` : ''}`)
         .replace(/sessionNum:\s*([^\r\n]\w*)$/m, `sessionNum: ${nextNumber}`)
         .replace(/location:\s*([^\r\n]\w*)$/m, `location: ${this.location}`)
         .replace(/date:\s*([^\r\n]\w*)$/m, `date: ${this.sessionDate}`)

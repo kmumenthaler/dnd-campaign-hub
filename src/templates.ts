@@ -563,10 +563,18 @@ date:
 **Sessions Played:** 
 
 \`\`\`dataviewjs
-const button = dv.el('button', '🎬 Create New Scene');
-button.className = 'mod-cta';
-button.onclick = () => {
+const sceneButton = dv.el('button', '🎬 Create New Scene');
+sceneButton.className = 'mod-cta';
+sceneButton.onclick = () => {
   app.commands.executeCommandById('dnd-campaign-hub:create-scene');
+};
+
+const sessionButton = dv.el('button', '📜 Create Session for This Adventure', { cls: 'mod-cta' });
+sessionButton.style.marginLeft = '10px';
+sessionButton.onclick = async () => {
+  const adventurePath = dv.current().file.path;
+  // Create session with adventure pre-linked
+  new (app as any).plugins.plugins['dnd-campaign-hub'].SessionCreationModal(app, (app as any).plugins.plugins['dnd-campaign-hub'], adventurePath).open();
 };
 \`\`\`
 
