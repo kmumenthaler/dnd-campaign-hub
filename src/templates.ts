@@ -518,6 +518,14 @@ date:
 **Expected Sessions:** {{EXPECTED_SESSIONS}}  
 **Sessions Played:** 
 
+\`\`\`dataviewjs
+const button = dv.el('button', '🎬 Create New Scene');
+button.className = 'mod-cta';
+button.onclick = () => {
+  app.commands.executeCommandById('dnd-campaign-hub:create-scene');
+};
+\`\`\`
+
 ## The Problem
 
 {{THE_PROBLEM}}

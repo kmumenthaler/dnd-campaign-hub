@@ -111,6 +111,12 @@ export default class DndCampaignHubPlugin extends Plugin {
       callback: () => this.createAdventure(),
     });
 
+    this.addCommand({
+      id: "create-scene",
+      name: "Create New Scene",
+      callback: () => this.createScene(),
+    });
+
     this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
   }
 
@@ -708,6 +714,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async createAdventure() {
 		// Open Adventure creation modal
 		new AdventureCreationModal(this.app, this).open();
+	}
+
+	async createScene() {
+		// Open Scene creation modal
+		new SceneCreationModal(this.app, this).open();
 	}
 
 	async createSession() {
@@ -3177,13 +3188,17 @@ class AdventureCreationModal extends Modal {
       }
 
       // Get current date
-      const currentDate = new Date().toISOString().split('T')[0];
+      const currentDate: string = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
+
+      // Ensure worldName has a value for type safety
+      const safeWorldName: string = worldName || campaignName || "Unknown";
+      const safeCampaignName: string = campaignName || "Unknown";
 
       // Create main adventure note
-      await this.createMainAdventureNote(mainNotePath, campaignName || "Unknown", worldName || campaignName || "Unknown", currentDate);
+      await this.createMainAdventureNote(mainNotePath, safeCampaignName, safeWorldName, currentDate);
 
       // Create scene notes
-      await this.createSceneNotes(scenesBasePath, campaignName || "Unknown", worldName || campaignName || "Unknown", currentDate);
+      await this.createSceneNotes(scenesBasePath, safeCampaignName, safeWorldName, currentDate);
 
       // Open the main adventure file
       await this.app.workspace.openLinkText(mainNotePath, "", true);
@@ -3282,6 +3297,431 @@ date: ${currentDate}
       .replace(/{{DIFFICULTY}}/g, scene.difficulty)
       .replace(/{{CAMPAIGN_NAME}}/g, campaignName)
       .replace(/{{WORLD_NAME}}/g, worldName)
+      .replace(/{{DATE}}/g, currentDate);
+
+    await this.app.vault.create(filePath, sceneContent);
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+class SceneCreationModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  adventurePath = "";
+  sceneName = "";
+  act = "1";
+  sceneNumber = "1";
+  duration = "30min";
+  type = "exploration";
+  difficulty = "medium";
+
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string) {
+    super(app);
+    this.plugin = plugin;
+    if (adventurePath) {
+      this.adventurePath = adventurePath;
+    }
+  }
+
+  async onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "🎬 Create New Scene" });
+
+    // Get all adventures from GM campaigns
+    const allAdventures = await this.getAllAdventures();
+
+    if (allAdventures.length === 0) {
+      contentEl.createEl("p", {
+        text: "⚠️ No adventures found. Create an adventure first.",
+        cls: "mod-warning"
+      });
+      
+      const closeBtn = contentEl.createEl("button", { text: "Close" });
+      closeBtn.addEventListener("click", () => this.close());
+      return;
+    }
+
+    // Set default adventure if provided, otherwise first one
+    if (!this.adventurePath && allAdventures.length > 0) {
+      this.adventurePath = allAdventures[0].path;
+    }
+
+    contentEl.createEl("p", {
+      text: "Add a new scene to your adventure. The scene will be inserted at the specified number.",
+      cls: "setting-item-description"
+    });
+
+    // Adventure Selection
+    new Setting(contentEl)
+      .setName("Adventure")
+      .setDesc("Select the adventure to add this scene to")
+      .addDropdown(dropdown => {
+        allAdventures.forEach(adv => {
+          dropdown.addOption(adv.path, adv.name);
+        });
+        dropdown.setValue(this.adventurePath);
+        dropdown.onChange(value => {
+          this.adventurePath = value;
+          // Update suggested scene number based on existing scenes
+          this.updateSceneNumberSuggestion();
+        });
+      });
+
+    // Scene Name
+    new Setting(contentEl)
+      .setName("Scene Name")
+      .setDesc("Give this scene a descriptive name")
+      .addText(text => text
+        .setPlaceholder("e.g., Tavern Ambush")
+        .setValue(this.sceneName)
+        .onChange(value => this.sceneName = value));
+
+    // Act Selection
+    new Setting(contentEl)
+      .setName("Act")
+      .setDesc("Which act does this scene belong to?")
+      .addDropdown(dropdown => dropdown
+        .addOption("1", "Act 1 - Setup")
+        .addOption("2", "Act 2 - Rising Action")
+        .addOption("3", "Act 3 - Climax")
+        .setValue(this.act)
+        .onChange(value => this.act = value));
+
+    // Scene Number
+    const sceneNumberSetting = new Setting(contentEl)
+      .setName("Scene Number")
+      .setDesc("Position in the adventure (existing scenes will be renumbered if needed)")
+      .addText(text => text
+        .setPlaceholder("e.g., 5")
+        .setValue(this.sceneNumber)
+        .onChange(value => this.sceneNumber = value));
+
+    // Duration
+    new Setting(contentEl)
+      .setName("Duration")
+      .setDesc("Estimated scene duration")
+      .addDropdown(dropdown => dropdown
+        .addOption("15min", "15 minutes")
+        .addOption("20min", "20 minutes")
+        .addOption("30min", "30 minutes")
+        .addOption("40min", "40 minutes")
+        .addOption("45min", "45 minutes")
+        .addOption("60min", "60 minutes")
+        .setValue(this.duration)
+        .onChange(value => this.duration = value));
+
+    // Type
+    new Setting(contentEl)
+      .setName("Type")
+      .setDesc("Primary scene type")
+      .addDropdown(dropdown => dropdown
+        .addOption("social", "Social")
+        .addOption("combat", "Combat")
+        .addOption("exploration", "Exploration")
+        .setValue(this.type)
+        .onChange(value => this.type = value));
+
+    // Difficulty
+    new Setting(contentEl)
+      .setName("Difficulty")
+      .setDesc("Challenge level")
+      .addDropdown(dropdown => dropdown
+        .addOption("easy", "Easy")
+        .addOption("medium", "Medium")
+        .addOption("hard", "Hard")
+        .addOption("deadly", "Deadly")
+        .setValue(this.difficulty)
+        .onChange(value => this.difficulty = value));
+
+    // Create button
+    new Setting(contentEl)
+      .addButton(btn => btn
+        .setButtonText("Create Scene")
+        .setCta()
+        .onClick(async () => {
+          if (!this.sceneName) {
+            new Notice("Please enter a scene name!");
+            return;
+          }
+
+          this.close();
+          await this.createSceneFile();
+        }));
+  }
+
+  async updateSceneNumberSuggestion() {
+    const existingScenes = await this.getExistingScenes(this.adventurePath);
+    const nextNumber = existingScenes.length + 1;
+    this.sceneNumber = nextNumber.toString();
+  }
+
+  async getAllAdventures(): Promise<Array<{ path: string; name: string }>> {
+    const adventures: Array<{ path: string; name: string }> = [];
+    const gmCampaigns = await this.getAllGMCampaigns();
+
+    for (const campaign of gmCampaigns) {
+      const adventuresFolder = this.app.vault.getAbstractFileByPath(`${campaign.path}/Adventures`);
+      
+      if (adventuresFolder instanceof TFolder) {
+        for (const item of adventuresFolder.children) {
+          if (item instanceof TFile && item.extension === 'md') {
+            // Adventure file directly in Adventures folder (flat structure)
+            adventures.push({
+              path: item.path,
+              name: item.basename
+            });
+          } else if (item instanceof TFolder) {
+            // Adventure folder with main note inside (folder structure)
+            const mainFile = this.app.vault.getAbstractFileByPath(`${item.path}/${item.name}.md`);
+            if (mainFile instanceof TFile) {
+              adventures.push({
+                path: mainFile.path,
+                name: item.name
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return adventures;
+  }
+
+  async getAllGMCampaigns(): Promise<Array<{ path: string; name: string }>> {
+    const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
+    const gmCampaigns: Array<{ path: string; name: string }> = [];
+
+    if (ttrpgsFolder instanceof TFolder) {
+      for (const child of ttrpgsFolder.children) {
+        if (child instanceof TFolder) {
+          const worldFile = this.app.vault.getAbstractFileByPath(`${child.path}/World.md`);
+          if (worldFile instanceof TFile) {
+            const worldContent = await this.app.vault.read(worldFile);
+            const roleMatch = worldContent.match(/^role:\s*([^\r\n]\w*)$/m);
+            if (roleMatch && roleMatch[1] && roleMatch[1].toLowerCase() === 'gm') {
+              gmCampaigns.push({
+                path: child.path,
+                name: child.name
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return gmCampaigns;
+  }
+
+  async getExistingScenes(adventurePath: string): Promise<Array<{ path: string; number: number; name: string }>> {
+    const scenes: Array<{ path: string; number: number; name: string }> = [];
+    const adventureFile = this.app.vault.getAbstractFileByPath(adventurePath);
+    
+    if (!(adventureFile instanceof TFile)) return scenes;
+
+    // Determine base path for scenes
+    const adventureFolder = adventureFile.parent;
+    if (!adventureFolder) return scenes;
+
+    // Check for flat structure (Adventure - Scenes folder)
+    const flatScenesFolder = this.app.vault.getAbstractFileByPath(
+      `${adventureFolder.path}/${adventureFile.basename} - Scenes`
+    );
+
+    // Check for folder structure (Adventure/Scene files or Adventure/Act X folders)
+    const folderScenesPath = `${adventureFolder.path}/${adventureFile.basename}`;
+    const folderStructure = this.app.vault.getAbstractFileByPath(folderScenesPath);
+
+    let sceneFolders: TFolder[] = [];
+
+    if (flatScenesFolder instanceof TFolder) {
+      // Flat structure
+      sceneFolders.push(flatScenesFolder);
+    } else if (folderStructure instanceof TFolder) {
+      // Folder structure - check for Act folders or direct scenes
+      for (const child of folderStructure.children) {
+        if (child instanceof TFolder && child.name.startsWith("Act ")) {
+          sceneFolders.push(child);
+        }
+      }
+      // If no Act folders, the main folder contains scenes
+      if (sceneFolders.length === 0) {
+        sceneFolders.push(folderStructure);
+      }
+    }
+
+    // Scan all scene folders for scene files
+    for (const folder of sceneFolders) {
+      for (const item of folder.children) {
+        if (item instanceof TFile && item.extension === 'md') {
+          // Extract scene number from filename: "Scene X - Name.md"
+          const match = item.basename.match(/^Scene\s+(\d+)\s+-\s+(.+)$/);
+          if (match) {
+            scenes.push({
+              path: item.path,
+              number: parseInt(match[1]),
+              name: match[2]
+            });
+          }
+        }
+      }
+    }
+
+    // Sort by scene number
+    scenes.sort((a, b) => a.number - b.number);
+    return scenes;
+  }
+
+  async createSceneFile() {
+    try {
+      const sceneNum = parseInt(this.sceneNumber);
+      if (isNaN(sceneNum) || sceneNum < 1) {
+        new Notice("Scene number must be a positive number!");
+        return;
+      }
+
+      new Notice(`Creating scene "${this.sceneName}"...`);
+
+      // Get adventure info
+      const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
+      if (!(adventureFile instanceof TFile)) {
+        new Notice("❌ Adventure file not found!");
+        return;
+      }
+
+      const adventureContent = await this.app.vault.read(adventureFile);
+      const campaignMatch = adventureContent.match(/^campaign:\s*([^\r\n]+)$/m);
+      const worldMatch = adventureContent.match(/^world:\s*([^\r\n]+)$/m);
+      const campaignName = campaignMatch?.[1]?.trim() || "Unknown";
+      const worldName = worldMatch?.[1]?.trim() || campaignName;
+
+      // Determine folder structure
+      const adventureFolder = adventureFile.parent;
+      if (!adventureFolder) {
+        new Notice("❌ Adventure folder not found!");
+        return;
+      }
+
+      // Check which structure is being used
+      const flatScenesFolder = `${adventureFolder.path}/${adventureFile.basename} - Scenes`;
+      const folderScenesPath = `${adventureFolder.path}/${adventureFile.basename}`;
+      
+      const flatExists = this.app.vault.getAbstractFileByPath(flatScenesFolder) instanceof TFolder;
+      const folderExists = this.app.vault.getAbstractFileByPath(folderScenesPath) instanceof TFolder;
+
+      let scenePath: string;
+      let usesActFolders = false;
+
+      if (flatExists) {
+        // Flat structure
+        scenePath = `${flatScenesFolder}/Scene ${sceneNum} - ${this.sceneName}.md`;
+      } else if (folderExists) {
+        // Folder structure - check for Act folders
+        const actFolderName = this.act === "1" ? "Act 1 - Setup" : 
+                              this.act === "2" ? "Act 2 - Rising Action" : "Act 3 - Climax";
+        const actFolderPath = `${folderScenesPath}/${actFolderName}`;
+        const actFolder = this.app.vault.getAbstractFileByPath(actFolderPath);
+        
+        if (actFolder instanceof TFolder) {
+          usesActFolders = true;
+          scenePath = `${actFolderPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
+        } else {
+          // No act folders, scenes directly in adventure folder
+          scenePath = `${folderScenesPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
+        }
+      } else {
+        new Notice("❌ Could not determine scene folder structure!");
+        return;
+      }
+
+      // Check if we need to renumber existing scenes
+      const existingScenes = await this.getExistingScenes(this.adventurePath);
+      const scenesAtOrAfter = existingScenes.filter(s => s.number >= sceneNum);
+
+      if (scenesAtOrAfter.length > 0) {
+        // Renumber scenes
+        await this.renumberScenes(scenesAtOrAfter, sceneNum);
+      }
+
+      // Ensure parent folder exists
+      const parentPath = scenePath.substring(0, scenePath.lastIndexOf('/'));
+      await this.plugin.ensureFolderExists(parentPath);
+
+      // Create the scene file
+      const currentDate: string = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
+      
+      const sceneData = {
+        act: parseInt(this.act),
+        num: sceneNum,
+        name: this.sceneName,
+        duration: this.duration,
+        type: this.type,
+        difficulty: this.difficulty
+      };
+
+      await this.createSceneNote(scenePath, sceneData, campaignName, worldName, adventureFile.basename, currentDate);
+
+      // Open the new scene
+      await this.app.workspace.openLinkText(scenePath, "", true);
+
+      new Notice(`✅ Scene "${this.sceneName}" created!`);
+    } catch (error) {
+      new Notice(`❌ Error creating scene: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("Scene creation error:", error);
+    }
+  }
+
+  async renumberScenes(scenes: Array<{ path: string; number: number; name: string }>, insertAt: number) {
+    // Renumber scenes from highest to lowest to avoid conflicts
+    const sorted = [...scenes].sort((a, b) => b.number - a.number);
+    
+    for (const scene of sorted) {
+      const oldFile = this.app.vault.getAbstractFileByPath(scene.path);
+      if (!(oldFile instanceof TFile)) continue;
+
+      const newNumber = scene.number + 1;
+      const newPath = scene.path.replace(
+        /Scene\s+\d+\s+-/,
+        `Scene ${newNumber} -`
+      );
+
+      // Read content and update scene_number in frontmatter
+      let content = await this.app.vault.read(oldFile);
+      content = content.replace(
+        /^scene_number:\s*\d+$/m,
+        `scene_number: ${newNumber}`
+      );
+
+      // Create new file with updated content
+      await this.app.vault.create(newPath, content);
+      
+      // Delete old file
+      await this.app.vault.delete(oldFile);
+    }
+  }
+
+  async createSceneNote(
+    filePath: string,
+    scene: any,
+    campaignName: string,
+    worldName: string,
+    adventureName: string,
+    currentDate: string
+  ) {
+    const sceneContent = SCENE_TEMPLATE
+      .replace(/{{SCENE_NUMBER}}/g, scene.num.toString())
+      .replace(/{{SCENE_NAME}}/g, scene.name)
+      .replace(/{{ADVENTURE_NAME}}/g, adventureName)
+      .replace(/{{ACT_NUMBER}}/g, scene.act.toString())
+      .replace(/{{DURATION}}/g, scene.duration)
+      .replace(/{{TYPE}}/g, scene.type)
+      .replace(/{{DIFFICULTY}}/g, scene.difficulty)
+      .replace(/{{CAMPAIGN}}/g, campaignName)
+      .replace(/{{WORLD}}/g, worldName)
       .replace(/{{DATE}}/g, currentDate);
 
     await this.app.vault.create(filePath, sceneContent);
