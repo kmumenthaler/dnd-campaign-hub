@@ -10,6 +10,7 @@ status: active
 role: player
 system:
 type: world
+template_version: 1.0.0
 fc-calendar: 
 fc-date: 
   year: 
@@ -146,6 +147,7 @@ SORT file.ctime DESC
 
 export const SESSION_GM_TEMPLATE = `---
 type: session
+template_version: 1.0.0
 campaign: 
 world: 
 adventure: 
@@ -275,6 +277,7 @@ if (adventureLink) {
 
 export const SESSION_PLAYER_TEMPLATE = `---
 type: session
+template_version: 1.0.0
 campaign: 
 world: 
 sessionNum: 
@@ -314,6 +317,7 @@ art: ""
 
 export const NPC_TEMPLATE = `---
 type: npc
+template_version: 1.0.0
 name: 
 world: 
 campaign: 
@@ -459,6 +463,7 @@ notes: []
 
 export const PC_TEMPLATE = `---
 type: player
+template_version: 1.0.0
 name: 
 player: 
 campaign: 
@@ -560,6 +565,7 @@ date:
 
 export const ADVENTURE_TEMPLATE = `---
 type: adventure
+template_version: 1.0.0
 name: 
 campaign: 
 world: 
@@ -715,6 +721,7 @@ if (allScenes.length === 0) {
 
 export const SCENE_TEMPLATE = `---
 type: scene
+template_version: 1.1.0
 adventure: "{{ADVENTURE_NAME}}"
 campaign: "{{CAMPAIGN}}"
 world: "{{WORLD}}"
@@ -838,6 +845,7 @@ if (trackerEncounter) {
 
 export const FACTION_TEMPLATE = `---
 type: faction
+template_version: 1.0.0
 name: 
 campaign: 
 world: 
@@ -904,6 +912,7 @@ date:
 
 export const ITEM_TEMPLATE = `---
 type: item
+template_version: 1.0.0
 rarity: common
 attunement: no
 ---
@@ -926,6 +935,7 @@ Where the item is currently located.
 
 export const SPELL_TEMPLATE = `---
 type: spell
+template_version: 1.0.0
 level: 1
 school: 
 casting_time: 1 action
@@ -945,6 +955,7 @@ How the spell scales with level.
 
 export const CAMPAIGN_TEMPLATE = `---
 type: campaign
+template_version: 1.0.0
 status: active
 dm: 
 players: []
@@ -973,6 +984,7 @@ Brief description of the campaign.
 
 export const SESSION_DEFAULT_TEMPLATE = `---
 type: session
+template_version: 1.0.0
 campaign: 
 date: 
 session_number: 

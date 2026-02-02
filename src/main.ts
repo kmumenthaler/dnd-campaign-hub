@@ -24,12 +24,347 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   pluginVersion: "0.0.0",
 };
 
+// Current template versions - increment when templates change
+const TEMPLATE_VERSIONS = {
+  world: "1.0.0",
+  session: "1.0.0",
+  npc: "1.0.0",
+  pc: "1.0.0",
+  adventure: "1.0.0",
+  scene: "1.1.0", // Updated with Initiative Tracker
+  faction: "1.0.0",
+  item: "1.0.0",
+  spell: "1.0.0",
+  campaign: "1.0.0"
+};
+
+/**
+ * Safe template migration system
+ * Tracks versions and applies incremental updates without data loss
+ */
+class MigrationManager {
+  private app: App;
+  private plugin: DndCampaignHubPlugin;
+
+  constructor(app: App, plugin: DndCampaignHubPlugin) {
+    this.app = app;
+    this.plugin = plugin;
+  }
+
+  /**
+   * Get the current template version from a file's frontmatter
+   */
+  async getFileTemplateVersion(file: TFile): Promise<string | null> {
+    const content = await this.app.vault.read(file);
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!frontmatterMatch || !frontmatterMatch[1]) return null;
+
+    const frontmatter = frontmatterMatch[1];
+    const versionMatch = frontmatter.match(/^template_version:\s*(.+)$/m);
+    return versionMatch && versionMatch[1] ? versionMatch[1].trim() : null;
+  }
+
+  /**
+   * Get the file type from frontmatter
+   */
+  async getFileType(file: TFile): Promise<string | null> {
+    const content = await this.app.vault.read(file);
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!frontmatterMatch || !frontmatterMatch[1]) return null;
+
+    const frontmatter = frontmatterMatch[1];
+    const typeMatch = frontmatter.match(/^type:\s*(.+)$/m);
+    return typeMatch && typeMatch[1] ? typeMatch[1].trim() : null;
+  }
+
+  /**
+   * Check if a file needs migration
+   */
+  async needsMigration(file: TFile): Promise<boolean> {
+    const fileType = await this.getFileType(file);
+    if (!fileType || !(fileType in TEMPLATE_VERSIONS)) return false;
+
+    const currentVersion = await this.getFileTemplateVersion(file);
+    const targetVersion = TEMPLATE_VERSIONS[fileType as keyof typeof TEMPLATE_VERSIONS];
+
+    // No version means old template, needs migration
+    if (!currentVersion) return true;
+
+    // Compare versions
+    return this.compareVersions(currentVersion, targetVersion) < 0;
+  }
+
+  /**
+   * Compare semantic versions (returns -1 if a < b, 0 if equal, 1 if a > b)
+   */
+  private compareVersions(a: string, b: string): number {
+    const aParts = a.split('.').map(Number);
+    const bParts = b.split('.').map(Number);
+
+    for (let i = 0; i < 3; i++) {
+      const aVal = aParts[i] || 0;
+      const bVal = bParts[i] || 0;
+      if (aVal < bVal) return -1;
+      if (aVal > bVal) return 1;
+    }
+    return 0;
+  }
+
+  /**
+   * Find all files that need migration in a campaign
+   */
+  async findFilesNeedingMigration(campaignPath: string): Promise<TFile[]> {
+    const filesNeedingMigration: TFile[] = [];
+    const campaignFolder = this.app.vault.getAbstractFileByPath(campaignPath);
+
+    if (!(campaignFolder instanceof TFolder)) return filesNeedingMigration;
+
+    const processFolder = async (folder: TFolder) => {
+      for (const child of folder.children) {
+        if (child instanceof TFile && child.extension === "md") {
+          if (await this.needsMigration(child)) {
+            filesNeedingMigration.push(child);
+          }
+        } else if (child instanceof TFolder) {
+          await processFolder(child);
+        }
+      }
+    };
+
+    await processFolder(campaignFolder);
+    return filesNeedingMigration;
+  }
+
+  /**
+   * Update only the template_version field in frontmatter
+   */
+  async updateTemplateVersion(file: TFile, newVersion: string): Promise<void> {
+    const content = await this.app.vault.read(file);
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    
+    if (!frontmatterMatch || !frontmatterMatch[1]) {
+      console.error(`No frontmatter found in ${file.path}`);
+      return;
+    }
+
+    let frontmatter = frontmatterMatch[1];
+    const versionMatch = frontmatter.match(/^template_version:\s*(.+)$/m);
+
+    if (versionMatch) {
+      // Update existing version
+      frontmatter = frontmatter.replace(
+        /^template_version:\s*(.+)$/m,
+        `template_version: ${newVersion}`
+      );
+    } else {
+      // Add version field after type field if it exists
+      if (frontmatter.match(/^type:/m)) {
+        frontmatter = frontmatter.replace(
+          /^(type:\s*.+)$/m,
+          `$1\ntemplate_version: ${newVersion}`
+        );
+      } else {
+        // Add at the beginning
+        frontmatter = `template_version: ${newVersion}\n${frontmatter}`;
+      }
+    }
+
+    const newContent = content.replace(
+      /^---\n[\s\S]*?\n---/,
+      `---\n${frontmatter}\n---`
+    );
+
+    await this.app.vault.modify(file, newContent);
+  }
+
+  /**
+   * Add a new frontmatter field if it doesn't exist
+   */
+  async addFrontmatterField(
+    file: TFile,
+    fieldName: string,
+    defaultValue: string
+  ): Promise<void> {
+    const content = await this.app.vault.read(file);
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    
+    if (!frontmatterMatch || !frontmatterMatch[1]) return;
+
+    let frontmatter = frontmatterMatch[1];
+    const fieldMatch = frontmatter.match(new RegExp(`^${fieldName}:`, "m"));
+
+    if (!fieldMatch) {
+      // Add field at the end of frontmatter
+      frontmatter = `${frontmatter}\n${fieldName}: ${defaultValue}`;
+
+      const newContent = content.replace(
+        /^---\n[\s\S]*?\n---/,
+        `---\n${frontmatter}\n---`
+      );
+
+      await this.app.vault.modify(file, newContent);
+    }
+  }
+
+  /**
+   * Inject a new section into a file if it doesn't exist
+   */
+  async injectSection(
+    file: TFile,
+    sectionHeading: string,
+    sectionContent: string,
+    insertAfterHeading?: string
+  ): Promise<void> {
+    const content = await this.app.vault.read(file);
+
+    // Check if section already exists
+    const sectionRegex = new RegExp(`^#{1,6}\\s+${sectionHeading}`, "m");
+    if (sectionRegex.test(content)) {
+      console.log(`Section "${sectionHeading}" already exists in ${file.path}`);
+      return;
+    }
+
+    let newContent: string;
+
+    if (insertAfterHeading) {
+      // Insert after specific heading
+      const afterRegex = new RegExp(`(^#{1,6}\\s+${insertAfterHeading}[^\n]*\n(?:.*\n)*?)(?=^#{1,6}\\s+|$)`, "m");
+      const match = content.match(afterRegex);
+
+      if (match) {
+        newContent = content.replace(
+          afterRegex,
+          `${match[1]}\n${sectionContent}\n\n`
+        );
+      } else {
+        // Fallback: add at the end
+        newContent = `${content}\n\n${sectionContent}`;
+      }
+    } else {
+      // Add at the end of the file
+      newContent = `${content}\n\n${sectionContent}`;
+    }
+
+    await this.app.vault.modify(file, newContent);
+  }
+
+  /**
+   * Update a specific dataview query in a file
+   */
+  async updateDataviewQuery(
+    file: TFile,
+    queryIdentifier: string,
+    newQuery: string
+  ): Promise<void> {
+    const content = await this.app.vault.read(file);
+
+    // Match dataview code blocks with the identifier nearby
+    const queryRegex = new RegExp(
+      `(\`\`\`dataview[^\`]*${queryIdentifier}[^\`]*\`\`\`)`,
+      "g"
+    );
+
+    if (!queryRegex.test(content)) {
+      console.log(`Query "${queryIdentifier}" not found in ${file.path}`);
+      return;
+    }
+
+    const newContent = content.replace(queryRegex, newQuery);
+    await this.app.vault.modify(file, newContent);
+  }
+
+  /**
+   * Apply scene v1.1.0 migration (Initiative Tracker integration)
+   */
+  async migrateSceneTo1_1_0(file: TFile): Promise<void> {
+    console.log(`Migrating scene ${file.path} to v1.1.0`);
+
+    // 1. Add tracker_encounter field to frontmatter
+    await this.addFrontmatterField(file, "tracker_encounter", "");
+
+    // 2. Inject Initiative Tracker section in Combat section
+    const trackerSection = `### Initiative Tracker
+
+\`\`\`dataview
+TABLE WITHOUT ID
+  choice(tracker_encounter != "" and tracker_encounter != null,
+    "🎲 **Encounter Linked:** " + tracker_encounter + "\\n\\n" +
+    "\`\`\`button\\nname Open Initiative Tracker\\ntype command\\naction Initiative Tracker: Open Tracker View\\n\`\`\`",
+    "ℹ️ **No encounter linked yet**\\n\\nTo use the Initiative Tracker:\\n1. Create an encounter in the Initiative Tracker plugin\\n2. Add the encounter name to the \`tracker_encounter\` field in this note's frontmatter\\n3. The button to open the tracker will appear here"
+  ) AS "Combat Tracker"
+FROM ""
+WHERE file.path = this.file.path
+LIMIT 1
+\`\`\``;
+
+    await this.injectSection(file, "Initiative Tracker", trackerSection, "Combat");
+
+    // 3. Update template version
+    await this.updateTemplateVersion(file, "1.1.0");
+
+    console.log(`Scene ${file.path} migrated successfully`);
+  }
+
+  /**
+   * Apply migration based on file type and version
+   */
+  async migrateFile(file: TFile): Promise<boolean> {
+    try {
+      const fileType = await this.getFileType(file);
+      const currentVersion = await this.getFileTemplateVersion(file);
+
+      if (!fileType) {
+        console.error(`No file type found in ${file.path}`);
+        return false;
+      }
+
+      // Scene migrations
+      if (fileType === "scene") {
+        if (!currentVersion || this.compareVersions(currentVersion, "1.1.0") < 0) {
+          await this.migrateSceneTo1_1_0(file);
+          return true;
+        }
+      }
+
+      // Add more type-specific migrations here as needed
+
+      return true;
+    } catch (error) {
+      console.error(`Error migrating ${file.path}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Migrate multiple files with progress tracking
+   */
+  async migrateFiles(files: TFile[]): Promise<{ success: number; failed: number }> {
+    let success = 0;
+    let failed = 0;
+
+    for (const file of files) {
+      const result = await this.migrateFile(file);
+      if (result) {
+        success++;
+      } else {
+        failed++;
+      }
+    }
+
+    return { success, failed };
+  }
+}
+
 export default class DndCampaignHubPlugin extends Plugin {
   settings!: DndCampaignHubSettings;
   SessionCreationModal = SessionCreationModal;
+  migrationManager!: MigrationManager;
 
   async onload() {
     await this.loadSettings();
+
+    // Initialize the migration manager
+    this.migrationManager = new MigrationManager(this.app, this);
 
     console.log("D&D Campaign Hub: Plugin loaded");
 
@@ -65,13 +400,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "update-dnd-hub-templates",
-      name: "Update D&D Hub Templates",
+      name: "Migrate D&D Hub Files",
       callback: () => {
         if (!this.isVaultInitialized()) {
-          new Notice("Initialize D&D Campaign Hub before updating templates.");
+          new Notice("Initialize D&D Campaign Hub before migrating files.");
           return;
         }
-        this.updateTemplates();
+        this.migrateTemplates();
       },
     });
 
@@ -148,7 +483,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		if (savedVersion !== currentVersion) {
 			// Plugin was updated
 			if (savedVersion !== "0.0.0") {
-				new Notice(`D&D Campaign Hub updated to v${currentVersion}! Use "Update D&D Hub Templates" to get the latest templates.`, 8000);
+				new Notice(`D&D Campaign Hub updated to v${currentVersion}! Use "Migrate D&D Hub Files" to safely update your existing files.`, 10000);
 			}
 			
 			// Update saved version
@@ -158,202 +493,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	/**
-	 * Update template files without affecting user data
+	 * Migrate template files safely without data loss
 	 */
-	async updateTemplates() {
-		// Show confirmation modal first
-		new UpdateConfirmModal(this.app, this).open();
-	}
-
-	/**
-	 * Actually perform the template update after user confirmation
-	 */
-	async performTemplateUpdate() {
-		new Notice("Updating D&D Hub templates...");
-
-		try {
-			// Create backup of existing campaign files
-			await this.backupCampaignFiles();
-			
-			// Update template files in z_Templates
-			await this.createTemplateFiles();
-			
-			// Update existing campaign files based on their templates
-			await this.updateExistingCampaignFiles();
-			
-			new Notice("✅ Templates updated successfully! Backups saved in z_Backups folder.");
-		} catch (error) {
-			console.error("Failed to update templates:", error);
-			new Notice("❌ Failed to update templates. Check console for details.");
-		}
-	}
-
-	/**
-	 * Create backups of all template-based campaign files before updating
-	 */
-	async backupCampaignFiles() {
-		const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
-		const backupFolder = `z_Backups/${timestamp}`;
-		
-		// Ensure backup folder exists
-		try {
-			await this.app.vault.createFolder(backupFolder);
-		} catch (error) {
-			// Folder might exist
-		}
-
-		// Find all markdown files in ttrpgs folder (campaigns)
-		const campaignFiles = this.app.vault.getMarkdownFiles().filter(file => 
-			file.path.startsWith("ttrpgs/")
-		);
-
-		for (const file of campaignFiles) {
-			try {
-				const content = await this.app.vault.read(file);
-				const backupPath = file.path.replace(/\//g, '_').replace('ttrpgs_', '');
-				const backupFileName = `${backupFolder}/${backupPath}`;
-				
-				await this.app.vault.create(backupFileName, content);
-			} catch (error) {
-				console.error(`Failed to backup ${file.path}:`, error);
-			}
-		}
-	}
-
-	/**
-	 * Update existing campaign files with new template content while preserving user data
-	 */
-	async updateExistingCampaignFiles() {
-		const campaignFiles = this.app.vault.getMarkdownFiles().filter(file => 
-			file.path.startsWith("ttrpgs/")
-		);
-
-		for (const file of campaignFiles) {
-			try {
-				const content = await this.app.vault.read(file);
-				
-				// Determine file type from frontmatter
-				const typeMatch = content.match(/^---\n[\s\S]*?type:\s*(.+?)\n[\s\S]*?---/);
-				if (!typeMatch || !typeMatch[1]) continue;
-				
-				const fileType = typeMatch[1].trim();
-				
-				// Update based on file type
-				switch (fileType) {
-					case 'world':
-						await this.updateWorldFile(file, content);
-						break;
-					case 'npc':
-						await this.updateNpcFile(file, content);
-						break;
-					case 'player':
-						await this.updatePcFile(file, content);
-						break;
-					case 'adventure':
-						await this.updateAdventureFile(file, content);
-						break;
-					case 'session':
-					case 'session-gm':
-					case 'session-player':
-						await this.updateSessionFile(file, content);
-						break;
-					case 'faction':
-						await this.updateFactionFile(file, content);
-						break;
-					case 'item':
-						await this.updateItemFile(file, content);
-						break;
-					case 'spell':
-						await this.updateSpellFile(file, content);
-						break;
-				}
-			} catch (error) {
-				console.error(`Failed to update ${file.path}:`, error);
-			}
-		}
-	}
-
-	/**
-	 * Update a World.md file
-	 */
-	async updateWorldFile(file: TFile, content: string) {
-		// Extract frontmatter
-		const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
-		if (!frontmatterMatch) return;
-		
-		const frontmatter = frontmatterMatch[0];
-		
-		// Extract user content from "Truths about the campaign/world" section
-		const truthsMatch = content.match(/## Truths about the campaign\/world\n\n\*[^*]+\*\n\n([\s\S]*?)(?=\n## |\n*$)/);
-		const userTruths = (truthsMatch && truthsMatch[1]) ? truthsMatch[1].trim() : "-";
-		
-		// Get campaign name from path
-		const campaignName = file.path.split('/')[1] || '';
-		
-		// Build new content with preserved user data
-		let newContent = WORLD_TEMPLATE.replace(/{{CAMPAIGN_NAME}}/g, campaignName);
-		
-		// Replace the frontmatter with the user's existing frontmatter
-		newContent = newContent.replace(/^---\n[\s\S]*?\n---\n/, frontmatter);
-		
-		// Replace the truths section with user content
-		newContent = newContent.replace(
-			/(## Truths about the campaign\/world\n\n\*[^*]+\*\n\n)- /,
-			`$1${userTruths}\n`
-		);
-		
-		// Update the file
-		await this.app.vault.modify(file, newContent);
-	}
-
-	/**
-	 * Update template-based files (NPC, PC, Adventure, etc.) by preserving frontmatter
-	 */
-	async updateTemplateBasedFile(file: TFile, content: string, template: string) {
-		// Extract frontmatter
-		const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
-		if (!frontmatterMatch) return;
-		
-		const frontmatter = frontmatterMatch[0];
-		
-		// Replace frontmatter in template with user's frontmatter
-		let newContent = template.replace(/^---\n[\s\S]*?\n---\n/, frontmatter);
-		
-		// Update the file
-		await this.app.vault.modify(file, newContent);
-	}
-
-	async updateNpcFile(file: TFile, content: string) {
-		await this.updateTemplateBasedFile(file, content, NPC_TEMPLATE);
-	}
-
-	async updatePcFile(file: TFile, content: string) {
-		await this.updateTemplateBasedFile(file, content, PC_TEMPLATE);
-	}
-
-	async updateAdventureFile(file: TFile, content: string) {
-		await this.updateTemplateBasedFile(file, content, ADVENTURE_TEMPLATE);
-	}
-
-	async updateSessionFile(file: TFile, content: string) {
-		// Determine if it's GM or Player session
-		const roleMatch = content.match(/role:\s*(.+)/);
-		const role = (roleMatch && roleMatch[1]) ? roleMatch[1].trim() : 'gm';
-		
-		const template = role === 'player' ? SESSION_PLAYER_TEMPLATE : SESSION_GM_TEMPLATE;
-		await this.updateTemplateBasedFile(file, content, template);
-	}
-
-	async updateFactionFile(file: TFile, content: string) {
-		await this.updateTemplateBasedFile(file, content, FACTION_TEMPLATE);
-	}
-
-	async updateItemFile(file: TFile, content: string) {
-		await this.updateTemplateBasedFile(file, content, ITEM_TEMPLATE);
-	}
-
-	async updateSpellFile(file: TFile, content: string) {
-		await this.updateTemplateBasedFile(file, content, SPELL_TEMPLATE);
+	async migrateTemplates() {
+		// Show migration modal
+		new MigrationModal(this.app, this).open();
 	}
 
 	/**
@@ -898,14 +1042,14 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
     });
     
     new Setting(containerEl)
-      .setName("Update Templates")
-      .setDesc("Update all campaign templates to the latest version (with backup)")
+      .setName("Migrate Files")
+      .setDesc("Safely migrate campaign files to the latest template versions (preserves all your content)")
       .addButton((button) =>
         button
-          .setButtonText("Update Templates")
+          .setButtonText("Migrate Files")
           .setCta()
           .onClick(async () => {
-            this.plugin.updateTemplates();
+            this.plugin.migrateTemplates();
           })
       );
 
@@ -998,56 +1142,203 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
   }
 }
 
-class UpdateConfirmModal extends Modal {
+class MigrationModal extends Modal {
   plugin: DndCampaignHubPlugin;
+  private filesNeedingMigration: TFile[] = [];
+  private selectedFiles: Set<TFile> = new Set();
+  private currentCampaign: string = "";
 
   constructor(app: App, plugin: DndCampaignHubPlugin) {
     super(app);
     this.plugin = plugin;
   }
 
-  onOpen() {
+  async onOpen() {
     const { contentEl } = this;
     contentEl.empty();
+    contentEl.addClass("dnd-migration-modal");
 
-    contentEl.createEl("h2", { text: "🔄 Update D&D Hub Templates" });
+    contentEl.createEl("h2", { text: "🛡️ Safe File Migration" });
 
-    contentEl.createEl("p", {
-      text: "This will update all template files and existing campaign World.md files with the latest version."
+    // Get current campaign
+    const campaigns = this.plugin.getAllCampaigns();
+    if (campaigns.length === 0) {
+      contentEl.createEl("p", { text: "No campaigns found. Nothing to migrate." });
+      const closeBtn = contentEl.createEl("button", { text: "Close", cls: "mod-cta" });
+      closeBtn.addEventListener("click", () => this.close());
+      return;
+    }
+
+    // Campaign selector
+    const campaignContainer = contentEl.createDiv({ cls: "setting-item" });
+    campaignContainer.createEl("label", { text: "Select Campaign:" });
+    const campaignSelect = campaignContainer.createEl("select");
+    
+    campaigns.forEach(campaign => {
+      const campaignName = typeof campaign === 'string' ? campaign : campaign.name;
+      const option = campaignSelect.createEl("option", { 
+        text: campaignName,
+        value: `ttrpgs/${campaignName}`
+      });
+      if (`ttrpgs/${campaign}` === this.plugin.settings.currentCampaign) {
+        option.selected = true;
+      }
     });
 
-    contentEl.createEl("h3", { text: "What will be updated:" });
-    const updateList = contentEl.createEl("ul");
-    updateList.createEl("li", { text: "Template files in z_Templates/" });
-    updateList.createEl("li", { text: "All campaign World.md files (buttons, dataviews, structure)" });
+    this.currentCampaign = campaignSelect.value;
 
-    contentEl.createEl("h3", { text: "What will be preserved:" });
-    const preserveList = contentEl.createEl("ul");
-    preserveList.createEl("li", { text: "✅ Campaign frontmatter (name, dates, calendar settings)" });
-    preserveList.createEl("li", { text: "✅ User-written content in 'Truths about the campaign/world'" });
-    preserveList.createEl("li", { text: "✅ All NPCs, PCs, sessions, and other campaign files" });
-
-    contentEl.createEl("h3", { text: "⚠️ Important:" });
-    const warningList = contentEl.createEl("ul", { cls: "mod-warning" });
-    warningList.createEl("li", { text: "Automatic backups will be created in z_Backups/" });
-    warningList.createEl("li", { text: "Template updates may require manual cleanup if you heavily customized your files" });
-    warningList.createEl("li", { text: "Review the updated files after the process completes" });
-
-    const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
-
-    const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
-    cancelBtn.addEventListener("click", () => {
-      this.close();
-    });
-
-    const confirmBtn = buttonContainer.createEl("button", {
-      text: "Update Templates",
+    // Scan button
+    const scanBtn = contentEl.createEl("button", {
+      text: "🔍 Scan for Updates",
       cls: "mod-cta"
     });
-    confirmBtn.addEventListener("click", async () => {
-      this.close();
-      await this.plugin.performTemplateUpdate();
+
+    const resultsContainer = contentEl.createDiv({ cls: "migration-results" });
+
+    scanBtn.addEventListener("click", async () => {
+      scanBtn.disabled = true;
+      scanBtn.textContent = "Scanning...";
+      resultsContainer.empty();
+
+      this.filesNeedingMigration = await this.plugin.migrationManager.findFilesNeedingMigration(this.currentCampaign);
+      
+      if (this.filesNeedingMigration.length === 0) {
+        resultsContainer.createEl("p", { 
+          text: "✅ All files are up to date!",
+          cls: "migration-success"
+        });
+        scanBtn.disabled = false;
+        scanBtn.textContent = "🔍 Scan for Updates";
+        return;
+      }
+
+      // Show results
+      resultsContainer.createEl("h3", { 
+        text: `Found ${this.filesNeedingMigration.length} file(s) that can be updated:` 
+      });
+
+      // Select all checkbox
+      const selectAllContainer = resultsContainer.createDiv({ cls: "setting-item" });
+      const selectAllCheckbox = selectAllContainer.createEl("input", { type: "checkbox" });
+      selectAllCheckbox.checked = true;
+      selectAllContainer.createEl("label", { text: " Select all files" });
+      
+      selectAllCheckbox.addEventListener("change", () => {
+        const allCheckboxes = resultsContainer.querySelectorAll('input[type="checkbox"]:not(:first-child)');
+        allCheckboxes.forEach((element) => {
+          const checkbox = element as HTMLInputElement;
+          checkbox.checked = selectAllCheckbox.checked;
+        });
+        this.updateSelectedFiles();
+      });
+
+      // File list
+      const fileList = resultsContainer.createEl("div", { cls: "migration-file-list" });
+      
+      for (const file of this.filesNeedingMigration) {
+        const fileItem = fileList.createDiv({ cls: "migration-file-item" });
+        
+        const checkbox = fileItem.createEl("input", { type: "checkbox" });
+        checkbox.checked = true;
+        this.selectedFiles.add(file);
+
+        const fileType = await this.plugin.migrationManager.getFileType(file);
+        const currentVersion = await this.plugin.migrationManager.getFileTemplateVersion(file) || "none";
+        const targetVersion = TEMPLATE_VERSIONS[fileType as keyof typeof TEMPLATE_VERSIONS];
+
+        const fileInfo = fileItem.createEl("span", {
+          text: `${file.path} (${fileType}: v${currentVersion} → v${targetVersion})`
+        });
+
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) {
+            this.selectedFiles.add(file);
+          } else {
+            this.selectedFiles.delete(file);
+          }
+        });
+      }
+
+      this.updateSelectedFiles();
+
+      // Migration info
+      const infoBox = resultsContainer.createDiv({ cls: "migration-info" });
+      infoBox.createEl("h3", { text: "What will be updated:" });
+      const updateList = infoBox.createEl("ul");
+      updateList.createEl("li", { text: "✅ New frontmatter fields will be added" });
+      updateList.createEl("li", { text: "✅ New sections will be injected (not replacing existing ones)" });
+      updateList.createEl("li", { text: "✅ Dataview queries may be updated" });
+      updateList.createEl("li", { text: "✅ Template version will be tracked" });
+      
+      infoBox.createEl("h3", { text: "What will be preserved:" });
+      const preserveList = infoBox.createEl("ul");
+      preserveList.createEl("li", { text: "🛡️ All your existing content" });
+      preserveList.createEl("li", { text: "🛡️ All frontmatter values" });
+      preserveList.createEl("li", { text: "🛡️ All sections you've written" });
+
+      // Migrate button
+      const migrateBtn = resultsContainer.createEl("button", {
+        text: `Migrate ${this.selectedFiles.size} file(s)`,
+        cls: "mod-cta"
+      });
+
+      migrateBtn.addEventListener("click", async () => {
+        await this.performMigration(migrateBtn, resultsContainer);
+      });
+
+      scanBtn.disabled = false;
+      scanBtn.textContent = "🔍 Scan for Updates";
     });
+
+    campaignSelect.addEventListener("change", () => {
+      this.currentCampaign = campaignSelect.value;
+      resultsContainer.empty();
+      this.filesNeedingMigration = [];
+      this.selectedFiles.clear();
+    });
+
+    // Close button
+    const closeBtn = contentEl.createEl("button", { text: "Close" });
+    closeBtn.addEventListener("click", () => this.close());
+  }
+
+  private updateSelectedFiles() {
+    // This method can be used to update UI based on selection
+  }
+
+  private async performMigration(button: HTMLButtonElement, container: HTMLElement) {
+    if (this.selectedFiles.size === 0) {
+      new Notice("No files selected for migration.");
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = "Migrating...";
+
+    const filesToMigrate = Array.from(this.selectedFiles);
+    const result = await this.plugin.migrationManager.migrateFiles(filesToMigrate);
+
+    container.empty();
+    
+    if (result.success > 0) {
+      container.createEl("p", {
+        text: `✅ Successfully migrated ${result.success} file(s)!`,
+        cls: "migration-success"
+      });
+    }
+
+    if (result.failed > 0) {
+      container.createEl("p", {
+        text: `⚠️ Failed to migrate ${result.failed} file(s). Check console for details.`,
+        cls: "migration-warning"
+      });
+    }
+
+    new Notice(`Migration complete: ${result.success} succeeded, ${result.failed} failed.`);
+
+    // Add close button
+    const closeBtn = container.createEl("button", { text: "Close", cls: "mod-cta" });
+    closeBtn.addEventListener("click", () => this.close());
   }
 
   onClose() {
