@@ -372,3 +372,89 @@
   justify-content: flex-start;
   gap: 8px;
 }
+
+/* Encounter Difficulty Calculator */
+.dnd-difficulty-container {
+  margin: 15px 0;
+}
+
+.dnd-difficulty-card {
+  background: var(--background-secondary);
+  border-radius: 8px;
+  padding: 15px;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.dnd-difficulty-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.dnd-difficulty-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-weight: bold;
+  font-size: 14px;
+  color: #ffffff;
+}
+
+.dnd-rounds-estimate {
+  margin-left: 10px;
+  opacity: 0.8;
+}
+
+.dnd-difficulty-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.dnd-stats-column h5 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.dnd-stats-column > div {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.dnd-stats-column strong {
+  color: var(--text-normal);
+}
+
+.dnd-difficulty-analysis {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: var(--background-primary);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dnd-difficulty-analysis strong {
+  color: var(--text-normal);
+}
+
+.dnd-difficulty-warning {
+  margin-top: 10px;
+  padding: 8px;
+  background-color: rgba(255, 136, 0, 0.2);
+  border-radius: 4px;
+  font-size: 12px;
+  border-left: 3px solid #ff8800;
+}
+
+/* Difficulty badge colors */
+.dnd-difficulty-trivial { background-color: #888888; }
+.dnd-difficulty-easy { background-color: #00aa00; }
+.dnd-difficulty-medium { background-color: #aaaa00; }
+.dnd-difficulty-hard { background-color: #ff8800; }
+.dnd-difficulty-deadly { background-color: #ff0000; }
+.dnd-difficulty-tpk { background-color: #880000; }
