@@ -6,6 +6,7 @@ import {
   NPC_TEMPLATE,
   PC_TEMPLATE,
   ADVENTURE_TEMPLATE,
+  SCENE_TEMPLATE,
   FACTION_TEMPLATE,
   ITEM_TEMPLATE,
   SPELL_TEMPLATE,
@@ -23,11 +24,368 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   pluginVersion: "0.0.0",
 };
 
+// Current template versions - increment when templates change
+const TEMPLATE_VERSIONS = {
+  world: "1.0.0",
+  session: "1.0.0",
+  npc: "1.0.0",
+  pc: "1.0.0",
+  adventure: "1.0.0",
+  scene: "1.1.0", // Updated with Initiative Tracker
+  faction: "1.0.0",
+  item: "1.0.0",
+  spell: "1.0.0",
+  campaign: "1.0.0"
+};
+
+/**
+ * Safe template migration system
+ * Tracks versions and applies incremental updates without data loss
+ */
+class MigrationManager {
+  private app: App;
+  private plugin: DndCampaignHubPlugin;
+
+  constructor(app: App, plugin: DndCampaignHubPlugin) {
+    this.app = app;
+    this.plugin = plugin;
+  }
+
+  /**
+   * Get the current template version from a file's frontmatter
+   */
+  async getFileTemplateVersion(file: TFile): Promise<string | null> {
+    const content = await this.app.vault.read(file);
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!frontmatterMatch || !frontmatterMatch[1]) return null;
+
+    const frontmatter = frontmatterMatch[1];
+    const versionMatch = frontmatter.match(/^template_version:\s*(.+)$/m);
+    return versionMatch && versionMatch[1] ? versionMatch[1].trim() : null;
+  }
+
+  /**
+   * Get the file type from frontmatter
+   */
+  async getFileType(file: TFile): Promise<string | null> {
+    const content = await this.app.vault.read(file);
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!frontmatterMatch || !frontmatterMatch[1]) return null;
+
+    const frontmatter = frontmatterMatch[1];
+    const typeMatch = frontmatter.match(/^type:\s*(.+)$/m);
+    return typeMatch && typeMatch[1] ? typeMatch[1].trim() : null;
+  }
+
+  /**
+   * Check if a file needs migration
+   */
+  async needsMigration(file: TFile): Promise<boolean> {
+    const fileType = await this.getFileType(file);
+    if (!fileType || !(fileType in TEMPLATE_VERSIONS)) return false;
+
+    const currentVersion = await this.getFileTemplateVersion(file);
+    const targetVersion = TEMPLATE_VERSIONS[fileType as keyof typeof TEMPLATE_VERSIONS];
+
+    // No version means old template, needs migration
+    if (!currentVersion) return true;
+
+    // Compare versions
+    return this.compareVersions(currentVersion, targetVersion) < 0;
+  }
+
+  /**
+   * Compare semantic versions (returns -1 if a < b, 0 if equal, 1 if a > b)
+   */
+  private compareVersions(a: string, b: string): number {
+    const aParts = a.split('.').map(Number);
+    const bParts = b.split('.').map(Number);
+
+    for (let i = 0; i < 3; i++) {
+      const aVal = aParts[i] || 0;
+      const bVal = bParts[i] || 0;
+      if (aVal < bVal) return -1;
+      if (aVal > bVal) return 1;
+    }
+    return 0;
+  }
+
+  /**
+   * Find all files that need migration in a campaign
+   */
+  async findFilesNeedingMigration(campaignPath: string): Promise<TFile[]> {
+    const filesNeedingMigration: TFile[] = [];
+    const campaignFolder = this.app.vault.getAbstractFileByPath(campaignPath);
+
+    if (!(campaignFolder instanceof TFolder)) return filesNeedingMigration;
+
+    const processFolder = async (folder: TFolder) => {
+      for (const child of folder.children) {
+        if (child instanceof TFile && child.extension === "md") {
+          if (await this.needsMigration(child)) {
+            filesNeedingMigration.push(child);
+          }
+        } else if (child instanceof TFolder) {
+          await processFolder(child);
+        }
+      }
+    };
+
+    await processFolder(campaignFolder);
+    return filesNeedingMigration;
+  }
+
+  /**
+   * Update only the template_version field in frontmatter
+   */
+  async updateTemplateVersion(file: TFile, newVersion: string): Promise<void> {
+    const content = await this.app.vault.read(file);
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    
+    if (!frontmatterMatch || !frontmatterMatch[1]) {
+      console.error(`No frontmatter found in ${file.path}`);
+      return;
+    }
+
+    let frontmatter = frontmatterMatch[1];
+    const versionMatch = frontmatter.match(/^template_version:\s*(.+)$/m);
+
+    if (versionMatch) {
+      // Update existing version
+      frontmatter = frontmatter.replace(
+        /^template_version:\s*(.+)$/m,
+        `template_version: ${newVersion}`
+      );
+    } else {
+      // Add version field after type field if it exists
+      if (frontmatter.match(/^type:/m)) {
+        frontmatter = frontmatter.replace(
+          /^(type:\s*.+)$/m,
+          `$1\ntemplate_version: ${newVersion}`
+        );
+      } else {
+        // Add at the beginning
+        frontmatter = `template_version: ${newVersion}\n${frontmatter}`;
+      }
+    }
+
+    const newContent = content.replace(
+      /^---\n[\s\S]*?\n---/,
+      `---\n${frontmatter}\n---`
+    );
+
+    await this.app.vault.modify(file, newContent);
+  }
+
+  /**
+   * Add a new frontmatter field if it doesn't exist
+   */
+  async addFrontmatterField(
+    file: TFile,
+    fieldName: string,
+    defaultValue: string
+  ): Promise<void> {
+    const content = await this.app.vault.read(file);
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    
+    if (!frontmatterMatch || !frontmatterMatch[1]) return;
+
+    let frontmatter = frontmatterMatch[1];
+    const fieldMatch = frontmatter.match(new RegExp(`^${fieldName}:`, "m"));
+
+    if (!fieldMatch) {
+      // Add field at the end of frontmatter
+      frontmatter = `${frontmatter}\n${fieldName}: ${defaultValue}`;
+
+      const newContent = content.replace(
+        /^---\n[\s\S]*?\n---/,
+        `---\n${frontmatter}\n---`
+      );
+
+      await this.app.vault.modify(file, newContent);
+    }
+  }
+
+  /**
+   * Inject a new section into a file if it doesn't exist
+   */
+  async injectSection(
+    file: TFile,
+    sectionHeading: string,
+    sectionContent: string,
+    insertAfterHeading?: string
+  ): Promise<void> {
+    const content = await this.app.vault.read(file);
+
+    // Check if section already exists
+    const sectionRegex = new RegExp(`^#{1,6}\\s+${sectionHeading}`, "m");
+    if (sectionRegex.test(content)) {
+      console.log(`Section "${sectionHeading}" already exists in ${file.path}`);
+      return;
+    }
+
+    let newContent: string;
+
+    if (insertAfterHeading) {
+      // Insert after specific heading
+      const afterRegex = new RegExp(`(^#{1,6}\\s+${insertAfterHeading}[^\n]*\n(?:.*\n)*?)(?=^#{1,6}\\s+|$)`, "m");
+      const match = content.match(afterRegex);
+
+      if (match) {
+        newContent = content.replace(
+          afterRegex,
+          `${match[1]}\n${sectionContent}\n\n`
+        );
+      } else {
+        // Fallback: add at the end
+        newContent = `${content}\n\n${sectionContent}`;
+      }
+    } else {
+      // Add at the end of the file
+      newContent = `${content}\n\n${sectionContent}`;
+    }
+
+    await this.app.vault.modify(file, newContent);
+  }
+
+  /**
+   * Update a specific dataview query in a file
+   */
+  async updateDataviewQuery(
+    file: TFile,
+    queryIdentifier: string,
+    newQuery: string
+  ): Promise<void> {
+    const content = await this.app.vault.read(file);
+
+    // Match dataview code blocks with the identifier nearby
+    const queryRegex = new RegExp(
+      `(\`\`\`dataview[^\`]*${queryIdentifier}[^\`]*\`\`\`)`,
+      "g"
+    );
+
+    if (!queryRegex.test(content)) {
+      console.log(`Query "${queryIdentifier}" not found in ${file.path}`);
+      return;
+    }
+
+    const newContent = content.replace(queryRegex, newQuery);
+    await this.app.vault.modify(file, newContent);
+  }
+
+  /**
+   * Apply scene v1.1.0 migration (Initiative Tracker integration)
+   */
+  async migrateSceneTo1_1_0(file: TFile): Promise<void> {
+    console.log(`Migrating scene ${file.path} to v1.1.0`);
+
+    // 1. Add tracker_encounter field to frontmatter
+    await this.addFrontmatterField(file, "tracker_encounter", "");
+
+    // 2. Inject Initiative Tracker section in Combat section
+    const trackerSection = `### Initiative Tracker
+
+\`\`\`dataview
+TABLE WITHOUT ID
+  choice(tracker_encounter != "" and tracker_encounter != null,
+    "🎲 **Encounter Linked:** " + tracker_encounter + "\\n\\n" +
+    "\`\`\`button\\nname Open Initiative Tracker\\ntype command\\naction Initiative Tracker: Open Tracker View\\n\`\`\`",
+    "ℹ️ **No encounter linked yet**\\n\\nTo use the Initiative Tracker:\\n1. Create an encounter in the Initiative Tracker plugin\\n2. Add the encounter name to the \`tracker_encounter\` field in this note's frontmatter\\n3. The button to open the tracker will appear here"
+  ) AS "Combat Tracker"
+FROM ""
+WHERE file.path = this.file.path
+LIMIT 1
+\`\`\``;
+
+    await this.injectSection(file, "Initiative Tracker", trackerSection, "Combat");
+
+    // 3. Update template version
+    await this.updateTemplateVersion(file, "1.1.0");
+
+    console.log(`Scene ${file.path} migrated successfully`);
+  }
+
+  /**
+   * Apply migration based on file type and version
+   */
+  async migrateFile(file: TFile): Promise<boolean> {
+    try {
+      const fileType = await this.getFileType(file);
+      const currentVersion = await this.getFileTemplateVersion(file);
+
+      if (!fileType) {
+        console.error(`No file type found in ${file.path}`);
+        return false;
+      }
+
+      // Get target version for this file type
+      const targetVersion = TEMPLATE_VERSIONS[fileType as keyof typeof TEMPLATE_VERSIONS];
+      if (!targetVersion) {
+        console.warn(`No template version defined for type: ${fileType}`);
+        return false;
+      }
+
+      // If file has no version, add the current template version
+      if (!currentVersion) {
+        console.log(`Adding template_version to ${file.path}`);
+        await this.updateTemplateVersion(file, targetVersion);
+        return true;
+      }
+
+      // Scene-specific migrations
+      if (fileType === "scene") {
+        if (this.compareVersions(currentVersion, "1.1.0") < 0) {
+          await this.migrateSceneTo1_1_0(file);
+          return true;
+        }
+      }
+
+      // For other types, if version is outdated, update it
+      // (In the future, add type-specific migration logic here as needed)
+      if (this.compareVersions(currentVersion, targetVersion) < 0) {
+        console.log(`Updating ${file.path} from v${currentVersion} to v${targetVersion}`);
+        await this.updateTemplateVersion(file, targetVersion);
+        return true;
+      }
+
+      // File is already up to date
+      return true;
+    } catch (error) {
+      console.error(`Error migrating ${file.path}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Migrate multiple files with progress tracking
+   */
+  async migrateFiles(files: TFile[]): Promise<{ success: number; failed: number }> {
+    let success = 0;
+    let failed = 0;
+
+    for (const file of files) {
+      const result = await this.migrateFile(file);
+      if (result) {
+        success++;
+      } else {
+        failed++;
+      }
+    }
+
+    return { success, failed };
+  }
+}
+
 export default class DndCampaignHubPlugin extends Plugin {
   settings!: DndCampaignHubSettings;
+  SessionCreationModal = SessionCreationModal;
+  migrationManager!: MigrationManager;
 
   async onload() {
     await this.loadSettings();
+
+    // Initialize the migration manager
+    this.migrationManager = new MigrationManager(this.app, this);
 
     console.log("D&D Campaign Hub: Plugin loaded");
 
@@ -63,13 +421,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "update-dnd-hub-templates",
-      name: "Update D&D Hub Templates",
+      name: "Migrate D&D Hub Files",
       callback: () => {
         if (!this.isVaultInitialized()) {
-          new Notice("Initialize D&D Campaign Hub before updating templates.");
+          new Notice("Initialize D&D Campaign Hub before migrating files.");
           return;
         }
-        this.updateTemplates();
+        this.migrateTemplates();
       },
     });
 
@@ -104,6 +462,26 @@ export default class DndCampaignHubPlugin extends Plugin {
       callback: () => this.createFaction(),
     });
 
+    this.addCommand({
+      id: "create-adventure",
+      name: "Create New Adventure",
+      callback: () => this.createAdventure(),
+    });
+
+    this.addCommand({
+      id: "create-scene",
+      name: "Create New Scene",
+      callback: () => this.createScene(),
+    });
+
+    this.addCommand({
+      id: "purge-vault",
+      name: "Purge D&D Campaign Hub Data",
+      callback: () => {
+        new PurgeConfirmModal(this.app, this).open();
+      },
+    });
+
     this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
   }
 
@@ -126,7 +504,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		if (savedVersion !== currentVersion) {
 			// Plugin was updated
 			if (savedVersion !== "0.0.0") {
-				new Notice(`D&D Campaign Hub updated to v${currentVersion}! Use "Update D&D Hub Templates" to get the latest templates.`, 8000);
+				new Notice(`D&D Campaign Hub updated to v${currentVersion}! Use "Migrate D&D Hub Files" to safely update your existing files.`, 10000);
 			}
 			
 			// Update saved version
@@ -136,202 +514,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	/**
-	 * Update template files without affecting user data
+	 * Migrate template files safely without data loss
 	 */
-	async updateTemplates() {
-		// Show confirmation modal first
-		new UpdateConfirmModal(this.app, this).open();
-	}
-
-	/**
-	 * Actually perform the template update after user confirmation
-	 */
-	async performTemplateUpdate() {
-		new Notice("Updating D&D Hub templates...");
-
-		try {
-			// Create backup of existing campaign files
-			await this.backupCampaignFiles();
-			
-			// Update template files in z_Templates
-			await this.createTemplateFiles();
-			
-			// Update existing campaign files based on their templates
-			await this.updateExistingCampaignFiles();
-			
-			new Notice("✅ Templates updated successfully! Backups saved in z_Backups folder.");
-		} catch (error) {
-			console.error("Failed to update templates:", error);
-			new Notice("❌ Failed to update templates. Check console for details.");
-		}
-	}
-
-	/**
-	 * Create backups of all template-based campaign files before updating
-	 */
-	async backupCampaignFiles() {
-		const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
-		const backupFolder = `z_Backups/${timestamp}`;
-		
-		// Ensure backup folder exists
-		try {
-			await this.app.vault.createFolder(backupFolder);
-		} catch (error) {
-			// Folder might exist
-		}
-
-		// Find all markdown files in ttrpgs folder (campaigns)
-		const campaignFiles = this.app.vault.getMarkdownFiles().filter(file => 
-			file.path.startsWith("ttrpgs/")
-		);
-
-		for (const file of campaignFiles) {
-			try {
-				const content = await this.app.vault.read(file);
-				const backupPath = file.path.replace(/\//g, '_').replace('ttrpgs_', '');
-				const backupFileName = `${backupFolder}/${backupPath}`;
-				
-				await this.app.vault.create(backupFileName, content);
-			} catch (error) {
-				console.error(`Failed to backup ${file.path}:`, error);
-			}
-		}
-	}
-
-	/**
-	 * Update existing campaign files with new template content while preserving user data
-	 */
-	async updateExistingCampaignFiles() {
-		const campaignFiles = this.app.vault.getMarkdownFiles().filter(file => 
-			file.path.startsWith("ttrpgs/")
-		);
-
-		for (const file of campaignFiles) {
-			try {
-				const content = await this.app.vault.read(file);
-				
-				// Determine file type from frontmatter
-				const typeMatch = content.match(/^---\n[\s\S]*?type:\s*(.+?)\n[\s\S]*?---/);
-				if (!typeMatch || !typeMatch[1]) continue;
-				
-				const fileType = typeMatch[1].trim();
-				
-				// Update based on file type
-				switch (fileType) {
-					case 'world':
-						await this.updateWorldFile(file, content);
-						break;
-					case 'npc':
-						await this.updateNpcFile(file, content);
-						break;
-					case 'player':
-						await this.updatePcFile(file, content);
-						break;
-					case 'adventure':
-						await this.updateAdventureFile(file, content);
-						break;
-					case 'session':
-					case 'session-gm':
-					case 'session-player':
-						await this.updateSessionFile(file, content);
-						break;
-					case 'faction':
-						await this.updateFactionFile(file, content);
-						break;
-					case 'item':
-						await this.updateItemFile(file, content);
-						break;
-					case 'spell':
-						await this.updateSpellFile(file, content);
-						break;
-				}
-			} catch (error) {
-				console.error(`Failed to update ${file.path}:`, error);
-			}
-		}
-	}
-
-	/**
-	 * Update a World.md file
-	 */
-	async updateWorldFile(file: TFile, content: string) {
-		// Extract frontmatter
-		const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
-		if (!frontmatterMatch) return;
-		
-		const frontmatter = frontmatterMatch[0];
-		
-		// Extract user content from "Truths about the campaign/world" section
-		const truthsMatch = content.match(/## Truths about the campaign\/world\n\n\*[^*]+\*\n\n([\s\S]*?)(?=\n## |\n*$)/);
-		const userTruths = (truthsMatch && truthsMatch[1]) ? truthsMatch[1].trim() : "-";
-		
-		// Get campaign name from path
-		const campaignName = file.path.split('/')[1] || '';
-		
-		// Build new content with preserved user data
-		let newContent = WORLD_TEMPLATE.replace(/{{CAMPAIGN_NAME}}/g, campaignName);
-		
-		// Replace the frontmatter with the user's existing frontmatter
-		newContent = newContent.replace(/^---\n[\s\S]*?\n---\n/, frontmatter);
-		
-		// Replace the truths section with user content
-		newContent = newContent.replace(
-			/(## Truths about the campaign\/world\n\n\*[^*]+\*\n\n)- /,
-			`$1${userTruths}\n`
-		);
-		
-		// Update the file
-		await this.app.vault.modify(file, newContent);
-	}
-
-	/**
-	 * Update template-based files (NPC, PC, Adventure, etc.) by preserving frontmatter
-	 */
-	async updateTemplateBasedFile(file: TFile, content: string, template: string) {
-		// Extract frontmatter
-		const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
-		if (!frontmatterMatch) return;
-		
-		const frontmatter = frontmatterMatch[0];
-		
-		// Replace frontmatter in template with user's frontmatter
-		let newContent = template.replace(/^---\n[\s\S]*?\n---\n/, frontmatter);
-		
-		// Update the file
-		await this.app.vault.modify(file, newContent);
-	}
-
-	async updateNpcFile(file: TFile, content: string) {
-		await this.updateTemplateBasedFile(file, content, NPC_TEMPLATE);
-	}
-
-	async updatePcFile(file: TFile, content: string) {
-		await this.updateTemplateBasedFile(file, content, PC_TEMPLATE);
-	}
-
-	async updateAdventureFile(file: TFile, content: string) {
-		await this.updateTemplateBasedFile(file, content, ADVENTURE_TEMPLATE);
-	}
-
-	async updateSessionFile(file: TFile, content: string) {
-		// Determine if it's GM or Player session
-		const roleMatch = content.match(/role:\s*(.+)/);
-		const role = (roleMatch && roleMatch[1]) ? roleMatch[1].trim() : 'gm';
-		
-		const template = role === 'player' ? SESSION_PLAYER_TEMPLATE : SESSION_GM_TEMPLATE;
-		await this.updateTemplateBasedFile(file, content, template);
-	}
-
-	async updateFactionFile(file: TFile, content: string) {
-		await this.updateTemplateBasedFile(file, content, FACTION_TEMPLATE);
-	}
-
-	async updateItemFile(file: TFile, content: string) {
-		await this.updateTemplateBasedFile(file, content, ITEM_TEMPLATE);
-	}
-
-	async updateSpellFile(file: TFile, content: string) {
-		await this.updateTemplateBasedFile(file, content, SPELL_TEMPLATE);
+	async migrateTemplates() {
+		// Show migration modal
+		new MigrationModal(this.app, this).open();
 	}
 
 	/**
@@ -422,6 +609,12 @@ export default class DndCampaignHubPlugin extends Plugin {
         name: "Calendarium",
         repo: "javalent/calendarium",
         version: "2.1.0"
+      },
+      {
+        id: "initiative-tracker",
+        name: "Initiative Tracker",
+        repo: "javalent/initiative-tracker",
+        version: "9.2.5"
       }
     ];
 
@@ -439,12 +632,7 @@ export default class DndCampaignHubPlugin extends Plugin {
     // Enable the plugins programmatically
     await this.enablePlugins(requiredPlugins.map(p => p.id));
 
-    new Notice("Required plugins installed! Reloading...");
-
-    // Reload Obsidian to activate plugins
-    setTimeout(() => {
-      (this.app as any).commands.executeCommandById('app:reload');
-    }, 1500);
+    new Notice("Required plugins installed! Please reload Obsidian (Ctrl+R) to activate them.");
   }
 
   /**
@@ -525,7 +713,8 @@ export default class DndCampaignHubPlugin extends Plugin {
       { id: "buttons", name: "Buttons" },
       { id: "dataview", name: "Dataview" },
       { id: "calendarium", name: "Calendarium" },
-      { id: "templater-obsidian", name: "Templater" }
+      { id: "templater-obsidian", name: "Templater" },
+      { id: "initiative-tracker", name: "Initiative Tracker" }
     ];
 
     const installed: string[] = [];
@@ -603,7 +792,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Configure plugin settings
 		await this.configurePluginSettings();
 
-		new Notice("Vault initialized successfully! Please reload Obsidian (Ctrl+R) to activate plugins.");
+		new Notice("Vault initialized successfully!");
 	}
 
 	/**
@@ -699,18 +888,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	async createAdventure() {
-		const adventureName = await this.promptForName("Adventure");
-		if (!adventureName) return;
+		// Open Adventure creation modal
+		new AdventureCreationModal(this.app, this).open();
+	}
 
-		const adventurePath = `${this.settings.currentCampaign}/Adventures/${adventureName}`;
-		await this.ensureFolderExists(adventurePath);
-
-		const template = this.getDefaultAdventureTemplate();
-		const filePath = `${adventurePath}/${adventureName}.md`;
-
-		await this.app.vault.create(filePath, template);
-		await this.app.workspace.openLinkText(filePath, "", true);
-		new Notice(`Adventure "${adventureName}" created!`);
+	async createScene() {
+		// Open Scene creation modal
+		new SceneCreationModal(this.app, this).open();
 	}
 
 	async createSession() {
@@ -810,6 +994,24 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// This is a placeholder - in actual use, this would be the filename
 		return "New Entity";
 	}
+
+	getAllCampaigns(): Array<{ path: string; name: string }> {
+		const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
+		const campaigns: Array<{ path: string; name: string }> = [];
+
+		if (ttrpgsFolder instanceof TFolder) {
+			ttrpgsFolder.children.forEach((child) => {
+				if (child instanceof TFolder) {
+					campaigns.push({
+						path: child.path,
+						name: child.name
+					});
+				}
+			});
+		}
+
+		return campaigns;
+	}
 }
 
 class DndCampaignHubSettingTab extends PluginSettingTab {
@@ -861,14 +1063,14 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
     });
     
     new Setting(containerEl)
-      .setName("Update Templates")
-      .setDesc("Update all campaign templates to the latest version (with backup)")
+      .setName("Migrate Files")
+      .setDesc("Safely migrate campaign files to the latest template versions (preserves all your content)")
       .addButton((button) =>
         button
-          .setButtonText("Update Templates")
+          .setButtonText("Migrate Files")
           .setCta()
           .onClick(async () => {
-            this.plugin.updateTemplates();
+            this.plugin.migrateTemplates();
           })
       );
 
@@ -915,7 +1117,8 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
       { id: "buttons", name: "Buttons", url: "obsidian://show-plugin?id=buttons" },
       { id: "dataview", name: "Dataview", url: "obsidian://show-plugin?id=dataview" },
       { id: "calendarium", name: "Calendarium", url: "obsidian://show-plugin?id=calendarium" },
-      { id: "templater-obsidian", name: "Templater", url: "obsidian://show-plugin?id=templater-obsidian" }
+      { id: "templater-obsidian", name: "Templater", url: "obsidian://show-plugin?id=templater-obsidian" },
+      { id: "initiative-tracker", name: "Initiative Tracker", url: "obsidian://show-plugin?id=initiative-tracker" }
     ];
 
     for (const plugin of requiredPlugins) {
@@ -960,56 +1163,203 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
   }
 }
 
-class UpdateConfirmModal extends Modal {
+class MigrationModal extends Modal {
   plugin: DndCampaignHubPlugin;
+  private filesNeedingMigration: TFile[] = [];
+  private selectedFiles: Set<TFile> = new Set();
+  private currentCampaign: string = "";
 
   constructor(app: App, plugin: DndCampaignHubPlugin) {
     super(app);
     this.plugin = plugin;
   }
 
-  onOpen() {
+  async onOpen() {
     const { contentEl } = this;
     contentEl.empty();
+    contentEl.addClass("dnd-migration-modal");
 
-    contentEl.createEl("h2", { text: "🔄 Update D&D Hub Templates" });
+    contentEl.createEl("h2", { text: "🛡️ Safe File Migration" });
 
-    contentEl.createEl("p", {
-      text: "This will update all template files and existing campaign World.md files with the latest version."
+    // Get current campaign
+    const campaigns = this.plugin.getAllCampaigns();
+    if (campaigns.length === 0) {
+      contentEl.createEl("p", { text: "No campaigns found. Nothing to migrate." });
+      const closeBtn = contentEl.createEl("button", { text: "Close", cls: "mod-cta" });
+      closeBtn.addEventListener("click", () => this.close());
+      return;
+    }
+
+    // Campaign selector
+    const campaignContainer = contentEl.createDiv({ cls: "setting-item" });
+    campaignContainer.createEl("label", { text: "Select Campaign:" });
+    const campaignSelect = campaignContainer.createEl("select");
+    
+    campaigns.forEach(campaign => {
+      const campaignName = typeof campaign === 'string' ? campaign : campaign.name;
+      const option = campaignSelect.createEl("option", { 
+        text: campaignName,
+        value: `ttrpgs/${campaignName}`
+      });
+      if (`ttrpgs/${campaign}` === this.plugin.settings.currentCampaign) {
+        option.selected = true;
+      }
     });
 
-    contentEl.createEl("h3", { text: "What will be updated:" });
-    const updateList = contentEl.createEl("ul");
-    updateList.createEl("li", { text: "Template files in z_Templates/" });
-    updateList.createEl("li", { text: "All campaign World.md files (buttons, dataviews, structure)" });
+    this.currentCampaign = campaignSelect.value;
 
-    contentEl.createEl("h3", { text: "What will be preserved:" });
-    const preserveList = contentEl.createEl("ul");
-    preserveList.createEl("li", { text: "✅ Campaign frontmatter (name, dates, calendar settings)" });
-    preserveList.createEl("li", { text: "✅ User-written content in 'Truths about the campaign/world'" });
-    preserveList.createEl("li", { text: "✅ All NPCs, PCs, sessions, and other campaign files" });
-
-    contentEl.createEl("h3", { text: "⚠️ Important:" });
-    const warningList = contentEl.createEl("ul", { cls: "mod-warning" });
-    warningList.createEl("li", { text: "Automatic backups will be created in z_Backups/" });
-    warningList.createEl("li", { text: "Template updates may require manual cleanup if you heavily customized your files" });
-    warningList.createEl("li", { text: "Review the updated files after the process completes" });
-
-    const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
-
-    const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
-    cancelBtn.addEventListener("click", () => {
-      this.close();
-    });
-
-    const confirmBtn = buttonContainer.createEl("button", {
-      text: "Update Templates",
+    // Scan button
+    const scanBtn = contentEl.createEl("button", {
+      text: "🔍 Scan for Updates",
       cls: "mod-cta"
     });
-    confirmBtn.addEventListener("click", async () => {
-      this.close();
-      await this.plugin.performTemplateUpdate();
+
+    const resultsContainer = contentEl.createDiv({ cls: "migration-results" });
+
+    scanBtn.addEventListener("click", async () => {
+      scanBtn.disabled = true;
+      scanBtn.textContent = "Scanning...";
+      resultsContainer.empty();
+
+      this.filesNeedingMigration = await this.plugin.migrationManager.findFilesNeedingMigration(this.currentCampaign);
+      
+      if (this.filesNeedingMigration.length === 0) {
+        resultsContainer.createEl("p", { 
+          text: "✅ All files are up to date!",
+          cls: "migration-success"
+        });
+        scanBtn.disabled = false;
+        scanBtn.textContent = "🔍 Scan for Updates";
+        return;
+      }
+
+      // Show results
+      resultsContainer.createEl("h3", { 
+        text: `Found ${this.filesNeedingMigration.length} file(s) that can be updated:` 
+      });
+
+      // Select all checkbox
+      const selectAllContainer = resultsContainer.createDiv({ cls: "setting-item" });
+      const selectAllCheckbox = selectAllContainer.createEl("input", { type: "checkbox" });
+      selectAllCheckbox.checked = true;
+      selectAllContainer.createEl("label", { text: " Select all files" });
+      
+      selectAllCheckbox.addEventListener("change", () => {
+        const allCheckboxes = resultsContainer.querySelectorAll('input[type="checkbox"]:not(:first-child)');
+        allCheckboxes.forEach((element) => {
+          const checkbox = element as HTMLInputElement;
+          checkbox.checked = selectAllCheckbox.checked;
+        });
+        this.updateSelectedFiles();
+      });
+
+      // File list
+      const fileList = resultsContainer.createEl("div", { cls: "migration-file-list" });
+      
+      for (const file of this.filesNeedingMigration) {
+        const fileItem = fileList.createDiv({ cls: "migration-file-item" });
+        
+        const checkbox = fileItem.createEl("input", { type: "checkbox" });
+        checkbox.checked = true;
+        this.selectedFiles.add(file);
+
+        const fileType = await this.plugin.migrationManager.getFileType(file);
+        const currentVersion = await this.plugin.migrationManager.getFileTemplateVersion(file) || "none";
+        const targetVersion = TEMPLATE_VERSIONS[fileType as keyof typeof TEMPLATE_VERSIONS];
+
+        const fileInfo = fileItem.createEl("span", {
+          text: `${file.path} (${fileType}: v${currentVersion} → v${targetVersion})`
+        });
+
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) {
+            this.selectedFiles.add(file);
+          } else {
+            this.selectedFiles.delete(file);
+          }
+        });
+      }
+
+      this.updateSelectedFiles();
+
+      // Migration info
+      const infoBox = resultsContainer.createDiv({ cls: "migration-info" });
+      infoBox.createEl("h3", { text: "What will be updated:" });
+      const updateList = infoBox.createEl("ul");
+      updateList.createEl("li", { text: "✅ New frontmatter fields will be added" });
+      updateList.createEl("li", { text: "✅ New sections will be injected (not replacing existing ones)" });
+      updateList.createEl("li", { text: "✅ Dataview queries may be updated" });
+      updateList.createEl("li", { text: "✅ Template version will be tracked" });
+      
+      infoBox.createEl("h3", { text: "What will be preserved:" });
+      const preserveList = infoBox.createEl("ul");
+      preserveList.createEl("li", { text: "🛡️ All your existing content" });
+      preserveList.createEl("li", { text: "🛡️ All frontmatter values" });
+      preserveList.createEl("li", { text: "🛡️ All sections you've written" });
+
+      // Migrate button
+      const migrateBtn = resultsContainer.createEl("button", {
+        text: `Migrate ${this.selectedFiles.size} file(s)`,
+        cls: "mod-cta"
+      });
+
+      migrateBtn.addEventListener("click", async () => {
+        await this.performMigration(migrateBtn, resultsContainer);
+      });
+
+      scanBtn.disabled = false;
+      scanBtn.textContent = "🔍 Scan for Updates";
     });
+
+    campaignSelect.addEventListener("change", () => {
+      this.currentCampaign = campaignSelect.value;
+      resultsContainer.empty();
+      this.filesNeedingMigration = [];
+      this.selectedFiles.clear();
+    });
+
+    // Close button
+    const closeBtn = contentEl.createEl("button", { text: "Close" });
+    closeBtn.addEventListener("click", () => this.close());
+  }
+
+  private updateSelectedFiles() {
+    // This method can be used to update UI based on selection
+  }
+
+  private async performMigration(button: HTMLButtonElement, container: HTMLElement) {
+    if (this.selectedFiles.size === 0) {
+      new Notice("No files selected for migration.");
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = "Migrating...";
+
+    const filesToMigrate = Array.from(this.selectedFiles);
+    const result = await this.plugin.migrationManager.migrateFiles(filesToMigrate);
+
+    container.empty();
+    
+    if (result.success > 0) {
+      container.createEl("p", {
+        text: `✅ Successfully migrated ${result.success} file(s)!`,
+        cls: "migration-success"
+      });
+    }
+
+    if (result.failed > 0) {
+      container.createEl("p", {
+        text: `⚠️ Failed to migrate ${result.failed} file(s). Check console for details.`,
+        cls: "migration-warning"
+      });
+    }
+
+    new Notice(`Migration complete: ${result.success} succeeded, ${result.failed} failed.`);
+
+    // Add close button
+    const closeBtn = container.createEl("button", { text: "Close", cls: "mod-cta" });
+    closeBtn.addEventListener("click", () => this.close());
   }
 
   onClose() {
@@ -1170,52 +1520,74 @@ class DndHubModal extends Modal {
 
     // Check if vault is initialized
     if (!this.plugin.isVaultInitialized()) {
+      console.log("DND Hub: Vault not initialized, showing init UI");
       this.showInitializationUI(contentEl);
       return;
     }
 
-        // Quick Actions Section
-        contentEl.createEl("h2", { text: "Quick Actions" });
+    // Check if any campaigns exist
+    const campaigns = this.plugin.getAllCampaigns();
+    const hasCampaigns = campaigns.length > 0;
+    console.log("DND Hub: Found", campaigns.length, "campaigns. hasCampaigns:", hasCampaigns);
 
-        const quickActionsContainer = contentEl.createDiv({ cls: "dnd-hub-quick-actions" });
+    // Quick Actions Section
+    contentEl.createEl("h2", { text: "Quick Actions" });
 
-        this.createActionButton(quickActionsContainer, "🎲 New Campaign", () => {
-          this.close();
-          this.plugin.createCampaign();
-        });
+    const quickActionsContainer = contentEl.createDiv({ cls: "dnd-hub-quick-actions" });
 
-    this.createActionButton(quickActionsContainer, "👤 New NPC", () => {
+    console.log("DND Hub: Creating 'New Campaign' button");
+    this.createActionButton(quickActionsContainer, "🎲 New Campaign", () => {
       this.close();
-      this.plugin.createNpc();
+      this.plugin.createCampaign();
     });
 
-    this.createActionButton(quickActionsContainer, "🛡️ New PC", () => {
-      this.close();
-      this.plugin.createPc();
-    });
+    // Only show other buttons if campaigns exist
+    if (hasCampaigns) {
+      this.createActionButton(quickActionsContainer, "👤 New NPC", () => {
+        this.close();
+        this.plugin.createNpc();
+      });
 
-    this.createActionButton(quickActionsContainer, "🏛️ New Faction", () => {
-      this.close();
-      this.plugin.createFaction();
-    });
+      this.createActionButton(quickActionsContainer, "🛡️ New PC", () => {
+        this.close();
+        this.plugin.createPc();
+      });
 
-    contentEl.createEl("p", {
-      text: "Create sessions from a campaign's World note or via the 'Create New Session' command.",
-      cls: "dnd-hub-info",
-    });
+      this.createActionButton(quickActionsContainer, "🏛️ New Faction", () => {
+        this.close();
+        this.plugin.createFaction();
+      });
 
-    // Browse Vault Section
-    contentEl.createEl("h2", { text: "Browse Vault" });
-    const browseContainer = contentEl.createDiv({ cls: "dnd-hub-browse" });
+      this.createActionButton(quickActionsContainer, "🗺️ New Adventure", () => {
+        this.close();
+        this.plugin.createAdventure();
+      });
+    }
 
-    this.createBrowseButton(browseContainer, "📁 Campaigns", "Campaigns");
-    this.createBrowseButton(browseContainer, "👥 NPCs", "NPCs");
-    this.createBrowseButton(browseContainer, "🛡️ PCs", "PCs");
-    this.createBrowseButton(browseContainer, "🗺️ Adventures", "Adventures");
-    this.createBrowseButton(browseContainer, "📜 Sessions", "Sessions");
-    this.createBrowseButton(browseContainer, "⚔️ Items", "Items");
-    this.createBrowseButton(browseContainer, "✨ Spells", "Spells");
-    this.createBrowseButton(browseContainer, "🏛️ Factions", "Factions");
+    if (hasCampaigns) {
+      contentEl.createEl("p", {
+        text: "Create sessions from a campaign's World note or via the 'Create New Session' command.",
+        cls: "dnd-hub-info",
+      });
+
+      // Browse Vault Section
+      contentEl.createEl("h2", { text: "Browse Vault" });
+      const browseContainer = contentEl.createDiv({ cls: "dnd-hub-browse" });
+
+      this.createBrowseButton(browseContainer, "📁 Campaigns", "Campaigns");
+      this.createBrowseButton(browseContainer, "👥 NPCs", "NPCs");
+      this.createBrowseButton(browseContainer, "🛡️ PCs", "PCs");
+      this.createBrowseButton(browseContainer, "🗺️ Adventures", "Adventures");
+      this.createBrowseButton(browseContainer, "📜 Sessions", "Sessions");
+      this.createBrowseButton(browseContainer, "⚔️ Items", "Items");
+      this.createBrowseButton(browseContainer, "✨ Spells", "Spells");
+      this.createBrowseButton(browseContainer, "🏛️ Factions", "Factions");
+    } else {
+      contentEl.createEl("p", {
+        text: "Create your first campaign to get started!",
+        cls: "dnd-hub-info",
+      });
+    }
   }
 
   createActionButton(container: Element, text: string, callback: () => void) {
@@ -1986,6 +2358,7 @@ class SessionCreationModal extends Modal {
   sessionTitle = "";
   sessionDate: string;
   location = "";
+  adventurePath = "";
   useCustomDate = false;
   calendar = "";
   startYear = "";
@@ -1997,10 +2370,43 @@ class SessionCreationModal extends Modal {
   selectedCalendarData: any = null;
   endDayDropdown: any = null;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string) {
     super(app);
     this.plugin = plugin;
     this.sessionDate = new Date().toISOString().split('T')[0] || "";
+    if (adventurePath) {
+      this.adventurePath = adventurePath;
+    }
+  }
+
+  async getAllAdventures(): Promise<Array<{ path: string; name: string }>> {
+    const adventures: Array<{ path: string; name: string }> = [];
+    const campaignPath = this.plugin.settings.currentCampaign;
+    
+    const adventuresFolder = this.app.vault.getAbstractFileByPath(`${campaignPath}/Adventures`);
+    
+    if (adventuresFolder instanceof TFolder) {
+      for (const item of adventuresFolder.children) {
+        if (item instanceof TFile && item.extension === 'md') {
+          // Adventure file directly in Adventures folder (flat structure)
+          adventures.push({
+            path: item.path,
+            name: item.basename
+          });
+        } else if (item instanceof TFolder) {
+          // Adventure folder with main note inside (folder structure)
+          const mainFile = this.app.vault.getAbstractFileByPath(`${item.path}/${item.name}.md`);
+          if (mainFile instanceof TFile) {
+            adventures.push({
+              path: mainFile.path,
+              name: item.name
+            });
+          }
+        }
+      }
+    }
+
+    return adventures;
   }
 
   async loadCalendarData() {
@@ -2133,6 +2539,24 @@ class SessionCreationModal extends Modal {
           });
         text.inputEl.focus();
       });
+
+    // Adventure Selection
+    const adventures = await this.getAllAdventures();
+    if (adventures.length > 0) {
+      new Setting(contentEl)
+        .setName("Adventure")
+        .setDesc("Link this session to an adventure (optional)")
+        .addDropdown(dropdown => {
+          dropdown.addOption("", "-- None --");
+          adventures.forEach(adv => {
+            dropdown.addOption(adv.path, adv.name);
+          });
+          dropdown.setValue(this.adventurePath);
+          dropdown.onChange(value => {
+            this.adventurePath = value;
+          });
+        });
+    }
 
     // Session Date (real world)
     new Setting(contentEl)
@@ -2302,6 +2726,7 @@ class SessionCreationModal extends Modal {
       sessionContent = sessionContent
         .replace(/campaign:\s*([^\r\n]\w*)$/m, `campaign: ${campaignName}`)
         .replace(/world:\s*([^\r\n]\w*)$/m, `world: ${campaignName}`)
+        .replace(/adventure:\s*([^\r\n]\w*)$/m, `adventure: ${this.adventurePath ? `"[[${this.adventurePath}]]"` : ''}`)
         .replace(/sessionNum:\s*([^\r\n]\w*)$/m, `sessionNum: ${nextNumber}`)
         .replace(/location:\s*([^\r\n]\w*)$/m, `location: ${this.location}`)
         .replace(/date:\s*([^\r\n]\w*)$/m, `date: ${this.sessionDate}`)
@@ -2934,6 +3359,808 @@ class CalendarDateInputModal extends Modal {
     contentEl.empty();
   }
 }
+
+class AdventureCreationModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  adventureName = "";
+  campaign = "";
+  theProblem = "";
+  levelFrom = "1";
+  levelTo = "3";
+  expectedSessions = "3";
+  useFolderStructure = false;
+  isGM = false;
+
+  constructor(app: App, plugin: DndCampaignHubPlugin) {
+    super(app);
+    this.plugin = plugin;
+    this.campaign = plugin.settings.currentCampaign;
+  }
+
+  async onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "🗺️ Create New Adventure" });
+
+    // Get all campaigns and filter for GM ones
+    const allCampaigns = await this.getAllGMCampaigns();
+
+    if (allCampaigns.length === 0) {
+      contentEl.createEl("p", {
+        text: "⚠️ Only GMs can create adventures. You don't have any campaigns where you are set as GM (role: gm in World.md).",
+        cls: "mod-warning"
+      });
+      
+      const closeBtn = contentEl.createEl("button", { text: "Close" });
+      closeBtn.addEventListener("click", () => this.close());
+      return;
+    }
+
+    // Default to first GM campaign
+    if (allCampaigns.length > 0 && allCampaigns[0]) {
+      this.campaign = allCampaigns[0].path;
+      this.isGM = true;
+    }
+
+    contentEl.createEl("p", {
+      text: "Plan a compelling multi-session adventure with a 3-act structure.",
+      cls: "setting-item-description"
+    });
+
+    // Adventure Name
+    new Setting(contentEl)
+      .setName("Adventure Name")
+      .setDesc("What is this adventure called?")
+      .addText((text) => {
+        text
+          .setPlaceholder("e.g., The Sunless Citadel, Murder in Baldur's Gate")
+          .onChange((value) => {
+            this.adventureName = value;
+          });
+        text.inputEl.focus();
+      });
+
+    // Campaign Selection (only GM campaigns)
+    new Setting(contentEl)
+      .setName("Campaign")
+      .setDesc("Which campaign does this adventure belong to?")
+      .addDropdown((dropdown) => {
+        allCampaigns.forEach(campaign => {
+          dropdown.addOption(campaign.path, campaign.name);
+        });
+        dropdown.setValue(this.campaign)
+          .onChange((value) => {
+            this.campaign = value;
+          });
+      });
+
+    contentEl.createEl("h3", { text: "📖 Core Adventure" });
+
+    // The Problem
+    new Setting(contentEl)
+      .setName("The Problem")
+      .setDesc("What urgent situation demands heroes? (2-3 sentences)")
+      .addTextArea((text) => {
+        text
+          .setPlaceholder("e.g., A kobold tribe has taken over an ancient citadel and is terrorizing nearby settlements. The mayor desperately needs heroes to stop the raids before the town is abandoned.")
+          .onChange((value) => {
+            this.theProblem = value;
+          });
+        text.inputEl.rows = 4;
+      });
+
+    contentEl.createEl("h3", { text: "⚙️ Adventure Parameters" });
+
+    // Level Range
+    const levelSetting = new Setting(contentEl)
+      .setName("Target Level Range")
+      .setDesc("What character levels is this adventure designed for?");
+
+    levelSetting.addText((text) => {
+      text
+        .setPlaceholder("1")
+        .setValue(this.levelFrom)
+        .onChange((value) => {
+          this.levelFrom = value;
+        });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "60px";
+    });
+
+    levelSetting.controlEl.createSpan({ text: " to ", cls: "dnd-level-separator" });
+
+    levelSetting.addText((text) => {
+      text
+        .setPlaceholder("3")
+        .setValue(this.levelTo)
+        .onChange((value) => {
+          this.levelTo = value;
+        });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "60px";
+    });
+
+    // Expected Sessions
+    new Setting(contentEl)
+      .setName("Expected Sessions")
+      .setDesc("How many sessions do you expect this adventure to take?")
+      .addText((text) => {
+        text
+          .setPlaceholder("3")
+          .setValue(this.expectedSessions)
+          .onChange((value) => {
+            this.expectedSessions = value;
+          });
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "80px";
+      });
+
+    contentEl.createEl("h3", { text: "📁 Structure Options" });
+
+    // Folder Structure Toggle
+    new Setting(contentEl)
+      .setName("Create full folder structure with Acts")
+      .setDesc("Organize scenes into separate Act folders (recommended for 3+ session adventures)")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.useFolderStructure)
+          .onChange((value) => {
+            this.useFolderStructure = value;
+          })
+      );
+
+    // Buttons
+    const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
+
+    const cancelButton = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelButton.addEventListener("click", () => {
+      this.close();
+    });
+
+    const createButton = buttonContainer.createEl("button", {
+      text: "Create Adventure",
+      cls: "mod-cta",
+    });
+
+    createButton.addEventListener("click", async () => {
+      if (!this.adventureName.trim()) {
+        new Notice("Please enter an adventure name!");
+        return;
+      }
+
+      this.close();
+      await this.createAdventureFile();
+    });
+  }
+
+  async getAllGMCampaigns(): Promise<Array<{ path: string; name: string }>> {
+    const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
+    const gmCampaigns: Array<{ path: string; name: string }> = [];
+
+    if (ttrpgsFolder instanceof TFolder) {
+      for (const child of ttrpgsFolder.children) {
+        if (child instanceof TFolder) {
+          // Check if this campaign has role: gm
+          const worldFile = this.app.vault.getAbstractFileByPath(`${child.path}/World.md`);
+          if (worldFile instanceof TFile) {
+            const worldContent = await this.app.vault.read(worldFile);
+            const roleMatch = worldContent.match(/^role:\s*([^\r\n]\w*)$/m);
+            if (roleMatch && roleMatch[1] && roleMatch[1].toLowerCase() === 'gm') {
+              gmCampaigns.push({
+                path: child.path,
+                name: child.name
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return gmCampaigns;
+  }
+
+  async createAdventureFile() {
+    const campaignName = this.campaign.split('/').pop() || "Unknown";
+    const baseAdventurePath = `${this.campaign}/Adventures`;
+    
+    new Notice(`Creating Adventure "${this.adventureName}"...`);
+
+    try {
+      await this.plugin.ensureFolderExists(baseAdventurePath);
+
+      // Get world info from campaign World.md
+      const worldFile = this.app.vault.getAbstractFileByPath(`${this.campaign}/World.md`);
+      let worldName = campaignName;
+      
+      if (worldFile instanceof TFile) {
+        const worldContent = await this.app.vault.read(worldFile);
+        const worldMatch = worldContent.match(/^world:\s*([^\r\n]+)$/m);
+        if (worldMatch && worldMatch[1] && worldMatch[1].trim()) {
+          worldName = worldMatch[1].trim();
+        }
+      }
+
+      // Determine folder structure
+      let adventureFolder: string;
+      let mainNotePath: string;
+      let scenesBasePath: string;
+
+      if (this.useFolderStructure) {
+        // Full folder structure: Adventures/Adventure Name/Adventure Name.md
+        adventureFolder = `${baseAdventurePath}/${this.adventureName}`;
+        await this.plugin.ensureFolderExists(adventureFolder);
+        mainNotePath = `${adventureFolder}/${this.adventureName}.md`;
+        scenesBasePath = adventureFolder; // Acts will be subfolders here
+      } else {
+        // Flat structure: Adventures/Adventure Name.md with Scenes subfolder
+        mainNotePath = `${baseAdventurePath}/${this.adventureName}.md`;
+        scenesBasePath = `${baseAdventurePath}/${this.adventureName} - Scenes`;
+        await this.plugin.ensureFolderExists(scenesBasePath);
+      }
+
+      // Get current date
+      const currentDate: string = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
+
+      // Ensure worldName has a value for type safety
+      const safeWorldName: string = worldName || campaignName || "Unknown";
+      const safeCampaignName: string = campaignName || "Unknown";
+
+      // Create main adventure note
+      await this.createMainAdventureNote(mainNotePath, safeCampaignName, safeWorldName, currentDate);
+
+      // Create scene notes
+      await this.createSceneNotes(scenesBasePath, safeCampaignName, safeWorldName, currentDate);
+
+      // Open the main adventure file
+      await this.app.workspace.openLinkText(mainNotePath, "", true);
+
+      new Notice(`✅ Adventure "${this.adventureName}" created with 9 scenes!`);
+    } catch (error) {
+      new Notice(`❌ Error creating Adventure: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("Adventure creation error:", error);
+    }
+  }
+
+  async createMainAdventureNote(filePath: string, campaignName: string, worldName: string, currentDate: string) {
+    // Get Adventure template
+    const templatePath = "z_Templates/Frontmatter - Adventure.md";
+    const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
+    let adventureContent: string;
+
+    if (templateFile instanceof TFile) {
+      adventureContent = await this.app.vault.read(templateFile);
+    } else {
+      adventureContent = ADVENTURE_TEMPLATE;
+    }
+
+    // Build complete frontmatter
+    const frontmatter = `---
+type: adventure
+name: ${this.adventureName}
+campaign: ${campaignName}
+world: ${worldName}
+status: planning
+level_range: ${this.levelFrom}-${this.levelTo}
+current_act: 1
+expected_sessions: ${this.expectedSessions}
+sessions: []
+date: ${currentDate}
+---`;
+
+    // Replace the frontmatter
+    adventureContent = adventureContent.replace(/^---\n[\s\S]*?\n---/, frontmatter);
+    
+    // Replace template placeholders
+    adventureContent = adventureContent
+      .replace(/# <% tp\.frontmatter\.name %>/g, `# ${this.adventureName}`)
+      .replace(/<% tp\.frontmatter\.name %>/g, this.adventureName)
+      .replace(/{{ADVENTURE_NAME}}/g, this.adventureName)
+      .replace(/{{CAMPAIGN_NAME}}/g, campaignName)
+      .replace(/{{LEVEL_RANGE}}/g, `${this.levelFrom}-${this.levelTo}`)
+      .replace(/{{EXPECTED_SESSIONS}}/g, this.expectedSessions)
+      .replace(/{{THE_PROBLEM}}/g, this.theProblem || "_[What urgent situation demands heroes?]_")
+      .replace(/<% tp\.frontmatter\.level_range %>/g, `${this.levelFrom}-${this.levelTo}`)
+      .replace(/<% tp\.frontmatter\.expected_sessions %>/g, this.expectedSessions)
+      .replace(/<% tp\.frontmatter\.current_act %>/g, "1");
+
+    await this.app.vault.create(filePath, adventureContent);
+  }
+
+  async createSceneNotes(basePath: string, campaignName: string, worldName: string, currentDate: string) {
+    const scenes = [
+      { act: 1, num: 1, name: "Opening Hook", duration: "15min", type: "social", difficulty: "easy" },
+      { act: 1, num: 2, name: "Investigation", duration: "30min", type: "exploration", difficulty: "medium" },
+      { act: 1, num: 3, name: "First Confrontation", duration: "45min", type: "combat", difficulty: "medium" },
+      { act: 2, num: 4, name: "Complication Arises", duration: "20min", type: "social", difficulty: "medium" },
+      { act: 2, num: 5, name: "Major Challenge", duration: "40min", type: "combat", difficulty: "hard" },
+      { act: 2, num: 6, name: "Critical Choice", duration: "30min", type: "social", difficulty: "hard" },
+      { act: 3, num: 7, name: "Preparation", duration: "20min", type: "exploration", difficulty: "medium" },
+      { act: 3, num: 8, name: "Climactic Battle", duration: "60min", type: "combat", difficulty: "deadly" },
+      { act: 3, num: 9, name: "Resolution", duration: "10min", type: "social", difficulty: "easy" }
+    ];
+
+    for (const scene of scenes) {
+      let scenePath: string;
+      
+      if (this.useFolderStructure) {
+        // Create Act folders
+        const actName = scene.act === 1 ? "Act 1 - Setup" : scene.act === 2 ? "Act 2 - Rising Action" : "Act 3 - Climax";
+        const actFolder = `${basePath}/${actName}`;
+        await this.plugin.ensureFolderExists(actFolder);
+        scenePath = `${actFolder}/Scene ${scene.num} - ${scene.name}.md`;
+      } else {
+        // Flat structure
+        scenePath = `${basePath}/Scene ${scene.num} - ${scene.name}.md`;
+      }
+
+      await this.createSceneNote(scenePath, scene, campaignName, worldName, currentDate);
+    }
+  }
+
+  async createSceneNote(filePath: string, scene: any, campaignName: string, worldName: string, currentDate: string) {
+    const sceneContent = SCENE_TEMPLATE
+      .replace(/{{SCENE_NUMBER}}/g, scene.num.toString())
+      .replace(/{{SCENE_NAME}}/g, scene.name)
+      .replace(/{{ADVENTURE_NAME}}/g, this.adventureName)
+      .replace(/{{ACT_NUMBER}}/g, scene.act.toString())
+      .replace(/{{DURATION}}/g, scene.duration)
+      .replace(/{{TYPE}}/g, scene.type)
+      .replace(/{{DIFFICULTY}}/g, scene.difficulty)
+      .replace(/{{CAMPAIGN}}/g, campaignName)
+      .replace(/{{WORLD}}/g, worldName)
+      .replace(/{{DATE}}/g, currentDate);
+
+    await this.app.vault.create(filePath, sceneContent);
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+class SceneCreationModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  adventurePath = "";
+  sceneName = "";
+  act = "1";
+  sceneNumber = "1";
+  duration = "30min";
+  type = "exploration";
+  difficulty = "medium";
+
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string) {
+    super(app);
+    this.plugin = plugin;
+    if (adventurePath) {
+      this.adventurePath = adventurePath;
+    }
+  }
+
+  async onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "🎬 Create New Scene" });
+
+    // Get all adventures from GM campaigns
+    const allAdventures = await this.getAllAdventures();
+
+    if (allAdventures.length === 0) {
+      contentEl.createEl("p", {
+        text: "⚠️ No adventures found. Create an adventure first.",
+        cls: "mod-warning"
+      });
+      
+      const closeBtn = contentEl.createEl("button", { text: "Close" });
+      closeBtn.addEventListener("click", () => this.close());
+      return;
+    }
+
+    // Set default adventure if provided, otherwise first one
+    if (!this.adventurePath && allAdventures.length > 0 && allAdventures[0]) {
+      this.adventurePath = allAdventures[0].path;
+    }
+
+    contentEl.createEl("p", {
+      text: "Add a new scene to your adventure. The scene will be inserted at the specified number.",
+      cls: "setting-item-description"
+    });
+
+    // Adventure Selection
+    new Setting(contentEl)
+      .setName("Adventure")
+      .setDesc("Select the adventure to add this scene to")
+      .addDropdown(dropdown => {
+        allAdventures.forEach(adv => {
+          dropdown.addOption(adv.path, adv.name);
+        });
+        dropdown.setValue(this.adventurePath);
+        dropdown.onChange(value => {
+          this.adventurePath = value;
+          // Update suggested scene number based on existing scenes
+          this.updateSceneNumberSuggestion();
+        });
+      });
+
+    // Scene Name
+    new Setting(contentEl)
+      .setName("Scene Name")
+      .setDesc("Give this scene a descriptive name")
+      .addText(text => text
+        .setPlaceholder("e.g., Tavern Ambush")
+        .setValue(this.sceneName)
+        .onChange(value => this.sceneName = value));
+
+    // Act Selection
+    new Setting(contentEl)
+      .setName("Act")
+      .setDesc("Which act does this scene belong to?")
+      .addDropdown(dropdown => dropdown
+        .addOption("1", "Act 1 - Setup")
+        .addOption("2", "Act 2 - Rising Action")
+        .addOption("3", "Act 3 - Climax")
+        .setValue(this.act)
+        .onChange(value => this.act = value));
+
+    // Scene Number
+    const sceneNumberSetting = new Setting(contentEl)
+      .setName("Scene Number")
+      .setDesc("Position in the adventure (existing scenes will be renumbered if needed)")
+      .addText(text => text
+        .setPlaceholder("e.g., 5")
+        .setValue(this.sceneNumber)
+        .onChange(value => this.sceneNumber = value));
+
+    // Duration
+    new Setting(contentEl)
+      .setName("Duration")
+      .setDesc("Estimated scene duration")
+      .addDropdown(dropdown => dropdown
+        .addOption("15min", "15 minutes")
+        .addOption("20min", "20 minutes")
+        .addOption("30min", "30 minutes")
+        .addOption("40min", "40 minutes")
+        .addOption("45min", "45 minutes")
+        .addOption("60min", "60 minutes")
+        .setValue(this.duration)
+        .onChange(value => this.duration = value));
+
+    // Type
+    new Setting(contentEl)
+      .setName("Type")
+      .setDesc("Primary scene type")
+      .addDropdown(dropdown => dropdown
+        .addOption("social", "Social")
+        .addOption("combat", "Combat")
+        .addOption("exploration", "Exploration")
+        .setValue(this.type)
+        .onChange(value => this.type = value));
+
+    // Difficulty
+    new Setting(contentEl)
+      .setName("Difficulty")
+      .setDesc("Challenge level")
+      .addDropdown(dropdown => dropdown
+        .addOption("easy", "Easy")
+        .addOption("medium", "Medium")
+        .addOption("hard", "Hard")
+        .addOption("deadly", "Deadly")
+        .setValue(this.difficulty)
+        .onChange(value => this.difficulty = value));
+
+    // Create button
+    new Setting(contentEl)
+      .addButton(btn => btn
+        .setButtonText("Create Scene")
+        .setCta()
+        .onClick(async () => {
+          if (!this.sceneName) {
+            new Notice("Please enter a scene name!");
+            return;
+          }
+
+          this.close();
+          await this.createSceneFile();
+        }));
+  }
+
+  async updateSceneNumberSuggestion() {
+    const existingScenes = await this.getExistingScenes(this.adventurePath);
+    const nextNumber = existingScenes.length + 1;
+    this.sceneNumber = nextNumber.toString();
+  }
+
+  async getAllAdventures(): Promise<Array<{ path: string; name: string }>> {
+    const adventures: Array<{ path: string; name: string }> = [];
+    const gmCampaigns = await this.getAllGMCampaigns();
+
+    for (const campaign of gmCampaigns) {
+      const adventuresFolder = this.app.vault.getAbstractFileByPath(`${campaign.path}/Adventures`);
+      
+      if (adventuresFolder instanceof TFolder) {
+        for (const item of adventuresFolder.children) {
+          if (item instanceof TFile && item.extension === 'md') {
+            // Adventure file directly in Adventures folder (flat structure)
+            adventures.push({
+              path: item.path,
+              name: item.basename
+            });
+          } else if (item instanceof TFolder) {
+            // Adventure folder with main note inside (folder structure)
+            const mainFile = this.app.vault.getAbstractFileByPath(`${item.path}/${item.name}.md`);
+            if (mainFile instanceof TFile) {
+              adventures.push({
+                path: mainFile.path,
+                name: item.name
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return adventures;
+  }
+
+  async getAllGMCampaigns(): Promise<Array<{ path: string; name: string }>> {
+    const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
+    const gmCampaigns: Array<{ path: string; name: string }> = [];
+
+    if (ttrpgsFolder instanceof TFolder) {
+      for (const child of ttrpgsFolder.children) {
+        if (child instanceof TFolder) {
+          const worldFile = this.app.vault.getAbstractFileByPath(`${child.path}/World.md`);
+          if (worldFile instanceof TFile) {
+            const worldContent = await this.app.vault.read(worldFile);
+            const roleMatch = worldContent.match(/^role:\s*([^\r\n]\w*)$/m);
+            if (roleMatch && roleMatch[1] && roleMatch[1].toLowerCase() === 'gm') {
+              gmCampaigns.push({
+                path: child.path,
+                name: child.name
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return gmCampaigns;
+  }
+
+  async getExistingScenes(adventurePath: string): Promise<Array<{ path: string; number: number; name: string }>> {
+    const scenes: Array<{ path: string; number: number; name: string }> = [];
+    const adventureFile = this.app.vault.getAbstractFileByPath(adventurePath);
+    
+    if (!(adventureFile instanceof TFile)) return scenes;
+
+    // Determine base path for scenes
+    const adventureFolder = adventureFile.parent;
+    if (!adventureFolder) return scenes;
+
+    // Check for flat structure (Adventure - Scenes folder)
+    const flatScenesFolder = this.app.vault.getAbstractFileByPath(
+      `${adventureFolder.path}/${adventureFile.basename} - Scenes`
+    );
+
+    // Check for folder structure (Adventure/Scene files or Adventure/Act X folders)
+    const folderScenesPath = `${adventureFolder.path}/${adventureFile.basename}`;
+    const folderStructure = this.app.vault.getAbstractFileByPath(folderScenesPath);
+
+    let sceneFolders: TFolder[] = [];
+
+    if (flatScenesFolder instanceof TFolder) {
+      // Flat structure
+      sceneFolders.push(flatScenesFolder);
+    } else if (folderStructure instanceof TFolder) {
+      // Folder structure - check for Act folders or direct scenes
+      for (const child of folderStructure.children) {
+        if (child instanceof TFolder && child.name.startsWith("Act ")) {
+          sceneFolders.push(child);
+        }
+      }
+      // If no Act folders, the main folder contains scenes
+      if (sceneFolders.length === 0) {
+        sceneFolders.push(folderStructure);
+      }
+    }
+
+    // Scan all scene folders for scene files
+    for (const folder of sceneFolders) {
+      for (const item of folder.children) {
+        if (item instanceof TFile && item.extension === 'md') {
+          // Extract scene number from filename: "Scene X - Name.md"
+          const match = item.basename.match(/^Scene\s+(\d+)\s+-\s+(.+)$/);
+          if (match && match[1] && match[2]) {
+            scenes.push({
+              path: item.path,
+              number: parseInt(match[1]),
+              name: match[2]
+            });
+          }
+        }
+      }
+    }
+
+    // Sort by scene number
+    scenes.sort((a, b) => a.number - b.number);
+    return scenes;
+  }
+
+  async createSceneFile() {
+    try {
+      const sceneNum = parseInt(this.sceneNumber);
+      if (isNaN(sceneNum) || sceneNum < 1) {
+        new Notice("Scene number must be a positive number!");
+        return;
+      }
+
+      new Notice(`Creating scene "${this.sceneName}"...`);
+
+      // Get adventure info
+      const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
+      if (!(adventureFile instanceof TFile)) {
+        new Notice("❌ Adventure file not found!");
+        return;
+      }
+
+      const adventureContent = await this.app.vault.read(adventureFile);
+      const campaignMatch = adventureContent.match(/^campaign:\s*([^\r\n]+)$/m);
+      const worldMatch = adventureContent.match(/^world:\s*([^\r\n]+)$/m);
+      const campaignName = (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
+      const worldName = (worldMatch?.[1]?.trim() || campaignName).replace(/^["']|["']$/g, '');
+
+      // Determine folder structure
+      const adventureFolder = adventureFile.parent;
+      if (!adventureFolder) {
+        new Notice("❌ Adventure folder not found!");
+        return;
+      }
+
+      // Check which structure is being used
+      // Flat structure: Adventures/Adventure Name.md with "Adventure Name - Scenes" folder
+      // Folder structure: Adventures/Adventure Name/Adventure Name.md with scenes in that folder (or Act subfolders)
+      
+      const flatScenesFolder = `${adventureFolder.path}/${adventureFile.basename} - Scenes`;
+      const flatExists = this.app.vault.getAbstractFileByPath(flatScenesFolder) instanceof TFolder;
+      
+      // For folder structure, check if we're in a dedicated adventure folder
+      // (i.e., adventure file has same name as its parent folder)
+      const isFolderStructure = adventureFolder.name === adventureFile.basename;
+
+      let scenePath: string;
+      let usesActFolders = false;
+
+      if (flatExists) {
+        // Flat structure
+        scenePath = `${flatScenesFolder}/Scene ${sceneNum} - ${this.sceneName}.md`;
+      } else if (isFolderStructure) {
+        // Folder structure - scenes go in the adventure folder or act subfolders
+        const actFolderName = this.act === "1" ? "Act 1 - Setup" : 
+                              this.act === "2" ? "Act 2 - Rising Action" : "Act 3 - Climax";
+        const actFolderPath = `${adventureFolder.path}/${actFolderName}`;
+        const actFolder = this.app.vault.getAbstractFileByPath(actFolderPath);
+        
+        if (actFolder instanceof TFolder) {
+          usesActFolders = true;
+          scenePath = `${actFolderPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
+        } else {
+          // Check if ANY act folders exist - if so, this is act-based structure
+          const act1Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 1 - Setup`) instanceof TFolder;
+          const act2Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 2 - Rising Action`) instanceof TFolder;
+          const act3Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 3 - Climax`) instanceof TFolder;
+          
+          if (act1Exists || act2Exists || act3Exists) {
+            // Act-based structure - create the missing act folder
+            usesActFolders = true;
+            await this.plugin.ensureFolderExists(actFolderPath);
+            scenePath = `${actFolderPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
+          } else {
+            // No act folders, scenes directly in adventure folder
+            scenePath = `${adventureFolder.path}/Scene ${sceneNum} - ${this.sceneName}.md`;
+          }
+        }
+      } else {
+        new Notice("❌ Could not determine scene folder structure!");
+        return;
+      }
+
+      // Check if we need to renumber existing scenes
+      const existingScenes = await this.getExistingScenes(this.adventurePath);
+      const scenesAtOrAfter = existingScenes.filter(s => s.number >= sceneNum);
+
+      if (scenesAtOrAfter.length > 0) {
+        // Renumber scenes
+        await this.renumberScenes(scenesAtOrAfter, sceneNum);
+      }
+
+      // Ensure parent folder exists
+      const parentPath = scenePath.substring(0, scenePath.lastIndexOf('/'));
+      await this.plugin.ensureFolderExists(parentPath);
+
+      // Create the scene file
+      const currentDate: string = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
+      
+      const sceneData = {
+        act: parseInt(this.act),
+        num: sceneNum,
+        name: this.sceneName,
+        duration: this.duration,
+        type: this.type,
+        difficulty: this.difficulty
+      };
+
+      await this.createSceneNote(scenePath, sceneData, campaignName, worldName, adventureFile.basename, currentDate);
+
+      // Open the new scene
+      await this.app.workspace.openLinkText(scenePath, "", true);
+
+      new Notice(`✅ Scene "${this.sceneName}" created!`);
+    } catch (error) {
+      new Notice(`❌ Error creating scene: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("Scene creation error:", error);
+    }
+  }
+
+  async renumberScenes(scenes: Array<{ path: string; number: number; name: string }>, insertAt: number) {
+    // Renumber scenes from highest to lowest to avoid conflicts
+    const sorted = [...scenes].sort((a, b) => b.number - a.number);
+    
+    for (const scene of sorted) {
+      const oldFile = this.app.vault.getAbstractFileByPath(scene.path);
+      if (!(oldFile instanceof TFile)) continue;
+
+      const newNumber = scene.number + 1;
+      const newPath = scene.path.replace(
+        /Scene\s+\d+\s+-/,
+        `Scene ${newNumber} -`
+      );
+
+      // Read content and update scene_number in frontmatter
+      let content = await this.app.vault.read(oldFile);
+      content = content.replace(
+        /^scene_number:\s*\d+$/m,
+        `scene_number: ${newNumber}`
+      );
+
+      // Create new file with updated content
+      await this.app.vault.create(newPath, content);
+      
+      // Delete old file
+      await this.app.vault.delete(oldFile);
+    }
+  }
+
+  async createSceneNote(
+    filePath: string,
+    scene: any,
+    campaignName: string,
+    worldName: string,
+    adventureName: string,
+    currentDate: string
+  ) {
+    const sceneContent = SCENE_TEMPLATE
+      .replace(/{{SCENE_NUMBER}}/g, scene.num.toString())
+      .replace(/{{SCENE_NAME}}/g, scene.name)
+      .replace(/{{ADVENTURE_NAME}}/g, adventureName)
+      .replace(/{{ACT_NUMBER}}/g, scene.act.toString())
+      .replace(/{{DURATION}}/g, scene.duration)
+      .replace(/{{TYPE}}/g, scene.type)
+      .replace(/{{DIFFICULTY}}/g, scene.difficulty)
+      .replace(/{{CAMPAIGN}}/g, campaignName)
+      .replace(/{{WORLD}}/g, worldName)
+      .replace(/{{DATE}}/g, currentDate);
+
+    await this.app.vault.create(filePath, sceneContent);
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
 class FactionCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
   factionName = "";

@@ -10,6 +10,7 @@ status: active
 role: player
 system:
 type: world
+template_version: 1.0.0
 fc-calendar: 
 fc-date: 
   year: 
@@ -113,6 +114,29 @@ WHERE type = "faction"
 SORT name ASC
 \`\`\`
 
+## Adventures
+
+*Track multi-session story arcs and adventures.*
+
+\`\`\`button
+name Create New Adventure
+type command
+action D&D Campaign Hub: Create New Adventure
+\`\`\`
+^button-new-adventure
+
+\`\`\`dataview
+TABLE WITHOUT ID
+  link(file.path, name) AS "Name",
+  level_range AS "Level",
+  status AS "Status",
+  current_act + "/3" AS "Act",
+  length(sessions) AS "Sessions"
+FROM "ttrpgs/{{CAMPAIGN_NAME}}/Adventures"
+WHERE type = "adventure"
+SORT file.ctime DESC
+\`\`\`
+
 ## Custom rules
 
 - [[Character options]]
@@ -123,8 +147,10 @@ SORT name ASC
 
 export const SESSION_GM_TEMPLATE = `---
 type: session
+template_version: 1.0.0
 campaign: 
 world: 
+adventure: 
 sessionNum: 
 location: 
 date: 
@@ -167,6 +193,65 @@ art: ""
 - [ ] 
 - [ ] 
 
+\`\`\`dataviewjs
+// Get current session's adventure (if linked)
+const sessionFile = dv.current();
+let adventureLink = sessionFile.adventure;
+
+// Parse wikilink if present: "[[path]]" -> path
+if (adventureLink && typeof adventureLink === 'string') {
+  const match = adventureLink.match(/\[\[(.+?)\]\]/);
+  if (match) adventureLink = match[1];
+}
+
+if (adventureLink) {
+  // Get the adventure file
+  const adventurePage = dv.page(adventureLink);
+  
+  if (adventurePage) {
+    const adventureName = adventurePage.name || adventurePage.file.name;
+    const campaignFolder = adventurePage.campaign;
+    const adventureFolder = adventurePage.file.folder;
+    
+    // Find scenes in both flat and folder structures
+    let scenesFlat = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`)
+      .where(p => p.file.name.startsWith("Scene"));
+    let scenesFolder = dv.pages(\`"\${adventureFolder}"\`)
+      .where(p => p.file.name.startsWith("Scene"));
+    
+    let allScenes = [...scenesFlat, ...scenesFolder];
+    
+    if (allScenes.length > 0) {
+      // Sort by scene number
+      allScenes.sort((a, b) => {
+        const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
+        const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
+        return aNum - bNum;
+      });
+      
+      dv.header(4, "Adventure Scenes");
+      for (const scene of allScenes) {
+        const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
+        const duration = scene.duration || "?min";
+        const type = scene.type || "?";
+        dv.paragraph(\`\${status} \${dv.fileLink(scene.file.path, false, scene.file.name)} - \\\`\${duration} | \${type}\\\`\`);
+      }
+    }
+  }
+} else {
+  dv.paragraph("*No adventure linked to this session.*");
+  dv.paragraph("To link an adventure, add it to the frontmatter:");
+  dv.paragraph(\`\\\`\\\`\\\`yaml\\nadventure: "[[Your Adventure Name]]"\\n\\\`\\\`\\\`\`);
+  dv.paragraph("Or create a new adventure:");
+  const createAdvBtn = dv.el('button', '🗺️ Create Adventure');
+  createAdvBtn.className = 'mod-cta';
+  createAdvBtn.style.marginTop = '10px';
+  createAdvBtn.onclick = () => {
+    app.commands.executeCommandById('dnd-campaign-hub:create-adventure');
+  };
+}
+\`\`\`
+
 ## Secrets and Clues
 
 - [ ] 
@@ -192,6 +277,7 @@ art: ""
 
 export const SESSION_PLAYER_TEMPLATE = `---
 type: session
+template_version: 1.0.0
 campaign: 
 world: 
 sessionNum: 
@@ -231,6 +317,7 @@ art: ""
 
 export const NPC_TEMPLATE = `---
 type: npc
+template_version: 1.0.0
 name: 
 world: 
 campaign: 
@@ -376,6 +463,7 @@ notes: []
 
 export const PC_TEMPLATE = `---
 type: player
+template_version: 1.0.0
 name: 
 player: 
 campaign: 
@@ -477,40 +565,287 @@ date:
 
 export const ADVENTURE_TEMPLATE = `---
 type: adventure
+template_version: 1.0.0
+name: 
 campaign: 
+world: 
+status: planning
 level_range: 
-status: planned
+current_act: 1
+expected_sessions: 3
+sessions: []
+date: 
 ---
 
-# Adventure
+# <% tp.frontmatter.name %>
 
-## Overview
-Adventure summary and objectives.
+**Status:** 🎬 Planning  
+**Level:** {{LEVEL_RANGE}} | **Current Act:** 1 of 3  
+**Expected Sessions:** {{EXPECTED_SESSIONS}}  
+**Sessions Played:** 
 
-## Key Locations
-- [[Location 1]]
-- [[Location 2]]
+\`\`\`dataviewjs
+const sceneButton = dv.el('button', '🎬 Create New Scene');
+sceneButton.className = 'mod-cta';
+sceneButton.onclick = () => {
+  app.commands.executeCommandById('dnd-campaign-hub:create-scene');
+};
 
-## NPCs
-- [[NPC 1]]
-- [[NPC 2]]
+const sessionButton = dv.el('button', '📜 Create Session for This Adventure', { cls: 'mod-cta' });
+sessionButton.style.marginLeft = '10px';
+sessionButton.onclick = async () => {
+  const adventurePath = dv.current().file.path;
+  const plugin = app.plugins.plugins['dnd-campaign-hub'];
+  new plugin.SessionCreationModal(app, plugin, adventurePath).open();
+};
+\`\`\`
+
+## The Problem
+
+{{THE_PROBLEM}}
+
+## The Hook
+
+*How do the PCs learn about this and get involved?*
+
+---
+
+## Scenes
+
+\`\`\`dataviewjs
+// Get all scenes for this adventure
+const adventureName = dv.current().name || dv.current().file.name;
+const campaignFolder = dv.current().campaign;
+const adventureFolder = dv.current().file.folder;
+
+// Find scenes in both flat and folder structures
+// Flat: Adventures/Adventure - Scenes/
+// Folder: Adventures/Adventure/ (scenes directly or in Act subfolders)
+let scenesFlat = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`)
+  .where(p => p.file.name.startsWith("Scene"));
+let scenesFolder = dv.pages(\`"\${adventureFolder}"\`)
+  .where(p => p.file.name.startsWith("Scene"));
+
+let allScenes = [...scenesFlat, ...scenesFolder];
+
+if (allScenes.length === 0) {
+  dv.paragraph("*No scenes created yet. Use the button above to create your first scene.*");
+} else {
+  // Sort by scene number
+  allScenes.sort((a, b) => {
+    const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
+    const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
+    return aNum - bNum;
+  });
+
+  // Group by act if act numbers exist
+  const hasActs = allScenes.some(s => s.act);
+  
+  if (hasActs) {
+    // Display grouped by acts
+    const acts = {1: [], 2: [], 3: []};
+    allScenes.forEach(scene => {
+      const act = scene.act || 1;
+      if (acts[act]) acts[act].push(scene);
+    });
+
+    const actNames = {
+      1: "Act 1: Setup & Inciting Incident",
+      2: "Act 2: Rising Action & Confrontation",
+      3: "Act 3: Climax & Resolution"
+    };
+
+    for (const [actNum, actScenes] of Object.entries(acts)) {
+      if (actScenes.length > 0) {
+        dv.header(3, actNames[actNum]);
+        for (const scene of actScenes) {
+          const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
+          const duration = scene.duration || "?min";
+          const type = scene.type || "?";
+          const difficulty = scene.difficulty || "?";
+          dv.paragraph(\`\${status} **\${dv.fileLink(scene.file.path, false, scene.file.name)}**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`);
+        }
+      }
+    }
+  } else {
+    // Display as simple list
+    for (const scene of allScenes) {
+      const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
+      const duration = scene.duration || "?min";
+      const type = scene.type || "?";
+      const difficulty = scene.difficulty || "?";
+      dv.paragraph(\`\${status} **\${dv.fileLink(scene.file.path, false, scene.file.name)}**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`);
+    }
+  }
+}
+\`\`\`
+
+---
+
+## GM Prep Notes
+
+### Session Pacing
+*How do you plan to pace this adventure across sessions?*
+
+### Backup Plans
+*What if PCs go off-script?*
+
+### Secrets & Clues
+- [ ] Clue 1
+- [ ] Clue 2
+- [ ] Clue 3
+- [ ] Secret 1
+- [ ] Secret 2
+
+### Resolution Options
+**Success:** *What happens if PCs succeed?*
+
+**Failure:** *What happens if they fail or give up?*
+
+---
+
+## Key NPCs
+
+*Link important NPCs from your campaign*
+
+---
+
+## Treasure & Rewards
+
+*Track loot and XP for this adventure*
+
+**XP Milestones:**
+- Total XP: 
+- Level up at: 
+`;
+
+export const SCENE_TEMPLATE = `---
+type: scene
+template_version: 1.1.0
+adventure: "{{ADVENTURE_NAME}}"
+campaign: "{{CAMPAIGN}}"
+world: "{{WORLD}}"
+act: {{ACT_NUMBER}}
+scene_number: {{SCENE_NUMBER}}
+duration: {{DURATION}}
+scene_type: {{TYPE}}
+difficulty: {{DIFFICULTY}}
+status: planned
+tracker_encounter: 
+date: {{DATE}}
+---
+
+# Scene {{SCENE_NUMBER}}: {{SCENE_NAME}}
+
+**Duration:** {{DURATION}} | **Type:** {{TYPE}} | **Difficulty:** {{DIFFICULTY}}  
+**Act:** {{ACT_NUMBER}} | **Adventure:** [[{{ADVENTURE_NAME}}]]
+
+---
+
+## Scene Goal
+
+*What should happen in this scene?*
+
+
+
+## Read-Aloud Text
+
+> *Boxed text to read to players when the scene begins*
+
+
+
+## Key Elements
+
+- Important detail 1
+- Important detail 2
+- Important detail 3
+
+---
 
 ## Encounters
-### Encounter 1
-- Description
-- Monsters: 
-- Treasure: 
 
-## Plot Hooks
-- Hook 1
-- Hook 2
+### Social Encounter
 
-## Resolution
-Adventure conclusion and outcomes.
+**NPCs Present:**
+- [[NPC Name]] - Role, motivation, what they want
+
+**Skill Checks:**
+- Persuasion DC 12: 
+- Insight DC 15: 
+- Investigation DC 13: 
+
+**Possible Outcomes:**
+- Success: 
+- Failure: 
+
+### Combat Encounter
+
+\`\`\`dataviewjs
+const trackerEncounter = dv.current().tracker_encounter;
+if (trackerEncounter) {
+  dv.paragraph(\`**Initiative Tracker:** \${trackerEncounter}\`);
+  const openBtn = dv.el('button', '⚔️ Open in Initiative Tracker');
+  openBtn.className = 'mod-cta';
+  openBtn.style.marginRight = '10px';
+  openBtn.onclick = () => {
+    app.commands.executeCommandById('initiative-tracker:open-tracker');
+  };
+} else {
+  dv.paragraph("*💡 Tip: Use the Initiative Tracker plugin to manage this combat*");
+  dv.paragraph("1. Open Initiative Tracker (Ctrl+P → 'Open Initiative Tracker')");
+  dv.paragraph("2. Create an encounter with your creatures");
+  dv.paragraph("3. Save it and add the encounter name to the frontmatter field: \`tracker_encounter\`");
+}
+\`\`\`
+
+**Enemies:**
+- Creature 1 (CR X) x2
+- Creature 2 (CR Y) x1
+
+**Tactics:**
+- Round 1: 
+- If bloodied: 
+- Retreat condition: 
+
+**Battlefield:**
+- Map: ![[map.jpg]]
+- Terrain features: 
+- Hazards: 
+- Cover: 
+
+---
+
+## What Players Might Do
+
+- **Option 1:** If PCs do X → Y happens
+- **Option 2:** If PCs do A → B happens
+- **Option 3:** If PCs try Z → Result
+
+---
+
+## Treasure & Rewards
+
+- [ ] Gold: 
+- [ ] Item: 
+- [ ] XP: 
+- [ ] Information: 
+
+---
+
+## What Actually Happened
+
+**Session:** [[Session X]]  
+**Date:** 
+
+*GM fills this during/after session*
+
+
+
 `;
 
 export const FACTION_TEMPLATE = `---
 type: faction
+template_version: 1.0.0
 name: 
 campaign: 
 world: 
@@ -577,6 +912,7 @@ date:
 
 export const ITEM_TEMPLATE = `---
 type: item
+template_version: 1.0.0
 rarity: common
 attunement: no
 ---
@@ -599,6 +935,7 @@ Where the item is currently located.
 
 export const SPELL_TEMPLATE = `---
 type: spell
+template_version: 1.0.0
 level: 1
 school: 
 casting_time: 1 action
@@ -618,6 +955,7 @@ How the spell scales with level.
 
 export const CAMPAIGN_TEMPLATE = `---
 type: campaign
+template_version: 1.0.0
 status: active
 dm: 
 players: []
@@ -646,6 +984,7 @@ Brief description of the campaign.
 
 export const SESSION_DEFAULT_TEMPLATE = `---
 type: session
+template_version: 1.0.0
 campaign: 
 date: 
 session_number: 
