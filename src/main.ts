@@ -118,6 +118,14 @@ export default class DndCampaignHubPlugin extends Plugin {
       callback: () => this.createScene(),
     });
 
+    this.addCommand({
+      id: "purge-vault",
+      name: "Purge D&D Campaign Hub Data",
+      callback: () => {
+        new PurgeConfirmModal(this.app, this).open();
+      },
+    });
+
     this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
   }
 
