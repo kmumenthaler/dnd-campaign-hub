@@ -194,7 +194,13 @@ art: ""
 \`\`\`dataviewjs
 // Get current session's adventure (if linked)
 const sessionFile = dv.current();
-const adventureLink = sessionFile.adventure;
+let adventureLink = sessionFile.adventure;
+
+// Parse wikilink if present: "[[path]]" -> path
+if (adventureLink && typeof adventureLink === 'string') {
+  const match = adventureLink.match(/\[\[(.+?)\]\]/);
+  if (match) adventureLink = match[1];
+}
 
 if (adventureLink) {
   // Get the adventure file
@@ -203,11 +209,12 @@ if (adventureLink) {
   if (adventurePage) {
     const adventureName = adventurePage.name || adventurePage.file.name;
     const campaignFolder = adventurePage.campaign;
+    const adventureFolder = adventurePage.file.folder;
     
     // Find scenes in both flat and folder structures
     let scenesFlat = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`)
       .where(p => p.file.name.startsWith("Scene"));
-    let scenesFolder = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName}"\`)
+    let scenesFolder = dv.pages(\`"\${adventureFolder}"\`)
       .where(p => p.file.name.startsWith("Scene"));
     
     let allScenes = [...scenesFlat, ...scenesFolder];
@@ -230,7 +237,13 @@ if (adventureLink) {
     }
   }
 } else {
-  dv.paragraph("*Link an adventure in frontmatter to see scenes dynamically*");
+  dv.paragraph("*No adventure linked. Link an adventure in frontmatter or create one:*");
+  const createAdvBtn = dv.el('button', '🗺️ Create Adventure for This Session');
+  createAdvBtn.className = 'mod-cta';
+  createAdvBtn.style.marginTop = '10px';
+  createAdvBtn.onclick = () => {
+    app.commands.executeCommandById('dnd-campaign-hub:create-adventure');
+  };
 }
 \`\`\`
 
@@ -573,8 +586,8 @@ const sessionButton = dv.el('button', '📜 Create Session for This Adventure', 
 sessionButton.style.marginLeft = '10px';
 sessionButton.onclick = async () => {
   const adventurePath = dv.current().file.path;
-  // Create session with adventure pre-linked
-  new (app as any).plugins.plugins['dnd-campaign-hub'].SessionCreationModal(app, (app as any).plugins.plugins['dnd-campaign-hub'], adventurePath).open();
+  const plugin = app.plugins.plugins['dnd-campaign-hub'];
+  new plugin.SessionCreationModal(app, plugin, adventurePath).open();
 };
 \`\`\`
 
