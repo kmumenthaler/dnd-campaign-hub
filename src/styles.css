@@ -175,3 +175,86 @@
   margin: 8px 0;
   color: var(--text-muted);
 }
+
+/* Encounter Builder Styles */
+.dnd-encounter-section {
+  margin: 20px 0;
+  padding: 15px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background-color: var(--background-secondary);
+}
+
+.dnd-encounter-section h3 {
+  margin: 0 0 15px 0;
+  color: var(--text-accent);
+}
+
+.dnd-encounter-builder {
+  margin-top: 15px;
+}
+
+.dnd-encounter-builder h4 {
+  margin: 15px 0 10px 0;
+  font-size: 0.95em;
+  color: var(--text-normal);
+}
+
+.dnd-creature-list {
+  margin: 10px 0;
+  padding: 10px;
+  background-color: var(--background-primary);
+  border-radius: 4px;
+  min-height: 60px;
+}
+
+.dnd-creature-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  margin: 5px 0;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+}
+
+.dnd-creature-name {
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.dnd-creature-stats {
+  font-size: 0.9em;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+
+.dnd-creature-remove {
+  padding: 4px 12px;
+  font-size: 0.85em;
+  background-color: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.dnd-creature-remove:hover {
+  opacity: 0.8;
+}
+
+.dnd-add-creature {
+  margin-top: 15px;
+}
+
+.dnd-add-creature .setting-item {
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 15px;
+}
+
+.dnd-add-creature input[type="text"],
+.dnd-add-creature input[type="number"] {
+  margin-right: 8px;
+}
