@@ -4480,22 +4480,23 @@ class SceneCreationModal extends Modal {
   }>> {
     const creatures: Array<{ name: string; path: string; hp: number; ac: number; cr?: string }> = [];
     
-    // Check multiple possible beastiary locations
+    // Check multiple possible creature/monster folder locations
     const possiblePaths = [
       "z_Beastiarity",
-      "My Vault/z_Beastiarity"
+      "My Vault/z_Beastiarity",
+      "nvdh-ttrpg-vault/monsters",
+      "monsters"
     ];
     
-    let beastiaryFolder: TFolder | null = null;
+    const beastiaryFolders: TFolder[] = [];
     for (const path of possiblePaths) {
       const folder = this.app.vault.getAbstractFileByPath(path);
       if (folder instanceof TFolder) {
-        beastiaryFolder = folder;
-        break;
+        beastiaryFolders.push(folder);
       }
     }
     
-    if (!beastiaryFolder) return creatures;
+    if (beastiaryFolders.length === 0) return creatures;
     
     const queryLower = query.toLowerCase();
     
@@ -4504,7 +4505,6 @@ class SceneCreationModal extends Modal {
       for (const child of folder.children) {
         if (child instanceof TFile && child.extension === "md") {
           try {
-            const content = await this.app.vault.read(child);
             const cache = this.app.metadataCache.getFileCache(child);
             
             // Check if file has statblock
@@ -4531,7 +4531,10 @@ class SceneCreationModal extends Modal {
       }
     };
     
-    await searchFolder(beastiaryFolder);
+    // Search all found beastiary folders
+    for (const folder of beastiaryFolders) {
+      await searchFolder(folder);
+    }
     
     // Sort alphabetically
     creatures.sort((a, b) => a.name.localeCompare(b.name));
