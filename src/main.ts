@@ -318,16 +318,37 @@ LIMIT 1
         return false;
       }
 
-      // Scene migrations
+      // Get target version for this file type
+      const targetVersion = TEMPLATE_VERSIONS[fileType as keyof typeof TEMPLATE_VERSIONS];
+      if (!targetVersion) {
+        console.warn(`No template version defined for type: ${fileType}`);
+        return false;
+      }
+
+      // If file has no version, add the current template version
+      if (!currentVersion) {
+        console.log(`Adding template_version to ${file.path}`);
+        await this.updateTemplateVersion(file, targetVersion);
+        return true;
+      }
+
+      // Scene-specific migrations
       if (fileType === "scene") {
-        if (!currentVersion || this.compareVersions(currentVersion, "1.1.0") < 0) {
+        if (this.compareVersions(currentVersion, "1.1.0") < 0) {
           await this.migrateSceneTo1_1_0(file);
           return true;
         }
       }
 
-      // Add more type-specific migrations here as needed
+      // For other types, if version is outdated, update it
+      // (In the future, add type-specific migration logic here as needed)
+      if (this.compareVersions(currentVersion, targetVersion) < 0) {
+        console.log(`Updating ${file.path} from v${currentVersion} to v${targetVersion}`);
+        await this.updateTemplateVersion(file, targetVersion);
+        return true;
+      }
 
+      // File is already up to date
       return true;
     } catch (error) {
       console.error(`Error migrating ${file.path}:`, error);
