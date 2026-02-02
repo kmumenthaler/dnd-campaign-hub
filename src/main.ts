@@ -31,7 +31,7 @@ const TEMPLATE_VERSIONS = {
   npc: "1.0.0",
   pc: "1.0.0",
   adventure: "1.0.0",
-  scene: "1.1.0", // Updated with Initiative Tracker
+  scene: "1.2.0", // Updated with encounter_creatures field
   faction: "1.0.0",
   item: "1.0.0",
   spell: "1.0.0",
@@ -281,6 +281,9 @@ class MigrationManager {
 
     // 1. Add tracker_encounter field to frontmatter
     await this.addFrontmatterField(file, "tracker_encounter", "");
+    
+    // 2. Add encounter_creatures field to frontmatter
+    await this.addFrontmatterField(file, "encounter_creatures", "[]");
 
     // 2. Inject Initiative Tracker section in Combat section
     const trackerSection = `### Initiative Tracker
@@ -303,6 +306,18 @@ LIMIT 1
     await this.updateTemplateVersion(file, "1.1.0");
 
     console.log(`Scene ${file.path} migrated successfully`);
+  }
+
+  async migrateSceneTo1_2_0(file: TFile): Promise<void> {
+    console.log(`Migrating scene ${file.path} to v1.2.0`);
+
+    // Ensure encounter_creatures field exists
+    await this.addFrontmatterField(file, "encounter_creatures", "[]");
+
+    // Update template version
+    await this.updateTemplateVersion(file, "1.2.0");
+
+    console.log(`Scene ${file.path} migrated to v1.2.0 successfully`);
   }
 
   /**
@@ -336,6 +351,10 @@ LIMIT 1
       if (fileType === "scene") {
         if (this.compareVersions(currentVersion, "1.1.0") < 0) {
           await this.migrateSceneTo1_1_0(file);
+          return true;
+        }
+        if (this.compareVersions(currentVersion, "1.2.0") < 0) {
+          await this.migrateSceneTo1_2_0(file);
           return true;
         }
       }
@@ -3709,7 +3728,9 @@ date: ${currentDate}
       .replace(/{{DIFFICULTY}}/g, scene.difficulty)
       .replace(/{{CAMPAIGN}}/g, campaignName)
       .replace(/{{WORLD}}/g, worldName)
-      .replace(/{{DATE}}/g, currentDate);
+      .replace(/{{DATE}}/g, currentDate)
+      .replace(/{{TRACKER_ENCOUNTER}}/g, "")
+      .replace(/{{ENCOUNTER_CREATURES}}/g, "[]");
 
     await this.app.vault.create(filePath, sceneContent);
   }
@@ -3729,6 +3750,23 @@ class SceneCreationModal extends Modal {
   duration = "30min";
   type = "exploration";
   difficulty = "medium";
+  
+  // Encounter builder properties
+  createEncounter = false;
+  encounterName = "";
+  useColorNames = false;
+  creatures: Array<{
+    name: string;
+    count: number;
+    hp?: number;
+    ac?: number;
+    cr?: string;
+    source?: string;
+  }> = [];
+  
+  // UI state
+  encounterSection: HTMLElement | null = null;
+  creatureListContainer: HTMLElement | null = null;
 
   constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string) {
     super(app);
@@ -3836,7 +3874,10 @@ class SceneCreationModal extends Modal {
         .addOption("combat", "Combat")
         .addOption("exploration", "Exploration")
         .setValue(this.type)
-        .onChange(value => this.type = value));
+        .onChange(value => {
+          this.type = value;
+          this.showEncounterBuilderIfCombat();
+        }));
 
     // Difficulty
     new Setting(contentEl)
@@ -3849,6 +3890,10 @@ class SceneCreationModal extends Modal {
         .addOption("deadly", "Deadly")
         .setValue(this.difficulty)
         .onChange(value => this.difficulty = value));
+
+    // Encounter Builder Section (only for combat scenes)
+    this.encounterSection = contentEl.createDiv({ cls: "dnd-encounter-section" });
+    this.showEncounterBuilderIfCombat();
 
     // Create button
     new Setting(contentEl)
@@ -4093,6 +4138,11 @@ class SceneCreationModal extends Modal {
 
       await this.createSceneNote(scenePath, sceneData, campaignName, worldName, adventureFile.basename, currentDate);
 
+      // Create Initiative Tracker encounter if requested
+      if (this.createEncounter && this.creatures.length > 0) {
+        await this.createInitiativeTrackerEncounter(scenePath);
+      }
+
       // Open the new scene
       await this.app.workspace.openLinkText(scenePath, "", true);
 
@@ -4140,6 +4190,12 @@ class SceneCreationModal extends Modal {
     adventureName: string,
     currentDate: string
   ) {
+    // Prepare encounter data for frontmatter
+    const trackerEncounter = this.encounterName || "";
+    const encounterCreaturesJson = this.creatures.length > 0 
+      ? JSON.stringify(this.creatures) 
+      : "[]";
+    
     const sceneContent = SCENE_TEMPLATE
       .replace(/{{SCENE_NUMBER}}/g, scene.num.toString())
       .replace(/{{SCENE_NAME}}/g, scene.name)
@@ -4150,9 +4206,708 @@ class SceneCreationModal extends Modal {
       .replace(/{{DIFFICULTY}}/g, scene.difficulty)
       .replace(/{{CAMPAIGN}}/g, campaignName)
       .replace(/{{WORLD}}/g, worldName)
-      .replace(/{{DATE}}/g, currentDate);
+      .replace(/{{DATE}}/g, currentDate)
+      .replace(/{{TRACKER_ENCOUNTER}}/g, trackerEncounter)
+      .replace(/{{ENCOUNTER_CREATURES}}/g, encounterCreaturesJson);
 
     await this.app.vault.create(filePath, sceneContent);
+  }
+
+  /**
+   * Show/hide encounter builder section based on scene type
+   */
+  showEncounterBuilderIfCombat() {
+    if (!this.encounterSection) return;
+    
+    this.encounterSection.empty();
+    
+    if (this.type !== "combat") {
+      this.encounterSection.style.display = "none";
+      return;
+    }
+    
+    this.encounterSection.style.display = "block";
+    
+    // Header
+    this.encounterSection.createEl("h3", { text: "⚔️ Combat Encounter" });
+    
+    // Toggle to create encounter
+    new Setting(this.encounterSection)
+      .setName("Create Initiative Tracker Encounter")
+      .setDesc("Build an encounter that will be ready to use in Initiative Tracker")
+      .addToggle(toggle => toggle
+        .setValue(this.createEncounter)
+        .onChange(value => {
+          this.createEncounter = value;
+          // Re-render entire section to show/hide color option
+          this.showEncounterBuilderIfCombat();
+        }));
+    
+    // Color naming option (only show when encounter creation is enabled)
+    if (this.createEncounter) {
+      new Setting(this.encounterSection)
+        .setName("Use Color Names")
+        .setDesc("Name duplicate creatures with colors (Red Goblin, Blue Goblin) instead of numbers (Goblin 1, Goblin 2)")
+        .addToggle(toggle => toggle
+          .setValue(this.useColorNames)
+          .onChange(value => {
+            this.useColorNames = value;
+          }));
+      
+      // Show the builder fields
+      this.showEncounterBuilderFields();
+    }
+  }
+
+  /**
+   * Show encounter builder input fields
+   */
+  async showEncounterBuilderFields() {
+    if (!this.encounterSection) return;
+    
+    // Remove existing builder fields
+    const existingBuilder = this.encounterSection.querySelector(".dnd-encounter-builder");
+    if (existingBuilder) {
+      existingBuilder.remove();
+    }
+    
+    if (!this.createEncounter) return;
+    
+    const builderContainer = this.encounterSection.createDiv({ cls: "dnd-encounter-builder" });
+    
+    // Auto-fill encounter name based on scene name
+    if (!this.encounterName && this.sceneName) {
+      this.encounterName = `${this.sceneName} - Encounter`;
+    }
+    
+    // Encounter Name
+    new Setting(builderContainer)
+      .setName("Encounter Name")
+      .setDesc("Name for this encounter in Initiative Tracker")
+      .addText(text => text
+        .setPlaceholder("e.g., Goblin Ambush")
+        .setValue(this.encounterName)
+        .onChange(value => this.encounterName = value));
+    
+    // Creature management section
+    builderContainer.createEl("h4", { text: "Creatures" });
+    
+    // Creature list container
+    this.creatureListContainer = builderContainer.createDiv({ cls: "dnd-creature-list" });
+    this.renderCreatureList();
+    
+    // === VAULT CREATURE SELECTION ===
+    const vaultCreatureSection = builderContainer.createDiv({ cls: "dnd-add-creature-vault" });
+    
+    let selectedCreature: { name: string; path: string; hp: number; ac: number; cr?: string } | null = null;
+    let vaultCreatureCount = "1";
+    let searchResults: HTMLElement | null = null;
+    
+    // Load creatures from vault
+    const vaultCreatures = await this.loadAllCreatures();
+    
+    console.log("Loaded creatures:", vaultCreatures.length, vaultCreatures.slice(0, 3).map(c => c.name));
+    
+    if (vaultCreatures.length > 0) {
+      const vaultCreatureSetting = new Setting(vaultCreatureSection)
+        .setName("Add from Vault")
+        .setDesc(`Search and select creatures from your vault (${vaultCreatures.length} available)`);
+      
+      // Create search input container
+      const searchContainer = vaultCreatureSetting.controlEl.createDiv({ cls: "dnd-creature-search-container" });
+      
+      const searchInput = searchContainer.createEl("input", {
+        type: "text",
+        placeholder: "Search creatures...",
+        cls: "dnd-creature-search-input"
+      });
+      
+      // Search results container
+      searchResults = searchContainer.createDiv({ cls: "dnd-creature-search-results" });
+      searchResults.style.display = "none";
+      
+      // Filter and display results
+      const showSearchResults = (query: string) => {
+        console.log("showSearchResults called with query:", query, "Total creatures:", vaultCreatures.length);
+        if (!searchResults) {
+          console.log("No searchResults element!");
+          return;
+        }
+        
+        if (!query || query.length < 1) {
+          searchResults.style.display = "none";
+          return;
+        }
+        
+        const queryLower = query.toLowerCase().trim();
+        console.log("Searching for:", queryLower);
+        console.log("Sample creature names:", vaultCreatures.slice(0, 5).map(c => ({name: c.name, lower: c.name.toLowerCase()})));
+        
+        const filtered = vaultCreatures.filter(c => {
+          const matches = c.name.toLowerCase().includes(queryLower);
+          if (queryLower.length <= 3 && matches) {
+            console.log("Match found:", c.name, "matches query:", queryLower);
+          }
+          return matches;
+        }).slice(0, 10); // Limit to 10 results
+        
+        console.log("Filtered results:", filtered.length, "matches");
+        if (filtered.length > 0) {
+          console.log("First 3 matches:", filtered.slice(0, 3).map(c => c.name));
+        }
+        
+        searchResults.empty();
+        
+        if (filtered.length === 0) {
+          searchResults.createEl("div", {
+            text: "No creatures found",
+            cls: "dnd-creature-search-no-results"
+          });
+          searchResults.style.display = "block";
+          return;
+        }
+        
+        filtered.forEach(creature => {
+          const resultEl = searchResults!.createDiv({ cls: "dnd-creature-search-result" });
+          
+          const nameEl = resultEl.createDiv({ cls: "dnd-creature-search-result-name" });
+          nameEl.setText(creature.name);
+          
+          const statsEl = resultEl.createDiv({ cls: "dnd-creature-search-result-stats" });
+          const statsParts: string[] = [];
+          if (creature.cr) statsParts.push(`CR ${creature.cr}`);
+          statsParts.push(`HP ${creature.hp}`);
+          statsParts.push(`AC ${creature.ac}`);
+          statsEl.setText(statsParts.join(" | "));
+          
+          resultEl.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log("Creature clicked:", creature.name);
+            selectedCreature = creature;
+            searchInput.value = creature.name;
+            if (searchResults) {
+              searchResults.style.display = "none";
+            }
+          });
+        });
+        
+        searchResults.style.display = "block";
+      };
+      
+      // Search input events
+      searchInput.addEventListener("input", (e) => {
+        const target = e.target as HTMLInputElement;
+        console.log("Input event:", target.value);
+        showSearchResults(target.value);
+      });
+      
+      searchInput.addEventListener("focus", (e) => {
+        const target = e.target as HTMLInputElement;
+        if (target.value.length >= 2) {
+          showSearchResults(target.value);
+        }
+      });
+      
+      searchInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && selectedCreature) {
+          e.preventDefault();
+          // Trigger add button
+        }
+      });
+      
+      // Close search results when clicking outside
+      searchInput.addEventListener("blur", () => {
+        setTimeout(() => {
+          if (searchResults) {
+            searchResults.style.display = "none";
+          }
+        }, 250); // Increased timeout to ensure click registers
+      });
+      
+      // Count input
+      vaultCreatureSetting.addText(text => {
+        text.setPlaceholder("Count")
+          .setValue("1")
+          .onChange(value => vaultCreatureCount = value);
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "60px";
+      });
+      
+      // Add button
+      vaultCreatureSetting.addButton(btn => btn
+        .setButtonText("Add")
+        .setCta()
+        .onClick(() => {
+          if (!selectedCreature) {
+            new Notice("Please search and select a creature first!");
+            return;
+          }
+          
+          this.addCreature({
+            name: selectedCreature.name,
+            count: parseInt(vaultCreatureCount) || 1,
+            hp: selectedCreature.hp,
+            ac: selectedCreature.ac,
+            cr: selectedCreature.cr,
+            source: "vault"
+          });
+          
+          new Notice(`Added ${vaultCreatureCount}x ${selectedCreature.name}`);
+          
+          // Clear search
+          searchInput.value = "";
+          selectedCreature = null;
+        }));
+    } else {
+      vaultCreatureSection.createEl("p", {
+        text: "⚠️ No creatures found in z_Beastiarity folder. Use manual entry below.",
+        cls: "setting-item-description mod-warning"
+      });
+    }
+    
+    // === MANUAL CREATURE ENTRY ===
+    const addCreatureSection = builderContainer.createDiv({ cls: "dnd-add-creature-manual" });
+    
+    let newCreatureName = "";
+    let newCreatureCount = "1";
+    let newCreatureHP = "";
+    let newCreatureAC = "";
+    let newCreatureCR = "";
+    
+    const addCreatureSetting = new Setting(addCreatureSection)
+      .setName("Add Custom Creature")
+      .setDesc("Enter creature details manually for custom or homebrew enemies");
+    
+    // Creature name input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("Name (e.g., Goblin)")
+        .onChange(value => newCreatureName = value);
+      text.inputEl.style.width = "120px";
+    });
+    
+    // Count input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("Count")
+        .setValue("1")
+        .onChange(value => newCreatureCount = value);
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "60px";
+    });
+    
+    // HP input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("HP")
+        .onChange(value => newCreatureHP = value);
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "60px";
+    });
+    
+    // AC input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("AC")
+        .onChange(value => newCreatureAC = value);
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "60px";
+    });
+    
+    // CR input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("CR")
+        .onChange(value => newCreatureCR = value);
+      text.inputEl.style.width = "60px";
+    });
+    
+    // Add button
+    addCreatureSetting.addButton(btn => btn
+      .setButtonText("Add")
+      .setCta()
+      .onClick(() => {
+        if (!newCreatureName.trim()) {
+          new Notice("Please enter a creature name!");
+          return;
+        }
+        
+        this.addCreature({
+          name: newCreatureName.trim(),
+          count: parseInt(newCreatureCount) || 1,
+          hp: newCreatureHP ? parseInt(newCreatureHP) : undefined,
+          ac: newCreatureAC ? parseInt(newCreatureAC) : undefined,
+          cr: newCreatureCR || undefined,
+          source: "manual"
+        });
+        
+        new Notice(`Added ${newCreatureCount}x ${newCreatureName}`);
+        
+        // Clear inputs
+        newCreatureName = "";
+        newCreatureCount = "1";
+        newCreatureHP = "";
+        newCreatureAC = "";
+        newCreatureCR = "";
+        
+        // Re-render to clear fields
+        this.showEncounterBuilderFields();
+      }));
+    
+    // Info text
+    builderContainer.createEl("p", {
+      text: "💡 Tip: Select creatures from your vault or add custom enemies on the fly. You can edit stats later in Initiative Tracker.",
+      cls: "setting-item-description"
+    });
+  }
+
+  /**
+   * Add a creature to the encounter
+   */
+  addCreature(creature: { name: string; count: number; hp?: number; ac?: number; cr?: string; source?: string }) {
+    this.creatures.push(creature);
+    this.renderCreatureList();
+  }
+
+  /**
+   * Remove a creature from the encounter
+   */
+  removeCreature(index: number) {
+    this.creatures.splice(index, 1);
+    this.renderCreatureList();
+  }
+
+  /**
+   * Render the list of creatures in the encounter
+   */
+  renderCreatureList() {
+    if (!this.creatureListContainer) return;
+    
+    this.creatureListContainer.empty();
+    
+    if (this.creatures.length === 0) {
+      this.creatureListContainer.createEl("p", {
+        text: "No creatures added yet. Add creatures below.",
+        cls: "setting-item-description"
+      });
+      return;
+    }
+    
+    this.creatures.forEach((creature, index) => {
+      const creatureItem = this.creatureListContainer!.createDiv({ cls: "dnd-creature-item" });
+      
+      const nameEl = creatureItem.createSpan({ cls: "dnd-creature-name" });
+      nameEl.setText(`${creature.name} x${creature.count}`);
+      
+      const statsEl = creatureItem.createSpan({ cls: "dnd-creature-stats" });
+      const stats: string[] = [];
+      if (creature.hp) stats.push(`HP: ${creature.hp}`);
+      if (creature.ac) stats.push(`AC: ${creature.ac}`);
+      if (creature.cr) stats.push(`CR: ${creature.cr}`);
+      statsEl.setText(stats.length > 0 ? ` | ${stats.join(" | ")}` : "");
+      
+      const removeBtn = creatureItem.createEl("button", {
+        text: "Remove",
+        cls: "dnd-creature-remove"
+      });
+      removeBtn.addEventListener("click", () => {
+        this.removeCreature(index);
+      });
+    });
+  }
+
+  /**
+   * Search vault for creature files in z_Beastiarity
+   * Parses creature statblocks from frontmatter
+   */
+  async searchVaultCreatures(query: string): Promise<Array<{
+    name: string;
+    path: string;
+    hp: number;
+    ac: number;
+    cr?: string;
+  }>> {
+    const creatures: Array<{ name: string; path: string; hp: number; ac: number; cr?: string }> = [];
+    
+    // Check multiple possible creature/monster folder locations
+    const possiblePaths = [
+      "z_Beastiarity",
+      "My Vault/z_Beastiarity",
+      "nvdh-ttrpg-vault/monsters",
+      "monsters"
+    ];
+    
+    const beastiaryFolders: TFolder[] = [];
+    for (const path of possiblePaths) {
+      const folder = this.app.vault.getAbstractFileByPath(path);
+      if (folder instanceof TFolder) {
+        beastiaryFolders.push(folder);
+      }
+    }
+    
+    if (beastiaryFolders.length === 0) return creatures;
+    
+    const queryLower = query.toLowerCase();
+    
+    // Recursively search all files in beastiary
+    const searchFolder = async (folder: TFolder) => {
+      for (const child of folder.children) {
+        if (child instanceof TFile && child.extension === "md") {
+          try {
+            const cache = this.app.metadataCache.getFileCache(child);
+            
+            // Check if file has statblock
+            if (cache?.frontmatter && cache.frontmatter.statblock === true) {
+              const name = cache.frontmatter.name || child.basename;
+              
+              // Filter by query
+              if (!query || name.toLowerCase().includes(queryLower)) {
+                creatures.push({
+                  name: name,
+                  path: child.path,
+                  hp: cache.frontmatter.hp || 1,
+                  ac: cache.frontmatter.ac || 10,
+                  cr: cache.frontmatter.cr?.toString() || undefined
+                });
+              }
+            }
+          } catch (error) {
+            console.error(`Error reading creature file ${child.path}:`, error);
+          }
+        } else if (child instanceof TFolder) {
+          await searchFolder(child);
+        }
+      }
+    };
+    
+    // Search all found beastiary folders
+    for (const folder of beastiaryFolders) {
+      await searchFolder(folder);
+    }
+    
+    // Sort alphabetically
+    creatures.sort((a, b) => a.name.localeCompare(b.name));
+    
+    return creatures;
+  }
+  
+  /**
+   * Load all creatures from vault for dropdown
+   */
+  async loadAllCreatures(): Promise<Array<{
+    name: string;
+    path: string;
+    hp: number;
+    ac: number;
+    cr?: string;
+  }>> {
+    const vaultCreatures = await this.searchVaultCreatures("");
+    const statblocksCreatures = await this.getStatblocksPluginCreatures();
+    
+    // Merge and deduplicate by name (vault takes priority)
+    const allCreatures = [...vaultCreatures];
+    const vaultNames = new Set(vaultCreatures.map(c => c.name.toLowerCase()));
+    
+    for (const creature of statblocksCreatures) {
+      if (!vaultNames.has(creature.name.toLowerCase())) {
+        allCreatures.push(creature);
+      }
+    }
+    
+    // Sort alphabetically
+    allCreatures.sort((a, b) => a.name.localeCompare(b.name));
+    
+    return allCreatures;
+  }
+  
+  /**
+   * Get creatures from the 5e Statblocks plugin (includes SRD monsters)
+   */
+  async getStatblocksPluginCreatures(): Promise<Array<{
+    name: string;
+    path: string;
+    hp: number;
+    ac: number;
+    cr?: string;
+  }>> {
+    const creatures: Array<{ name: string; path: string; hp: number; ac: number; cr?: string }> = [];
+    
+    try {
+      const statblocksPlugin = (this.app as any).plugins?.plugins?.["obsidian-5e-statblocks"];
+      if (!statblocksPlugin || !statblocksPlugin.api) {
+        console.log("5e Statblocks plugin or API not found");
+        return creatures;
+      }
+      
+      // Use the API's getBestiaryCreatures() method to get all creatures
+      const bestiaryCreatures = statblocksPlugin.api.getBestiaryCreatures();
+      
+      if (!Array.isArray(bestiaryCreatures)) {
+        console.log("getBestiaryCreatures() did not return an array");
+        return creatures;
+      }
+      
+      console.log(`Loading ${bestiaryCreatures.length} creatures from 5e Statblocks plugin`);
+      
+      for (const monster of bestiaryCreatures) {
+        if (!monster || typeof monster !== 'object') continue;
+        
+        creatures.push({
+          name: monster.name || "Unknown",
+          path: monster.path || "[SRD]",
+          hp: monster.hp || 1,
+          ac: typeof monster.ac === 'number' ? monster.ac : (parseInt(monster.ac) || 10),
+          cr: monster.cr?.toString() || undefined
+        });
+      }
+      
+      console.log(`Loaded ${creatures.length} creatures from 5e Statblocks plugin`);
+      if (creatures.length > 0) {
+        console.log("First 5 creatures:", creatures.slice(0, 5).map(c => c.name));
+      }
+    } catch (error) {
+      console.error("Error accessing 5e Statblocks plugin creatures:", error);
+    }
+    
+    return creatures;
+  }
+
+  /**
+   * Create encounter in Initiative Tracker and link to scene
+   */
+  async createInitiativeTrackerEncounter(scenePath: string) {
+    if (!this.createEncounter || this.creatures.length === 0) return;
+    
+    try {
+      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+      if (!initiativePlugin) {
+        new Notice("⚠️ Initiative Tracker plugin not found. Encounter data saved to scene frontmatter only.");
+        console.log("Initiative Tracker plugin not found");
+        return;
+      }
+      
+      console.log("Initiative Tracker plugin found:", initiativePlugin);
+      console.log("Available properties:", Object.keys(initiativePlugin));
+      
+      // Debug: Log creature data before building encounter
+      console.log("Creatures to add:", this.creatures);
+      
+      // Helper function to generate unique IDs like Initiative Tracker does
+      const generateId = () => {
+        const chars = '0123456789abcdef';
+        let id = 'ID_';
+        for (let i = 0; i < 12; i++) {
+          id += chars[Math.floor(Math.random() * chars.length)];
+        }
+        return id;
+      };
+      
+      // Color names for duplicate creatures
+      const colors = [
+        "Red", "Blue", "Green", "Yellow", "Purple", "Orange", 
+        "Pink", "Brown", "Black", "White", "Gray", "Cyan", 
+        "Magenta", "Lime", "Teal", "Indigo", "Violet", "Gold", 
+        "Silver", "Bronze"
+      ];
+      
+      // Build creature data in Initiative Tracker format
+      const creatures = this.creatures.flatMap(c => {
+        console.log(`Building creature: ${c.name}, HP: ${c.hp}, AC: ${c.ac}`);
+        const instances = [];
+        for (let i = 0; i < c.count; i++) {
+          const hp = c.hp || 1;
+          const ac = c.ac || 10;
+          
+          // Determine name and display based on useColorNames setting
+          let creatureName = c.name;
+          let displayName = "";
+          
+          if (this.useColorNames && c.count > 1) {
+            const colorIndex = i % colors.length;
+            // Make the name itself unique to prevent auto-numbering
+            creatureName = `${c.name} (${colors[colorIndex]})`;
+            // Display name same as name for consistency
+            displayName = creatureName;
+          }
+          
+          const creature = {
+            name: creatureName,  // Unique name with color to prevent auto-numbering
+            display: displayName,  // Display name (empty for default, or colored name)
+            initiative: 0,
+            static: false,
+            modifier: 0,  // Initiative modifier
+            hp: hp,
+            currentMaxHP: hp,  // Initiative Tracker uses currentMaxHP, not max
+            cr: c.cr || undefined,
+            ac: ac,  // AC as number
+            currentAC: ac,  // Initiative Tracker also tracks currentAC
+            id: generateId(),  // CRITICAL: Unique ID for each creature instance
+            currentHP: hp,  // Initiative Tracker uses currentHP, not hp
+            tempHP: 0,  // Initiative Tracker uses tempHP, not temp
+            status: [],  // Array of status effects
+            enabled: true,
+            active: false,  // Whether this creature is currently active in turn order
+            hidden: false,  // Hidden from players
+            friendly: false,  // Friendly to players
+            rollHP: false  // Whether to roll HP when adding to tracker
+          };
+          console.log(`Created creature instance:`, creature);
+          instances.push(creature);
+        }
+        return instances;
+      });
+      
+      // Save encounter to Initiative Tracker's data.encounters for later loading
+      if (initiativePlugin.data && typeof initiativePlugin.data.encounters === 'object') {
+        console.log("Saving encounter to Initiative Tracker data...");
+        
+        // Initiative Tracker stores encounters as: data.encounters[name] = { creatures, state, name, round, ... }
+        initiativePlugin.data.encounters[this.encounterName] = {
+          creatures: creatures,
+          state: false,
+          name: this.encounterName,
+          round: 1,
+          logFile: null,
+          rollHP: false
+        };
+        
+        // Save settings to persist the encounter
+        if (initiativePlugin.saveSettings) {
+          await initiativePlugin.saveSettings();
+          console.log(`Encounter "${this.encounterName}" saved to Initiative Tracker`);
+          new Notice(`✅ Encounter "${this.encounterName}" saved! Use "Load Encounter" in Initiative Tracker to start combat.`);
+        }
+      } else {
+        console.log("Could not access Initiative Tracker data structure");
+        new Notice(`⚠️ Encounter data saved to scene frontmatter only. Load manually in Initiative Tracker.`);
+      }
+      
+      // Link encounter to scene
+      await this.linkEncounterToScene(scenePath);
+      
+    } catch (error) {
+      console.error("Error creating Initiative Tracker encounter:", error);
+      new Notice("⚠️ Could not save encounter to Initiative Tracker. Check console for details.");
+    }
+  }
+
+  /**
+   * Link encounter to scene by updating tracker_encounter frontmatter field
+   */
+  async linkEncounterToScene(scenePath: string) {
+    try {
+      const sceneFile = this.app.vault.getAbstractFileByPath(scenePath);
+      if (!(sceneFile instanceof TFile)) return;
+      
+      let content = await this.app.vault.read(sceneFile);
+      
+      // Update tracker_encounter field in frontmatter
+      content = content.replace(
+        /^tracker_encounter:\s*$/m,
+        `tracker_encounter: "${this.encounterName}"`
+      );
+      
+      await this.app.vault.modify(sceneFile, content);
+      
+    } catch (error) {
+      console.error("Error linking encounter to scene:", error);
+    }
   }
 
   onClose() {

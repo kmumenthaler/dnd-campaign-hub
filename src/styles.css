@@ -175,3 +175,200 @@
   margin: 8px 0;
   color: var(--text-muted);
 }
+
+/* Encounter Builder Styles */
+.dnd-encounter-section {
+  margin: 20px 0;
+  padding: 15px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background-color: var(--background-secondary);
+}
+
+.dnd-encounter-section h3 {
+  margin: 0 0 15px 0;
+  color: var(--text-accent);
+}
+
+.dnd-encounter-builder {
+  margin-top: 15px;
+}
+
+.dnd-encounter-builder h4 {
+  margin: 15px 0 10px 0;
+  font-size: 0.95em;
+  color: var(--text-normal);
+}
+
+.dnd-creature-list {
+  margin: 10px 0;
+  padding: 10px;
+  background-color: var(--background-primary);
+  border-radius: 4px;
+  min-height: 60px;
+}
+
+.dnd-creature-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  margin: 5px 0;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+}
+
+.dnd-creature-name {
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.dnd-creature-stats {
+  font-size: 0.9em;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+
+.dnd-creature-remove {
+  padding: 4px 12px;
+  font-size: 0.85em;
+  background-color: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.dnd-creature-remove:hover {
+  opacity: 0.8;
+}
+
+.dnd-add-creature {
+  margin-top: 15px;
+}
+
+.dnd-add-creature .setting-item {
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 15px;
+}
+
+.dnd-add-creature input[type="text"],
+.dnd-add-creature input[type="number"] {
+  margin-right: 8px;
+}
+
+/* Vault creature selection */
+.dnd-add-creature-vault {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 12px;
+}
+
+.dnd-add-creature-vault .setting-item {
+  border: none;
+  padding-top: 0;
+  flex-wrap: wrap;
+}
+
+.dnd-add-creature-vault .setting-item-info {
+  min-width: 200px;
+  max-width: 100%;
+  flex-basis: 100%;
+  margin-bottom: 8px;
+}
+
+.dnd-add-creature-vault .setting-item-control {
+  flex-grow: 1;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+/* Creature search input styling */
+.dnd-creature-search-container {
+  position: relative;
+  flex-grow: 1;
+  max-width: 300px;
+}
+
+.dnd-creature-search-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.dnd-creature-search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  z-index: 1000;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.dnd-creature-search-result {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.dnd-creature-search-result:last-child {
+  border-bottom: none;
+}
+
+.dnd-creature-search-result:hover {
+  background: var(--background-modifier-hover);
+}
+
+.dnd-creature-search-result-name {
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.dnd-creature-search-result-stats {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.dnd-creature-search-no-results {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Manual creature entry */
+.dnd-add-creature-manual {
+  padding: 12px 0;
+  margin-top: 8px;
+}
+
+.dnd-add-creature-manual .setting-item {
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 15px;
+  flex-wrap: wrap;
+}
+
+.dnd-add-creature-manual .setting-item-info {
+  min-width: 200px;
+  max-width: 100%;
+  flex-basis: 100%;
+  margin-bottom: 8px;
+}
+
+.dnd-add-creature-manual .setting-item-control {
+  flex-grow: 1;
+  justify-content: flex-start;
+  gap: 8px;
+}

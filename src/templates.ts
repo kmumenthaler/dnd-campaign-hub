@@ -721,7 +721,7 @@ if (allScenes.length === 0) {
 
 export const SCENE_TEMPLATE = `---
 type: scene
-template_version: 1.1.0
+template_version: 1.2.0
 adventure: "{{ADVENTURE_NAME}}"
 campaign: "{{CAMPAIGN}}"
 world: "{{WORLD}}"
@@ -731,7 +731,8 @@ duration: {{DURATION}}
 scene_type: {{TYPE}}
 difficulty: {{DIFFICULTY}}
 status: planned
-tracker_encounter: 
+tracker_encounter: {{TRACKER_ENCOUNTER}}
+encounter_creatures: {{ENCOUNTER_CREATURES}}
 date: {{DATE}}
 ---
 
@@ -782,25 +783,123 @@ date: {{DATE}}
 
 \`\`\`dataviewjs
 const trackerEncounter = dv.current().tracker_encounter;
-if (trackerEncounter) {
-  dv.paragraph(\`**Initiative Tracker:** \${trackerEncounter}\`);
-  const openBtn = dv.el('button', '⚔️ Open in Initiative Tracker');
+const encounterCreatures = dv.current().encounter_creatures;
+
+if (trackerEncounter && trackerEncounter !== "") {
+  dv.header(3, "⚔️ " + trackerEncounter);
+  
+  // Display creature list
+  if (encounterCreatures && Array.isArray(encounterCreatures) && encounterCreatures.length > 0) {
+    dv.paragraph("**Enemies:**");
+    const list = dv.el('ul', "");
+    for (const creature of encounterCreatures) {
+      const stats = [];
+      if (creature.cr) stats.push(\`CR \${creature.cr}\`);
+      if (creature.hp) stats.push(\`HP \${creature.hp}\`);
+      if (creature.ac) stats.push(\`AC \${creature.ac}\`);
+      const statsStr = stats.length > 0 ? \` (\${stats.join(", ")})\` : "";
+      dv.el('li', \`\${creature.name}\${statsStr} x\${creature.count}\`, { container: list });
+    }
+  }
+  
+  // Open Initiative Tracker button
+  dv.paragraph("");
+  const openBtn = dv.el('button', '⚔️ Open Initiative Tracker');
   openBtn.className = 'mod-cta';
   openBtn.style.marginRight = '10px';
-  openBtn.onclick = () => {
-    app.commands.executeCommandById('initiative-tracker:open-tracker');
+  openBtn.onclick = async () => {
+    const initiativePlugin = app.plugins?.plugins?.['initiative-tracker'];
+    
+    // Try to find and reveal existing tracker view
+    const trackerViewType = 'initiative-tracker-view';
+    let foundView = false;
+    
+    app.workspace.iterateAllLeaves(leaf => {
+      if (leaf.view?.getViewType() === trackerViewType) {
+        // Found the tracker view, reveal it
+        app.workspace.revealLeaf(leaf);
+        foundView = true;
+        new Notice('✅ Initiative Tracker opened');
+        return true; // Stop iterating
+      }
+    });
+    
+    // If view wasn't found, try to open it with command
+    if (!foundView) {
+      const commandId = 'initiative-tracker:open-tracker';
+      try {
+        const success = app.commands.executeCommandById(commandId);
+        if (success) {
+          new Notice('✅ Opening Initiative Tracker...');
+        } else {
+          new Notice('⚠️ Could not open Initiative Tracker. Please open it manually from the command palette.');
+        }
+      } catch (e) {
+        console.error('Error opening Initiative Tracker:', e);
+        new Notice('⚠️ Could not open Initiative Tracker. Please open it manually from the command palette.');
+      }
+    }
   };
+  
+  // Load encounter button
+  const loadBtn = dv.el('button', '📋 Load Encounter');
+  loadBtn.className = 'mod-warning';
+  loadBtn.onclick = async () => {
+    const initiativePlugin = app.plugins?.plugins?.['initiative-tracker'];
+    if (!initiativePlugin) {
+      new Notice('❌ Initiative Tracker plugin not found!');
+      return;
+    }
+    
+    // Check if the encounter exists in saved encounters
+    if (!initiativePlugin.data?.encounters?.[trackerEncounter]) {
+      new Notice(\`❌ Encounter "\${trackerEncounter}" not found in Initiative Tracker!\`);
+      return;
+    }
+    
+    // Use Initiative Tracker's internal tracker API to load the encounter
+    const encounterData = initiativePlugin.data.encounters[trackerEncounter];
+    
+    try {
+      // Access the tracker store (he.new is the method used by Initiative Tracker)
+      if (initiativePlugin.tracker?.new) {
+        initiativePlugin.tracker.new(initiativePlugin, encounterData);
+        new Notice(\`✅ Loaded encounter: \${trackerEncounter}\`);
+      } else if (typeof initiativePlugin.tracker === 'object') {
+        // Alternative: Try to call the tracker's new method directly
+        const tracker = initiativePlugin.tracker;
+        if (typeof tracker.new === 'function') {
+          tracker.new(initiativePlugin, encounterData);
+          new Notice(\`✅ Loaded encounter: \${trackerEncounter}\`);
+        } else {
+          new Notice('⚠️ Could not load encounter. Try using "Load Encounter" from Initiative Tracker menu.');
+        }
+      } else {
+        new Notice('⚠️ Could not load encounter. Try using "Load Encounter" from Initiative Tracker menu.');
+      }
+    } catch (e) {
+      console.error('Error loading encounter:', e);
+      new Notice(\`⚠️ Could not load encounter: \${e.message}\`);
+    }
+  };
+} else if (encounterCreatures && Array.isArray(encounterCreatures) && encounterCreatures.length > 0) {
+  // Creatures defined but no tracker encounter name
+  dv.paragraph("**Enemies:**");
+  const list = dv.el('ul', "");
+  for (const creature of encounterCreatures) {
+    const stats = [];
+    if (creature.cr) stats.push(\`CR \${creature.cr}\`);
+    if (creature.hp) stats.push(\`HP \${creature.hp}\`);
+    if (creature.ac) stats.push(\`AC \${creature.ac}\`);
+    const statsStr = stats.length > 0 ? \` (\${stats.join(", ")})\` : "";
+    dv.el('li', \`\${creature.name}\${statsStr} x\${creature.count}\`, { container: list });
+  }
+  dv.paragraph("");
+  dv.paragraph("*💡 Create this encounter in Initiative Tracker to manage combat*");
 } else {
-  dv.paragraph("*💡 Tip: Use the Initiative Tracker plugin to manage this combat*");
-  dv.paragraph("1. Open Initiative Tracker (Ctrl+P → 'Open Initiative Tracker')");
-  dv.paragraph("2. Create an encounter with your creatures");
-  dv.paragraph("3. Save it and add the encounter name to the frontmatter field: \`tracker_encounter\`");
+  dv.paragraph("*No combat encounter created. Add creatures to the \`encounter_creatures\` frontmatter field.*");
 }
 \`\`\`
-
-**Enemies:**
-- Creature 1 (CR X) x2
-- Creature 2 (CR Y) x1
 
 **Tactics:**
 - Round 1: 
