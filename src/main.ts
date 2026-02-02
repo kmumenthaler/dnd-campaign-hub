@@ -31,7 +31,7 @@ const TEMPLATE_VERSIONS = {
   npc: "1.0.0",
   pc: "1.0.0",
   adventure: "1.0.0",
-  scene: "1.1.0", // Updated with Initiative Tracker
+  scene: "1.2.0", // Updated with encounter_creatures field
   faction: "1.0.0",
   item: "1.0.0",
   spell: "1.0.0",
@@ -281,6 +281,9 @@ class MigrationManager {
 
     // 1. Add tracker_encounter field to frontmatter
     await this.addFrontmatterField(file, "tracker_encounter", "");
+    
+    // 2. Add encounter_creatures field to frontmatter
+    await this.addFrontmatterField(file, "encounter_creatures", "[]");
 
     // 2. Inject Initiative Tracker section in Combat section
     const trackerSection = `### Initiative Tracker
@@ -303,6 +306,18 @@ LIMIT 1
     await this.updateTemplateVersion(file, "1.1.0");
 
     console.log(`Scene ${file.path} migrated successfully`);
+  }
+
+  async migrateSceneTo1_2_0(file: TFile): Promise<void> {
+    console.log(`Migrating scene ${file.path} to v1.2.0`);
+
+    // Ensure encounter_creatures field exists
+    await this.addFrontmatterField(file, "encounter_creatures", "[]");
+
+    // Update template version
+    await this.updateTemplateVersion(file, "1.2.0");
+
+    console.log(`Scene ${file.path} migrated to v1.2.0 successfully`);
   }
 
   /**
@@ -336,6 +351,10 @@ LIMIT 1
       if (fileType === "scene") {
         if (this.compareVersions(currentVersion, "1.1.0") < 0) {
           await this.migrateSceneTo1_1_0(file);
+          return true;
+        }
+        if (this.compareVersions(currentVersion, "1.2.0") < 0) {
+          await this.migrateSceneTo1_2_0(file);
           return true;
         }
       }
@@ -3709,7 +3728,9 @@ date: ${currentDate}
       .replace(/{{DIFFICULTY}}/g, scene.difficulty)
       .replace(/{{CAMPAIGN}}/g, campaignName)
       .replace(/{{WORLD}}/g, worldName)
-      .replace(/{{DATE}}/g, currentDate);
+      .replace(/{{DATE}}/g, currentDate)
+      .replace(/{{TRACKER_ENCOUNTER}}/g, "")
+      .replace(/{{ENCOUNTER_CREATURES}}/g, "[]");
 
     await this.app.vault.create(filePath, sceneContent);
   }
@@ -3733,6 +3754,7 @@ class SceneCreationModal extends Modal {
   // Encounter builder properties
   createEncounter = false;
   encounterName = "";
+  useColorNames = false;
   creatures: Array<{
     name: string;
     count: number;
@@ -4168,6 +4190,12 @@ class SceneCreationModal extends Modal {
     adventureName: string,
     currentDate: string
   ) {
+    // Prepare encounter data for frontmatter
+    const trackerEncounter = this.encounterName || "";
+    const encounterCreaturesJson = this.creatures.length > 0 
+      ? JSON.stringify(this.creatures) 
+      : "[]";
+    
     const sceneContent = SCENE_TEMPLATE
       .replace(/{{SCENE_NUMBER}}/g, scene.num.toString())
       .replace(/{{SCENE_NAME}}/g, scene.name)
@@ -4178,7 +4206,9 @@ class SceneCreationModal extends Modal {
       .replace(/{{DIFFICULTY}}/g, scene.difficulty)
       .replace(/{{CAMPAIGN}}/g, campaignName)
       .replace(/{{WORLD}}/g, worldName)
-      .replace(/{{DATE}}/g, currentDate);
+      .replace(/{{DATE}}/g, currentDate)
+      .replace(/{{TRACKER_ENCOUNTER}}/g, trackerEncounter)
+      .replace(/{{ENCOUNTER_CREATURES}}/g, encounterCreaturesJson);
 
     await this.app.vault.create(filePath, sceneContent);
   }
@@ -4209,10 +4239,24 @@ class SceneCreationModal extends Modal {
         .setValue(this.createEncounter)
         .onChange(value => {
           this.createEncounter = value;
-          this.showEncounterBuilderFields();
+          // Re-render entire section to show/hide color option
+          this.showEncounterBuilderIfCombat();
         }));
     
-    this.showEncounterBuilderFields();
+    // Color naming option (only show when encounter creation is enabled)
+    if (this.createEncounter) {
+      new Setting(this.encounterSection)
+        .setName("Use Color Names")
+        .setDesc("Name duplicate creatures with colors (Red Goblin, Blue Goblin) instead of numbers (Goblin 1, Goblin 2)")
+        .addToggle(toggle => toggle
+          .setValue(this.useColorNames)
+          .onChange(value => {
+            this.useColorNames = value;
+          }));
+      
+      // Show the builder fields
+      this.showEncounterBuilderFields();
+    }
   }
 
   /**
@@ -4284,23 +4328,33 @@ class SceneCreationModal extends Modal {
       
       // Filter and display results
       const showSearchResults = (query: string) => {
-        console.log("showSearchResults called with:", query);
+        console.log("showSearchResults called with query:", query, "Total creatures:", vaultCreatures.length);
         if (!searchResults) {
           console.log("No searchResults element!");
           return;
         }
         
-        if (!query || query.length < 2) {
+        if (!query || query.length < 1) {
           searchResults.style.display = "none";
           return;
         }
         
-        const queryLower = query.toLowerCase();
-        const filtered = vaultCreatures.filter(c => 
-          c.name.toLowerCase().includes(queryLower)
-        ).slice(0, 10); // Limit to 10 results
+        const queryLower = query.toLowerCase().trim();
+        console.log("Searching for:", queryLower);
+        console.log("Sample creature names:", vaultCreatures.slice(0, 5).map(c => ({name: c.name, lower: c.name.toLowerCase()})));
         
-        console.log("Filtered results:", filtered.length, filtered.map(c => c.name));
+        const filtered = vaultCreatures.filter(c => {
+          const matches = c.name.toLowerCase().includes(queryLower);
+          if (queryLower.length <= 3 && matches) {
+            console.log("Match found:", c.name, "matches query:", queryLower);
+          }
+          return matches;
+        }).slice(0, 10); // Limit to 10 results
+        
+        console.log("Filtered results:", filtered.length, "matches");
+        if (filtered.length > 0) {
+          console.log("First 3 matches:", filtered.slice(0, 3).map(c => c.name));
+        }
         
         searchResults.empty();
         
@@ -4643,7 +4697,75 @@ class SceneCreationModal extends Modal {
     ac: number;
     cr?: string;
   }>> {
-    return await this.searchVaultCreatures("");
+    const vaultCreatures = await this.searchVaultCreatures("");
+    const statblocksCreatures = await this.getStatblocksPluginCreatures();
+    
+    // Merge and deduplicate by name (vault takes priority)
+    const allCreatures = [...vaultCreatures];
+    const vaultNames = new Set(vaultCreatures.map(c => c.name.toLowerCase()));
+    
+    for (const creature of statblocksCreatures) {
+      if (!vaultNames.has(creature.name.toLowerCase())) {
+        allCreatures.push(creature);
+      }
+    }
+    
+    // Sort alphabetically
+    allCreatures.sort((a, b) => a.name.localeCompare(b.name));
+    
+    return allCreatures;
+  }
+  
+  /**
+   * Get creatures from the 5e Statblocks plugin (includes SRD monsters)
+   */
+  async getStatblocksPluginCreatures(): Promise<Array<{
+    name: string;
+    path: string;
+    hp: number;
+    ac: number;
+    cr?: string;
+  }>> {
+    const creatures: Array<{ name: string; path: string; hp: number; ac: number; cr?: string }> = [];
+    
+    try {
+      const statblocksPlugin = (this.app as any).plugins?.plugins?.["obsidian-5e-statblocks"];
+      if (!statblocksPlugin || !statblocksPlugin.api) {
+        console.log("5e Statblocks plugin or API not found");
+        return creatures;
+      }
+      
+      // Use the API's getBestiaryCreatures() method to get all creatures
+      const bestiaryCreatures = statblocksPlugin.api.getBestiaryCreatures();
+      
+      if (!Array.isArray(bestiaryCreatures)) {
+        console.log("getBestiaryCreatures() did not return an array");
+        return creatures;
+      }
+      
+      console.log(`Loading ${bestiaryCreatures.length} creatures from 5e Statblocks plugin`);
+      
+      for (const monster of bestiaryCreatures) {
+        if (!monster || typeof monster !== 'object') continue;
+        
+        creatures.push({
+          name: monster.name || "Unknown",
+          path: monster.path || "[SRD]",
+          hp: monster.hp || 1,
+          ac: typeof monster.ac === 'number' ? monster.ac : (parseInt(monster.ac) || 10),
+          cr: monster.cr?.toString() || undefined
+        });
+      }
+      
+      console.log(`Loaded ${creatures.length} creatures from 5e Statblocks plugin`);
+      if (creatures.length > 0) {
+        console.log("First 5 creatures:", creatures.slice(0, 5).map(c => c.name));
+      }
+    } catch (error) {
+      console.error("Error accessing 5e Statblocks plugin creatures:", error);
+    }
+    
+    return creatures;
   }
 
   /**
@@ -4655,36 +4777,105 @@ class SceneCreationModal extends Modal {
     try {
       const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
       if (!initiativePlugin) {
-        new Notice("⚠️ Initiative Tracker plugin not found. Encounter data will be saved to scene frontmatter only.");
+        new Notice("⚠️ Initiative Tracker plugin not found. Encounter data saved to scene frontmatter only.");
+        console.log("Initiative Tracker plugin not found");
         return;
       }
       
-      // Build encounter data
-      const encounterData = {
-        name: this.encounterName,
-        creatures: this.creatures.flatMap(c => {
-          const instances = [];
-          for (let i = 0; i < c.count; i++) {
-            instances.push({
-              name: c.count > 1 ? `${c.name} ${i + 1}` : c.name,
-              hp: c.hp || 1,
-              max: c.hp || 1,
-              ac: c.ac || 10,
-              initiative: 0,
-              enabled: true,
-              player: false
-            });
-          }
-          return instances;
-        }),
-        state: false,
-        round: 0
+      console.log("Initiative Tracker plugin found:", initiativePlugin);
+      console.log("Available properties:", Object.keys(initiativePlugin));
+      
+      // Debug: Log creature data before building encounter
+      console.log("Creatures to add:", this.creatures);
+      
+      // Helper function to generate unique IDs like Initiative Tracker does
+      const generateId = () => {
+        const chars = '0123456789abcdef';
+        let id = 'ID_';
+        for (let i = 0; i < 12; i++) {
+          id += chars[Math.floor(Math.random() * chars.length)];
+        }
+        return id;
       };
       
-      // Save encounter to Initiative Tracker
-      if (initiativePlugin.saveEncounter) {
-        await initiativePlugin.saveEncounter(encounterData);
-        new Notice(`✅ Encounter "${this.encounterName}" created in Initiative Tracker!`);
+      // Color names for duplicate creatures
+      const colors = [
+        "Red", "Blue", "Green", "Yellow", "Purple", "Orange", 
+        "Pink", "Brown", "Black", "White", "Gray", "Cyan", 
+        "Magenta", "Lime", "Teal", "Indigo", "Violet", "Gold", 
+        "Silver", "Bronze"
+      ];
+      
+      // Build creature data in Initiative Tracker format
+      const creatures = this.creatures.flatMap(c => {
+        console.log(`Building creature: ${c.name}, HP: ${c.hp}, AC: ${c.ac}`);
+        const instances = [];
+        for (let i = 0; i < c.count; i++) {
+          const hp = c.hp || 1;
+          const ac = c.ac || 10;
+          
+          // Determine name and display based on useColorNames setting
+          let creatureName = c.name;
+          let displayName = "";
+          
+          if (this.useColorNames && c.count > 1) {
+            const colorIndex = i % colors.length;
+            // Make the name itself unique to prevent auto-numbering
+            creatureName = `${c.name} (${colors[colorIndex]})`;
+            // Display name same as name for consistency
+            displayName = creatureName;
+          }
+          
+          const creature = {
+            name: creatureName,  // Unique name with color to prevent auto-numbering
+            display: displayName,  // Display name (empty for default, or colored name)
+            initiative: 0,
+            static: false,
+            modifier: 0,  // Initiative modifier
+            hp: hp,
+            currentMaxHP: hp,  // Initiative Tracker uses currentMaxHP, not max
+            cr: c.cr || undefined,
+            ac: ac,  // AC as number
+            currentAC: ac,  // Initiative Tracker also tracks currentAC
+            id: generateId(),  // CRITICAL: Unique ID for each creature instance
+            currentHP: hp,  // Initiative Tracker uses currentHP, not hp
+            tempHP: 0,  // Initiative Tracker uses tempHP, not temp
+            status: [],  // Array of status effects
+            enabled: true,
+            active: false,  // Whether this creature is currently active in turn order
+            hidden: false,  // Hidden from players
+            friendly: false,  // Friendly to players
+            rollHP: false  // Whether to roll HP when adding to tracker
+          };
+          console.log(`Created creature instance:`, creature);
+          instances.push(creature);
+        }
+        return instances;
+      });
+      
+      // Save encounter to Initiative Tracker's data.encounters for later loading
+      if (initiativePlugin.data && typeof initiativePlugin.data.encounters === 'object') {
+        console.log("Saving encounter to Initiative Tracker data...");
+        
+        // Initiative Tracker stores encounters as: data.encounters[name] = { creatures, state, name, round, ... }
+        initiativePlugin.data.encounters[this.encounterName] = {
+          creatures: creatures,
+          state: false,
+          name: this.encounterName,
+          round: 1,
+          logFile: null,
+          rollHP: false
+        };
+        
+        // Save settings to persist the encounter
+        if (initiativePlugin.saveSettings) {
+          await initiativePlugin.saveSettings();
+          console.log(`Encounter "${this.encounterName}" saved to Initiative Tracker`);
+          new Notice(`✅ Encounter "${this.encounterName}" saved! Use "Load Encounter" in Initiative Tracker to start combat.`);
+        }
+      } else {
+        console.log("Could not access Initiative Tracker data structure");
+        new Notice(`⚠️ Encounter data saved to scene frontmatter only. Load manually in Initiative Tracker.`);
       }
       
       // Link encounter to scene
@@ -4692,7 +4883,7 @@ class SceneCreationModal extends Modal {
       
     } catch (error) {
       console.error("Error creating Initiative Tracker encounter:", error);
-      new Notice("⚠️ Could not create encounter in Initiative Tracker. Check console for details.");
+      new Notice("⚠️ Could not save encounter to Initiative Tracker. Check console for details.");
     }
   }
 
