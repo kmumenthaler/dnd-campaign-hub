@@ -3347,7 +3347,7 @@ class SceneCreationModal extends Modal {
     }
 
     // Set default adventure if provided, otherwise first one
-    if (!this.adventurePath && allAdventures.length > 0) {
+    if (!this.adventurePath && allAdventures.length > 0 && allAdventures[0]) {
       this.adventurePath = allAdventures[0].path;
     }
 
@@ -3560,7 +3560,7 @@ class SceneCreationModal extends Modal {
         if (item instanceof TFile && item.extension === 'md') {
           // Extract scene number from filename: "Scene X - Name.md"
           const match = item.basename.match(/^Scene\s+(\d+)\s+-\s+(.+)$/);
-          if (match) {
+          if (match && match[1] && match[2]) {
             scenes.push({
               path: item.path,
               number: parseInt(match[1]),
