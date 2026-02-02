@@ -2177,8 +2177,10 @@ date: ${currentDate}
       // Create player data in Initiative Tracker format
       const playerData = {
         name: this.pcName,
+        display: this.pcName,  // CRITICAL: Display name for party view
         id: playerId,
         initiative: 0,
+        static: false,
         modifier: initMod,
         hp: maxHP,
         currentMaxHP: maxHP,
@@ -2195,7 +2197,8 @@ date: ${currentDate}
         enabled: true,
         active: false,
         hidden: false,
-        friendly: true
+        friendly: true,
+        rollHP: false
       };
 
       // Initialize players array if it doesn't exist
@@ -3908,6 +3911,7 @@ class SceneCreationModal extends Modal {
   createEncounter = false;
   encounterName = "";
   useColorNames = false;
+  includeParty = true;  // Include party members in encounter
   creatures: Array<{
     name: string;
     count: number;
@@ -4405,6 +4409,15 @@ class SceneCreationModal extends Modal {
           .setValue(this.useColorNames)
           .onChange(value => {
             this.useColorNames = value;
+          }));
+      
+      new Setting(this.encounterSection)
+        .setName("Include Party Members")
+        .setDesc("Automatically add the campaign's party to this encounter")
+        .addToggle(toggle => toggle
+          .setValue(this.includeParty)
+          .onChange(value => {
+            this.includeParty = value;
           }));
       
       // Show the builder fields
@@ -4959,6 +4972,12 @@ class SceneCreationModal extends Modal {
         "Silver", "Bronze"
       ];
       
+      // Get campaign party members if requested
+      let partyMembers: any[] = [];
+      if (this.includeParty) {
+        partyMembers = await this.getCampaignPartyMembers(initiativePlugin);
+      }
+      
       // Build creature data in Initiative Tracker format
       const creatures = this.creatures.flatMap(c => {
         console.log(`Building creature: ${c.name}, HP: ${c.hp}, AC: ${c.ac}`);
@@ -5010,9 +5029,12 @@ class SceneCreationModal extends Modal {
       if (initiativePlugin.data && typeof initiativePlugin.data.encounters === 'object') {
         console.log("Saving encounter to Initiative Tracker data...");
         
+        // Combine party members and creatures
+        const allCombatants = [...partyMembers, ...creatures];
+        
         // Initiative Tracker stores encounters as: data.encounters[name] = { creatures, state, name, round, ... }
         initiativePlugin.data.encounters[this.encounterName] = {
-          creatures: creatures,
+          creatures: allCombatants,
           state: false,
           name: this.encounterName,
           round: 1,
@@ -5037,6 +5059,51 @@ class SceneCreationModal extends Modal {
     } catch (error) {
       console.error("Error creating Initiative Tracker encounter:", error);
       new Notice("⚠️ Could not save encounter to Initiative Tracker. Check console for details.");
+    }
+  }
+
+  /**
+   * Get party members for the current campaign
+   */
+  async getCampaignPartyMembers(initiativePlugin: any): Promise<any[]> {
+    try {
+      // Get campaign name from adventure path
+      const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
+      if (!(adventureFile instanceof TFile)) return [];
+      
+      const adventureContent = await this.app.vault.read(adventureFile);
+      const campaignMatch = adventureContent.match(/^campaign:\s*([^\r\n]+)$/m);
+      const campaignName = (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
+      
+      // Find the campaign's party
+      const partyName = `${campaignName} Party`;
+      const party = initiativePlugin.data.parties?.find((p: any) => p.name === partyName);
+      
+      if (!party || !party.players || party.players.length === 0) {
+        console.log(`No party found for campaign "${campaignName}"`);
+        return [];
+      }
+      
+      // Get all player data for party members
+      const partyMembers: any[] = [];
+      for (const playerId of party.players) {
+        const player = initiativePlugin.data.players?.find((p: any) => p.id === playerId);
+        if (player) {
+          // Clone the player data to avoid modifying the original
+          partyMembers.push({
+            ...player,
+            initiative: 0,  // Reset initiative for new encounter
+            active: false,
+            enabled: true
+          });
+        }
+      }
+      
+      console.log(`Found ${partyMembers.length} party members for "${campaignName}"`);
+      return partyMembers;
+    } catch (error) {
+      console.error("Error fetching party members:", error);
+      return [];
     }
   }
 
