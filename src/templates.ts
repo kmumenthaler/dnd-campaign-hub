@@ -148,6 +148,7 @@ export const SESSION_GM_TEMPLATE = `---
 type: session
 campaign: 
 world: 
+adventure: 
 sessionNum: 
 location: 
 date: 
@@ -189,6 +190,49 @@ art: ""
 - [ ] 
 - [ ] 
 - [ ] 
+
+\`\`\`dataviewjs
+// Get current session's adventure (if linked)
+const sessionFile = dv.current();
+const adventureLink = sessionFile.adventure;
+
+if (adventureLink) {
+  // Get the adventure file
+  const adventurePage = dv.page(adventureLink);
+  
+  if (adventurePage) {
+    const adventureName = adventurePage.name || adventurePage.file.name;
+    const campaignFolder = adventurePage.campaign;
+    
+    // Find scenes in both flat and folder structures
+    let scenesFlat = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`)
+      .where(p => p.file.name.startsWith("Scene"));
+    let scenesFolder = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName}"\`)
+      .where(p => p.file.name.startsWith("Scene"));
+    
+    let allScenes = [...scenesFlat, ...scenesFolder];
+    
+    if (allScenes.length > 0) {
+      // Sort by scene number
+      allScenes.sort((a, b) => {
+        const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
+        const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
+        return aNum - bNum;
+      });
+      
+      dv.header(4, "Adventure Scenes");
+      for (const scene of allScenes) {
+        const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
+        const duration = scene.duration || "?min";
+        const type = scene.type || "?";
+        dv.paragraph(\`\${status} \${dv.fileLink(scene.file.path, false, scene.file.name)} - \\\`\${duration} | \${type}\\\`\`);
+      }
+    }
+  }
+} else {
+  dv.paragraph("*Link an adventure in frontmatter to see scenes dynamically*");
+}
+\`\`\`
 
 ## Secrets and Clues
 
@@ -536,196 +580,110 @@ button.onclick = () => {
 
 ---
 
-## Scene Checklist
+## Scenes
 
-### Act 1: Setup & Inciting Incident
-**Goal:** Introduce the problem and get PCs invested
+\`\`\`dataviewjs
+// Get all scenes for this adventure
+const adventureName = dv.current().name || dv.current().file.name;
+const campaignFolder = dv.current().campaign;
 
-- [ ] [[Scene 1 - Opening Hook]]  
-  \`15min | social | easy\`
-- [ ] [[Scene 2 - Investigation]]  
-  \`30min | exploration | medium\`
-- [ ] [[Scene 3 - First Confrontation]]  
-  \`45min | combat | medium\`
+// Find scenes in both flat and folder structures
+let scenesFlat = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`)
+  .where(p => p.file.name.startsWith("Scene"));
+let scenesFolder = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName}"\`)
+  .where(p => p.file.name.startsWith("Scene"));
 
-### Act 2: Rising Action & Confrontation
-**Goal:** PCs face obstacles, stakes escalate
+let allScenes = [...scenesFlat, ...scenesFolder];
 
-- [ ] [[Scene 4 - Complication Arises]]  
-  \`20min | social | medium\`
-- [ ] [[Scene 5 - Major Challenge]]  
-  \`40min | combat | hard\`
-- [ ] [[Scene 6 - Critical Choice]]  
-  \`30min | social | hard\`
+if (allScenes.length === 0) {
+  dv.paragraph("*No scenes created yet. Use the button above to create your first scene.*");
+} else {
+  // Sort by scene number
+  allScenes.sort((a, b) => {
+    const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
+    const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
+    return aNum - bNum;
+  });
 
-### Act 3: Climax & Resolution
-**Goal:** Final confrontation and aftermath
-
-- [ ] [[Scene 7 - Preparation]]  
-  \`20min | exploration | medium\`
-- [ ] [[Scene 8 - Climactic Battle]]  
-  \`60min | combat | deadly\`
-- [ ] [[Scene 9 - Resolution]]  
-  \`10min | social | easy\`
-
----
-
-## Act 1: Setup & Inciting Incident
-
-**Goal:** Introduce the problem and get PCs invested  
-**Expected Duration:** ~90 minutes
-
-### Scenes
-
-- [ ] **Scene 1:** Opening Hook  
-  \`duration: 15min\` \`type: social\` \`difficulty: easy\`
+  // Group by act if act numbers exist
+  const hasActs = allScenes.some(s => s.act);
   
-- [ ] **Scene 2:** Investigation/Discovery  
-  \`duration: 30min\` \`type: exploration\` \`difficulty: medium\`
-  
-- [ ] **Scene 3:** First Confrontation  
-  \`duration: 45min\` \`type: combat\` \`difficulty: medium\`
+  if (hasActs) {
+    // Display grouped by acts
+    const acts = {1: [], 2: [], 3: []};
+    allScenes.forEach(scene => {
+      const act = scene.act || 1;
+      if (acts[act]) acts[act].push(scene);
+    });
 
-**Sessions:**   
-**What Happened:**
-- 
+    const actNames = {
+      1: "Act 1: Setup & Inciting Incident",
+      2: "Act 2: Rising Action & Confrontation",
+      3: "Act 3: Climax & Resolution"
+    };
 
----
-
-## Act 2: Rising Action & Confrontation
-
-**Goal:** PCs face obstacles, stakes escalate  
-**Expected Duration:** ~90 minutes
-
-### Scenes
-
-- [ ] **Scene 4:** Complication Arises  
-  \`duration: 20min\` \`type: social\` \`difficulty: medium\`
-  
-- [ ] **Scene 5:** Major Challenge  
-  \`duration: 40min\` \`type: combat\` \`difficulty: hard\`
-  
-- [ ] **Scene 6:** Critical Choice  
-  \`duration: 30min\` \`type: social\` \`difficulty: hard\`
-
-**Sessions:**   
-**What Happened:**
-- 
-
----
-
-## Act 3: Climax & Resolution
-
-**Goal:** Final confrontation and aftermath  
-**Expected Duration:** ~90 minutes
-
-### Scenes
-
-- [ ] **Scene 7:** Preparation for Finale  
-  \`duration: 20min\` \`type: exploration\` \`difficulty: medium\`
-  
-- [ ] **Scene 8:** Climactic Battle  
-  \`duration: 60min\` \`type: combat\` \`difficulty: deadly\`
-  
-- [ ] **Scene 9:** Resolution & Aftermath  
-  \`duration: 10min\` \`type: social\` \`difficulty: easy\`
-
-**Sessions:**   
-**What Happened:**
-- 
-
----
-
-## Encounters & Creatures
-
-**For Initiative Tracker Plugin:**  
-Link creatures from \`z_Beastiarity/\` folder
-
-### Act 1 Encounters
-
-- [ ] Scene 3: [Encounter Name] - CR ?, [# creatures]
-  - Link: 
-
-### Act 2 Encounters
-
-- [ ] Scene 5: [Encounter Name] - CR ?, [# creatures]
-  - Link: 
-
-### Act 3 Encounters
-
-- [ ] Scene 8: [Climactic Battle] - CR ?, [# creatures]
-  - Link: 
-
----
-
-## Key NPCs
-
-\`\`\`button
-name Create New NPC for Adventure
-type command
-action D&D Campaign Hub: Create New NPC
+    for (const [actNum, actScenes] of Object.entries(acts)) {
+      if (actScenes.length > 0) {
+        dv.header(3, actNames[actNum]);
+        for (const scene of actScenes) {
+          const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
+          const duration = scene.duration || "?min";
+          const type = scene.type || "?";
+          const difficulty = scene.difficulty || "?";
+          dv.paragraph(\`\${status} **\${dv.fileLink(scene.file.path, false, scene.file.name)}**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`);
+        }
+      }
+    }
+  } else {
+    // Display as simple list
+    for (const scene of allScenes) {
+      const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
+      const duration = scene.duration || "?min";
+      const type = scene.type || "?";
+      const difficulty = scene.difficulty || "?";
+      dv.paragraph(\`\${status} **\${dv.fileLink(scene.file.path, false, scene.file.name)}**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`);
+    }
+  }
+}
 \`\`\`
-
-\`\`\`dataview
-TABLE WITHOUT ID
-  link(file.path, name) AS "Name",
-  motivation AS "Wants",
-  location AS "Location"
-FROM "ttrpgs/{{CAMPAIGN_NAME}}/NPCs"
-WHERE contains(file.outlinks, this.file.link)
-SORT name ASC
-\`\`\`
-
----
-
-## Locations & Maps
-
-**Primary Locations:**
-
-1. **Location Name**
-   - Description
-   - Key features
-   - Map: ![[map-image.jpg|400]] or [[Canvas Map]]
-
----
-
-## Treasure & Rewards
-
-**By Act:**
-- Act 1: 
-- Act 2: 
-- Act 3: 
-
-**XP Milestones:**
-- Total XP: 
-- Level up at: 
 
 ---
 
 ## GM Prep Notes
 
 ### Session Pacing
-- Act 1: Session 1 (scenes 1-3)
-- Act 2: Session 2 (scenes 4-6)  
-- Act 3: Session 3 (scenes 7-9)
+*How do you plan to pace this adventure across sessions?*
 
 ### Backup Plans
-What if PCs go off-script?
+*What if PCs go off-script?*
 
 ### Secrets & Clues
 - [ ] Clue 1
 - [ ] Clue 2
 - [ ] Clue 3
-- [ ] Clue 4
-- [ ] Clue 5
 - [ ] Secret 1
 - [ ] Secret 2
-- [ ] Secret 3
 
 ### Resolution Options
-**Success:** What happens if PCs succeed?
+**Success:** *What happens if PCs succeed?*
 
-**Failure:** What happens if they fail or give up?
+**Failure:** *What happens if they fail or give up?*
+
+---
+
+## Key NPCs
+
+*Link important NPCs from your campaign*
+
+---
+
+## Treasure & Rewards
+
+*Track loot and XP for this adventure*
+
+**XP Milestones:**
+- Total XP: 
+- Level up at: 
 `;
 
 export const SCENE_TEMPLATE = `---
