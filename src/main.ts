@@ -4218,7 +4218,7 @@ class SceneCreationModal extends Modal {
   /**
    * Show encounter builder input fields
    */
-  showEncounterBuilderFields() {
+  async showEncounterBuilderFields() {
     if (!this.encounterSection) return;
     
     // Remove existing builder fields
@@ -4252,8 +4252,77 @@ class SceneCreationModal extends Modal {
     this.creatureListContainer = builderContainer.createDiv({ cls: "dnd-creature-list" });
     this.renderCreatureList();
     
-    // Add creature section
-    const addCreatureSection = builderContainer.createDiv({ cls: "dnd-add-creature" });
+    // === VAULT CREATURE SELECTION ===
+    const vaultCreatureSection = builderContainer.createDiv({ cls: "dnd-add-creature-vault" });
+    
+    let selectedCreaturePath = "";
+    let vaultCreatureCount = "1";
+    
+    // Load creatures from vault
+    const vaultCreatures = await this.loadAllCreatures();
+    
+    if (vaultCreatures.length > 0) {
+      const vaultCreatureSetting = new Setting(vaultCreatureSection)
+        .setName("Add from Vault")
+        .setDesc(`Select a creature from z_Beastiarity (${vaultCreatures.length} found)`);
+      
+      // Creature dropdown
+      vaultCreatureSetting.addDropdown(dropdown => {
+        dropdown.addOption("", "— Select creature —");
+        vaultCreatures.forEach(creature => {
+          const label = creature.cr 
+            ? `${creature.name} (CR ${creature.cr}, HP ${creature.hp}, AC ${creature.ac})`
+            : `${creature.name} (HP ${creature.hp}, AC ${creature.ac})`;
+          dropdown.addOption(creature.path, label);
+        });
+        dropdown.onChange(value => selectedCreaturePath = value);
+      });
+      
+      // Count input
+      vaultCreatureSetting.addText(text => {
+        text.setPlaceholder("Count")
+          .setValue("1")
+          .onChange(value => vaultCreatureCount = value);
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "60px";
+      });
+      
+      // Add button
+      vaultCreatureSetting.addButton(btn => btn
+        .setButtonText("Add")
+        .setCta()
+        .onClick(() => {
+          if (!selectedCreaturePath) {
+            new Notice("Please select a creature!");
+            return;
+          }
+          
+          const creature = vaultCreatures.find(c => c.path === selectedCreaturePath);
+          if (!creature) {
+            new Notice("Creature not found!");
+            return;
+          }
+          
+          this.addCreature({
+            name: creature.name,
+            count: parseInt(vaultCreatureCount) || 1,
+            hp: creature.hp,
+            ac: creature.ac,
+            cr: creature.cr,
+            source: "vault"
+          });
+          
+          new Notice(`Added ${vaultCreatureCount}x ${creature.name}`);
+        }));
+    } else {
+      vaultCreatureSection.createEl("p", {
+        text: "⚠️ No creatures found in z_Beastiarity folder. Use manual entry below.",
+        cls: "setting-item-description mod-warning"
+      });
+    }
+    
+    // === MANUAL CREATURE ENTRY ===
+    const addCreatureSection = builderContainer.createDiv({ cls: "dnd-add-creature-manual" });
     
     let newCreatureName = "";
     let newCreatureCount = "1";
@@ -4262,8 +4331,8 @@ class SceneCreationModal extends Modal {
     let newCreatureCR = "";
     
     const addCreatureSetting = new Setting(addCreatureSection)
-      .setName("Add Creature")
-      .setDesc("Enter creature details manually");
+      .setName("Add Custom Creature")
+      .setDesc("Enter creature details manually for custom or homebrew enemies");
     
     // Creature name input
     addCreatureSetting.addText(text => {
@@ -4323,6 +4392,8 @@ class SceneCreationModal extends Modal {
           source: "manual"
         });
         
+        new Notice(`Added ${newCreatureCount}x ${newCreatureName}`);
+        
         // Clear inputs
         newCreatureName = "";
         newCreatureCount = "1";
@@ -4336,7 +4407,7 @@ class SceneCreationModal extends Modal {
     
     // Info text
     builderContainer.createEl("p", {
-      text: "💡 Tip: Add creatures from your z_Beastiarity folder or enter them manually. You can edit counts and stats later in Initiative Tracker.",
+      text: "💡 Tip: Select creatures from your vault or add custom enemies on the fly. You can edit stats later in Initiative Tracker.",
       cls: "setting-item-description"
     });
   }
@@ -4398,7 +4469,7 @@ class SceneCreationModal extends Modal {
 
   /**
    * Search vault for creature files in z_Beastiarity
-   * Future enhancement for autocomplete
+   * Parses creature statblocks from frontmatter
    */
   async searchVaultCreatures(query: string): Promise<Array<{
     name: string;
@@ -4409,13 +4480,76 @@ class SceneCreationModal extends Modal {
   }>> {
     const creatures: Array<{ name: string; path: string; hp: number; ac: number; cr?: string }> = [];
     
-    const beastiaryFolder = this.app.vault.getAbstractFileByPath("z_Beastiarity");
-    if (!(beastiaryFolder instanceof TFolder)) return creatures;
+    // Check multiple possible beastiary locations
+    const possiblePaths = [
+      "z_Beastiarity",
+      "My Vault/z_Beastiarity"
+    ];
     
-    // TODO: Implement creature file parsing
-    // For now, return empty array - will be enhanced in future iterations
+    let beastiaryFolder: TFolder | null = null;
+    for (const path of possiblePaths) {
+      const folder = this.app.vault.getAbstractFileByPath(path);
+      if (folder instanceof TFolder) {
+        beastiaryFolder = folder;
+        break;
+      }
+    }
+    
+    if (!beastiaryFolder) return creatures;
+    
+    const queryLower = query.toLowerCase();
+    
+    // Recursively search all files in beastiary
+    const searchFolder = async (folder: TFolder) => {
+      for (const child of folder.children) {
+        if (child instanceof TFile && child.extension === "md") {
+          try {
+            const content = await this.app.vault.read(child);
+            const cache = this.app.metadataCache.getFileCache(child);
+            
+            // Check if file has statblock
+            if (cache?.frontmatter && cache.frontmatter.statblock === true) {
+              const name = cache.frontmatter.name || child.basename;
+              
+              // Filter by query
+              if (!query || name.toLowerCase().includes(queryLower)) {
+                creatures.push({
+                  name: name,
+                  path: child.path,
+                  hp: cache.frontmatter.hp || 1,
+                  ac: cache.frontmatter.ac || 10,
+                  cr: cache.frontmatter.cr?.toString() || undefined
+                });
+              }
+            }
+          } catch (error) {
+            console.error(`Error reading creature file ${child.path}:`, error);
+          }
+        } else if (child instanceof TFolder) {
+          await searchFolder(child);
+        }
+      }
+    };
+    
+    await searchFolder(beastiaryFolder);
+    
+    // Sort alphabetically
+    creatures.sort((a, b) => a.name.localeCompare(b.name));
     
     return creatures;
+  }
+  
+  /**
+   * Load all creatures from vault for dropdown
+   */
+  async loadAllCreatures(): Promise<Array<{
+    name: string;
+    path: string;
+    hp: number;
+    ac: number;
+    cr?: string;
+  }>> {
+    return await this.searchVaultCreatures("");
   }
 
   /**

@@ -258,3 +258,26 @@
 .dnd-add-creature input[type="number"] {
   margin-right: 8px;
 }
+
+/* Vault creature selection */
+.dnd-add-creature-vault {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 12px;
+}
+
+.dnd-add-creature-vault .setting-item {
+  border: none;
+  padding-top: 0;
+}
+
+/* Manual creature entry */
+.dnd-add-creature-manual {
+  padding: 12px 0;
+  margin-top: 8px;
+}
+
+.dnd-add-creature-manual .setting-item {
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 15px;
+}
