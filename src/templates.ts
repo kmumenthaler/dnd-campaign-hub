@@ -586,11 +586,14 @@ button.onclick = () => {
 // Get all scenes for this adventure
 const adventureName = dv.current().name || dv.current().file.name;
 const campaignFolder = dv.current().campaign;
+const adventureFolder = dv.current().file.folder;
 
 // Find scenes in both flat and folder structures
+// Flat: Adventures/Adventure - Scenes/
+// Folder: Adventures/Adventure/ (scenes directly or in Act subfolders)
 let scenesFlat = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`)
   .where(p => p.file.name.startsWith("Scene"));
-let scenesFolder = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName}"\`)
+let scenesFolder = dv.pages(\`"\${adventureFolder}"\`)
   .where(p => p.file.name.startsWith("Scene"));
 
 let allScenes = [...scenesFlat, ...scenesFolder];

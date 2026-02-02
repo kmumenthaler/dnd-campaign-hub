@@ -3625,8 +3625,6 @@ class SceneCreationModal extends Modal {
         scenePath = `${flatScenesFolder}/Scene ${sceneNum} - ${this.sceneName}.md`;
       } else if (isFolderStructure) {
         // Folder structure - scenes go in the adventure folder or act subfolders
-      } else if (isFolderStructure) {
-        // Folder structure - scenes go in the adventure folder or act subfolders
         const actFolderName = this.act === "1" ? "Act 1 - Setup" : 
                               this.act === "2" ? "Act 2 - Rising Action" : "Act 3 - Climax";
         const actFolderPath = `${adventureFolder.path}/${actFolderName}`;
