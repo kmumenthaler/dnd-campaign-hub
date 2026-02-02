@@ -692,12 +692,12 @@ if (allScenes.length === 0) {
 export const SCENE_TEMPLATE = `---
 type: scene
 adventure: "{{ADVENTURE_NAME}}"
-campaign: "{{CAMPAIGN_NAME}}"
-world: "{{WORLD_NAME}}"
+campaign: "{{CAMPAIGN}}"
+world: "{{WORLD}}"
 act: {{ACT_NUMBER}}
 scene_number: {{SCENE_NUMBER}}
 duration: {{DURATION}}
-scene_type: {{SCENE_TYPE}}
+scene_type: {{TYPE}}
 difficulty: {{DIFFICULTY}}
 status: planned
 date: {{DATE}}
@@ -705,7 +705,7 @@ date: {{DATE}}
 
 # Scene {{SCENE_NUMBER}}: {{SCENE_NAME}}
 
-**Duration:** {{DURATION}} | **Type:** {{SCENE_TYPE}} | **Difficulty:** {{DIFFICULTY}}  
+**Duration:** {{DURATION}} | **Type:** {{TYPE}} | **Difficulty:** {{DIFFICULTY}}  
 **Act:** {{ACT_NUMBER}} | **Adventure:** [[{{ADVENTURE_NAME}}]]
 
 ---
