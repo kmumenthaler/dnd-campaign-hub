@@ -461,12 +461,7 @@ export default class DndCampaignHubPlugin extends Plugin {
     // Enable the plugins programmatically
     await this.enablePlugins(requiredPlugins.map(p => p.id));
 
-    new Notice("Required plugins installed! Reloading...");
-
-    // Reload Obsidian to activate plugins
-    setTimeout(() => {
-      (this.app as any).commands.executeCommandById('app:reload');
-    }, 1500);
+    new Notice("Required plugins installed! Please reload Obsidian (Ctrl+R) to activate them.");
   }
 
   /**
@@ -625,7 +620,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Configure plugin settings
 		await this.configurePluginSettings();
 
-		new Notice("Vault initialized successfully! Please reload Obsidian (Ctrl+R) to activate plugins.");
+		new Notice("Vault initialized successfully!");
 	}
 
 	/**
@@ -1191,53 +1186,67 @@ class DndHubModal extends Modal {
       return;
     }
 
-        // Quick Actions Section
-        contentEl.createEl("h2", { text: "Quick Actions" });
+    // Check if any campaigns exist
+    const campaigns = this.plugin.getAllCampaigns();
+    const hasCampaigns = campaigns.length > 0;
 
-        const quickActionsContainer = contentEl.createDiv({ cls: "dnd-hub-quick-actions" });
+    // Quick Actions Section
+    contentEl.createEl("h2", { text: "Quick Actions" });
 
-        this.createActionButton(quickActionsContainer, "🎲 New Campaign", () => {
-          this.close();
-          this.plugin.createCampaign();
-        });
+    const quickActionsContainer = contentEl.createDiv({ cls: "dnd-hub-quick-actions" });
 
-    this.createActionButton(quickActionsContainer, "👤 New NPC", () => {
+    this.createActionButton(quickActionsContainer, "🎲 New Campaign", () => {
       this.close();
-      this.plugin.createNpc();
+      this.plugin.createCampaign();
     });
 
-    this.createActionButton(quickActionsContainer, "🛡️ New PC", () => {
-      this.close();
-      this.plugin.createPc();
-    });
+    // Only show other buttons if campaigns exist
+    if (hasCampaigns) {
+      this.createActionButton(quickActionsContainer, "👤 New NPC", () => {
+        this.close();
+        this.plugin.createNpc();
+      });
 
-    this.createActionButton(quickActionsContainer, "🏛️ New Faction", () => {
-      this.close();
-      this.plugin.createFaction();
-    });
+      this.createActionButton(quickActionsContainer, "🛡️ New PC", () => {
+        this.close();
+        this.plugin.createPc();
+      });
 
-    this.createActionButton(quickActionsContainer, "🗺️ New Adventure", () => {
-      this.close();
-      this.plugin.createAdventure();
-    });
+      this.createActionButton(quickActionsContainer, "🏛️ New Faction", () => {
+        this.close();
+        this.plugin.createFaction();
+      });
 
-    contentEl.createEl("p", {
-      text: "Create sessions from a campaign's World note or via the 'Create New Session' command.",
-      cls: "dnd-hub-info",
-    });
+      this.createActionButton(quickActionsContainer, "🗺️ New Adventure", () => {
+        this.close();
+        this.plugin.createAdventure();
+      });
+    }
 
-    // Browse Vault Section
-    contentEl.createEl("h2", { text: "Browse Vault" });
-    const browseContainer = contentEl.createDiv({ cls: "dnd-hub-browse" });
+    if (hasCampaigns) {
+      contentEl.createEl("p", {
+        text: "Create sessions from a campaign's World note or via the 'Create New Session' command.",
+        cls: "dnd-hub-info",
+      });
 
-    this.createBrowseButton(browseContainer, "📁 Campaigns", "Campaigns");
-    this.createBrowseButton(browseContainer, "👥 NPCs", "NPCs");
-    this.createBrowseButton(browseContainer, "🛡️ PCs", "PCs");
-    this.createBrowseButton(browseContainer, "🗺️ Adventures", "Adventures");
-    this.createBrowseButton(browseContainer, "📜 Sessions", "Sessions");
-    this.createBrowseButton(browseContainer, "⚔️ Items", "Items");
-    this.createBrowseButton(browseContainer, "✨ Spells", "Spells");
-    this.createBrowseButton(browseContainer, "🏛️ Factions", "Factions");
+      // Browse Vault Section
+      contentEl.createEl("h2", { text: "Browse Vault" });
+      const browseContainer = contentEl.createDiv({ cls: "dnd-hub-browse" });
+
+      this.createBrowseButton(browseContainer, "📁 Campaigns", "Campaigns");
+      this.createBrowseButton(browseContainer, "👥 NPCs", "NPCs");
+      this.createBrowseButton(browseContainer, "🛡️ PCs", "PCs");
+      this.createBrowseButton(browseContainer, "🗺️ Adventures", "Adventures");
+      this.createBrowseButton(browseContainer, "📜 Sessions", "Sessions");
+      this.createBrowseButton(browseContainer, "⚔️ Items", "Items");
+      this.createBrowseButton(browseContainer, "✨ Spells", "Spells");
+      this.createBrowseButton(browseContainer, "🏛️ Factions", "Factions");
+    } else {
+      contentEl.createEl("p", {
+        text: "Create your first campaign to get started!",
+        cls: "dnd-hub-info",
+      });
+    }
   }
 
   createActionButton(container: Element, text: string, callback: () => void) {
