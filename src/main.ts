@@ -1723,6 +1723,7 @@ class PCCreationModal extends Modal {
   characterSheetUrl = "";
   characterSheetPdf = "";
   isGM = false;
+  registerInTracker = true;  // Default: register PCs in Initiative Tracker
 
   constructor(app: App, plugin: DndCampaignHubPlugin) {
     super(app);
@@ -1959,6 +1960,22 @@ class PCCreationModal extends Modal {
             this.characterSheetUrl = value;
           })
       );
+    
+    // Initiative Tracker Integration
+    if (this.isGM) {
+      contentEl.createEl("h3", { text: "🎲 Initiative Tracker Integration" });
+      
+      new Setting(contentEl)
+        .setName("Register in Initiative Tracker")
+        .setDesc("Automatically add this PC to Initiative Tracker's party management system")
+        .addToggle((toggle) =>
+          toggle
+            .setValue(this.registerInTracker)
+            .onChange((value) => {
+              this.registerInTracker = value;
+            })
+        );
+    }
 
     new Setting(contentEl)
       .setName("Character Sheet PDF")
@@ -2119,10 +2136,146 @@ date: ${currentDate}
       await this.app.workspace.openLinkText(filePath, "", true);
 
       new Notice(`✅ PC "${this.pcName}" created successfully!`);
+      
+      // Register in Initiative Tracker if requested
+      if (this.registerInTracker && this.isGM) {
+        await this.registerPCInInitiativeTracker(filePath);
+      }
     } catch (error) {
       new Notice(`❌ Error creating PC: ${error instanceof Error ? error.message : String(error)}`);
       console.error("PC creation error:", error);
     }
+  }
+
+  /**
+   * Register PC in Initiative Tracker's party management system
+   */
+  async registerPCInInitiativeTracker(pcFilePath: string) {
+    try {
+      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+      if (!initiativePlugin) {
+        new Notice("⚠️ Initiative Tracker not found. PC created but not registered in tracker.");
+        return;
+      }
+
+      // Generate unique ID for the player
+      const playerId = this.generatePlayerId();
+      
+      // Parse initiative modifier
+      const initMod = parseInt(this.initBonus) || 0;
+      
+      // Parse HP values
+      const currentHP = parseInt(this.hpCurrent) || parseInt(this.hpMax) || 1;
+      const maxHP = parseInt(this.hpMax) || currentHP;
+      
+      // Parse AC
+      const armorClass = parseInt(this.ac) || 10;
+      
+      // Parse level
+      const charLevel = parseInt(this.level) || 1;
+      
+      // Create player data in Initiative Tracker format
+      const playerData = {
+        name: this.pcName,
+        id: playerId,
+        initiative: 0,
+        modifier: initMod,
+        hp: maxHP,
+        currentMaxHP: maxHP,
+        currentHP: currentHP,
+        tempHP: 0,
+        ac: armorClass,
+        currentAC: armorClass,
+        level: charLevel,
+        path: pcFilePath,
+        note: `${this.classes.filter(c => c.trim()).join("/")} - Player: ${this.playerName}`,
+        player: true,
+        marker: "default",
+        status: [],
+        enabled: true,
+        active: false,
+        hidden: false,
+        friendly: true
+      };
+
+      // Initialize players array if it doesn't exist
+      if (!initiativePlugin.data.players) {
+        initiativePlugin.data.players = [];
+      }
+
+      // Add player to Initiative Tracker
+      initiativePlugin.data.players.push(playerData);
+
+      // Get or create party for this campaign
+      const campaignName = this.campaign.split('/').pop() || "Unknown Campaign";
+      const partyId = await this.getOrCreateCampaignParty(campaignName, initiativePlugin);
+      
+      // Add player to party
+      if (!initiativePlugin.data.parties) {
+        initiativePlugin.data.parties = [];
+      }
+      
+      const party = initiativePlugin.data.parties.find((p: any) => p.id === partyId);
+      if (party && !party.players.includes(playerId)) {
+        party.players.push(playerId);
+      }
+
+      // Save Initiative Tracker settings
+      if (initiativePlugin.saveSettings) {
+        await initiativePlugin.saveSettings();
+        new Notice(`✅ ${this.pcName} registered in Initiative Tracker party!`);
+      }
+    } catch (error) {
+      console.error("Error registering PC in Initiative Tracker:", error);
+      new Notice("⚠️ PC created but could not register in Initiative Tracker. Check console for details.");
+    }
+  }
+
+  /**
+   * Get existing party for campaign or create a new one
+   */
+  async getOrCreateCampaignParty(campaignName: string, initiativePlugin: any): Promise<string> {
+    const partyName = `${campaignName} Party`;
+    
+    // Initialize parties array if needed
+    if (!initiativePlugin.data.parties) {
+      initiativePlugin.data.parties = [];
+    }
+    
+    // Check if party already exists
+    const existingParty = initiativePlugin.data.parties.find((p: any) => p.name === partyName);
+    if (existingParty) {
+      return existingParty.id;
+    }
+    
+    // Create new party
+    const partyId = this.generatePlayerId(); // Reuse the ID generator
+    const newParty = {
+      name: partyName,
+      id: partyId,
+      players: []
+    };
+    
+    initiativePlugin.data.parties.push(newParty);
+    
+    // Set as default party if no default exists
+    if (!initiativePlugin.data.defaultParty) {
+      initiativePlugin.data.defaultParty = partyId;
+    }
+    
+    return partyId;
+  }
+
+  /**
+   * Generate unique ID for player/party
+   */
+  generatePlayerId(): string {
+    const chars = '0123456789abcdef';
+    let id = 'ID_';
+    for (let i = 0; i < 12; i++) {
+      id += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return id;
   }
 
   onClose() {
