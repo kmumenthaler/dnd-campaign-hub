@@ -904,7 +904,8 @@ class EncounterBuilderModal extends Modal {
       "30": { hp: 850, ac: 19, dpr: 230, attackBonus: 14, xp: 155000 }
     };
 
-    return crTable[cr || "1/4"] || crTable["1/4"];
+    const stats = crTable[cr || "1/4"] || crTable["1/4"];
+    return stats!;
   }
 
   getLevelStats(level: number): { hp: number; ac: number; dpr: number; attackBonus: number } {
@@ -929,13 +930,45 @@ class EncounterBuilderModal extends Modal {
   async getPartyForDifficulty(): Promise<Array<{ level: number; hp?: number; ac?: number }>> {
     if (!this.includeParty) return [];
 
-    // Get party members from plugin settings
-    const partyMembers = this.plugin.settings.partyMembers || [];
-    return partyMembers.map(member => ({
-      level: member.level || 1,
-      hp: member.hp,
-      ac: member.ac
-    }));
+    const partyMembers: Array<{ level: number; hp?: number; ac?: number }> = [];
+    
+    try {
+      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+      if (!initiativePlugin?.data) return partyMembers;
+      
+      // Try to get campaign context from active file
+      const activeFile = this.app.workspace.getActiveFile();
+      let campaignName = "Unknown";
+      
+      if (activeFile) {
+        const campaignFolder = this.findCampaignFolder(activeFile.path);
+        if (campaignFolder) {
+          campaignName = campaignFolder.split('/').pop() || "Unknown";
+        }
+      }
+      
+      // Find the campaign's party
+      const partyName = `${campaignName} Party`;
+      const party = initiativePlugin.data.parties?.find((p: any) => p.name === partyName);
+      
+      if (!party?.players) return partyMembers;
+      
+      // Get player details
+      for (const playerName of party.players) {
+        const player = initiativePlugin.data.players?.find((p: any) => p.name === playerName);
+        if (player) {
+          partyMembers.push({
+            level: player.level || 1,
+            hp: player.hp || player.currentMaxHP,
+            ac: player.ac || player.currentAC
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error getting party for difficulty:", error);
+    }
+    
+    return partyMembers;
   }
 
   calculateHitChance(attackBonus: number, targetAC: number): number {
@@ -1149,15 +1182,40 @@ _Add notes about tactics, environment, or special conditions here._
 
       // Add party members if requested
       if (this.includeParty) {
-        const partyMembers = this.plugin.settings.partyMembers || [];
-        for (const member of partyMembers) {
-          creatures.push({
-            name: member.name,
-            hp: member.hp || this.getLevelStats(member.level).hp,
-            ac: member.ac || this.getLevelStats(member.level).ac,
-            modifier: Math.floor((member.level - 1) / 4) + 2,
-            player: true
-          });
+        try {
+          const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+          if (initiativePlugin?.data) {
+            // Try to get campaign context
+            const activeFile = this.app.workspace.getActiveFile();
+            let campaignName = "Unknown";
+            
+            if (activeFile) {
+              const campaignFolder = this.findCampaignFolder(activeFile.path);
+              if (campaignFolder) {
+                campaignName = campaignFolder.split('/').pop() || "Unknown";
+              }
+            }
+            
+            const partyName = `${campaignName} Party`;
+            const party = initiativePlugin.data.parties?.find((p: any) => p.name === partyName);
+            
+            if (party?.players) {
+              for (const playerName of party.players) {
+                const player = initiativePlugin.data.players?.find((p: any) => p.name === playerName);
+                if (player) {
+                  creatures.push({
+                    name: player.name || playerName,
+                    hp: player.hp || player.currentMaxHP || 20,
+                    ac: player.ac || player.currentAC || 14,
+                    modifier: Math.floor(((player.level || 1) - 1) / 4) + 2,
+                    player: true
+                  });
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error getting party members for Initiative Tracker:", error);
         }
       }
 
