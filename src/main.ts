@@ -7054,7 +7054,8 @@ if (countermeasures.length === 0) {
       let actionDesc = '';
       
       if (element.attack_bonus !== undefined) {
-        actionDesc += `Melee or Ranged Weapon Attack: +${element.attack_bonus} to hit, reach 5 ft. or range 60 ft., one target. `;
+        const range = element.range || "reach 5 ft. or range 60 ft.";
+        actionDesc += `Melee or Ranged Weapon Attack: +${element.attack_bonus} to hit, ${range}, one target. `;
       }
       
       if (element.save_dc !== undefined) {
@@ -7065,8 +7066,30 @@ if (countermeasures.length === 0) {
         if (element.attack_bonus !== undefined) {
           actionDesc += `Hit: ${element.damage} damage. `;
         } else if (element.save_dc !== undefined) {
-          actionDesc += `On a failed save: ${element.damage} damage, or half as much on a successful one. `;
+          // Use custom success/failure text if provided
+          if (element.on_failure) {
+            actionDesc += `On a failed save: ${element.on_failure} `;
+          } else {
+            actionDesc += `On a failed save: ${element.damage} damage`;
+            if (element.on_success) {
+              actionDesc += `, ${element.on_success} `;
+            } else {
+              actionDesc += `, or half as much damage on a successful one. `;
+            }
+          }
         }
+      } else if (element.save_dc && (element.on_failure || element.on_success)) {
+        // No damage but has success/failure effects
+        if (element.on_failure) {
+          actionDesc += `On a failed save: ${element.on_failure} `;
+        }
+        if (element.on_success) {
+          actionDesc += `On a successful save: ${element.on_success} `;
+        }
+      }
+      
+      if (element.additional_damage) {
+        actionDesc += `Additional: ${element.additional_damage}. `;
       }
       
       if (element.effect) {
@@ -7141,7 +7164,8 @@ ${traitsContent}${actionsContent}
           let actionDesc = '';
           
           if (element.attack_bonus !== undefined) {
-            actionDesc += `Melee or Ranged Weapon Attack: +${element.attack_bonus} to hit, reach 5 ft. or range 60 ft., one target. `;
+            const range = element.range || "reach 5 ft. or range 60 ft.";
+            actionDesc += `Melee or Ranged Weapon Attack: +${element.attack_bonus} to hit, ${range}, one target. `;
           }
           
           if (element.save_dc !== undefined) {
@@ -7152,8 +7176,30 @@ ${traitsContent}${actionsContent}
             if (element.attack_bonus !== undefined) {
               actionDesc += `Hit: ${element.damage} damage. `;
             } else if (element.save_dc !== undefined) {
-              actionDesc += `On a failed save: ${element.damage} damage, or half as much on a successful one. `;
+              // Use custom success/failure text if provided
+              if (element.on_failure) {
+                actionDesc += `On a failed save: ${element.on_failure} `;
+              } else {
+                actionDesc += `On a failed save: ${element.damage} damage`;
+                if (element.on_success) {
+                  actionDesc += `, ${element.on_success} `;
+                } else {
+                  actionDesc += `, or half as much damage on a successful one. `;
+                }
+              }
             }
+          } else if (element.save_dc && (element.on_failure || element.on_success)) {
+            // No damage but has success/failure effects
+            if (element.on_failure) {
+              actionDesc += `On a failed save: ${element.on_failure} `;
+            }
+            if (element.on_success) {
+              actionDesc += `On a successful save: ${element.on_success} `;
+            }
+          }
+          
+          if (element.additional_damage) {
+            actionDesc += `Additional: ${element.additional_damage}. `;
           }
           
           if (element.effect) {
