@@ -396,6 +396,877 @@ LIMIT 1
   }
 }
 
+class EncounterBuilderModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  encounterName = "";
+  creatures: EncounterCreature[] = [];
+  includeParty = true;
+  useColorNames = false;
+  adventurePath = "";
+  scenePath = "";
+  campaignPath = "";
+  
+  // For editing existing encounters
+  isEdit = false;
+  originalEncounterPath = "";
+  
+  // UI containers
+  creatureListContainer: HTMLElement | null = null;
+  difficultyContainer: HTMLElement | null = null;
+
+  constructor(app: App, plugin: DndCampaignHubPlugin, encounterPath?: string) {
+    super(app);
+    this.plugin = plugin;
+    if (encounterPath) {
+      this.isEdit = true;
+      this.originalEncounterPath = encounterPath;
+    }
+  }
+
+  async onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    
+    // If editing, load existing encounter data
+    if (this.isEdit) {
+      await this.loadEncounterData();
+    }
+
+    contentEl.createEl("h2", { text: this.isEdit ? "⚔️ Edit Encounter" : "⚔️ Create New Encounter" });
+
+    // Encounter Name
+    new Setting(contentEl)
+      .setName("Encounter Name")
+      .setDesc("Give this encounter a memorable name")
+      .addText((text) =>
+        text
+          .setPlaceholder("Goblin Ambush")
+          .setValue(this.encounterName)
+          .onChange((value) => {
+            this.encounterName = value;
+          })
+      );
+
+    // Include Party
+    new Setting(contentEl)
+      .setName("Include Party Members")
+      .setDesc("Add party members to the Initiative Tracker")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.includeParty)
+          .onChange((value) => {
+            this.includeParty = value;
+            this.updateDifficultyDisplay();
+          })
+      );
+
+    // Use Color Names
+    new Setting(contentEl)
+      .setName("Use Color Names")
+      .setDesc("Add color suffixes to creatures (e.g., 'Goblin Red', 'Goblin Blue')")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.useColorNames)
+          .onChange((value) => {
+            this.useColorNames = value;
+          })
+      );
+
+    // Creatures Section
+    contentEl.createEl("h3", { text: "Creatures" });
+    this.creatureListContainer = contentEl.createDiv();
+    this.renderCreatureList();
+
+    new Setting(contentEl)
+      .addButton((button) =>
+        button
+          .setButtonText("+ Add Creature")
+          .onClick(() => {
+            this.addCreature();
+          })
+      );
+
+    // Difficulty Display Section
+    contentEl.createEl("h3", { text: "Encounter Difficulty" });
+    this.difficultyContainer = contentEl.createDiv();
+    this.difficultyContainer.style.padding = "10px";
+    this.difficultyContainer.style.marginBottom = "10px";
+    this.difficultyContainer.style.border = "1px solid var(--background-modifier-border)";
+    this.difficultyContainer.style.borderRadius = "5px";
+    this.updateDifficultyDisplay();
+
+    // Action Buttons
+    const buttonContainer = new Setting(contentEl);
+    
+    buttonContainer.addButton((button) =>
+      button
+        .setButtonText(this.isEdit ? "Update Encounter" : "Create Encounter")
+        .setCta()
+        .onClick(() => {
+          this.saveEncounter();
+        })
+    );
+
+    if (this.isEdit) {
+      buttonContainer.addButton((button) =>
+        button
+          .setButtonText("Delete Encounter")
+          .setWarning()
+          .onClick(() => {
+            this.deleteEncounter();
+          })
+      );
+    }
+  }
+
+  async loadEncounterData() {
+    try {
+      const file = this.app.vault.getAbstractFileByPath(this.originalEncounterPath);
+      if (!(file instanceof TFile)) return;
+
+      const content = await this.app.vault.read(file);
+      const cache = this.app.metadataCache.getFileCache(file);
+      
+      if (cache?.frontmatter) {
+        this.encounterName = cache.frontmatter.name || "";
+        this.includeParty = cache.frontmatter.include_party !== false;
+        this.useColorNames = cache.frontmatter.use_color_names || false;
+        this.adventurePath = cache.frontmatter.adventure_path || "";
+        this.scenePath = cache.frontmatter.scene_path || "";
+        this.campaignPath = cache.frontmatter.campaign_path || "";
+        
+        // Load creatures
+        if (cache.frontmatter.creatures && Array.isArray(cache.frontmatter.creatures)) {
+          this.creatures = cache.frontmatter.creatures.map((c: any) => ({
+            name: c.name || "",
+            count: c.count || 1,
+            hp: c.hp,
+            ac: c.ac,
+            cr: c.cr,
+            source: c.source,
+            path: c.path
+          }));
+        }
+      }
+    } catch (error) {
+      console.error("Error loading encounter data:", error);
+      new Notice("Error loading encounter data");
+    }
+  }
+
+  addCreature() {
+    this.creatures.push({
+      name: "",
+      count: 1,
+      hp: undefined,
+      ac: undefined,
+      cr: "1/4",
+      source: undefined,
+      path: undefined
+    });
+    this.renderCreatureList();
+  }
+
+  removeCreature(index: number) {
+    this.creatures.splice(index, 1);
+    this.renderCreatureList();
+    this.updateDifficultyDisplay();
+  }
+
+  renderCreatureList() {
+    if (!this.creatureListContainer) return;
+    this.creatureListContainer.empty();
+
+    if (this.creatures.length === 0) {
+      this.creatureListContainer.createEl("p", {
+        text: "No creatures added yet. Click '+ Add Creature' to add monsters to this encounter.",
+        attr: { style: "color: var(--text-muted); font-style: italic;" }
+      });
+      return;
+    }
+
+    this.creatures.forEach((creature, index) => {
+      const creatureContainer = this.creatureListContainer!.createDiv({ cls: "encounter-creature" });
+      creatureContainer.style.border = "1px solid var(--background-modifier-border)";
+      creatureContainer.style.padding = "10px";
+      creatureContainer.style.marginBottom = "10px";
+      creatureContainer.style.borderRadius = "5px";
+
+      // Header with remove button
+      const headerDiv = creatureContainer.createDiv();
+      headerDiv.style.display = "flex";
+      headerDiv.style.justifyContent = "space-between";
+      headerDiv.style.alignItems = "center";
+      headerDiv.style.marginBottom = "10px";
+
+      headerDiv.createEl("h4", { text: `Creature ${index + 1}`, attr: { style: "margin: 0;" } });
+      
+      const removeBtn = headerDiv.createEl("button", { text: "Remove" });
+      removeBtn.style.padding = "2px 8px";
+      removeBtn.style.fontSize = "0.8em";
+      removeBtn.onclick = () => this.removeCreature(index);
+
+      // Creature Name
+      new Setting(creatureContainer)
+        .setName("Creature Name")
+        .addText((text) =>
+          text
+            .setPlaceholder("Goblin")
+            .setValue(creature.name)
+            .onChange((value) => {
+              creature.name = value;
+              this.updateDifficultyDisplay();
+            })
+        );
+
+      // Count
+      new Setting(creatureContainer)
+        .setName("Count")
+        .addText((text) =>
+          text
+            .setPlaceholder("1")
+            .setValue(creature.count.toString())
+            .onChange((value) => {
+              const num = parseInt(value);
+              if (!isNaN(num) && num > 0) {
+                creature.count = num;
+                this.updateDifficultyDisplay();
+              }
+            })
+        );
+
+      // CR
+      new Setting(creatureContainer)
+        .setName("Challenge Rating (CR)")
+        .addDropdown((dropdown) => {
+          const crOptions = [
+            "0", "1/8", "1/4", "1/2",
+            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+            "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+            "21", "22", "23", "24", "25", "26", "27", "28", "29", "30"
+          ];
+          crOptions.forEach((cr) => dropdown.addOption(cr, `CR ${cr}`));
+          dropdown.setValue(creature.cr || "1/4");
+          dropdown.onChange((value) => {
+            creature.cr = value;
+            this.updateDifficultyDisplay();
+          });
+        });
+
+      // HP (optional)
+      new Setting(creatureContainer)
+        .setName("HP (optional)")
+        .setDesc("Leave empty to use CR-based default")
+        .addText((text) =>
+          text
+            .setPlaceholder("Auto")
+            .setValue(creature.hp?.toString() || "")
+            .onChange((value) => {
+              const num = parseInt(value);
+              if (!isNaN(num) && num > 0) {
+                creature.hp = num;
+              } else {
+                creature.hp = undefined;
+              }
+              this.updateDifficultyDisplay();
+            })
+        );
+
+      // AC (optional)
+      new Setting(creatureContainer)
+        .setName("AC (optional)")
+        .setDesc("Leave empty to use CR-based default")
+        .addText((text) =>
+          text
+            .setPlaceholder("Auto")
+            .setValue(creature.ac?.toString() || "")
+            .onChange((value) => {
+              const num = parseInt(value);
+              if (!isNaN(num) && num > 0) {
+                creature.ac = num;
+              } else {
+                creature.ac = undefined;
+              }
+              this.updateDifficultyDisplay();
+            })
+        );
+    });
+  }
+
+  async updateDifficultyDisplay() {
+    if (!this.difficultyContainer) return;
+
+    if (this.creatures.length === 0) {
+      this.difficultyContainer.innerHTML = "<p style='color: var(--text-muted);'>Add creatures to calculate difficulty.</p>";
+      return;
+    }
+
+    // Calculate difficulty using the same method as SceneCreationModal
+    const diffResult = await this.calculateEncounterDifficulty();
+
+    this.difficultyContainer.innerHTML = `
+      <div style="text-align: center; margin-bottom: 10px;">
+        <span style="font-size: 1.5em; font-weight: bold; color: ${diffResult.analysis.difficultyColor};">
+          ${diffResult.analysis.difficulty}
+        </span>
+      </div>
+      <div style="font-size: 0.9em; white-space: pre-line;">
+        ${diffResult.analysis.summary}
+      </div>
+    `;
+  }
+
+  async calculateEncounterDifficulty(): Promise<any> {
+    // Reuse the difficulty calculation logic from SceneCreationModal
+    // Calculate enemy stats
+    let enemyTotalHP = 0;
+    let enemyTotalAC = 0;
+    let enemyTotalDPR = 0;
+    let enemyTotalAttackBonus = 0;
+    let enemyCount = 0;
+    
+    for (const creature of this.creatures) {
+      const crStats = this.getCRStats(creature.cr);
+      const count = creature.count || 1;
+      
+      const hp = creature.hp || crStats.hp;
+      const ac = creature.ac || crStats.ac;
+      
+      enemyTotalHP += hp * count;
+      enemyTotalAC += ac * count;
+      enemyTotalDPR += crStats.dpr * count;
+      enemyTotalAttackBonus += crStats.attackBonus * count;
+      enemyCount += count;
+    }
+    
+    const avgEnemyAC = enemyCount > 0 ? enemyTotalAC / enemyCount : 13;
+    const avgEnemyAttackBonus = enemyCount > 0 ? enemyTotalAttackBonus / enemyCount : 3;
+    
+    // Get party stats
+    const partyMembers = await this.getPartyForDifficulty();
+    
+    let partyTotalHP = 0;
+    let partyTotalAC = 0;
+    let partyTotalDPR = 0;
+    let partyTotalAttackBonus = 0;
+    let totalLevel = 0;
+    
+    for (const member of partyMembers) {
+      const levelStats = this.getLevelStats(member.level);
+      
+      const memberHP = Number(member.hp) || 0;
+      const memberAC = Number(member.ac) || 0;
+      
+      partyTotalHP += memberHP > 0 ? memberHP : levelStats.hp;
+      partyTotalAC += memberAC > 0 ? memberAC : levelStats.ac;
+      partyTotalDPR += levelStats.dpr;
+      partyTotalAttackBonus += levelStats.attackBonus;
+      totalLevel += member.level;
+    }
+    
+    const memberCount = partyMembers.length;
+    
+    let avgPartyAC: number;
+    let avgPartyAttackBonus: number;
+    let avgLevel: number;
+    
+    if (memberCount > 0) {
+      avgPartyAC = partyTotalAC / memberCount;
+      avgPartyAttackBonus = partyTotalAttackBonus / memberCount;
+      avgLevel = totalLevel / memberCount;
+    } else {
+      const defaultStats = this.getLevelStats(3);
+      partyTotalHP = defaultStats.hp * 4;
+      partyTotalDPR = defaultStats.dpr * 4;
+      avgPartyAC = defaultStats.ac;
+      avgPartyAttackBonus = defaultStats.attackBonus;
+      avgLevel = 3;
+    }
+    
+    // Calculate hit chances
+    const partyHitChance = this.calculateHitChance(avgPartyAttackBonus, avgEnemyAC);
+    const enemyHitChance = this.calculateHitChance(avgEnemyAttackBonus, avgPartyAC);
+    
+    // Calculate effective DPR
+    const partyEffectiveDPR = this.calculateEffectiveDPR(partyTotalDPR, partyHitChance);
+    const enemyEffectiveDPR = this.calculateEffectiveDPR(enemyTotalDPR, enemyHitChance);
+    
+    // Calculate rounds to defeat
+    const roundsToDefeatEnemies = this.calculateRoundsToDefeat(enemyTotalHP, partyEffectiveDPR);
+    const roundsToDefeatParty = this.calculateRoundsToDefeat(partyTotalHP, enemyEffectiveDPR);
+    
+    // Survival ratio
+    const survivalRatio = roundsToDefeatParty / roundsToDefeatEnemies;
+    
+    // Determine difficulty
+    let difficulty: string;
+    let difficultyColor: string;
+    
+    if (survivalRatio >= 4 || roundsToDefeatEnemies <= 1) {
+      difficulty = "Trivial";
+      difficultyColor = "#888888";
+    } else if (survivalRatio >= 2.5) {
+      difficulty = "Easy";
+      difficultyColor = "#00aa00";
+    } else if (survivalRatio >= 1.5) {
+      difficulty = "Medium";
+      difficultyColor = "#aaaa00";
+    } else if (survivalRatio >= 1.0) {
+      difficulty = "Hard";
+      difficultyColor = "#ff8800";
+    } else if (survivalRatio >= 0.6) {
+      difficulty = "Deadly";
+      difficultyColor = "#ff0000";
+    } else {
+      difficulty = "TPK Risk";
+      difficultyColor = "#880000";
+    }
+    
+    // Generate summary
+    let summary = "";
+    if (partyMembers.length === 0) {
+      summary = `⚠️ No party found. Using default 4-player party (Level 3).\\n`;
+      summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}.`;
+    } else {
+      summary = `Party: ${memberCount} members (Avg Level ${avgLevel.toFixed(1)})\\n`;
+      summary += `Enemies: ${enemyCount} creatures\\n`;
+      summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}`;
+    }
+    
+    return {
+      enemyStats: {
+        totalHP: enemyTotalHP,
+        avgAC: avgEnemyAC,
+        totalDPR: enemyTotalDPR,
+        avgAttackBonus: avgEnemyAttackBonus,
+        creatureCount: enemyCount
+      },
+      partyStats: {
+        totalHP: partyTotalHP,
+        avgAC: avgPartyAC,
+        totalDPR: partyTotalDPR,
+        avgAttackBonus: avgPartyAttackBonus,
+        memberCount: memberCount,
+        avgLevel: avgLevel
+      },
+      analysis: {
+        partyHitChance,
+        enemyHitChance,
+        partyEffectiveDPR,
+        enemyEffectiveDPR,
+        roundsToDefeatEnemies,
+        roundsToDefeatParty,
+        survivalRatio,
+        difficulty,
+        difficultyColor,
+        summary
+      }
+    };
+  }
+
+  // Helper methods (copied from SceneCreationModal)
+  getCRStats(cr: string | undefined): { hp: number; ac: number; dpr: number; attackBonus: number; xp: number } {
+    // CR stats table from D&D 5e DMG
+    const crTable: { [key: string]: { hp: number; ac: number; dpr: number; attackBonus: number; xp: number } } = {
+      "0": { hp: 5, ac: 13, dpr: 1, attackBonus: 3, xp: 10 },
+      "1/8": { hp: 10, ac: 13, dpr: 2, attackBonus: 3, xp: 25 },
+      "1/4": { hp: 20, ac: 13, dpr: 3, attackBonus: 3, xp: 50 },
+      "1/2": { hp: 35, ac: 13, dpr: 5, attackBonus: 3, xp: 100 },
+      "1": { hp: 70, ac: 13, dpr: 8, attackBonus: 3, xp: 200 },
+      "2": { hp: 85, ac: 13, dpr: 15, attackBonus: 3, xp: 450 },
+      "3": { hp: 100, ac: 13, dpr: 21, attackBonus: 4, xp: 700 },
+      "4": { hp: 115, ac: 14, dpr: 27, attackBonus: 5, xp: 1100 },
+      "5": { hp: 130, ac: 15, dpr: 33, attackBonus: 6, xp: 1800 },
+      "6": { hp: 145, ac: 15, dpr: 39, attackBonus: 6, xp: 2300 },
+      "7": { hp: 160, ac: 15, dpr: 45, attackBonus: 6, xp: 2900 },
+      "8": { hp: 175, ac: 16, dpr: 51, attackBonus: 7, xp: 3900 },
+      "9": { hp: 190, ac: 16, dpr: 57, attackBonus: 7, xp: 5000 },
+      "10": { hp: 205, ac: 17, dpr: 63, attackBonus: 7, xp: 5900 },
+      "11": { hp: 220, ac: 17, dpr: 69, attackBonus: 7, xp: 7200 },
+      "12": { hp: 235, ac: 17, dpr: 75, attackBonus: 8, xp: 8400 },
+      "13": { hp: 250, ac: 18, dpr: 81, attackBonus: 8, xp: 10000 },
+      "14": { hp: 265, ac: 18, dpr: 87, attackBonus: 8, xp: 11500 },
+      "15": { hp: 280, ac: 18, dpr: 93, attackBonus: 8, xp: 13000 },
+      "16": { hp: 295, ac: 18, dpr: 99, attackBonus: 9, xp: 15000 },
+      "17": { hp: 310, ac: 19, dpr: 105, attackBonus: 10, xp: 18000 },
+      "18": { hp: 325, ac: 19, dpr: 111, attackBonus: 10, xp: 20000 },
+      "19": { hp: 340, ac: 19, dpr: 117, attackBonus: 10, xp: 22000 },
+      "20": { hp: 355, ac: 19, dpr: 123, attackBonus: 10, xp: 25000 },
+      "21": { hp: 400, ac: 19, dpr: 140, attackBonus: 11, xp: 33000 },
+      "22": { hp: 450, ac: 19, dpr: 150, attackBonus: 11, xp: 41000 },
+      "23": { hp: 500, ac: 19, dpr: 160, attackBonus: 11, xp: 50000 },
+      "24": { hp: 550, ac: 19, dpr: 170, attackBonus: 12, xp: 62000 },
+      "25": { hp: 600, ac: 19, dpr: 180, attackBonus: 12, xp: 75000 },
+      "26": { hp: 650, ac: 19, dpr: 190, attackBonus: 12, xp: 90000 },
+      "27": { hp: 700, ac: 19, dpr: 200, attackBonus: 13, xp: 105000 },
+      "28": { hp: 750, ac: 19, dpr: 210, attackBonus: 13, xp: 120000 },
+      "29": { hp: 800, ac: 19, dpr: 220, attackBonus: 13, xp: 135000 },
+      "30": { hp: 850, ac: 19, dpr: 230, attackBonus: 14, xp: 155000 }
+    };
+
+    return crTable[cr || "1/4"] || crTable["1/4"];
+  }
+
+  getLevelStats(level: number): { hp: number; ac: number; dpr: number; attackBonus: number } {
+    // Level-based stats from D&D 5e Player's Handbook averages
+    const baseHP = 8; // Average starting HP
+    const hpPerLevel = 5; // Average HP gain per level
+    const baseAC = 12;
+    const acIncreaseInterval = 4; // AC increases every 4 levels
+    const baseDPR = 5;
+    const dprPerLevel = 1.5;
+    const baseAttackBonus = 2;
+    const proficiencyBonus = Math.floor((level - 1) / 4) + 2;
+
+    return {
+      hp: baseHP + hpPerLevel * (level - 1),
+      ac: baseAC + Math.floor(level / acIncreaseInterval),
+      dpr: baseDPR + dprPerLevel * (level - 1),
+      attackBonus: baseAttackBonus + proficiencyBonus
+    };
+  }
+
+  async getPartyForDifficulty(): Promise<Array<{ level: number; hp?: number; ac?: number }>> {
+    if (!this.includeParty) return [];
+
+    // Get party members from plugin settings
+    const partyMembers = this.plugin.settings.partyMembers || [];
+    return partyMembers.map(member => ({
+      level: member.level || 1,
+      hp: member.hp,
+      ac: member.ac
+    }));
+  }
+
+  calculateHitChance(attackBonus: number, targetAC: number): number {
+    const rollNeeded = Math.max(2, Math.min(20, targetAC - attackBonus));
+    return Math.max(0.05, Math.min(0.95, (21 - rollNeeded) / 20));
+  }
+
+  calculateEffectiveDPR(baseDPR: number, hitChance: number): number {
+    return baseDPR * hitChance;
+  }
+
+  calculateRoundsToDefeat(totalHP: number, effectiveDPR: number): number {
+    if (effectiveDPR <= 0) return 999;
+    return Math.max(1, Math.ceil(totalHP / effectiveDPR));
+  }
+
+  async saveEncounter() {
+    if (!this.encounterName.trim()) {
+      new Notice("Please enter an encounter name");
+      return;
+    }
+
+    if (this.creatures.length === 0) {
+      new Notice("Please add at least one creature");
+      return;
+    }
+
+    try {
+      // Determine encounter folder path
+      let encounterFolder = "z_Encounters";
+      
+      // Check if we're in a campaign context
+      const activeCampaignFile = this.app.workspace.getActiveFile();
+      if (activeCampaignFile) {
+        const campaignFolder = this.findCampaignFolder(activeCampaignFile.path);
+        if (campaignFolder) {
+          encounterFolder = `${campaignFolder}/z_Encounters`;
+          this.campaignPath = campaignFolder;
+        }
+      }
+
+      // Create folder if it doesn't exist
+      const folderExists = this.app.vault.getAbstractFileByPath(encounterFolder);
+      if (!folderExists) {
+        await this.app.vault.createFolder(encounterFolder);
+      }
+
+      // Generate encounter file content
+      const diffResult = await this.calculateEncounterDifficulty();
+      const encounterContent = await this.generateEncounterContent(diffResult);
+
+      // Save or update encounter file
+      const fileName = `${this.encounterName}.md`;
+      const encounterPath = `${encounterFolder}/${fileName}`;
+
+      if (this.isEdit && this.originalEncounterPath !== encounterPath) {
+        // If name changed, delete old file and create new one
+        const oldFile = this.app.vault.getAbstractFileByPath(this.originalEncounterPath);
+        if (oldFile instanceof TFile) {
+          await this.app.vault.delete(oldFile);
+        }
+      }
+
+      const existingFile = this.app.vault.getAbstractFileByPath(encounterPath);
+      if (existingFile instanceof TFile) {
+        await this.app.vault.modify(existingFile, encounterContent);
+        new Notice(`Encounter "${this.encounterName}" updated!`);
+      } else {
+        await this.app.vault.create(encounterPath, encounterContent);
+        new Notice(`Encounter "${this.encounterName}" created!`);
+      }
+
+      // Save to Initiative Tracker
+      await this.saveToInitiativeTracker(encounterPath);
+
+      this.close();
+    } catch (error) {
+      console.error("Error saving encounter:", error);
+      new Notice("Error saving encounter");
+    }
+  }
+
+  findCampaignFolder(filePath: string): string | null {
+    // Look for campaign folder in path (folders containing "ttrpgs" subdirectory)
+    const parts = filePath.split('/');
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const potentialCampaign = parts.slice(0, i + 1).join('/');
+      const ttrpgPath = `${potentialCampaign}/ttrpgs`;
+      if (this.app.vault.getAbstractFileByPath(ttrpgPath)) {
+        return potentialCampaign;
+      }
+    }
+    return null;
+  }
+
+  async generateEncounterContent(diffResult: any): Promise<string> {
+    const currentDate = window.moment().format("YYYY-MM-DD");
+
+    let frontmatter = `---
+type: encounter
+name: "${this.encounterName}"
+creatures:`;
+
+    for (const creature of this.creatures) {
+      frontmatter += `\n  - name: "${creature.name}"
+    count: ${creature.count}`;
+      if (creature.hp) frontmatter += `\n    hp: ${creature.hp}`;
+      if (creature.ac) frontmatter += `\n    ac: ${creature.ac}`;
+      if (creature.cr) frontmatter += `\n    cr: "${creature.cr}"`;
+      if (creature.source) frontmatter += `\n    source: "${creature.source}"`;
+      if (creature.path) frontmatter += `\n    path: "${creature.path}"`;
+    }
+
+    frontmatter += `
+include_party: ${this.includeParty}
+use_color_names: ${this.useColorNames}`;
+
+    if (this.adventurePath) frontmatter += `\nadventure_path: "${this.adventurePath}"`;
+    if (this.scenePath) frontmatter += `\nscene_path: "${this.scenePath}"`;
+    if (this.campaignPath) frontmatter += `\ncampaign_path: "${this.campaignPath}"`;
+
+    frontmatter += `
+difficulty:
+  rating: "${diffResult.analysis.difficulty}"
+  color: "${diffResult.analysis.difficultyColor}"
+  party_count: ${diffResult.partyStats.memberCount}
+  party_avg_level: ${diffResult.partyStats.avgLevel.toFixed(1)}
+  enemy_count: ${diffResult.enemyStats.creatureCount}
+  rounds_to_defeat: ${diffResult.analysis.roundsToDefeatEnemies}
+  survival_ratio: ${diffResult.analysis.survivalRatio.toFixed(2)}
+date: ${currentDate}
+---`;
+
+    const content = `${frontmatter}
+
+# ${this.encounterName}
+
+## Difficulty: <span style="color: ${diffResult.analysis.difficultyColor}; font-weight: bold;">${diffResult.analysis.difficulty}</span>
+
+${diffResult.analysis.summary}
+
+---
+
+## Creatures
+
+\`\`\`dataviewjs
+const creatures = dv.current().creatures || [];
+
+if (creatures.length === 0) {
+  dv.paragraph("*No creatures in this encounter.*");
+} else {
+  for (const creature of creatures) {
+    const crDisplay = creature.cr ? \` (CR \${creature.cr})\` : "";
+    const countDisplay = creature.count > 1 ? \` x\${creature.count}\` : "";
+    dv.header(4, \`\${creature.name}\${crDisplay}\${countDisplay}\`);
+    
+    if (creature.hp) {
+      dv.paragraph(\`**HP:** \${creature.hp}\`);
+    }
+    if (creature.ac) {
+      dv.paragraph(\`**AC:** \${creature.ac}\`);
+    }
+    dv.paragraph("");
+  }
+}
+\`\`\`
+
+---
+
+## Statistics
+
+### Party
+- **Members:** ${diffResult.partyStats.memberCount}
+- **Avg Level:** ${diffResult.partyStats.avgLevel.toFixed(1)}
+- **Total HP:** ${diffResult.partyStats.totalHP}
+- **Avg AC:** ${diffResult.partyStats.avgAC.toFixed(1)}
+- **Total DPR:** ${diffResult.partyStats.totalDPR.toFixed(1)}
+
+### Enemies
+- **Count:** ${diffResult.enemyStats.creatureCount}
+- **Total HP:** ${diffResult.enemyStats.totalHP}
+- **Avg AC:** ${diffResult.enemyStats.avgAC.toFixed(1)}
+- **Total DPR:** ${diffResult.enemyStats.totalDPR.toFixed(1)}
+
+### Analysis
+- **Party Hit Chance:** ${(diffResult.analysis.partyHitChance * 100).toFixed(1)}%
+- **Enemy Hit Chance:** ${(diffResult.analysis.enemyHitChance * 100).toFixed(1)}%
+- **Expected Rounds:** ${diffResult.analysis.roundsToDefeatEnemies}
+- **Survival Ratio:** ${diffResult.analysis.survivalRatio.toFixed(2)}
+
+---
+
+## GM Notes
+
+_Add notes about tactics, environment, or special conditions here._
+`;
+
+    return content;
+  }
+
+  async saveToInitiativeTracker(encounterPath: string) {
+    try {
+      const initiativeTracker = (this.app as any).plugins.getPlugin("initiative-tracker");
+      if (!initiativeTracker) {
+        console.log("Initiative Tracker plugin not found");
+        return;
+      }
+
+      // Build creature list for initiative tracker
+      const creatures: any[] = [];
+
+      // Add party members if requested
+      if (this.includeParty) {
+        const partyMembers = this.plugin.settings.partyMembers || [];
+        for (const member of partyMembers) {
+          creatures.push({
+            name: member.name,
+            hp: member.hp || this.getLevelStats(member.level).hp,
+            ac: member.ac || this.getLevelStats(member.level).ac,
+            modifier: Math.floor((member.level - 1) / 4) + 2,
+            player: true
+          });
+        }
+      }
+
+      // Add enemy creatures
+      const colorNames = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange", "Black", "White"];
+      for (const creature of this.creatures) {
+        const crStats = this.getCRStats(creature.cr);
+        const hp = creature.hp || crStats.hp;
+        const ac = creature.ac || crStats.ac;
+
+        if (this.useColorNames && creature.count > 1) {
+          // Add creatures with color suffixes
+          for (let i = 0; i < creature.count; i++) {
+            const colorSuffix = i < colorNames.length ? ` ${colorNames[i]}` : ` ${i + 1}`;
+            creatures.push({
+              name: `${creature.name}${colorSuffix}`,
+              hp: hp,
+              ac: ac,
+              modifier: crStats.attackBonus,
+              player: false
+            });
+          }
+        } else {
+          // Add creatures with number suffix if count > 1
+          for (let i = 0; i < creature.count; i++) {
+            const nameSuffix = creature.count > 1 ? ` ${i + 1}` : "";
+            creatures.push({
+              name: `${creature.name}${nameSuffix}`,
+              hp: hp,
+              ac: ac,
+              modifier: crStats.attackBonus,
+              player: false
+            });
+          }
+        }
+      }
+
+      // Save encounter to Initiative Tracker
+      if (initiativeTracker.saveEncounter) {
+        await initiativeTracker.saveEncounter(this.encounterName, creatures);
+        console.log(`Saved encounter "${this.encounterName}" to Initiative Tracker`);
+      }
+    } catch (error) {
+      console.error("Error saving to Initiative Tracker:", error);
+    }
+  }
+
+  async deleteEncounter() {
+    if (!this.isEdit) return;
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      const modal = new Modal(this.app);
+      modal.contentEl.createEl("h3", { text: "Delete Encounter?" });
+      modal.contentEl.createEl("p", { text: `Are you sure you want to delete "${this.encounterName}"?` });
+      modal.contentEl.createEl("p", { 
+        text: "This will remove the encounter file and remove it from the Initiative Tracker.", 
+        cls: "mod-warning" 
+      });
+
+      const buttonContainer = modal.contentEl.createDiv();
+      buttonContainer.style.display = "flex";
+      buttonContainer.style.justifyContent = "flex-end";
+      buttonContainer.style.gap = "10px";
+      buttonContainer.style.marginTop = "20px";
+
+      const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
+      cancelBtn.onclick = () => {
+        modal.close();
+        resolve(false);
+      };
+
+      const deleteBtn = buttonContainer.createEl("button", { text: "Delete", cls: "mod-warning" });
+      deleteBtn.onclick = () => {
+        modal.close();
+        resolve(true);
+      };
+
+      modal.open();
+    });
+
+    if (!confirmed) return;
+
+    try {
+      // Delete the encounter file
+      const file = this.app.vault.getAbstractFileByPath(this.originalEncounterPath);
+      if (file instanceof TFile) {
+        await this.app.vault.delete(file);
+      }
+
+      // Remove from Initiative Tracker
+      const initiativeTracker = (this.app as any).plugins.getPlugin("initiative-tracker");
+      if (initiativeTracker && initiativeTracker.deleteEncounter) {
+        await initiativeTracker.deleteEncounter(this.encounterName);
+      }
+
+      new Notice(`Encounter "${this.encounterName}" deleted`);
+      this.close();
+    } catch (error) {
+      console.error("Error deleting encounter:", error);
+      new Notice("Error deleting encounter");
+    }
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
 export default class DndCampaignHubPlugin extends Plugin {
   settings!: DndCampaignHubSettings;
   SessionCreationModal = SessionCreationModal;
@@ -504,6 +1375,12 @@ export default class DndCampaignHubPlugin extends Plugin {
         },
       ],
       callback: () => this.createTrap(),
+    });
+
+    this.addCommand({
+      id: "create-encounter",
+      name: "Create New Encounter",
+      callback: () => this.createEncounter(),
     });
 
     this.addCommand({
@@ -932,6 +1809,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async createTrap() {
 		// Open Trap creation modal
 		new TrapCreationModal(this.app, this).open();
+	}
+
+	async createEncounter() {
+		// Open Encounter Builder modal
+		new EncounterBuilderModal(this.app, this).open();
 	}
 
 	async createSession() {
@@ -1598,6 +2480,11 @@ class DndHubModal extends Modal {
       this.createActionButton(quickActionsContainer, "🗺️ New Adventure", () => {
         this.close();
         this.plugin.createAdventure();
+      });
+
+      this.createActionButton(quickActionsContainer, "⚔️ New Encounter", () => {
+        this.close();
+        this.plugin.createEncounter();
       });
     }
 
@@ -3960,6 +4847,33 @@ interface TrapCountermeasure {
   dc?: number;
   checks_needed?: number;
   effect?: string;
+}
+
+interface EncounterCreature {
+  name: string;
+  count: number;
+  hp?: number;
+  ac?: number;
+  cr?: string;
+  source?: string;
+  path?: string;  // Path to creature file for statblock plugin
+}
+
+interface EncounterData {
+  name: string;
+  creatures: EncounterCreature[];
+  includeParty: boolean;
+  useColorNames: boolean;
+  adventurePath?: string;
+  scenePath?: string;
+  campaignPath?: string;
+  difficulty?: {
+    rating: string;
+    color: string;
+    summary: string;
+    partyStats?: any;
+    enemyStats?: any;
+  };
 }
 
 class SceneCreationModal extends Modal {
