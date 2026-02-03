@@ -842,7 +842,13 @@ if (trackerEncounter && trackerEncounter !== "") {
       if (creature.hp) stats.push(\`HP \${creature.hp}\`);
       if (creature.ac) stats.push(\`AC \${creature.ac}\`);
       const statsStr = stats.length > 0 ? \` (\${stats.join(", ")})\` : "";
-      dv.el('li', \`\${creature.name}\${statsStr} x\${creature.count}\`, { container: list });
+      
+      // Create wiki-link if path is available for statblock plugin recognition
+      const nameDisplay = creature.path 
+        ? \`[[\${creature.path}|\${creature.name}]]\`
+        : creature.name;
+      
+      dv.el('li', \`\${nameDisplay}\${statsStr} x\${creature.count}\`, { container: list });
     }
   }
   
@@ -936,7 +942,13 @@ if (trackerEncounter && trackerEncounter !== "") {
     if (creature.hp) stats.push(\`HP \${creature.hp}\`);
     if (creature.ac) stats.push(\`AC \${creature.ac}\`);
     const statsStr = stats.length > 0 ? \` (\${stats.join(", ")})\` : "";
-    dv.el('li', \`\${creature.name}\${statsStr} x\${creature.count}\`, { container: list });
+    
+    // Create wiki-link if path is available for statblock plugin recognition
+    const nameDisplay = creature.path 
+      ? \`[[\${creature.path}|\${creature.name}]]\`
+      : creature.name;
+    
+    dv.el('li', \`\${nameDisplay}\${statsStr} x\${creature.count}\`, { container: list });
   }
   dv.paragraph("");
   dv.paragraph("*💡 Create this encounter in Initiative Tracker to manage combat*");

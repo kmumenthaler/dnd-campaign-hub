@@ -3945,6 +3945,7 @@ class SceneCreationModal extends Modal {
     ac?: number;
     cr?: string;
     source?: string;
+    path?: string;  // Path to creature file for statblock plugin
   }> = [];
   
   // UI state
@@ -4661,7 +4662,8 @@ class SceneCreationModal extends Modal {
             hp: selectedCreature.hp,
             ac: selectedCreature.ac,
             cr: selectedCreature.cr,
-            source: "vault"
+            source: "vault",
+            path: selectedCreature.path  // Include path for statblock plugin
           });
           
           new Notice(`Added ${vaultCreatureCount}x ${selectedCreature.name}`);
@@ -4776,7 +4778,7 @@ class SceneCreationModal extends Modal {
   /**
    * Add a creature to the encounter
    */
-  addCreature(creature: { name: string; count: number; hp?: number; ac?: number; cr?: string; source?: string }) {
+  addCreature(creature: { name: string; count: number; hp?: number; ac?: number; cr?: string; source?: string; path?: string }) {
     this.creatures.push(creature);
     this.renderCreatureList();
   }
@@ -5552,7 +5554,9 @@ class SceneCreationModal extends Modal {
             active: false,  // Whether this creature is currently active in turn order
             hidden: false,  // Hidden from players
             friendly: false,  // Friendly to players
-            rollHP: false  // Whether to roll HP when adding to tracker
+            rollHP: false,  // Whether to roll HP when adding to tracker
+            note: c.path || "",  // Path to statblock file for Fantasy Statblock plugin
+            path: c.path || ""   // Also store path field for compatibility
           };
           console.log(`Created creature instance:`, creature);
           instances.push(creature);
