@@ -1193,7 +1193,7 @@ if (countermeasures.length === 0) {
 **Created:** <% tp.date.now("YYYY-MM-DD") %>
 
 *Record when this trap was encountered and what happened*
-
+5
 
 `;
 

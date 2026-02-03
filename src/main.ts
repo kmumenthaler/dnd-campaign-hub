@@ -497,12 +497,6 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.addCommand({
       id: "create-trap",
       name: "Create New Trap",
-      hotkeys: [
-        {
-          modifiers: ["Mod", "Shift"],
-          key: "M",
-        },
-      ],
       callback: () => this.createTrap(),
     });
 
@@ -1598,6 +1592,11 @@ class DndHubModal extends Modal {
       this.createActionButton(quickActionsContainer, "🗺️ New Adventure", () => {
         this.close();
         this.plugin.createAdventure();
+      });
+
+      this.createActionButton(quickActionsContainer, "🪤 New Trap", () => {
+        this.close();
+        this.plugin.createTrap();
       });
     }
 
@@ -6221,26 +6220,20 @@ class TrapCreationModal extends Modal {
         }
       }
 
-      // Create trap file path
-      let trapPath = "";
-      if (this.scenePath) {
-        // Create trap in same folder as scene
-        const sceneFolder = this.scenePath.substring(0, this.scenePath.lastIndexOf("/"));
-        trapPath = `${sceneFolder}/${this.trapName}.md`;
-      } else if (this.adventurePath) {
-        // Create in adventure's Scenes folder
-        const adventureFolder = this.adventurePath.replace(".md", "");
-        trapPath = `${adventureFolder}/Scenes/${this.trapName}.md`;
-        
-        // Ensure Scenes folder exists
-        const scenesFolder = `${adventureFolder}/Scenes`;
-        if (!(await this.app.vault.adapter.exists(scenesFolder))) {
-          await this.app.vault.createFolder(scenesFolder);
-        }
-      } else {
-        // Create in current folder
-        trapPath = `${this.trapName}.md`;
+      // Create trap file path in z_Traps folder
+      let trapsFolder = "z_Traps";
+      
+      // If we have a campaign, create in campaign's z_Traps folder
+      if (campaignName) {
+        trapsFolder = `${campaignName}/z_Traps`;
       }
+      
+      // Ensure z_Traps folder exists
+      if (!(await this.app.vault.adapter.exists(trapsFolder))) {
+        await this.app.vault.createFolder(trapsFolder);
+      }
+      
+      const trapPath = `${trapsFolder}/${this.trapName}.md`;
 
       // Check if file already exists
       if (await this.app.vault.adapter.exists(trapPath)) {
@@ -6248,11 +6241,14 @@ class TrapCreationModal extends Modal {
         return;
       }
 
-      // Create trap content
+      // Create trap content with statblocks
       const trapContent = this.createTrapContent(campaignName, worldName);
 
       // Create the file
       await this.app.vault.create(trapPath, trapContent);
+
+      // Save statblocks to Fantasy Statblocks plugin
+      await this.saveStatblocks();
 
       new Notice(`Trap "${this.trapName}" created!`);
       this.close();
@@ -6270,6 +6266,9 @@ class TrapCreationModal extends Modal {
 
   createTrapContent(campaignName: string, worldName: string): string {
     const now = new Date().toISOString().split('T')[0];
+    
+    // Generate statblock content
+    const statblockContent = this.generateStatblockContent();
     
     // Convert elements and countermeasures to YAML
     const elementsYaml = JSON.stringify(this.elements, null, 2)
@@ -6310,6 +6309,12 @@ date: ${now}
 
 ### Trigger Condition
 ${this.trigger || "Not specified"}
+
+---
+
+## Statblocks
+
+${statblockContent}
 
 ---
 
@@ -6460,6 +6465,668 @@ if (countermeasures.length === 0) {
 
 *Record when this trap was encountered and what happened*
 `;
+  }
+
+  async saveStatblocks() {
+    try {
+      const statblocksPlugin = (this.app as any).plugins.getPlugin("obsidian-5e-statblocks");
+      if (!statblocksPlugin) {
+        console.warn("Fantasy Statblocks plugin not found. Statblocks will not be saved to bestiary.");
+        return;
+      }
+
+      const homebrewSource = `Trap: ${this.trapName}`;
+      const homebrewCreatures: any[] = [];
+
+      if (this.trapType === 'simple') {
+        // Create single statblock for simple trap
+        const statblock = this.createSimpleStatblock(homebrewSource);
+        homebrewCreatures.push(statblock);
+      } else {
+        // Create multiple statblocks for complex trap
+        const statblocks = this.createComplexStatblocks(homebrewSource);
+        homebrewCreatures.push(...statblocks);
+      }
+
+      // Save to Fantasy Statblocks bestiary
+      if (homebrewCreatures.length > 0) {
+        await statblocksPlugin.saveMonsters(homebrewCreatures);
+        console.log(`Saved ${homebrewCreatures.length} trap statblock(s) to Fantasy Statblocks bestiary`);
+      }
+    } catch (error) {
+      console.error("Error saving trap statblocks:", error);
+      // Don't fail the trap creation if statblock saving fails
+    }
+  }
+
+  createSimpleStatblock(source: string): any {
+    const element = this.elements[0]; // Use first element for simple trap
+    
+    // Build actions from trap element
+    const actions: any[] = [];
+    
+    if (element) {
+      const action: any = {
+        name: element.name || "Trap Effect",
+        desc: ""
+      };
+
+      if (element.attack_bonus !== undefined) {
+        action.desc += `Melee or Ranged Weapon Attack: +${element.attack_bonus} to hit, reach 5 ft. or range 60 ft., one target. `;
+      }
+
+      if (element.save_dc !== undefined) {
+        action.desc += `DC ${element.save_dc} ${element.save_ability || "DEX"} saving throw. `;
+      }
+
+      if (element.damage) {
+        if (element.attack_bonus !== undefined) {
+          action.desc += `Hit: ${element.damage} damage. `;
+        } else if (element.save_dc !== undefined) {
+          action.desc += `On a failed save: ${element.damage} damage, or half as much on a successful one. `;
+        }
+      }
+
+      if (element.effect) {
+        action.desc += element.effect;
+      }
+
+      actions.push(action);
+    }
+
+    // Build traits from countermeasures
+    const traits: any[] = this.countermeasures.map(cm => ({
+      name: `Countermeasure: ${cm.method}`,
+      desc: `${cm.description || cm.method}${cm.dc ? ` (DC ${cm.dc})` : ''}${cm.checks_needed && cm.checks_needed > 1 ? ` Requires ${cm.checks_needed} successful checks.` : ''} ${cm.effect || ''}`
+    }));
+
+    return {
+      name: this.trapName,
+      source: source,
+      type: "trap",
+      size: "Large",
+      alignment: "unaligned",
+      ac: 15,
+      hp: 50,
+      speed: "0 ft.",
+      stats: [10, 10, 10, 10, 10, 10],
+      senses: "—",
+      languages: "—",
+      cr: this.calculateTrapCR(),
+      traits: traits,
+      actions: actions,
+      layout: "Basic 5e Layout"
+    };
+  }
+
+  createComplexStatblocks(source: string): any[] {
+    const statblocks: any[] = [];
+
+    // Group elements by initiative
+    const byInitiative = new Map<number, TrapElement[]>();
+    const constantElements: TrapElement[] = [];
+    const dynamicElements: TrapElement[] = [];
+
+    for (const element of this.elements) {
+      if (element.element_type === 'constant') {
+        constantElements.push(element);
+      } else if (element.element_type === 'dynamic') {
+        dynamicElements.push(element);
+      } else if (element.initiative !== undefined) {
+        if (!byInitiative.has(element.initiative)) {
+          byInitiative.set(element.initiative, []);
+        }
+        byInitiative.get(element.initiative)!.push(element);
+      }
+    }
+
+    // Create statblock for each initiative group
+    for (const [initiative, elements] of byInitiative.entries()) {
+      const actions: any[] = elements.map(element => {
+        let desc = "";
+
+        if (element.attack_bonus !== undefined) {
+          desc += `Melee or Ranged Weapon Attack: +${element.attack_bonus} to hit, reach 5 ft. or range 60 ft., one target. `;
+        }
+
+        if (element.save_dc !== undefined) {
+          desc += `DC ${element.save_dc} ${element.save_ability || "DEX"} saving throw. `;
+        }
+
+        if (element.damage) {
+          if (element.attack_bonus !== undefined) {
+            desc += `Hit: ${element.damage} damage. `;
+          } else if (element.save_dc !== undefined) {
+            desc += `On a failed save: ${element.damage} damage, or half as much on a successful one. `;
+          }
+        }
+
+        if (element.effect) {
+          desc += element.effect;
+        }
+
+        return {
+          name: element.name || "Effect",
+          desc: desc
+        };
+      });
+
+      const initTraits: any[] = [
+        {
+          name: "Fixed Initiative",
+          desc: `This trap element acts on initiative count ${initiative}. Do not roll initiative for this creature.`
+        }
+      ];
+
+      statblocks.push({
+        name: `${this.trapName} (Initiative ${initiative})`,
+        source: source,
+        type: "trap",
+        size: "Large",
+        alignment: "unaligned",
+        ac: 15,
+        hp: 1,
+        speed: "0 ft.",
+        stats: [10, 10, 10, 10, 10, 10],
+        senses: "—",
+        languages: "—",
+        cr: 0,
+        modifier: initiative,
+        initiative: initiative,  // Fixed initiative value
+        traits: initTraits,
+        actions: actions,
+        layout: "Basic 5e Layout"
+      });
+    }
+
+    // Create constant effects statblock if any
+    if (constantElements.length > 0) {
+      const traits: any[] = constantElements.map(element => ({
+        name: element.name || "Constant Effect",
+        desc: element.effect || ""
+      }));
+
+      statblocks.push({
+        name: `${this.trapName} (Constant)`,
+        source: source,
+        type: "trap",
+        size: "Large",
+        alignment: "unaligned",
+        ac: 15,
+        hp: 1,
+        speed: "0 ft.",
+        stats: [10, 10, 10, 10, 10, 10],
+        senses: "—",
+        languages: "—",
+        cr: 0,
+        traits: traits,
+        actions: [],
+        layout: "Basic 5e Layout"
+      });
+    }
+
+    // Create dynamic effects statblock if any
+    if (dynamicElements.length > 0) {
+      const traits: any[] = dynamicElements.map(element => ({
+        name: element.name || "Dynamic Effect",
+        desc: `${element.condition ? 'Condition: ' + element.condition + '. ' : ''}${element.effect || ''}`
+      }));
+
+      statblocks.push({
+        name: `${this.trapName} (Dynamic)`,
+        source: source,
+        type: "trap",
+        size: "Large",
+        alignment: "unaligned",
+        ac: 15,
+        hp: 1,
+        speed: "0 ft.",
+        stats: [10, 10, 10, 10, 10, 10],
+        senses: "—",
+        languages: "—",
+        cr: 0,
+        traits: traits,
+        actions: [],
+        layout: "Basic 5e Layout"
+      });
+    }
+
+    // Add countermeasures to first statblock
+    if (statblocks.length > 0 && this.countermeasures.length > 0) {
+      const counterTraits = this.countermeasures.map(cm => ({
+        name: `Countermeasure: ${cm.method}`,
+        desc: `${cm.description || cm.method}${cm.dc ? ` (DC ${cm.dc})` : ''}${cm.checks_needed && cm.checks_needed > 1 ? ` Requires ${cm.checks_needed} successful checks.` : ''} ${cm.effect || ''}`
+      }));
+      statblocks[0].traits = [...statblocks[0].traits, ...counterTraits];
+    }
+
+    return statblocks;
+  }
+
+  calculateTrapCR(): number {
+    // Calculate average damage per activation
+    let totalDamage = 0;
+    let maxDC = 0;
+    let maxAttackBonus = 0;
+    let elementCount = 0;
+
+    for (const element of this.elements) {
+      if (element.damage) {
+        // Parse damage string to get average (e.g., "4d10" -> 22, "2d6+3" -> 10)
+        const avgDamage = this.parseDamageAverage(element.damage);
+        totalDamage += avgDamage;
+        elementCount++;
+      }
+
+      if (element.save_dc && element.save_dc > maxDC) {
+        maxDC = element.save_dc;
+      }
+
+      if (element.attack_bonus && element.attack_bonus > maxAttackBonus) {
+        maxAttackBonus = element.attack_bonus;
+      }
+    }
+
+    // If no damage, return CR 0
+    if (totalDamage === 0) {
+      return 0;
+    }
+
+    // For complex traps, consider how many elements activate per round
+    let dpr = totalDamage;
+    if (this.trapType === 'complex') {
+      // Count unique initiatives (elements that can activate in same round)
+      const initiatives = new Set(
+        this.elements
+          .filter(e => e.element_type === 'active' && e.initiative !== undefined)
+          .map(e => e.initiative)
+      );
+      
+      // If multiple initiatives, trap deals damage over multiple rounds
+      // Average DPR is lower
+      if (initiatives.size > 1) {
+        dpr = totalDamage / initiatives.size;
+      }
+    }
+
+    // Find CR based on DPR using existing CR tables
+    let estimatedCR = this.findCRByDPR(dpr);
+
+    // Adjust based on save DC or attack bonus
+    const dcOrAttack = maxDC > 0 ? maxDC : maxAttackBonus;
+    if (dcOrAttack > 0) {
+      const crByDC = this.findCRByDC(dcOrAttack);
+      // Average the two estimates
+      estimatedCR = Math.round((estimatedCR + crByDC) / 2);
+    }
+
+    // Apply threat level modifier
+    if (this.threatLevel === 'dangerous') {
+      estimatedCR = Math.ceil(estimatedCR * 1.25);
+    } else if (this.threatLevel === 'deadly') {
+      estimatedCR = Math.ceil(estimatedCR * 1.5);
+    } else if (this.threatLevel === 'setback') {
+      estimatedCR = Math.max(0, Math.floor(estimatedCR * 0.75));
+    }
+
+    // Clamp to reasonable range based on level range
+    const minCR = Math.max(0, Math.floor(this.minLevel / 4));
+    const maxCR = Math.ceil(this.maxLevel / 2);
+    estimatedCR = Math.max(minCR, Math.min(maxCR, estimatedCR));
+
+    return estimatedCR;
+  }
+
+  parseDamageAverage(damageStr: string | undefined): number {
+    // Parse damage strings like "4d10", "2d6+3", "22", etc.
+    if (!damageStr) return 0;
+    
+    damageStr = damageStr.trim().toLowerCase();
+    
+    // Remove damage type (e.g., "4d10 fire" -> "4d10")
+    damageStr = damageStr.split(' ')[0];
+
+    // Check if it's just a number
+    const staticDamage = parseInt(damageStr);
+    if (!isNaN(staticDamage)) {
+      return staticDamage;
+    }
+
+    // Parse dice notation: XdY+Z or XdY-Z or XdY
+    const diceMatch = damageStr.match(/(\d+)d(\d+)([+-]\d+)?/);
+    if (diceMatch) {
+      const numDice = parseInt(diceMatch[1]);
+      const dieSize = parseInt(diceMatch[2]);
+      const modifier = diceMatch[3] ? parseInt(diceMatch[3]) : 0;
+      
+      // Average of XdY is X * (Y+1)/2
+      const avgRoll = numDice * (dieSize + 1) / 2;
+      return Math.floor(avgRoll + modifier);
+    }
+
+    // Couldn't parse, return 0
+    return 0;
+  }
+
+  findCRByDPR(dpr: number): number {
+    // Use existing CR table to find closest CR by DPR
+    // CR table from getCRStats function
+    const crDPRTable = [
+      { cr: 0, dpr: 1 },
+      { cr: 0.125, dpr: 2 },
+      { cr: 0.25, dpr: 3 },
+      { cr: 0.5, dpr: 5 },
+      { cr: 1, dpr: 8 },
+      { cr: 2, dpr: 15 },
+      { cr: 3, dpr: 21 },
+      { cr: 4, dpr: 27 },
+      { cr: 5, dpr: 33 },
+      { cr: 6, dpr: 39 },
+      { cr: 7, dpr: 45 },
+      { cr: 8, dpr: 51 },
+      { cr: 9, dpr: 57 },
+      { cr: 10, dpr: 63 },
+      { cr: 11, dpr: 69 },
+      { cr: 12, dpr: 75 },
+      { cr: 13, dpr: 81 },
+      { cr: 14, dpr: 87 },
+      { cr: 15, dpr: 93 },
+      { cr: 16, dpr: 99 },
+      { cr: 17, dpr: 105 },
+      { cr: 18, dpr: 111 },
+      { cr: 19, dpr: 117 },
+      { cr: 20, dpr: 123 },
+      { cr: 21, dpr: 140 },
+      { cr: 22, dpr: 150 },
+      { cr: 23, dpr: 160 },
+      { cr: 24, dpr: 170 },
+      { cr: 25, dpr: 180 },
+      { cr: 26, dpr: 190 },
+      { cr: 27, dpr: 200 },
+      { cr: 28, dpr: 210 },
+      { cr: 29, dpr: 220 },
+      { cr: 30, dpr: 230 }
+    ];
+
+    // Find closest CR
+    let closestCR = 0;
+    let minDiff = Infinity;
+
+    for (const entry of crDPRTable) {
+      const diff = Math.abs(entry.dpr - dpr);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestCR = entry.cr;
+      }
+    }
+
+    return Math.floor(closestCR);
+  }
+
+  findCRByDC(dc: number): number {
+    // Find CR based on save DC or attack bonus
+    // From DMG: DC starts at 13 for CR 0, increases by ~1 every 2-3 CR
+    const crDCTable = [
+      { cr: 0, dc: 13 },
+      { cr: 1, dc: 13 },
+      { cr: 2, dc: 13 },
+      { cr: 3, dc: 13 },
+      { cr: 4, dc: 14 },
+      { cr: 5, dc: 15 },
+      { cr: 6, dc: 15 },
+      { cr: 7, dc: 15 },
+      { cr: 8, dc: 16 },
+      { cr: 9, dc: 16 },
+      { cr: 10, dc: 16 },
+      { cr: 11, dc: 17 },
+      { cr: 12, dc: 17 },
+      { cr: 13, dc: 18 },
+      { cr: 14, dc: 18 },
+      { cr: 15, dc: 18 },
+      { cr: 16, dc: 18 },
+      { cr: 17, dc: 19 },
+      { cr: 18, dc: 19 },
+      { cr: 19, dc: 19 },
+      { cr: 20, dc: 19 },
+      { cr: 21, dc: 20 },
+      { cr: 22, dc: 20 },
+      { cr: 23, dc: 20 },
+      { cr: 24, dc: 21 },
+      { cr: 25, dc: 22 },
+      { cr: 26, dc: 22 },
+      { cr: 27, dc: 22 },
+      { cr: 28, dc: 23 },
+      { cr: 29, dc: 23 },
+      { cr: 30, dc: 24 }
+    ];
+
+    // Find closest CR
+    let closestCR = 0;
+    let minDiff = Infinity;
+
+    for (const entry of crDCTable) {
+      const diff = Math.abs(entry.dc - dc);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestCR = entry.cr;
+      }
+    }
+
+    return Math.floor(closestCR);
+  }
+
+  generateStatblockContent(): string {
+    if (this.trapType === 'simple') {
+      return this.generateSimpleStatblockContent();
+    } else {
+      return this.generateComplexStatblockContent();
+    }
+  }
+
+  generateSimpleStatblockContent(): string {
+    const element = this.elements[0];
+    const homebrewSource = `Trap: ${this.trapName}`;
+
+    let actionsContent = '';
+    if (element) {
+      let actionDesc = '';
+      
+      if (element.attack_bonus !== undefined) {
+        actionDesc += `Melee or Ranged Weapon Attack: +${element.attack_bonus} to hit, reach 5 ft. or range 60 ft., one target. `;
+      }
+      
+      if (element.save_dc !== undefined) {
+        actionDesc += `DC ${element.save_dc} ${element.save_ability || "DEX"} saving throw. `;
+      }
+      
+      if (element.damage) {
+        if (element.attack_bonus !== undefined) {
+          actionDesc += `Hit: ${element.damage} damage. `;
+        } else if (element.save_dc !== undefined) {
+          actionDesc += `On a failed save: ${element.damage} damage, or half as much on a successful one. `;
+        }
+      }
+      
+      if (element.effect) {
+        actionDesc += element.effect;
+      }
+
+      actionsContent = `actions:
+  - name: "${element.name || "Trap Effect"}"
+    desc: "${actionDesc}"`;
+    }
+
+    let traitsContent = '';
+    if (this.countermeasures.length > 0) {
+      traitsContent = 'traits:\n';
+      for (const cm of this.countermeasures) {
+        const dcText = cm.dc ? ` (DC ${cm.dc})` : '';
+        const checksText = cm.checks_needed && cm.checks_needed > 1 ? ` Requires ${cm.checks_needed} successful checks.` : '';
+        const traitDesc = `${cm.description || cm.method}${dcText}${checksText} ${cm.effect || ''}`;
+        traitsContent += `  - name: "Countermeasure: ${cm.method}"\n    desc: "${traitDesc}"\n`;
+      }
+    }
+
+    return `\`\`\`statblock
+layout: Basic 5e Layout
+source: "${homebrewSource}"
+name: "${this.trapName}"
+type: trap
+size: Large
+alignment: unaligned
+ac: 15
+hp: 50
+speed: "0 ft."
+stats: [10, 10, 10, 10, 10, 10]
+senses: "—"
+languages: "—"
+cr: ${this.calculateTrapCR()}
+${traitsContent}${actionsContent}
+\`\`\``;
+  }
+
+  generateComplexStatblockContent(): string {
+    const homebrewSource = `Trap: ${this.trapName}`;
+    let statblockContent = '';
+
+    // Group elements by initiative
+    const byInitiative = new Map<number, TrapElement[]>();
+    const constantElements: TrapElement[] = [];
+    const dynamicElements: TrapElement[] = [];
+
+    for (const element of this.elements) {
+      if (element.element_type === 'constant') {
+        constantElements.push(element);
+      } else if (element.element_type === 'dynamic') {
+        dynamicElements.push(element);
+      } else if (element.initiative !== undefined) {
+        if (!byInitiative.has(element.initiative)) {
+          byInitiative.set(element.initiative, []);
+        }
+        byInitiative.get(element.initiative)!.push(element);
+      }
+    }
+
+    // Create statblock for each initiative
+    const sortedInits = Array.from(byInitiative.keys()).sort((a, b) => b - a);
+    for (const initiative of sortedInits) {
+      const elements = byInitiative.get(initiative)!;
+      
+      let actionsContent = '';
+      if (elements.length > 0) {
+        actionsContent = 'actions:\n';
+        for (const element of elements) {
+          let actionDesc = '';
+          
+          if (element.attack_bonus !== undefined) {
+            actionDesc += `Melee or Ranged Weapon Attack: +${element.attack_bonus} to hit, reach 5 ft. or range 60 ft., one target. `;
+          }
+          
+          if (element.save_dc !== undefined) {
+            actionDesc += `DC ${element.save_dc} ${element.save_ability || "DEX"} saving throw. `;
+          }
+          
+          if (element.damage) {
+            if (element.attack_bonus !== undefined) {
+              actionDesc += `Hit: ${element.damage} damage. `;
+            } else if (element.save_dc !== undefined) {
+              actionDesc += `On a failed save: ${element.damage} damage, or half as much on a successful one. `;
+            }
+          }
+          
+          if (element.effect) {
+            actionDesc += element.effect;
+          }
+
+          actionsContent += `  - name: "${element.name || "Effect"}"\n    desc: "${actionDesc}"\n`;
+        }
+      }
+
+      const traitsContent = `traits:
+  - name: "Fixed Initiative"
+    desc: "This trap element acts on initiative count ${initiative}. Do not roll initiative for this creature."
+`;
+
+      statblockContent += `\n\`\`\`statblock
+layout: Basic 5e Layout
+source: "${homebrewSource}"
+name: "${this.trapName} (Initiative ${initiative})"
+type: trap
+size: Large
+alignment: unaligned
+ac: 15
+hp: 1
+modifier: ${initiative}
+initiative: ${initiative}
+speed: "0 ft."
+stats: [10, 10, 10, 10, 10, 10]
+senses: "—"
+languages: "—"
+cr: 0
+${traitsContent}${actionsContent}\`\`\`\n`;
+    }
+
+    // Add constant effects statblock
+    if (constantElements.length > 0) {
+      let traitsContent = 'traits:\n';
+      for (const element of constantElements) {
+        traitsContent += `  - name: "${element.name || "Constant Effect"}"\n    desc: "${element.effect || ""}"\n`;
+      }
+
+      statblockContent += `\n\`\`\`statblock
+layout: Basic 5e Layout
+source: "${homebrewSource}"
+name: "${this.trapName} (Constant)"
+type: trap
+size: Large
+alignment: unaligned
+ac: 15
+hp: 1
+speed: "0 ft."
+stats: [10, 10, 10, 10, 10, 10]
+senses: "—"
+languages: "—"
+cr: 0
+${traitsContent}\`\`\`\n`;
+    }
+
+    // Add dynamic effects statblock
+    if (dynamicElements.length > 0) {
+      let traitsContent = 'traits:\n';
+      for (const element of dynamicElements) {
+        const traitDesc = `${element.condition ? 'Condition: ' + element.condition + '. ' : ''}${element.effect || ''}`;
+        traitsContent += `  - name: "${element.name || "Dynamic Effect"}"\n    desc: "${traitDesc}"\n`;
+      }
+
+      statblockContent += `\n\`\`\`statblock
+layout: Basic 5e Layout
+source: "${homebrewSource}"
+name: "${this.trapName} (Dynamic)"
+type: trap
+size: Large
+alignment: unaligned
+ac: 15
+hp: 1
+speed: "0 ft."
+stats: [10, 10, 10, 10, 10, 10]
+senses: "—"
+languages: "—"
+cr: 0
+${traitsContent}\`\`\`\n`;
+    }
+
+    // Add countermeasures to first statblock or as separate section
+    if (this.countermeasures.length > 0) {
+      statblockContent += '\n## Countermeasures\n\n';
+      for (const cm of this.countermeasures) {
+        const dcText = cm.dc ? ` (DC ${cm.dc})` : '';
+        const checksText = cm.checks_needed && cm.checks_needed > 1 ? ` Requires ${cm.checks_needed} successful checks.` : '';
+        const cmDesc = `${cm.description || cm.method}${dcText}${checksText} ${cm.effect || ''}`;
+        statblockContent += `- **${cm.method}:** ${cmDesc}\n`;
+      }
+    }
+
+    return statblockContent;
   }
 
   onClose() {
