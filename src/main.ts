@@ -6781,22 +6781,23 @@ if (countermeasures.length === 0) {
     // Parse damage strings like "4d10", "2d6+3", "22", etc.
     if (!damageStr) return 0;
     
-    damageStr = damageStr.trim().toLowerCase();
+    let cleanDamage = damageStr.trim().toLowerCase();
     
     // Remove damage type (e.g., "4d10 fire" -> "4d10")
-    damageStr = damageStr.split(' ')[0];
+    const parts = cleanDamage.split(' ');
+    cleanDamage = parts[0] || cleanDamage;
 
     // Check if it's just a number
-    const staticDamage = parseInt(damageStr);
+    const staticDamage = parseInt(cleanDamage);
     if (!isNaN(staticDamage)) {
       return staticDamage;
     }
 
     // Parse dice notation: XdY+Z or XdY-Z or XdY
-    const diceMatch = damageStr.match(/(\d+)d(\d+)([+-]\d+)?/);
+    const diceMatch = cleanDamage.match(/(\d+)d(\d+)([+-]\d+)?/);
     if (diceMatch) {
-      const numDice = parseInt(diceMatch[1]);
-      const dieSize = parseInt(diceMatch[2]);
+      const numDice = parseInt(diceMatch[1]!);
+      const dieSize = parseInt(diceMatch[2]!);
       const modifier = diceMatch[3] ? parseInt(diceMatch[3]) : 0;
       
       // Average of XdY is X * (Y+1)/2
