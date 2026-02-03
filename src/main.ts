@@ -3949,6 +3949,10 @@ interface TrapElement {
   save_dc?: number;
   save_ability?: string;
   damage?: string;
+  additional_damage?: string;  // Extra damage (e.g., ongoing, secondary)
+  range?: string;  // Attack/effect range (e.g., "60 ft.", "Touch")
+  on_success?: string;  // What happens on successful save
+  on_failure?: string;  // What happens on failed save
   effect?: string;
   condition?: string;  // For dynamic elements
 }
@@ -6013,6 +6017,18 @@ class TrapCreationModal extends Modal {
             })
         );
 
+      // Range
+      new Setting(elementContainer)
+        .setName("Range (optional)")
+        .addText((text) =>
+          text
+            .setPlaceholder("60 ft. or Touch or Melee")
+            .setValue(element.range || "")
+            .onChange((value) => {
+              element.range = value || undefined;
+            })
+        );
+
       // Save DC
       new Setting(elementContainer)
         .setName("Save DC (optional)")
@@ -6051,9 +6067,50 @@ class TrapCreationModal extends Modal {
             .setPlaceholder("4d10 thunder")
             .setValue(element.damage || "")
             .onChange((value) => {
-              element.damage = value;
+              element.damage = value || undefined;
             })
         );
+
+      // Additional Damage
+      new Setting(elementContainer)
+        .setName("Additional Damage (optional)")
+        .addText((text) =>
+          text
+            .setPlaceholder("2d6 fire (ongoing)")
+            .setValue(element.additional_damage || "")
+            .onChange((value) => {
+              element.additional_damage = value || undefined;
+            })
+        );
+
+      // Save Success/Failure (only if save_dc is set)
+      if (element.save_dc) {
+        new Setting(elementContainer)
+          .setName("On Successful Save")
+          .addTextArea((text) => {
+            text
+              .setPlaceholder("Takes half damage...")
+              .setValue(element.on_success || "")
+              .onChange((value) => {
+                element.on_success = value || undefined;
+              });
+            text.inputEl.rows = 2;
+            text.inputEl.style.width = "100%";
+          });
+
+        new Setting(elementContainer)
+          .setName("On Failed Save")
+          .addTextArea((text) => {
+            text
+              .setPlaceholder("Takes full damage and is knocked prone...")
+              .setValue(element.on_failure || "")
+              .onChange((value) => {
+                element.on_failure = value || undefined;
+              });
+            text.inputEl.rows = 2;
+            text.inputEl.style.width = "100%";
+          });
+      }
 
       // Effect
       new Setting(elementContainer)
@@ -6331,13 +6388,22 @@ if (elements.length === 0) {
     for (const element of elements) {
       dv.header(4, element.name || "Effect");
       if (element.attack_bonus !== undefined) {
-        dv.paragraph(\`**Attack:** +\${element.attack_bonus} to hit\`);
+        dv.paragraph(\`**Attack:** +\${element.attack_bonus} to hit\${element.range ? \`, \${element.range}\` : ""}\`);
       }
       if (element.save_dc !== undefined) {
         dv.paragraph(\`**Save:** DC \${element.save_dc} \${element.save_ability || "DEX"}\`);
       }
       if (element.damage) {
         dv.paragraph(\`**Damage:** \${element.damage}\`);
+      }
+      if (element.additional_damage) {
+        dv.paragraph(\`**Additional Damage:** \${element.additional_damage}\`);
+      }
+      if (element.on_success) {
+        dv.paragraph(\`**On Success:** \${element.on_success}\`);
+      }
+      if (element.on_failure) {
+        dv.paragraph(\`**On Failure:** \${element.on_failure}\`);
       }
       if (element.effect) {
         dv.paragraph(\`**Effect:** \${element.effect}\`);
@@ -6370,13 +6436,22 @@ if (elements.length === 0) {
         for (const element of byInitiative.get(init)) {
           dv.paragraph(\`**\${element.name || "Effect"}**\`);
           if (element.attack_bonus !== undefined) {
-            dv.paragraph(\`  Attack: +\${element.attack_bonus} to hit\`);
+            dv.paragraph(\`  Attack: +\${element.attack_bonus} to hit\${element.range ? \`, \${element.range}\` : ""}\`);
           }
           if (element.save_dc !== undefined) {
             dv.paragraph(\`  Save: DC \${element.save_dc} \${element.save_ability || "DEX"}\`);
           }
           if (element.damage) {
             dv.paragraph(\`  Damage: \${element.damage}\`);
+          }
+          if (element.additional_damage) {
+            dv.paragraph(\`  Additional Damage: \${element.additional_damage}\`);
+          }
+          if (element.on_success) {
+            dv.paragraph(\`  On Success: \${element.on_success}\`);
+          }
+          if (element.on_failure) {
+            dv.paragraph(\`  On Failure: \${element.on_failure}\`);
           }
           if (element.effect) {
             dv.paragraph(\`  Effect: \${element.effect}\`);
@@ -6512,7 +6587,8 @@ if (countermeasures.length === 0) {
       };
 
       if (element.attack_bonus !== undefined) {
-        action.desc += `Melee or Ranged Weapon Attack: +${element.attack_bonus} to hit, reach 5 ft. or range 60 ft., one target. `;
+        const range = element.range || "reach 5 ft. or range 60 ft.";
+        action.desc += `Melee or Ranged Weapon Attack: +${element.attack_bonus} to hit, ${range}, one target. `;
       }
 
       if (element.save_dc !== undefined) {
@@ -6523,8 +6599,30 @@ if (countermeasures.length === 0) {
         if (element.attack_bonus !== undefined) {
           action.desc += `Hit: ${element.damage} damage. `;
         } else if (element.save_dc !== undefined) {
-          action.desc += `On a failed save: ${element.damage} damage, or half as much on a successful one. `;
+          // Use custom success/failure text if provided
+          if (element.on_failure) {
+            action.desc += `On a failed save: ${element.on_failure} `;
+          } else {
+            action.desc += `On a failed save: ${element.damage} damage`;
+            if (element.on_success) {
+              action.desc += `, ${element.on_success} `;
+            } else {
+              action.desc += `, or half as much damage on a successful one. `;
+            }
+          }
         }
+      } else if (element.save_dc && (element.on_failure || element.on_success)) {
+        // No damage but has success/failure effects
+        if (element.on_failure) {
+          action.desc += `On a failed save: ${element.on_failure} `;
+        }
+        if (element.on_success) {
+          action.desc += `On a successful save: ${element.on_success} `;
+        }
+      }
+
+      if (element.additional_damage) {
+        action.desc += `Additional: ${element.additional_damage}. `;
       }
 
       if (element.effect) {
@@ -6586,7 +6684,8 @@ if (countermeasures.length === 0) {
         let desc = "";
 
         if (element.attack_bonus !== undefined) {
-          desc += `Melee or Ranged Weapon Attack: +${element.attack_bonus} to hit, reach 5 ft. or range 60 ft., one target. `;
+          const range = element.range || "reach 5 ft. or range 60 ft.";
+          desc += `Melee or Ranged Weapon Attack: +${element.attack_bonus} to hit, ${range}, one target. `;
         }
 
         if (element.save_dc !== undefined) {
@@ -6597,8 +6696,30 @@ if (countermeasures.length === 0) {
           if (element.attack_bonus !== undefined) {
             desc += `Hit: ${element.damage} damage. `;
           } else if (element.save_dc !== undefined) {
-            desc += `On a failed save: ${element.damage} damage, or half as much on a successful one. `;
+            // Use custom success/failure text if provided
+            if (element.on_failure) {
+              desc += `On a failed save: ${element.on_failure} `;
+            } else {
+              desc += `On a failed save: ${element.damage} damage`;
+              if (element.on_success) {
+                desc += `, ${element.on_success} `;
+              } else {
+                desc += `, or half as much damage on a successful one. `;
+              }
+            }
           }
+        } else if (element.save_dc && (element.on_failure || element.on_success)) {
+          // No damage but has success/failure effects
+          if (element.on_failure) {
+            desc += `On a failed save: ${element.on_failure} `;
+          }
+          if (element.on_success) {
+            desc += `On a successful save: ${element.on_success} `;
+          }
+        }
+
+        if (element.additional_damage) {
+          desc += `Additional: ${element.additional_damage}. `;
         }
 
         if (element.effect) {
