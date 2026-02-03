@@ -565,7 +565,7 @@ date:
 
 export const ADVENTURE_TEMPLATE = `---
 type: adventure
-template_version: 1.0.0
+template_version: 1.0.1
 name: 
 campaign: 
 world: 
@@ -589,6 +589,12 @@ const sceneButton = dv.el('button', '🎬 Create New Scene');
 sceneButton.className = 'mod-cta';
 sceneButton.onclick = () => {
   app.commands.executeCommandById('dnd-campaign-hub:create-scene');
+};
+
+const trapButton = dv.el('button', '🪤 Create New Trap', { cls: 'mod-cta' });
+trapButton.style.marginLeft = '10px';
+trapButton.onclick = () => {
+  app.commands.executeCommandById('dnd-campaign-hub:create-trap');
 };
 
 const sessionButton = dv.el('button', '📜 Create Session for This Adventure', { cls: 'mod-cta' });
@@ -721,7 +727,7 @@ if (allScenes.length === 0) {
 
 export const SCENE_TEMPLATE = `---
 type: scene
-template_version: 1.3.0
+template_version: 1.3.1
 adventure: "{{ADVENTURE_NAME}}"
 campaign: "{{CAMPAIGN}}"
 world: "{{WORLD}}"
@@ -741,6 +747,13 @@ date: {{DATE}}
 
 **Duration:** {{DURATION}} | **Type:** {{TYPE}} | **Difficulty:** {{DIFFICULTY}}  
 **Act:** {{ACT_NUMBER}} | **Adventure:** [[{{ADVENTURE_NAME}}]]
+
+\`\`\`button
+name 🪤 Create Trap
+type command
+action D&D Campaign Hub: Create New Trap
+\`\`\`
+^button-new-trap
 
 ---
 
@@ -994,6 +1007,192 @@ if (trackerEncounter && trackerEncounter !== "") {
 
 *GM fills this during/after session*
 
+
+
+`;
+
+export const TRAP_TEMPLATE = `---
+type: trap
+template_version: 1.0.1
+campaign: 
+adventure: 
+world: 
+scene: 
+trap_name: 
+trap_type: simple
+threat_level: setback
+min_level: 1
+max_level: 20
+trigger: 
+elements: []
+countermeasures: []
+date: 
+---
+
+# <% tp.frontmatter.trap_name || "Unnamed Trap" %>
+
+## Trap Details
+
+**Type:** <% tp.frontmatter.trap_type.charAt(0).toUpperCase() + tp.frontmatter.trap_type.slice(1) %> Trap  
+**Threat Level:** <% tp.frontmatter.threat_level.charAt(0).toUpperCase() + tp.frontmatter.threat_level.slice(1) %>  
+**Level Range:** <% tp.frontmatter.min_level %>-<% tp.frontmatter.max_level %>
+
+### Trigger Condition
+<% tp.frontmatter.trigger || "Not specified" %>
+
+---
+
+## Trap Elements & Effects
+
+\`\`\`dataviewjs
+const elements = dv.current().elements || [];
+const trapType = dv.current().trap_type || 'simple';
+
+if (elements.length === 0) {
+  dv.paragraph("*No trap elements defined. Add elements to the \`elements\` frontmatter field.*");
+} else {
+  if (trapType === 'simple') {
+    // Simple trap - just show effects
+    for (const element of elements) {
+      dv.header(4, element.name || "Effect");
+      if (element.attack_bonus !== undefined) {
+        dv.paragraph(\`**Attack:** +\${element.attack_bonus} to hit\`);
+      }
+      if (element.save_dc !== undefined) {
+        dv.paragraph(\`**Save:** DC \${element.save_dc} \${element.save_ability || "DEX"}\`);
+      }
+      if (element.damage) {
+        dv.paragraph(\`**Damage:** \${element.damage}\`);
+      }
+      if (element.effect) {
+        dv.paragraph(\`**Effect:** \${element.effect}\`);
+      }
+      dv.paragraph("");
+    }
+  } else {
+    // Complex trap - organize by initiative
+    const byInitiative = new Map();
+    const constant = [];
+    const dynamic = [];
+    
+    for (const element of elements) {
+      if (element.element_type === 'constant') {
+        constant.push(element);
+      } else if (element.element_type === 'dynamic') {
+        dynamic.push(element);
+      } else if (element.initiative !== undefined) {
+        if (!byInitiative.has(element.initiative)) {
+          byInitiative.set(element.initiative, []);
+        }
+        byInitiative.get(element.initiative).push(element);
+      }
+    }
+    
+    // Show initiative-based elements
+    if (byInitiative.size > 0) {
+      dv.header(3, "Initiative Actions");
+      const sortedInit = Array.from(byInitiative.keys()).sort((a, b) => b - a);
+      for (const init of sortedInit) {
+        dv.header(4, \`Initiative \${init}\`);
+        for (const element of byInitiative.get(init)) {
+          dv.paragraph(\`**\${element.name || "Effect"}**\`);
+          if (element.attack_bonus !== undefined) {
+            dv.paragraph(\`  Attack: +\${element.attack_bonus} to hit\`);
+          }
+          if (element.save_dc !== undefined) {
+            dv.paragraph(\`  Save: DC \${element.save_dc} \${element.save_ability || "DEX"}\`);
+          }
+          if (element.damage) {
+            dv.paragraph(\`  Damage: \${element.damage}\`);
+          }
+          if (element.effect) {
+            dv.paragraph(\`  Effect: \${element.effect}\`);
+          }
+          dv.paragraph("");
+        }
+      }
+    }
+    
+    // Show dynamic elements
+    if (dynamic.length > 0) {
+      dv.header(3, "Dynamic Elements");
+      for (const element of dynamic) {
+        dv.paragraph(\`**\${element.name || "Dynamic Effect"}**\`);
+        if (element.condition) {
+          dv.paragraph(\`  Condition: \${element.condition}\`);
+        }
+        if (element.effect) {
+          dv.paragraph(\`  Effect: \${element.effect}\`);
+        }
+        dv.paragraph("");
+      }
+    }
+    
+    // Show constant elements
+    if (constant.length > 0) {
+      dv.header(3, "Constant Effects");
+      for (const element of constant) {
+        dv.paragraph(\`**\${element.name || "Constant Effect"}**\`);
+        if (element.effect) {
+          dv.paragraph(\`  \${element.effect}\`);
+        }
+        dv.paragraph("");
+      }
+    }
+  }
+}
+\`\`\`
+
+---
+
+## Countermeasures
+
+\`\`\`dataviewjs
+const countermeasures = dv.current().countermeasures || [];
+
+if (countermeasures.length === 0) {
+  dv.paragraph("*No countermeasures defined. Add countermeasures to the \`countermeasures\` frontmatter field.*");
+} else {
+  for (const cm of countermeasures) {
+    dv.header(4, cm.method || "Countermeasure");
+    
+    if (cm.dc !== undefined) {
+      dv.paragraph(\`**DC:** \${cm.dc}\`);
+    }
+    if (cm.checks_needed !== undefined && cm.checks_needed > 1) {
+      dv.paragraph(\`**Checks Needed:** \${cm.checks_needed}\`);
+    }
+    if (cm.description) {
+      dv.paragraph(\`**Description:** \${cm.description}\`);
+    }
+    if (cm.effect) {
+      dv.paragraph(\`**Effect on Success:** \${cm.effect}\`);
+    }
+    dv.paragraph("");
+  }
+}
+\`\`\`
+
+---
+
+## GM Notes
+
+### Setup
+*How to describe and introduce this trap*
+
+### Running the Trap
+*Tips for managing the trap in combat*
+
+### Disabling
+*Additional notes on countermeasures and player creativity*
+
+---
+
+## Session History
+
+**Created:** <% tp.date.now("YYYY-MM-DD") %>
+
+*Record when this trap was encountered and what happened*
 
 
 `;

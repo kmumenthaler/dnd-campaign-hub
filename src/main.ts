@@ -7,6 +7,7 @@ import {
   PC_TEMPLATE,
   ADVENTURE_TEMPLATE,
   SCENE_TEMPLATE,
+  TRAP_TEMPLATE,
   FACTION_TEMPLATE,
   ITEM_TEMPLATE,
   SPELL_TEMPLATE,
@@ -494,6 +495,18 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "create-trap",
+      name: "Create New Trap",
+      hotkeys: [
+        {
+          modifiers: ["Mod", "Shift"],
+          key: "M",
+        },
+      ],
+      callback: () => this.createTrap(),
+    });
+
+    this.addCommand({
       id: "purge-vault",
       name: "Purge D&D Campaign Hub Data",
       callback: () => {
@@ -914,6 +927,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async createScene() {
 		// Open Scene creation modal
 		new SceneCreationModal(this.app, this).open();
+	}
+
+	async createTrap() {
+		// Open Trap creation modal
+		new TrapCreationModal(this.app, this).open();
 	}
 
 	async createSession() {
@@ -3923,6 +3941,27 @@ date: ${currentDate}
   }
 }
 
+// Trap-related interfaces
+interface TrapElement {
+  name: string;
+  element_type: 'active' | 'dynamic' | 'constant';
+  initiative?: number;  // For active elements
+  attack_bonus?: number;
+  save_dc?: number;
+  save_ability?: string;
+  damage?: string;
+  effect?: string;
+  condition?: string;  // For dynamic elements
+}
+
+interface TrapCountermeasure {
+  method: string;
+  description?: string;
+  dc?: number;
+  checks_needed?: number;
+  effect?: string;
+}
+
 class SceneCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
   adventurePath = "";
@@ -5667,6 +5706,760 @@ class SceneCreationModal extends Modal {
     } catch (error) {
       console.error("Error linking encounter to scene:", error);
     }
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+class TrapCreationModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  trapName = "";
+  trapType: 'simple' | 'complex' = 'simple';
+  threatLevel: 'setback' | 'dangerous' | 'deadly' = 'setback';
+  minLevel = 1;
+  maxLevel = 5;
+  trigger = "";
+  adventurePath = "";
+  scenePath = "";
+  
+  elements: TrapElement[] = [];
+  countermeasures: TrapCountermeasure[] = [];
+  
+  // UI containers
+  elementsContainer: HTMLElement | null = null;
+  countermeasuresContainer: HTMLElement | null = null;
+
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, scenePath?: string) {
+    super(app);
+    this.plugin = plugin;
+    if (adventurePath) this.adventurePath = adventurePath;
+    if (scenePath) this.scenePath = scenePath;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "Create New Trap" });
+
+    // Trap Name
+    new Setting(contentEl)
+      .setName("Trap Name")
+      .setDesc("Name of the trap")
+      .addText((text) =>
+        text
+          .setPlaceholder("Thundering Squall")
+          .setValue(this.trapName)
+          .onChange((value) => {
+            this.trapName = value;
+          })
+      );
+
+    // Trap Type
+    new Setting(contentEl)
+      .setName("Trap Type")
+      .setDesc("Simple traps have basic effects. Complex traps have multiple initiatives and elements.")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("simple", "Simple")
+          .addOption("complex", "Complex")
+          .setValue(this.trapType)
+          .onChange((value) => {
+            this.trapType = value as 'simple' | 'complex';
+            this.refreshUI();
+          })
+      );
+
+    // Threat Level
+    new Setting(contentEl)
+      .setName("Threat Level")
+      .setDesc("How dangerous is this trap?")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("setback", "Setback")
+          .addOption("dangerous", "Dangerous")
+          .addOption("deadly", "Deadly")
+          .setValue(this.threatLevel)
+          .onChange((value: any) => {
+            this.threatLevel = value;
+          })
+      );
+
+    // Level Range
+    new Setting(contentEl)
+      .setName("Level Range")
+      .setDesc("Minimum and maximum character levels for this trap")
+      .addText((text) =>
+        text
+          .setPlaceholder("1")
+          .setValue(this.minLevel.toString())
+          .onChange((value) => {
+            const num = parseInt(value);
+            if (!isNaN(num) && num >= 1 && num <= 20) {
+              this.minLevel = num;
+            }
+          })
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("5")
+          .setValue(this.maxLevel.toString())
+          .onChange((value) => {
+            const num = parseInt(value);
+            if (!isNaN(num) && num >= 1 && num <= 20) {
+              this.maxLevel = num;
+            }
+          })
+      );
+
+    // Trigger
+    new Setting(contentEl)
+      .setName("Trigger")
+      .setDesc("What activates this trap?")
+      .addTextArea((text) => {
+        text
+          .setPlaceholder("A creature enters the area without the cult insignia...")
+          .setValue(this.trigger)
+          .onChange((value) => {
+            this.trigger = value;
+          });
+        text.inputEl.rows = 3;
+        text.inputEl.style.width = "100%";
+      });
+
+    // Elements Section
+    contentEl.createEl("h3", { text: "Trap Elements" });
+    this.elementsContainer = contentEl.createDiv();
+    this.renderElements();
+
+    new Setting(contentEl)
+      .addButton((button) =>
+        button
+          .setButtonText("+ Add Element")
+          .onClick(() => {
+            this.addElement();
+          })
+      );
+
+    // Countermeasures Section
+    contentEl.createEl("h3", { text: "Countermeasures" });
+    this.countermeasuresContainer = contentEl.createDiv();
+    this.renderCountermeasures();
+
+    new Setting(contentEl)
+      .addButton((button) =>
+        button
+          .setButtonText("+ Add Countermeasure")
+          .onClick(() => {
+            this.addCountermeasure();
+          })
+      );
+
+    // Adventure/Scene Link
+    const adventureDisplay = this.adventurePath 
+      ? this.adventurePath.split('/').pop()?.replace('.md', '') || 'None'
+      : 'None';
+
+    const sceneDisplay = this.scenePath
+      ? this.scenePath.split('/').pop()?.replace('.md', '') || 'None'
+      : 'None';
+
+    contentEl.createEl("p", { 
+      text: `Adventure: ${adventureDisplay} | Scene: ${sceneDisplay}`,
+      attr: { style: "margin-top: 1em; font-size: 0.9em; color: var(--text-muted);" }
+    });
+
+    // Create Button
+    new Setting(contentEl).addButton((button) =>
+      button
+        .setButtonText("Create Trap")
+        .setCta()
+        .onClick(() => {
+          this.createTrap();
+        })
+    );
+  }
+
+  refreshUI() {
+    this.renderElements();
+  }
+
+  addElement() {
+    const newElement: TrapElement = {
+      name: "",
+      element_type: this.trapType === 'simple' ? 'active' : 'active',
+      initiative: this.trapType === 'complex' ? 20 : undefined,
+      effect: ""
+    };
+    this.elements.push(newElement);
+    this.renderElements();
+  }
+
+  removeElement(index: number) {
+    this.elements.splice(index, 1);
+    this.renderElements();
+  }
+
+  renderElements() {
+    if (!this.elementsContainer) return;
+    this.elementsContainer.empty();
+
+    if (this.elements.length === 0) {
+      this.elementsContainer.createEl("p", { 
+        text: "No elements added yet. Click '+ Add Element' to add trap effects.",
+        attr: { style: "color: var(--text-muted); font-style: italic;" }
+      });
+      return;
+    }
+
+    this.elements.forEach((element, index) => {
+      const elementContainer = this.elementsContainer!.createDiv({ cls: "trap-element" });
+      elementContainer.style.border = "1px solid var(--background-modifier-border)";
+      elementContainer.style.padding = "10px";
+      elementContainer.style.marginBottom = "10px";
+      elementContainer.style.borderRadius = "5px";
+
+      // Element header with remove button
+      const headerDiv = elementContainer.createDiv();
+      headerDiv.style.display = "flex";
+      headerDiv.style.justifyContent = "space-between";
+      headerDiv.style.alignItems = "center";
+      headerDiv.style.marginBottom = "10px";
+
+      headerDiv.createEl("h4", { text: `Element ${index + 1}`, attr: { style: "margin: 0;" } });
+      
+      const removeBtn = headerDiv.createEl("button", { text: "Remove" });
+      removeBtn.style.padding = "2px 8px";
+      removeBtn.style.fontSize = "0.8em";
+      removeBtn.onclick = () => this.removeElement(index);
+
+      // Name
+      new Setting(elementContainer)
+        .setName("Name")
+        .addText((text) =>
+          text
+            .setPlaceholder("Thunderous Slam")
+            .setValue(element.name)
+            .onChange((value) => {
+              element.name = value;
+            })
+        );
+
+      // Element Type (for complex traps)
+      if (this.trapType === 'complex') {
+        new Setting(elementContainer)
+          .setName("Element Type")
+          .addDropdown((dropdown) =>
+            dropdown
+              .addOption("active", "Active (on initiative)")
+              .addOption("dynamic", "Dynamic (conditional)")
+              .addOption("constant", "Constant (ongoing)")
+              .setValue(element.element_type)
+              .onChange((value: any) => {
+                element.element_type = value;
+                this.renderElements();
+              })
+          );
+
+        // Initiative (for active elements)
+        if (element.element_type === 'active') {
+          new Setting(elementContainer)
+            .setName("Initiative")
+            .addText((text) =>
+              text
+                .setPlaceholder("20")
+                .setValue(element.initiative?.toString() || "")
+                .onChange((value) => {
+                  const num = parseInt(value);
+                  if (!isNaN(num)) {
+                    element.initiative = num;
+                  }
+                })
+            );
+        }
+
+        // Condition (for dynamic elements)
+        if (element.element_type === 'dynamic') {
+          new Setting(elementContainer)
+            .setName("Condition")
+            .addTextArea((text) => {
+              text
+                .setPlaceholder("On each initiative count 10...")
+                .setValue(element.condition || "")
+                .onChange((value) => {
+                  element.condition = value;
+                });
+              text.inputEl.rows = 2;
+              text.inputEl.style.width = "100%";
+            });
+        }
+      }
+
+      // Attack Bonus
+      new Setting(elementContainer)
+        .setName("Attack Bonus (optional)")
+        .addText((text) =>
+          text
+            .setPlaceholder("+8")
+            .setValue(element.attack_bonus?.toString() || "")
+            .onChange((value) => {
+              const num = parseInt(value);
+              if (!isNaN(num)) {
+                element.attack_bonus = num;
+              } else if (value === "") {
+                element.attack_bonus = undefined;
+              }
+            })
+        );
+
+      // Save DC
+      new Setting(elementContainer)
+        .setName("Save DC (optional)")
+        .addText((text) =>
+          text
+            .setPlaceholder("15")
+            .setValue(element.save_dc?.toString() || "")
+            .onChange((value) => {
+              const num = parseInt(value);
+              if (!isNaN(num)) {
+                element.save_dc = num;
+              } else if (value === "") {
+                element.save_dc = undefined;
+              }
+            })
+        )
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption("DEX", "DEX")
+            .addOption("STR", "STR")
+            .addOption("CON", "CON")
+            .addOption("INT", "INT")
+            .addOption("WIS", "WIS")
+            .addOption("CHA", "CHA")
+            .setValue(element.save_ability || "DEX")
+            .onChange((value) => {
+              element.save_ability = value;
+            })
+        );
+
+      // Damage
+      new Setting(elementContainer)
+        .setName("Damage (optional)")
+        .addText((text) =>
+          text
+            .setPlaceholder("4d10 thunder")
+            .setValue(element.damage || "")
+            .onChange((value) => {
+              element.damage = value;
+            })
+        );
+
+      // Effect
+      new Setting(elementContainer)
+        .setName("Effect")
+        .addTextArea((text) => {
+          text
+            .setPlaceholder("The target is pushed 10 feet and knocked prone...")
+            .setValue(element.effect || "")
+            .onChange((value) => {
+              element.effect = value;
+            });
+          text.inputEl.rows = 3;
+          text.inputEl.style.width = "100%";
+        });
+    });
+  }
+
+  addCountermeasure() {
+    const newCM: TrapCountermeasure = {
+      method: "",
+      dc: 15,
+      checks_needed: 1
+    };
+    this.countermeasures.push(newCM);
+    this.renderCountermeasures();
+  }
+
+  removeCountermeasure(index: number) {
+    this.countermeasures.splice(index, 1);
+    this.renderCountermeasures();
+  }
+
+  renderCountermeasures() {
+    if (!this.countermeasuresContainer) return;
+    this.countermeasuresContainer.empty();
+
+    if (this.countermeasures.length === 0) {
+      this.countermeasuresContainer.createEl("p", { 
+        text: "No countermeasures added yet. Click '+ Add Countermeasure' to add ways to disable the trap.",
+        attr: { style: "color: var(--text-muted); font-style: italic;" }
+      });
+      return;
+    }
+
+    this.countermeasures.forEach((cm, index) => {
+      const cmContainer = this.countermeasuresContainer!.createDiv({ cls: "trap-countermeasure" });
+      cmContainer.style.border = "1px solid var(--background-modifier-border)";
+      cmContainer.style.padding = "10px";
+      cmContainer.style.marginBottom = "10px";
+      cmContainer.style.borderRadius = "5px";
+
+      // Header with remove button
+      const headerDiv = cmContainer.createDiv();
+      headerDiv.style.display = "flex";
+      headerDiv.style.justifyContent = "space-between";
+      headerDiv.style.alignItems = "center";
+      headerDiv.style.marginBottom = "10px";
+
+      headerDiv.createEl("h4", { text: `Countermeasure ${index + 1}`, attr: { style: "margin: 0;" } });
+      
+      const removeBtn = headerDiv.createEl("button", { text: "Remove" });
+      removeBtn.style.padding = "2px 8px";
+      removeBtn.style.fontSize = "0.8em";
+      removeBtn.onclick = () => this.removeCountermeasure(index);
+
+      // Method
+      new Setting(cmContainer)
+        .setName("Method")
+        .addText((text) =>
+          text
+            .setPlaceholder("Force open the door")
+            .setValue(cm.method)
+            .onChange((value) => {
+              cm.method = value;
+            })
+        );
+
+      // DC
+      new Setting(cmContainer)
+        .setName("DC")
+        .addText((text) =>
+          text
+            .setPlaceholder("15")
+            .setValue(cm.dc?.toString() || "")
+            .onChange((value) => {
+              const num = parseInt(value);
+              if (!isNaN(num)) {
+                cm.dc = num;
+              }
+            })
+        );
+
+      // Checks Needed
+      new Setting(cmContainer)
+        .setName("Checks Needed")
+        .setDesc("How many successful checks to complete?")
+        .addText((text) =>
+          text
+            .setPlaceholder("1")
+            .setValue(cm.checks_needed?.toString() || "1")
+            .onChange((value) => {
+              const num = parseInt(value);
+              if (!isNaN(num) && num >= 1) {
+                cm.checks_needed = num;
+              }
+            })
+        );
+
+      // Description
+      new Setting(cmContainer)
+        .setName("Description")
+        .addTextArea((text) => {
+          text
+            .setPlaceholder("Three DC 20 Strength checks required to force the door...")
+            .setValue(cm.description || "")
+            .onChange((value) => {
+              cm.description = value;
+            });
+          text.inputEl.rows = 2;
+          text.inputEl.style.width = "100%";
+        });
+
+      // Effect
+      new Setting(cmContainer)
+        .setName("Effect on Success")
+        .addTextArea((text) => {
+          text
+            .setPlaceholder("The trap is disabled...")
+            .setValue(cm.effect || "")
+            .onChange((value) => {
+              cm.effect = value;
+            });
+          text.inputEl.rows = 2;
+          text.inputEl.style.width = "100%";
+        });
+    });
+  }
+
+  async createTrap() {
+    if (!this.trapName) {
+      new Notice("Please enter a trap name");
+      return;
+    }
+
+    if (this.elements.length === 0) {
+      new Notice("Please add at least one trap element");
+      return;
+    }
+
+    try {
+      // Get campaign and world info
+      let campaignName = "";
+      let worldName = "";
+
+      if (this.adventurePath) {
+        const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
+        if (adventureFile instanceof TFile) {
+          const content = await this.app.vault.read(adventureFile);
+          const campaignMatch = content.match(/^campaign:\s*(.+)$/m);
+          const worldMatch = content.match(/^world:\s*(.+)$/m);
+          
+          if (campaignMatch && campaignMatch[1]) campaignName = campaignMatch[1].trim();
+          if (worldMatch && worldMatch[1]) worldName = worldMatch[1].trim();
+        }
+      }
+
+      // Create trap file path
+      let trapPath = "";
+      if (this.scenePath) {
+        // Create trap in same folder as scene
+        const sceneFolder = this.scenePath.substring(0, this.scenePath.lastIndexOf("/"));
+        trapPath = `${sceneFolder}/${this.trapName}.md`;
+      } else if (this.adventurePath) {
+        // Create in adventure's Scenes folder
+        const adventureFolder = this.adventurePath.replace(".md", "");
+        trapPath = `${adventureFolder}/Scenes/${this.trapName}.md`;
+        
+        // Ensure Scenes folder exists
+        const scenesFolder = `${adventureFolder}/Scenes`;
+        if (!(await this.app.vault.adapter.exists(scenesFolder))) {
+          await this.app.vault.createFolder(scenesFolder);
+        }
+      } else {
+        // Create in current folder
+        trapPath = `${this.trapName}.md`;
+      }
+
+      // Check if file already exists
+      if (await this.app.vault.adapter.exists(trapPath)) {
+        new Notice(`A trap named "${this.trapName}" already exists!`);
+        return;
+      }
+
+      // Create trap content
+      const trapContent = this.createTrapContent(campaignName, worldName);
+
+      // Create the file
+      await this.app.vault.create(trapPath, trapContent);
+
+      new Notice(`Trap "${this.trapName}" created!`);
+      this.close();
+
+      // Open the new trap file
+      const trapFile = this.app.vault.getAbstractFileByPath(trapPath);
+      if (trapFile instanceof TFile) {
+        await this.app.workspace.getLeaf().openFile(trapFile);
+      }
+    } catch (error) {
+      console.error("Error creating trap:", error);
+      new Notice("Failed to create trap. Check console for details.");
+    }
+  }
+
+  createTrapContent(campaignName: string, worldName: string): string {
+    const now = new Date().toISOString().split('T')[0];
+    
+    // Convert elements and countermeasures to YAML
+    const elementsYaml = JSON.stringify(this.elements, null, 2)
+      .split('\n')
+      .map((line, idx) => idx === 0 ? line : '  ' + line)
+      .join('\n');
+
+    const countermeasuresYaml = JSON.stringify(this.countermeasures, null, 2)
+      .split('\n')
+      .map((line, idx) => idx === 0 ? line : '  ' + line)
+      .join('\n');
+
+    return `---
+type: trap
+template_version: 1.0.0
+campaign: ${campaignName}
+adventure: ${this.adventurePath?.split('/').pop()?.replace('.md', '') || ''}
+world: ${worldName}
+scene: ${this.scenePath?.split('/').pop()?.replace('.md', '') || ''}
+trap_name: ${this.trapName}
+trap_type: ${this.trapType}
+threat_level: ${this.threatLevel}
+min_level: ${this.minLevel}
+max_level: ${this.maxLevel}
+trigger: ${this.trigger}
+elements: ${elementsYaml}
+countermeasures: ${countermeasuresYaml}
+date: ${now}
+---
+
+# ${this.trapName}
+
+## Trap Details
+
+**Type:** ${this.trapType.charAt(0).toUpperCase() + this.trapType.slice(1)} Trap  
+**Threat Level:** ${this.threatLevel.charAt(0).toUpperCase() + this.threatLevel.slice(1)}  
+**Level Range:** ${this.minLevel}-${this.maxLevel}
+
+### Trigger Condition
+${this.trigger || "Not specified"}
+
+---
+
+## Trap Elements & Effects
+
+\`\`\`dataviewjs
+const elements = dv.current().elements || [];
+const trapType = dv.current().trap_type || 'simple';
+
+if (elements.length === 0) {
+  dv.paragraph("*No trap elements defined.*");
+} else {
+  if (trapType === 'simple') {
+    for (const element of elements) {
+      dv.header(4, element.name || "Effect");
+      if (element.attack_bonus !== undefined) {
+        dv.paragraph(\`**Attack:** +\${element.attack_bonus} to hit\`);
+      }
+      if (element.save_dc !== undefined) {
+        dv.paragraph(\`**Save:** DC \${element.save_dc} \${element.save_ability || "DEX"}\`);
+      }
+      if (element.damage) {
+        dv.paragraph(\`**Damage:** \${element.damage}\`);
+      }
+      if (element.effect) {
+        dv.paragraph(\`**Effect:** \${element.effect}\`);
+      }
+      dv.paragraph("");
+    }
+  } else {
+    const byInitiative = new Map();
+    const constant = [];
+    const dynamic = [];
+    
+    for (const element of elements) {
+      if (element.element_type === 'constant') {
+        constant.push(element);
+      } else if (element.element_type === 'dynamic') {
+        dynamic.push(element);
+      } else if (element.initiative !== undefined) {
+        if (!byInitiative.has(element.initiative)) {
+          byInitiative.set(element.initiative, []);
+        }
+        byInitiative.get(element.initiative).push(element);
+      }
+    }
+    
+    if (byInitiative.size > 0) {
+      dv.header(3, "Initiative Actions");
+      const sortedInit = Array.from(byInitiative.keys()).sort((a, b) => b - a);
+      for (const init of sortedInit) {
+        dv.header(4, \`Initiative \${init}\`);
+        for (const element of byInitiative.get(init)) {
+          dv.paragraph(\`**\${element.name || "Effect"}**\`);
+          if (element.attack_bonus !== undefined) {
+            dv.paragraph(\`  Attack: +\${element.attack_bonus} to hit\`);
+          }
+          if (element.save_dc !== undefined) {
+            dv.paragraph(\`  Save: DC \${element.save_dc} \${element.save_ability || "DEX"}\`);
+          }
+          if (element.damage) {
+            dv.paragraph(\`  Damage: \${element.damage}\`);
+          }
+          if (element.effect) {
+            dv.paragraph(\`  Effect: \${element.effect}\`);
+          }
+          dv.paragraph("");
+        }
+      }
+    }
+    
+    if (dynamic.length > 0) {
+      dv.header(3, "Dynamic Elements");
+      for (const element of dynamic) {
+        dv.paragraph(\`**\${element.name || "Dynamic Effect"}**\`);
+        if (element.condition) {
+          dv.paragraph(\`  Condition: \${element.condition}\`);
+        }
+        if (element.effect) {
+          dv.paragraph(\`  Effect: \${element.effect}\`);
+        }
+        dv.paragraph("");
+      }
+    }
+    
+    if (constant.length > 0) {
+      dv.header(3, "Constant Effects");
+      for (const element of constant) {
+        dv.paragraph(\`**\${element.name || "Constant Effect"}**\`);
+        if (element.effect) {
+          dv.paragraph(\`  \${element.effect}\`);
+        }
+        dv.paragraph("");
+      }
+    }
+  }
+}
+\`\`\`
+
+---
+
+## Countermeasures
+
+\`\`\`dataviewjs
+const countermeasures = dv.current().countermeasures || [];
+
+if (countermeasures.length === 0) {
+  dv.paragraph("*No countermeasures defined.*");
+} else {
+  for (const cm of countermeasures) {
+    dv.header(4, cm.method || "Countermeasure");
+    
+    if (cm.dc !== undefined) {
+      dv.paragraph(\`**DC:** \${cm.dc}\`);
+    }
+    if (cm.checks_needed !== undefined && cm.checks_needed > 1) {
+      dv.paragraph(\`**Checks Needed:** \${cm.checks_needed}\`);
+    }
+    if (cm.description) {
+      dv.paragraph(\`**Description:** \${cm.description}\`);
+    }
+    if (cm.effect) {
+      dv.paragraph(\`**Effect on Success:** \${cm.effect}\`);
+    }
+    dv.paragraph("");
+  }
+}
+\`\`\`
+
+---
+
+## GM Notes
+
+### Setup
+*How to describe and introduce this trap*
+
+### Running the Trap
+*Tips for managing the trap in combat*
+
+### Disabling
+*Additional notes on countermeasures and player creativity*
+
+---
+
+## Session History
+
+**Created:** ${now}
+
+*Record when this trap was encountered and what happened*
+`;
   }
 
   onClose() {
