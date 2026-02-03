@@ -670,6 +670,7 @@ class EncounterBuilderModal extends Modal {
   creatureListContainer: HTMLElement | null = null;
   difficultyContainer: HTMLElement | null = null;
   partySelectionContainer: HTMLElement | null = null;
+  partyMemberListContainer: HTMLElement | null = null;
 
   constructor(app: App, plugin: DndCampaignHubPlugin, encounterPath?: string) {
     super(app);
@@ -724,6 +725,11 @@ class EncounterBuilderModal extends Modal {
     this.partySelectionContainer.style.marginBottom = "15px";
     await this.renderPartySelection();
 
+    // Party Member List Container
+    this.partyMemberListContainer = contentEl.createDiv({ cls: "dnd-party-member-list" });
+    this.partyMemberListContainer.style.marginBottom = "15px";
+    await this.renderPartyMemberList();
+
     // Use Color Names
     new Setting(contentEl)
       .setName("Use Color Names")
@@ -739,28 +745,16 @@ class EncounterBuilderModal extends Modal {
     // Creatures Section
     contentEl.createEl("h3", { text: "Creatures" });
     
-    // Add creature buttons
-    const addButtonsDiv = contentEl.createDiv();
-    addButtonsDiv.style.display = "flex";
-    addButtonsDiv.style.gap = "10px";
-    addButtonsDiv.style.marginBottom = "10px";
-
-    const addFromStatblocksBtn = addButtonsDiv.createEl("button", { text: "📚 Add from Statblocks" });
-    addFromStatblocksBtn.onclick = () => this.addCreatureFromStatblocks();
-
-    const addCustomBtn = addButtonsDiv.createEl("button", { text: "+ Add Custom Creature" });
-    addCustomBtn.onclick = () => this.addCustomCreature();
-
-    this.creatureListContainer = contentEl.createDiv();
+    // Creature list container
+    this.creatureListContainer = contentEl.createDiv({ cls: "dnd-creature-list" });
     this.renderCreatureList();
+    
+    // Show creature input fields
+    this.showCreatureInputFields(contentEl);
 
     // Difficulty Display Section
     contentEl.createEl("h3", { text: "Encounter Difficulty" });
-    this.difficultyContainer = contentEl.createDiv();
-    this.difficultyContainer.style.padding = "10px";
-    this.difficultyContainer.style.marginBottom = "10px";
-    this.difficultyContainer.style.border = "1px solid var(--background-modifier-border)";
-    this.difficultyContainer.style.borderRadius = "5px";
+    this.difficultyContainer = contentEl.createDiv({ cls: "dnd-difficulty-container" });
     this.updateDifficultyDisplay();
 
     // Action Buttons
@@ -887,6 +881,7 @@ class EncounterBuilderModal extends Modal {
           .setButtonText("Apply Party")
           .onClick(async () => {
             await this.renderPartySelection();
+            await this.renderPartyMemberList();
             this.updateDifficultyDisplay();
           })
       );
@@ -924,6 +919,7 @@ class EncounterBuilderModal extends Modal {
           } else {
             this.selectedPartyMembers = this.selectedPartyMembers.filter(n => n !== member.name);
           }
+          this.renderPartyMemberList();
           this.updateDifficultyDisplay();
         };
 
@@ -948,6 +944,7 @@ class EncounterBuilderModal extends Modal {
       selectAllBtn.onclick = () => {
         this.selectedPartyMembers = partyMembers.map(m => m.name);
         this.renderPartySelection();
+        this.renderPartyMemberList();
         this.updateDifficultyDisplay();
       };
 
@@ -956,6 +953,7 @@ class EncounterBuilderModal extends Modal {
       deselectAllBtn.onclick = () => {
         this.selectedPartyMembers = [];
         this.renderPartySelection();
+        this.renderPartyMemberList();
         this.updateDifficultyDisplay();
       };
     } catch (error) {
@@ -963,61 +961,327 @@ class EncounterBuilderModal extends Modal {
     }
   }
 
+  async renderPartyMemberList() {
+    if (!this.partyMemberListContainer) return;
+    this.partyMemberListContainer.empty();
+
+    if (!this.includeParty || this.selectedPartyMembers.length === 0) {
+      return;
+    }
+
+    try {
+      const partyMembers = await this.encounterBuilder.getAvailablePartyMembers();
+      const memberByName = new Map(partyMembers.map(m => [m.name, m]));
+
+      const headerDiv = this.partyMemberListContainer.createDiv({ cls: "dnd-party-member-header" });
+      headerDiv.style.marginBottom = "10px";
+      headerDiv.style.fontWeight = "600";
+      headerDiv.setText(`Selected Party Members (${this.selectedPartyMembers.length})`);
+
+      for (const memberName of this.selectedPartyMembers) {
+        const memberData = memberByName.get(memberName);
+        if (!memberData) continue;
+
+        const memberItem = this.partyMemberListContainer.createDiv({ cls: "dnd-creature-item" });
+        
+        const nameEl = memberItem.createSpan({ cls: "dnd-creature-name" });
+        nameEl.setText(memberName);
+        
+        const statsEl = memberItem.createSpan({ cls: "dnd-creature-stats" });
+        const stats: string[] = [];
+        stats.push(`Level: ${memberData.level}`);
+        stats.push(`HP: ${memberData.hp}`);
+        stats.push(`AC: ${memberData.ac}`);
+        statsEl.setText(` | ${stats.join(" | ")}`);
+        
+        const removeBtn = memberItem.createEl("button", {
+          text: "Remove",
+          cls: "dnd-creature-remove"
+        });
+        removeBtn.addEventListener("click", () => {
+          this.removePartyMember(memberName);
+        });
+      }
+    } catch (error) {
+      console.error("Error rendering party member list:", error);
+    }
+  }
+
+  removePartyMember(memberName: string) {
+    this.selectedPartyMembers = this.selectedPartyMembers.filter(n => n !== memberName);
+    this.renderPartySelection();
+    this.renderPartyMemberList();
+    this.updateDifficultyDisplay();
+  }
+
   async getAvailablePartyMembers(): Promise<Array<{ name: string; level: number; hp: number; ac: number }>> {
     this.syncEncounterBuilder();
     return this.encounterBuilder.getAvailablePartyMembers();
   }
 
-  async addCreatureFromStatblocks() {
-    try {
-      this.syncEncounterBuilder();
-      const allCreatures = await this.encounterBuilder.getStatblocksPluginCreatures();
-
-      if (allCreatures.length === 0) {
-        new Notice("No creatures found in Fantasy Statblocks");
-        return;
-      }
-
-      // Create a suggestion modal for selecting creatures
-      const modal = new MultiCreatureSelectorModal(this.app, allCreatures, (selectedCreatures) => {
-        for (const selected of selectedCreatures) {
+  async showCreatureInputFields(container: HTMLElement) {
+    // === VAULT CREATURE SELECTION ===
+    const vaultCreatureSection = container.createDiv({ cls: "dnd-add-creature-vault" });
+    
+    let selectedCreature: { name: string; path: string; hp: number; ac: number; cr?: string } | null = null;
+    let vaultCreatureCount = "1";
+    let searchResults: HTMLElement | null = null;
+    
+    // Load creatures from vault
+    this.syncEncounterBuilder();
+    const vaultCreatures = await this.encounterBuilder.loadAllCreatures();
+    
+    console.log("Loaded creatures:", vaultCreatures.length, vaultCreatures.slice(0, 3).map(c => c.name));
+    
+    if (vaultCreatures.length > 0) {
+      const vaultCreatureSetting = new Setting(vaultCreatureSection)
+        .setName("Add from Vault")
+        .setDesc(`Search and select creatures from your vault (${vaultCreatures.length} available)`);
+      
+      // Create search input container
+      const searchContainer = vaultCreatureSetting.controlEl.createDiv({ cls: "dnd-creature-search-container" });
+      
+      const searchInput = searchContainer.createEl("input", {
+        type: "text",
+        placeholder: "Search creatures...",
+        cls: "dnd-creature-search-input"
+      });
+      
+      // Search results container
+      searchResults = searchContainer.createDiv({ cls: "dnd-creature-search-results" });
+      searchResults.style.display = "none";
+      
+      // Filter and display results
+      const showSearchResults = (query: string) => {
+        if (!searchResults) return;
+        
+        if (!query || query.length < 1) {
+          searchResults.style.display = "none";
+          return;
+        }
+        
+        const queryLower = query.toLowerCase().trim();
+        
+        const filtered = vaultCreatures.filter(c => {
+          return c.name.toLowerCase().includes(queryLower);
+        }).slice(0, 10); // Limit to 10 results
+        
+        searchResults.empty();
+        
+        if (filtered.length === 0) {
+          searchResults.createEl("div", {
+            text: "No creatures found",
+            cls: "dnd-creature-search-no-results"
+          });
+          searchResults.style.display = "block";
+          return;
+        }
+        
+        filtered.forEach(creature => {
+          const resultEl = searchResults!.createDiv({ cls: "dnd-creature-search-result" });
+          
+          const nameEl = resultEl.createDiv({ cls: "dnd-creature-search-result-name" });
+          nameEl.setText(creature.name);
+          
+          const statsEl = resultEl.createDiv({ cls: "dnd-creature-search-result-stats" });
+          const statsParts: string[] = [];
+          if (creature.cr) statsParts.push(`CR ${creature.cr}`);
+          statsParts.push(`HP ${creature.hp}`);
+          statsParts.push(`AC ${creature.ac}`);
+          statsEl.setText(statsParts.join(" | "));
+          
+          resultEl.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            selectedCreature = creature;
+            searchInput.value = creature.name;
+            if (searchResults) {
+              searchResults.style.display = "none";
+            }
+          });
+        });
+        
+        searchResults.style.display = "block";
+      };
+      
+      // Search input events
+      searchInput.addEventListener("input", (e) => {
+        const target = e.target as HTMLInputElement;
+        showSearchResults(target.value);
+      });
+      
+      searchInput.addEventListener("focus", (e) => {
+        const target = e.target as HTMLInputElement;
+        if (target.value.length >= 1) {
+          showSearchResults(target.value);
+        }
+      });
+      
+      searchInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && selectedCreature) {
+          e.preventDefault();
+          // Add creature
           this.creatures.push({
-            name: selected.name || "Unknown",
-            count: 1,
-            hp: selected.hp,
-            ac: selected.ac,
-            cr: selected.cr?.toString() || "1/4",
-            source: selected.source || "statblocks",
-            path: selected.path,
+            name: selectedCreature.name,
+            count: parseInt(vaultCreatureCount) || 1,
+            hp: selectedCreature.hp,
+            ac: selectedCreature.ac,
+            cr: selectedCreature.cr,
+            source: "vault",
+            path: selectedCreature.path,
             isCustom: false,
             isFriendly: false,
             isHidden: false
           });
+          this.renderCreatureList();
+          this.updateDifficultyDisplay();
+          new Notice(`Added ${vaultCreatureCount}x ${selectedCreature.name}`);
+          searchInput.value = "";
+          selectedCreature = null;
         }
+      });
+      
+      // Close search results when clicking outside
+      searchInput.addEventListener("blur", () => {
+        setTimeout(() => {
+          if (searchResults) {
+            searchResults.style.display = "none";
+          }
+        }, 250);
+      });
+      
+      // Count input
+      vaultCreatureSetting.addText(text => {
+        text.setPlaceholder("Count")
+          .setValue("1")
+          .onChange(value => vaultCreatureCount = value);
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "60px";
+      });
+      
+      // Add button
+      vaultCreatureSetting.addButton(btn => btn
+        .setButtonText("Add")
+        .setCta()
+        .onClick(() => {
+          if (!selectedCreature) {
+            new Notice("Please search and select a creature first!");
+            return;
+          }
+          
+          this.creatures.push({
+            name: selectedCreature.name,
+            count: parseInt(vaultCreatureCount) || 1,
+            hp: selectedCreature.hp,
+            ac: selectedCreature.ac,
+            cr: selectedCreature.cr,
+            source: "vault",
+            path: selectedCreature.path,
+            isCustom: false,
+            isFriendly: false,
+            isHidden: false
+          });
+          
+          this.renderCreatureList();
+          this.updateDifficultyDisplay();
+          new Notice(`Added ${vaultCreatureCount}x ${selectedCreature.name}`);
+          
+          // Clear search
+          searchInput.value = "";
+          selectedCreature = null;
+        }));
+    } else {
+      vaultCreatureSection.createEl("p", {
+        text: "⚠️ No creatures found in z_Beastiarity folder. Use manual entry below.",
+        cls: "setting-item-description mod-warning"
+      });
+    }
+    
+    // === MANUAL CREATURE ENTRY ===
+    const addCreatureSection = container.createDiv({ cls: "dnd-add-creature-manual" });
+    
+    let newCreatureName = "";
+    let newCreatureCount = "1";
+    let newCreatureHP = "";
+    let newCreatureAC = "";
+    let newCreatureCR = "";
+    
+    const addCreatureSetting = new Setting(addCreatureSection)
+      .setName("Add Custom Creature")
+      .setDesc("Enter creature details manually for custom or homebrew enemies");
+    
+    // Creature name input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("Name (e.g., Goblin)")
+        .onChange(value => newCreatureName = value);
+      text.inputEl.style.width = "120px";
+    });
+    
+    // Count input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("Count")
+        .setValue("1")
+        .onChange(value => newCreatureCount = value);
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "60px";
+    });
+    
+    // HP input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("HP")
+        .onChange(value => newCreatureHP = value);
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "60px";
+    });
+    
+    // AC input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("AC")
+        .onChange(value => newCreatureAC = value);
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "60px";
+    });
+    
+    // CR input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("CR")
+        .onChange(value => newCreatureCR = value);
+      text.inputEl.style.width = "60px";
+    });
+    
+    // Add button
+    addCreatureSetting.addButton(btn => btn
+      .setButtonText("Add")
+      .setCta()
+      .onClick(() => {
+        if (!newCreatureName.trim()) {
+          new Notice("Please enter a creature name!");
+          return;
+        }
+        
+        this.creatures.push({
+          name: newCreatureName.trim(),
+          count: parseInt(newCreatureCount) || 1,
+          hp: newCreatureHP ? parseInt(newCreatureHP) : undefined,
+          ac: newCreatureAC ? parseInt(newCreatureAC) : undefined,
+          cr: newCreatureCR || undefined,
+          source: "manual",
+          path: undefined,
+          isCustom: true,
+          isFriendly: false,
+          isHidden: false
+        });
+        
         this.renderCreatureList();
         this.updateDifficultyDisplay();
-      });
-      modal.open();
-    } catch (error) {
-      console.error("Error adding creature from statblocks:", error);
-      new Notice("Error accessing Fantasy Statblocks");
-    }
-  }
-
-  addCustomCreature() {
-    this.creatures.push({
-      name: "",
-      count: 1,
-      hp: undefined,
-      ac: undefined,
-      cr: "1/4",
-      source: undefined,
-      path: undefined,
-      isCustom: true,
-      isFriendly: false,
-      isHidden: false
+        new Notice(`Added ${newCreatureCount}x ${newCreatureName}`);
+      }));
+    
+    // Info text
+    container.createEl("p", {
+      text: "💡 Tip: Select creatures from your vault or add custom enemies on the fly. You can edit stats later in Initiative Tracker.",
+      cls: "setting-item-description"
     });
-    this.renderCreatureList();
   }
 
   removeCreature(index: number) {
@@ -1032,214 +1296,117 @@ class EncounterBuilderModal extends Modal {
 
     if (this.creatures.length === 0) {
       this.creatureListContainer.createEl("p", {
-        text: "No creatures added yet.",
-        attr: { style: "color: var(--text-muted); font-style: italic;" }
+        text: "No creatures added yet. Add creatures below.",
+        cls: "setting-item-description"
       });
       return;
     }
 
     this.creatures.forEach((creature, index) => {
-      const creatureContainer = this.creatureListContainer!.createDiv({ cls: "encounter-creature" });
-      creatureContainer.style.border = "1px solid var(--background-modifier-border)";
-      creatureContainer.style.padding = "10px";
-      creatureContainer.style.marginBottom = "10px";
-      creatureContainer.style.borderRadius = "5px";
-
-      // Header with remove button
-      const headerDiv = creatureContainer.createDiv();
-      headerDiv.style.display = "flex";
-      headerDiv.style.justifyContent = "space-between";
-      headerDiv.style.alignItems = "center";
-      headerDiv.style.marginBottom = "10px";
-
-      headerDiv.createEl("h4", { text: `Creature ${index + 1}`, attr: { style: "margin: 0;" } });
+      const creatureItem = this.creatureListContainer!.createDiv({ cls: "dnd-creature-item" });
       
-      const removeBtn = headerDiv.createEl("button", { text: "Remove" });
-      removeBtn.style.padding = "2px 8px";
-      removeBtn.style.fontSize = "0.8em";
-      removeBtn.onclick = () => this.removeCreature(index);
-
-      // Show if custom/from statblocks
-      if (creature.isCustom) {
-        const badge = headerDiv.createEl("span", { text: "Custom" });
-        badge.style.padding = "2px 8px";
-        badge.style.fontSize = "0.7em";
-        badge.style.backgroundColor = "var(--interactive-accent)";
-        badge.style.color = "white";
-        badge.style.borderRadius = "3px";
-        badge.style.marginLeft = "10px";
-      }
-
-      // Creature Name
-      new Setting(creatureContainer)
-        .setName("Creature Name")
-        .addText((text) =>
-          text
-            .setPlaceholder("Goblin")
-            .setValue(creature.name)
-            .onChange((value) => {
-              creature.name = value;
-              this.updateDifficultyDisplay();
-            })
-        );
-
-      // Count
-      new Setting(creatureContainer)
-        .setName("Count")
-        .addText((text) =>
-          text
-            .setPlaceholder("1")
-            .setValue(creature.count.toString())
-            .onChange((value) => {
-              const num = parseInt(value);
-              if (!isNaN(num) && num > 0) {
-                creature.count = num;
-                this.updateDifficultyDisplay();
-              }
-            })
-        );
-
-      // For custom creatures, show CR, HP, AC as required fields
-      if (creature.isCustom) {
-        // CR (required for custom)
-        new Setting(creatureContainer)
-          .setName("Challenge Rating (CR)")
-          .setDesc("Required for difficulty calculation")
-          .addDropdown((dropdown) => {
-            const crOptions = [
-              "0", "1/8", "1/4", "1/2",
-              "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
-              "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
-              "21", "22", "23", "24", "25", "26", "27", "28", "29", "30"
-            ];
-            crOptions.forEach((cr) => dropdown.addOption(cr, `CR ${cr}`));
-            dropdown.setValue(creature.cr || "1/4");
-            dropdown.onChange((value) => {
-              creature.cr = value;
-              this.updateDifficultyDisplay();
-            });
-          });
-
-        // HP (required for custom)
-        new Setting(creatureContainer)
-          .setName("Hit Points")
-          .setDesc("Required for difficulty calculation")
-          .addText((text) =>
-            text
-              .setPlaceholder("25")
-              .setValue(creature.hp?.toString() || "")
-              .onChange((value) => {
-                const num = parseInt(value);
-                if (!isNaN(num) && num > 0) {
-                  creature.hp = num;
-                  this.updateDifficultyDisplay();
-                }
-              })
-          );
-
-        // AC (required for custom)
-        new Setting(creatureContainer)
-          .setName("Armor Class")
-          .setDesc("Required for difficulty calculation")
-          .addText((text) =>
-            text
-              .setPlaceholder("13")
-              .setValue(creature.ac?.toString() || "")
-              .onChange((value) => {
-                const num = parseInt(value);
-                if (!isNaN(num) && num > 0) {
-                  creature.ac = num;
-                  this.updateDifficultyDisplay();
-                }
-              })
-          );
-      } else {
-        // For statblock creatures, HP and AC are optional overrides
-        new Setting(creatureContainer)
-          .setName("HP Override (optional)")
-          .setDesc("Leave empty to use statblock default")
-          .addText((text) =>
-            text
-              .setPlaceholder("Auto")
-              .setValue(creature.hp?.toString() || "")
-              .onChange((value) => {
-                const num = parseInt(value);
-                if (!isNaN(num) && num > 0) {
-                  creature.hp = num;
-                } else {
-                  creature.hp = undefined;
-                }
-                this.updateDifficultyDisplay();
-              })
-          );
-
-        new Setting(creatureContainer)
-          .setName("AC Override (optional)")
-          .setDesc("Leave empty to use statblock default")
-          .addText((text) =>
-            text
-              .setPlaceholder("Auto")
-              .setValue(creature.ac?.toString() || "")
-              .onChange((value) => {
-                const num = parseInt(value);
-                if (!isNaN(num) && num > 0) {
-                  creature.ac = num;
-                } else {
-                  creature.ac = undefined;
-                }
-                this.updateDifficultyDisplay();
-              })
-          );
-      }
-
-      // Friendly checkbox
-      new Setting(creatureContainer)
-        .setName("Friendly")
-        .setDesc("Mark as friendly NPC/creature")
-        .addToggle((toggle) =>
-          toggle
-            .setValue(creature.isFriendly || false)
-            .onChange((value) => {
-              creature.isFriendly = value;
-            })
-        );
-
-      // Hidden checkbox
-      new Setting(creatureContainer)
-        .setName("Hidden")
-        .setDesc("Hide from players initially")
-        .addToggle((toggle) =>
-          toggle
-            .setValue(creature.isHidden || false)
-            .onChange((value) => {
-              creature.isHidden = value;
-            })
-        );
+      const nameEl = creatureItem.createSpan({ cls: "dnd-creature-name" });
+      nameEl.setText(`${creature.name} x${creature.count}`);
+      
+      const statsEl = creatureItem.createSpan({ cls: "dnd-creature-stats" });
+      const stats: string[] = [];
+      if (creature.hp) stats.push(`HP: ${creature.hp}`);
+      if (creature.ac) stats.push(`AC: ${creature.ac}`);
+      if (creature.cr) stats.push(`CR: ${creature.cr}`);
+      statsEl.setText(stats.length > 0 ? ` | ${stats.join(" | ")}` : "");
+      
+      const removeBtn = creatureItem.createEl("button", {
+        text: "Remove",
+        cls: "dnd-creature-remove"
+      });
+      removeBtn.addEventListener("click", () => {
+        this.removeCreature(index);
+      });
     });
   }
 
   async updateDifficultyDisplay() {
     if (!this.difficultyContainer) return;
 
+    this.difficultyContainer.empty();
+
     if (this.creatures.length === 0) {
-      this.difficultyContainer.innerHTML = "<p style='color: var(--text-muted);'>Add creatures to calculate difficulty.</p>";
+      this.difficultyContainer.createEl("p", {
+        text: "Add creatures to see encounter difficulty analysis.",
+        cls: "setting-item-description"
+      });
       return;
     }
 
-    // Calculate difficulty using the same method as SceneCreationModal
-    this.syncEncounterBuilder();
-    const diffResult = await this.encounterBuilder.calculateEncounterDifficulty();
+    const loadingEl = this.difficultyContainer.createEl("p", { text: "Calculating difficulty..." });
 
-    this.difficultyContainer.innerHTML = `
-      <div style="text-align: center; margin-bottom: 10px;">
-        <span style="font-size: 1.5em; font-weight: bold; color: ${diffResult.analysis.difficultyColor};">
-          ${diffResult.analysis.difficulty}
-        </span>
-      </div>
-      <div style="font-size: 0.9em; white-space: pre-line;">
-        ${diffResult.analysis.summary}
+    this.syncEncounterBuilder();
+    const result = await this.encounterBuilder.calculateEncounterDifficulty();
+
+    loadingEl.remove();
+
+    const difficultyCard = this.difficultyContainer.createDiv({ cls: "dnd-difficulty-card" });
+
+    const header = difficultyCard.createDiv({ cls: "dnd-difficulty-header" });
+
+    const difficultyBadge = header.createEl("span", {
+      text: result.analysis.difficulty,
+      cls: "dnd-difficulty-badge"
+    });
+    difficultyBadge.style.backgroundColor = result.analysis.difficultyColor;
+
+    header.createEl("span", {
+      text: ` ~${result.analysis.roundsToDefeatEnemies} round${result.analysis.roundsToDefeatEnemies !== 1 ? 's' : ''}`,
+      cls: "dnd-rounds-estimate"
+    });
+
+    const statsGrid = difficultyCard.createDiv({ cls: "dnd-difficulty-stats-grid" });
+
+    const partyCol = statsGrid.createDiv({ cls: "dnd-stats-column" });
+    partyCol.createEl("h5", { text: `⚔️ Party (${result.partyStats.memberCount})` });
+    const partyStats = partyCol.createDiv();
+    partyStats.innerHTML = `
+      <div>HP Pool: <strong>${result.partyStats.totalHP}</strong></div>
+      <div>Avg AC: <strong>${result.partyStats.avgAC.toFixed(0)}</strong></div>
+      <div>Total DPR: <strong>${result.partyStats.totalDPR.toFixed(0)}</strong></div>
+      <div>Hit Chance: <strong>${(result.analysis.partyHitChance * 100).toFixed(0)}%</strong></div>
+      <div>Effective DPR: <strong>${result.analysis.partyEffectiveDPR.toFixed(0)}</strong></div>
+    `;
+
+    const enemyCol = statsGrid.createDiv({ cls: "dnd-stats-column" });
+    enemyCol.createEl("h5", { text: `👹 Enemies (${result.enemyStats.creatureCount})` });
+    const enemyStats = enemyCol.createDiv();
+    enemyStats.innerHTML = `
+      <div>HP Pool: <strong>${result.enemyStats.totalHP}</strong></div>
+      <div>Avg AC: <strong>${result.enemyStats.avgAC.toFixed(0)}</strong></div>
+      <div>Total DPR: <strong>${result.enemyStats.totalDPR.toFixed(0)}</strong></div>
+      <div>Hit Chance: <strong>${(result.analysis.enemyHitChance * 100).toFixed(0)}%</strong></div>
+      <div>Effective DPR: <strong>${result.analysis.enemyEffectiveDPR.toFixed(0)}</strong></div>
+    `;
+
+    const analysisSummary = difficultyCard.createDiv({ cls: "dnd-difficulty-analysis" });
+
+    const partyDamage3Rounds = result.analysis.partyEffectiveDPR * 3;
+    const enemyDamage3Rounds = result.analysis.enemyEffectiveDPR * 3;
+    const partyHPAfter3 = Math.max(0, result.partyStats.totalHP - enemyDamage3Rounds);
+    const enemyHPAfter3 = Math.max(0, result.enemyStats.totalHP - partyDamage3Rounds);
+
+    analysisSummary.innerHTML = `
+      <div style="margin-bottom: 8px;"><strong>📊 3-Round Analysis:</strong></div>
+      <div>Party deals: <strong>${partyDamage3Rounds.toFixed(0)}</strong> damage → Enemies at <strong>${enemyHPAfter3.toFixed(0)}</strong> HP (${((enemyHPAfter3 / result.enemyStats.totalHP) * 100).toFixed(0)}%)</div>
+      <div>Enemies deal: <strong>${enemyDamage3Rounds.toFixed(0)}</strong> damage → Party at <strong>${partyHPAfter3.toFixed(0)}</strong> HP (${((partyHPAfter3 / result.partyStats.totalHP) * 100).toFixed(0)}%)</div>
+      <div style="margin-top: 8px; opacity: 0.8;">
+        Survival Ratio: ${result.analysis.survivalRatio.toFixed(2)}
+        (Party can survive ${result.analysis.roundsToDefeatParty} rounds, enemies survive ${result.analysis.roundsToDefeatEnemies} rounds)
       </div>
     `;
+
+    const partyMembers = await this.getPartyForDifficulty();
+    if (result.partyStats.memberCount === 0 || partyMembers.length === 0) {
+      const warningEl = difficultyCard.createDiv({ cls: "dnd-difficulty-warning" });
+      warningEl.innerHTML = `⚠️ <strong>No party registered!</strong> Using default estimates for 4 Level-3 PCs.
+        <br>Register PCs via "Create PC" to get accurate calculations.`;
+    }
   }
 
   async calculateEncounterDifficulty(): Promise<any> {
@@ -1501,39 +1668,45 @@ class EncounterBuilderModal extends Modal {
     return null;
   }
 
+  escapeYamlString(str: string): string {
+    if (!str) return '""';
+    // Escape backslashes first, then quotes
+    return '"' + str.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  }
+
   async generateEncounterContent(diffResult: any): Promise<string> {
     const currentDate = window.moment().format("YYYY-MM-DD");
 
     let frontmatter = `---
 type: encounter
-name: "${this.encounterName}"
+name: ${this.escapeYamlString(this.encounterName)}
 creatures:`;
 
     for (const creature of this.creatures) {
-      frontmatter += `\n  - name: "${creature.name}"
+      frontmatter += `\n  - name: ${this.escapeYamlString(creature.name)}
     count: ${creature.count}`;
       if (creature.hp) frontmatter += `\n    hp: ${creature.hp}`;
       if (creature.ac) frontmatter += `\n    ac: ${creature.ac}`;
-      if (creature.cr) frontmatter += `\n    cr: "${creature.cr}"`;
-      if (creature.source) frontmatter += `\n    source: "${creature.source}"`;
-      if (creature.path) frontmatter += `\n    path: "${creature.path}"`;
+      if (creature.cr) frontmatter += `\n    cr: ${this.escapeYamlString(creature.cr)}`;
+      if (creature.source) frontmatter += `\n    source: ${this.escapeYamlString(creature.source)}`;
+      if (creature.path) frontmatter += `\n    path: ${this.escapeYamlString(creature.path)}`;
     }
 
     frontmatter += `
 include_party: ${this.includeParty}
 use_color_names: ${this.useColorNames}`;
 
-  if (this.selectedPartyId) frontmatter += `\nselected_party_id: "${this.selectedPartyId}"`;
-  if (this.selectedPartyName) frontmatter += `\nselected_party_name: "${this.selectedPartyName}"`;
+  if (this.selectedPartyId) frontmatter += `\nselected_party_id: ${this.escapeYamlString(this.selectedPartyId)}`;
+  if (this.selectedPartyName) frontmatter += `\nselected_party_name: ${this.escapeYamlString(this.selectedPartyName)}`;
 
-    if (this.adventurePath) frontmatter += `\nadventure_path: "${this.adventurePath}"`;
-    if (this.scenePath) frontmatter += `\nscene_path: "${this.scenePath}"`;
-    if (this.campaignPath) frontmatter += `\ncampaign_path: "${this.campaignPath}"`;
+    if (this.adventurePath) frontmatter += `\nadventure_path: ${this.escapeYamlString(this.adventurePath)}`;
+    if (this.scenePath) frontmatter += `\nscene_path: ${this.escapeYamlString(this.scenePath)}`;
+    if (this.campaignPath) frontmatter += `\ncampaign_path: ${this.escapeYamlString(this.campaignPath)}`;
 
     frontmatter += `
 difficulty:
-  rating: "${diffResult.analysis.difficulty}"
-  color: "${diffResult.analysis.difficultyColor}"
+  rating: ${this.escapeYamlString(diffResult.analysis.difficulty)}
+  color: ${this.escapeYamlString(diffResult.analysis.difficultyColor)}
   party_count: ${diffResult.partyStats.memberCount}
   party_avg_level: ${diffResult.partyStats.avgLevel.toFixed(1)}
   enemy_count: ${diffResult.enemyStats.creatureCount}
