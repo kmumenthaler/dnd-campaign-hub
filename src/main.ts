@@ -1391,7 +1391,21 @@ class EncounterBuilderModal extends Modal {
     const partyHPAfter3 = Math.max(0, result.partyStats.totalHP - enemyDamage3Rounds);
     const enemyHPAfter3 = Math.max(0, result.enemyStats.totalHP - partyDamage3Rounds);
 
+    // Action economy display
+    const partyAEMod = result.analysis.partyActionEconomyMod || 1.0;
+    const enemyAEMod = result.analysis.enemyActionEconomyMod || 1.0;
+    const actionEconomyInfo = partyAEMod !== 1.0 || enemyAEMod !== 1.0
+      ? `<div style="margin-bottom: 8px; padding: 8px; background: var(--background-modifier-border); border-radius: 4px;">
+          <strong>⚖️ Action Economy:</strong> 
+          Party ${partyAEMod > 1 ? '✓' : partyAEMod < 1 ? '✗' : '='} 
+          ${(partyAEMod * 100).toFixed(0)}% efficiency | 
+          Enemies ${enemyAEMod > 1 ? '✓' : enemyAEMod < 1 ? '✗' : '='} 
+          ${(enemyAEMod * 100).toFixed(0)}% efficiency
+        </div>`
+      : '';
+
     analysisSummary.innerHTML = `
+      ${actionEconomyInfo}
       <div style="margin-bottom: 8px;"><strong>📊 3-Round Analysis:</strong></div>
       <div>Party deals: <strong>${partyDamage3Rounds.toFixed(0)}</strong> damage → Enemies at <strong>${enemyHPAfter3.toFixed(0)}</strong> HP (${((enemyHPAfter3 / result.enemyStats.totalHP) * 100).toFixed(0)}%)</div>
       <div>Enemies deal: <strong>${enemyDamage3Rounds.toFixed(0)}</strong> damage → Party at <strong>${partyHPAfter3.toFixed(0)}</strong> HP (${((partyHPAfter3 / result.partyStats.totalHP) * 100).toFixed(0)}%)</div>
@@ -1409,28 +1423,303 @@ class EncounterBuilderModal extends Modal {
     }
   }
 
+  /**
+   * Parse statblock YAML to extract real combat stats
+   * Returns hp, ac, dpr (damage per round), and attackBonus
+   */
+  async parseStatblockStats(filePath: string): Promise<{ hp: number; ac: number; dpr: number; attackBonus: number } | null> {
+    try {
+      console.log(`[Parser] Reading file: ${filePath}`);
+      const file = this.app.vault.getAbstractFileByPath(filePath);
+      if (!(file instanceof TFile)) {
+        console.log(`[Parser] File not found or not a TFile`);
+        return null;
+      }
+
+      const cache = this.app.metadataCache.getFileCache(file);
+      if (!cache?.frontmatter) {
+        console.log(`[Parser] No frontmatter found`);
+        return null;
+      }
+
+      const fm = cache.frontmatter;
+      console.log(`[Parser] Frontmatter keys:`, Object.keys(fm));
+      
+      // Extract basic stats
+      const hp = this.parseHP(fm.hp);
+      const ac = this.parseAC(fm.ac);
+      console.log(`[Parser] Parsed HP: ${hp}, AC: ${ac}`);
+      
+      // Calculate DPR and attack bonus from actions
+      let totalDPR = 0;
+      let highestAttackBonus = 0;
+      let attackCount = 0;
+      
+      // Check for actions array (where attacks are defined)
+      if (fm.actions && Array.isArray(fm.actions)) {
+        console.log(`[Parser] Found ${fm.actions.length} actions`);
+        
+        for (const action of fm.actions) {
+          if (!action.name) continue;
+          console.log(`[Parser] Action: "${action.name}"`);
+          
+          // === CHECK STRUCTURED FIELDS FIRST ===
+          // Many statblocks (especially from Fantasy Statblocks plugin) have structured data
+          let actionDPR = 0;
+          let actionAttackBonus = 0;
+          let usedStructuredData = false;
+          
+          // Check for attack_bonus field
+          if (typeof action.attack_bonus === 'number') {
+            actionAttackBonus = action.attack_bonus;
+            if (actionAttackBonus > highestAttackBonus) {
+              highestAttackBonus = actionAttackBonus;
+            }
+            console.log(`[Parser] Found structured attack_bonus: ${actionAttackBonus}`);
+            usedStructuredData = true;
+          }
+          
+          // Check for damage_dice and damage_bonus fields
+          if (action.damage_dice || action.damage_bonus) {
+            console.log(`[Parser] Found structured damage fields: dice="${action.damage_dice}", bonus="${action.damage_bonus}"`);
+            
+            // Parse damage_dice (e.g., "1d6" or "2d8")
+            let diceDamage = 0;
+            if (action.damage_dice && typeof action.damage_dice === 'string') {
+              const diceMatch = action.damage_dice.match(/(\d+)d(\d+)/i);
+              if (diceMatch) {
+                const numDice = parseInt(diceMatch[1]);
+                const dieSize = parseInt(diceMatch[2]);
+                diceDamage = numDice * ((dieSize + 1) / 2); // Average of dice
+                console.log(`[Parser] Calculated dice damage: ${numDice}d${dieSize} = ${diceDamage}`);
+              }
+            }
+            
+            // Add damage bonus
+            let damageBonus = 0;
+            if (typeof action.damage_bonus === 'number') {
+              damageBonus = action.damage_bonus;
+            } else if (typeof action.damage_bonus === 'string') {
+              damageBonus = parseInt(action.damage_bonus) || 0;
+            }
+            
+            actionDPR = diceDamage + damageBonus;
+            console.log(`[Parser] Calculated structured damage: ${diceDamage} + ${damageBonus} = ${actionDPR}`);
+            
+            if (actionDPR > 0) {
+              totalDPR += actionDPR;
+              attackCount++;
+              usedStructuredData = true;
+            }
+          }
+          
+          // If we successfully used structured data, skip text parsing for this action
+          if (usedStructuredData) {
+            console.log(`[Parser] Used structured data for ${action.name}, DPR=${actionDPR}, Attack=${actionAttackBonus}`);
+            continue;
+          }
+          
+          // === FALLBACK TO TEXT PARSING ===
+          // Parse attack actions from description text
+          if (action.desc && typeof action.desc === 'string') {
+            const desc = action.desc;
+            console.log(`[Parser] Description: ${desc.substring(0, 100)}...`);
+            
+            // Look for attack bonus: "+5 to hit" or "attack: +5"
+            const attackMatch = desc.match(/[+\-]\d+\s+to\s+hit/i);
+            if (attackMatch) {
+              const bonusMatch = attackMatch[0].match(/[+\-]\d+/);
+              if (bonusMatch) {
+                attackCount++; // Increment attack count
+                const bonus = parseInt(bonusMatch[0]);
+                console.log(`[Parser] Found attack bonus: ${bonus}`);
+                if (bonus > highestAttackBonus) highestAttackBonus = bonus;
+              }
+            }
+            
+            // Look for damage in various formats
+            // Format 1: "4 (1d6 + 1)" - average shown first
+            // Format 2: "(1d6+1)" - just dice
+            // Format 3: "1d6+1" or "2d6 + 3"
+            const damagePatterns = [
+              /(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/gi,  // "4 (1d6+1)"
+              /\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/gi,           // "(1d6+1)"
+              /(\d+)d(\d+)\s*([+\-]?\s*\d+)?(?!\))/gi          // "1d6+1"
+            ];
+            
+            let damageFound = false;
+            
+            // Try format 1 first (with pre-calculated average)
+            const avgDamageMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/i);
+            if (avgDamageMatch) {
+              const avgDamage = parseInt(avgDamageMatch[1]);
+              console.log(`[Parser] Found pre-calculated damage: ${avgDamage}`);
+              totalDPR += avgDamage;
+              damageFound = true;
+              if (!attackMatch) attackCount++; // Count this as an attack if we haven't already
+            } else {
+              // Try parsing dice notation
+              const diceMatch = desc.match(/(\d+)d(\d+)\s*([+\-]?\s*\d+)?/i);
+              if (diceMatch) {
+                if (!attackMatch) attackCount++; // Count this as an attack if we haven't already
+                const numDice = parseInt(diceMatch[1]);
+                const dieSize = parseInt(diceMatch[2]);
+                const modifier = diceMatch[3] ? parseInt(diceMatch[3].replace(/\s/g, '')) : 0;
+                const avgDamage = Math.floor(numDice * (dieSize + 1) / 2) + modifier;
+                console.log(`[Parser] Calculated damage from ${diceMatch[0]}: ${avgDamage}`);
+                totalDPR += avgDamage;
+                damageFound = true;
+              }
+            }
+            
+            if (!damageFound) {
+              console.log(`[Parser] No damage found in action`);
+            }
+          }
+        }
+      } else {
+        console.log(`[Parser] No actions array found`);
+      }
+      
+      console.log(`[Parser] Total DPR before multiattack: ${totalDPR}`);
+      
+      // Check for multiattack
+      let multiattackMultiplier = 1;
+      if (fm.actions && Array.isArray(fm.actions)) {
+        const multiattack = fm.actions.find((a: any) => 
+          a.name && a.name.toLowerCase().includes('multiattack')
+        );
+        
+        if (multiattack?.desc) {
+          console.log(`[Parser] Multiattack found: ${multiattack.desc}`);
+          // Look for "makes two attacks" or "makes three weapon attacks"
+          const countMatch = multiattack.desc.match(/makes?\s+(two|three|four|five|\d+)\s+.*?attack/i);
+          if (countMatch) {
+            const countStr = countMatch[1].toLowerCase();
+            const countMap: Record<string, number> = { 'two': 2, 'three': 3, 'four': 4, 'five': 5 };
+            multiattackMultiplier = countMap[countStr] || parseInt(countStr) || 1;
+            console.log(`[Parser] Multiattack multiplier: ${multiattackMultiplier}`);
+          }
+        }
+      }
+      
+      // Apply multiattack multiplier if we found actual attack damage
+      // Note: We don't strictly require attackCount > 0 because some statblocks 
+      // might have damage without explicit "to hit" text
+      if (totalDPR > 0 && multiattackMultiplier > 1) {
+        console.log(`[Parser] Applying multiattack multiplier ${multiattackMultiplier} to DPR ${totalDPR}`);
+        totalDPR *= multiattackMultiplier;
+        console.log(`[Parser] Final DPR after multiattack: ${totalDPR}`);
+      }
+      
+      // If we couldn't parse DPR, return null to fall back to CR estimates
+      // We allow attack bonus to be 0 as it's less critical than DPR
+      if (totalDPR === 0) {
+        console.log(`[Parser] No DPR found, returning null to use CR estimates`);
+        return null;
+      }
+      
+      // Use a reasonable default attack bonus if we couldn't parse it
+      if (highestAttackBonus === 0) {
+        // Estimate based on DPR (higher DPR usually means higher attack bonus)
+        highestAttackBonus = Math.max(2, Math.floor(totalDPR / 5));
+        console.log(`[Parser] No attack bonus found, estimating ${highestAttackBonus} based on DPR`);
+      }
+      
+      const result = {
+        hp: hp || 1,
+        ac: ac || 10,
+        dpr: totalDPR,
+        attackBonus: highestAttackBonus
+      };
+      console.log(`[Parser] SUCCESS: Returning`, result);
+      return result;
+    } catch (error) {
+      console.error("[Parser] Error parsing statblock:", filePath, error);
+      return null;
+    }
+  }
+
+  /**
+   * Parse HP from various formats: "45 (6d10+12)" or just "45"
+   */
+  parseHP(hpStr: any): number {
+    if (typeof hpStr === 'number') return hpStr;
+    if (typeof hpStr !== 'string') return 0;
+    
+    // Try to extract number before parentheses: "45 (6d10+12)"
+    const match = hpStr.match(/^(\d+)/);
+    return match && match[1] ? parseInt(match[1]) : 0;
+  }
+
+  /**
+   * Parse AC from various formats: "13 (natural armor)" or just "13" or number
+   */
+  parseAC(acStr: any): number {
+    if (typeof acStr === 'number') return acStr;
+    if (typeof acStr !== 'string') return 10;
+    
+    // Try to extract number: "13 (natural armor)" or "13"
+    const match = acStr.match(/^(\d+)/);
+    return match && match[1] ? parseInt(match[1]) : 10;
+  }
+
   async calculateEncounterDifficulty(): Promise<any> {
-    // Reuse the difficulty calculation logic from SceneCreationModal
-    // Calculate enemy stats
+    // Calculate enemy stats with real statblock data when available
     let enemyTotalHP = 0;
     let enemyTotalAC = 0;
     let enemyTotalDPR = 0;
     let enemyTotalAttackBonus = 0;
     let enemyCount = 0;
     
+    console.log("=== ENCOUNTER DIFFICULTY CALCULATION ===");
+    
     for (const creature of this.creatures) {
-      const crStats = this.getCRStats(creature.cr);
       const count = creature.count || 1;
       
-      const hp = creature.hp || crStats.hp;
-      const ac = creature.ac || crStats.ac;
+      console.log(`\n--- Creature: ${creature.name} (x${count}) ---`);
+      console.log(`Path: ${creature.path || 'none'}`);
+      console.log(`CR: ${creature.cr || 'unknown'}`);
+      
+      // Try to get real stats from statblock if available
+      let realStats = null;
+      if (creature.path && typeof creature.path === 'string') {
+        console.log(`Attempting to parse statblock: ${creature.path}`);
+        realStats = await this.parseStatblockStats(creature.path);
+        console.log(`Parsed stats:`, realStats);
+      } else {
+        console.log(`No valid path, using CR estimates`);
+      }
+      
+      // Fall back to CR-based estimates if no statblock or parsing failed
+      const crStats = this.getCRStats(creature.cr);
+      console.log(`CR-based fallback stats:`, crStats);
+      
+      const hp = creature.hp || realStats?.hp || crStats.hp;
+      const ac = creature.ac || realStats?.ac || crStats.ac;
+      const dpr = realStats?.dpr || crStats.dpr;
+      const attackBonus = realStats?.attackBonus || crStats.attackBonus;
+      
+      const dprSource = realStats?.dpr ? '📊 STATBLOCK' : '📖 CR_TABLE';
+      const hpSource = realStats?.hp ? '📊 STATBLOCK' : creature.hp ? '✏️ MANUAL' : '📖 CR_TABLE';
+      const acSource = realStats?.ac ? '📊 STATBLOCK' : creature.ac ? '✏️ MANUAL' : '📖 CR_TABLE';
+      
+      console.log(`Final stats used: HP=${hp} (${hpSource}), AC=${ac} (${acSource}), DPR=${dpr} (${dprSource}), Attack=${attackBonus}`);
+      console.log(`Total contribution (x${count}): HP=${hp * count}, DPR=${dpr * count}`);
       
       enemyTotalHP += hp * count;
       enemyTotalAC += ac * count;
-      enemyTotalDPR += crStats.dpr * count;
-      enemyTotalAttackBonus += crStats.attackBonus * count;
+      enemyTotalDPR += dpr * count;
+      enemyTotalAttackBonus += attackBonus * count;
       enemyCount += count;
     }
+    
+    console.log(`\n=== TOTALS ===`);
+    console.log(`Total Enemies: ${enemyCount}`);
+    console.log(`Total Enemy HP: ${enemyTotalHP}`);
+    console.log(`Total Enemy DPR: ${enemyTotalDPR}`);
+    console.log(`Average Enemy AC: ${enemyCount > 0 ? (enemyTotalAC / enemyCount).toFixed(1) : 0}`);
+    console.log(`Average Enemy Attack Bonus: ${enemyCount > 0 ? (enemyTotalAttackBonus / enemyCount).toFixed(1) : 0}`);
     
     const avgEnemyAC = enemyCount > 0 ? enemyTotalAC / enemyCount : 13;
     const avgEnemyAttackBonus = enemyCount > 0 ? enemyTotalAttackBonus / enemyCount : 3;
@@ -1462,11 +1751,13 @@ class EncounterBuilderModal extends Modal {
     let avgPartyAC: number;
     let avgPartyAttackBonus: number;
     let avgLevel: number;
+    let effectivePartyCount: number; // Track effective count for action economy
     
     if (memberCount > 0) {
       avgPartyAC = partyTotalAC / memberCount;
       avgPartyAttackBonus = partyTotalAttackBonus / memberCount;
       avgLevel = totalLevel / memberCount;
+      effectivePartyCount = memberCount;
     } else {
       const defaultStats = this.getLevelStats(3);
       partyTotalHP = defaultStats.hp * 4;
@@ -1474,15 +1765,51 @@ class EncounterBuilderModal extends Modal {
       avgPartyAC = defaultStats.ac;
       avgPartyAttackBonus = defaultStats.attackBonus;
       avgLevel = 3;
+      effectivePartyCount = 4; // Default to 4-person party
     }
     
     // Calculate hit chances
     const partyHitChance = this.calculateHitChance(avgPartyAttackBonus, avgEnemyAC);
     const enemyHitChance = this.calculateHitChance(avgEnemyAttackBonus, avgPartyAC);
     
-    // Calculate effective DPR
-    const partyEffectiveDPR = this.calculateEffectiveDPR(partyTotalDPR, partyHitChance);
-    const enemyEffectiveDPR = this.calculateEffectiveDPR(enemyTotalDPR, enemyHitChance);
+    // === ACTION ECONOMY ADJUSTMENT ===
+    // In D&D 5e, action economy affects combat through:
+    // 1. Focus Fire: More creatures can eliminate threats faster
+    // 2. Action Efficiency: Fewer creatures waste actions on downed targets
+    // 3. Target Distribution: Very few creatures can't threaten all enemies
+    
+    const partyActionCount = effectivePartyCount;
+    const enemyActionCount = enemyCount;
+    
+    // Calculate action economy modifiers based on creature count disparity
+    let partyActionEconomyMod = 1.0;
+    let enemyActionEconomyMod = 1.0;
+    
+    if (partyActionCount > 0 && enemyActionCount > 0) {
+      const actionRatio = partyActionCount / enemyActionCount;
+      
+      if (actionRatio > 2.0) {
+        // Extreme party advantage: 6+ PCs vs 1-2 enemies
+        // Party can focus fire and chain eliminate threats
+        partyActionEconomyMod = 1.0 + Math.min((actionRatio - 1) * 0.1, 0.25); // Up to +25%
+        // Very few enemies spread damage thin, but still somewhat effective
+        enemyActionEconomyMod = Math.max(0.85, 1.0 - (actionRatio - 2) * 0.05); // Down to 85%
+      } else if (actionRatio < 0.5) {
+        // Extreme enemy advantage: outnumbered 2:1 or worse
+        // Party spread too thin, can't focus effectively
+        const inverseRatio = enemyActionCount / partyActionCount;
+        partyActionEconomyMod = Math.max(0.85, 1.0 - (inverseRatio - 2) * 0.05); // Down to 85%
+        enemyActionEconomyMod = 1.0 + Math.min((inverseRatio - 1) * 0.1, 0.25); // Up to +25%
+      }
+      // Between 0.5-2.0 ratio: relatively balanced, minimal adjustment
+    }
+    
+    // Calculate effective DPR with action economy adjustments
+    const partyBaseDPR = this.calculateEffectiveDPR(partyTotalDPR, partyHitChance);
+    const enemyBaseDPR = this.calculateEffectiveDPR(enemyTotalDPR, enemyHitChance);
+    
+    const partyEffectiveDPR = partyBaseDPR * partyActionEconomyMod;
+    const enemyEffectiveDPR = enemyBaseDPR * enemyActionEconomyMod;
     
     // Calculate rounds to defeat
     const roundsToDefeatEnemies = this.calculateRoundsToDefeat(enemyTotalHP, partyEffectiveDPR);
@@ -1547,6 +1874,8 @@ class EncounterBuilderModal extends Modal {
         enemyHitChance,
         partyEffectiveDPR,
         enemyEffectiveDPR,
+        partyActionEconomyMod,
+        enemyActionEconomyMod,
         roundsToDefeatEnemies,
         roundsToDefeatParty,
         survivalRatio,
@@ -1980,21 +2309,20 @@ _Add notes about tactics, environment, or special conditions here._
           // Determine name and display based on useColorNames setting
           // IMPORTANT: 'name' is used for bestiary lookup and must be the base creature name
           // 'display' is used for visual representation in the tracker
-          let displayName = "";
+          // Initiative Tracker will auto-number duplicate display names (Zombie -> Zombie 1, Zombie 2)
+          let displayName = c.name;  // Always show at least the creature name
 
-          if (c.count > 1) {
-            if (this.useColorNames) {
-              const colorIndex = i % colors.length;
-              // Use display for color names, keep name as base for bestiary lookup
-              displayName = `${c.name} (${colors[colorIndex]})`;
-            } else {
-              displayName = c.name;  // Empty display for auto-numbering
-            }
+          if (c.count > 1 && this.useColorNames) {
+            const colorIndex = i % colors.length;
+            // Use display for color names
+            displayName = `${c.name} (${colors[colorIndex]})`;
           }
+          // For single creatures or multiple without colors, display is just the creature name
+          // Initiative Tracker will add numbers automatically for duplicates
 
           const creature = {
             name: c.name,  // Base creature name for bestiary lookup
-            display: displayName,  // Display name (empty for auto-numbering, or colored name)
+            display: displayName,  // Display name (always has a value now)
             initiative: 0,
             static: false,
             modifier: 0,  // Initiative modifier
@@ -6135,27 +6463,282 @@ class EncounterBuilder {
     return Math.max(1, Math.ceil(totalHP / effectiveDPR));
   }
 
+  /**
+   * Parse statblock YAML to extract real combat stats
+   * Returns hp, ac, dpr (damage per round), and attackBonus
+   */
+  async parseStatblockStats(filePath: string): Promise<{ hp: number; ac: number; dpr: number; attackBonus: number } | null> {
+    try {
+      console.log(`[Parser] Reading file: ${filePath}`);
+      const file = this.app.vault.getAbstractFileByPath(filePath);
+      if (!(file instanceof TFile)) {
+        console.log(`[Parser] File not found or not a TFile`);
+        return null;
+      }
+
+      const cache = this.app.metadataCache.getFileCache(file);
+      if (!cache?.frontmatter) {
+        console.log(`[Parser] No frontmatter found`);
+        return null;
+      }
+
+      const fm = cache.frontmatter;
+      console.log(`[Parser] Frontmatter keys:`, Object.keys(fm));
+      
+      // Extract basic stats
+      const hp = this.parseHP(fm.hp);
+      const ac = this.parseAC(fm.ac);
+      console.log(`[Parser] Parsed HP: ${hp}, AC: ${ac}`);
+      
+      // Calculate DPR and attack bonus from actions
+      let totalDPR = 0;
+      let highestAttackBonus = 0;
+      let attackCount = 0;
+      
+      // Check for actions array (where attacks are defined)
+      if (fm.actions && Array.isArray(fm.actions)) {
+        console.log(`[Parser] Found ${fm.actions.length} actions`);
+        
+        for (const action of fm.actions) {
+          if (!action.name) continue;
+          console.log(`[Parser] Action: "${action.name}"`);
+          
+          // === CHECK STRUCTURED FIELDS FIRST ===
+          let actionDPR = 0;
+          let actionAttackBonus = 0;
+          let usedStructuredData = false;
+          
+          // Check for attack_bonus field
+          if (typeof action.attack_bonus === 'number') {
+            actionAttackBonus = action.attack_bonus;
+            if (actionAttackBonus > highestAttackBonus) {
+              highestAttackBonus = actionAttackBonus;
+            }
+            console.log(`[Parser] Found structured attack_bonus: ${actionAttackBonus}`);
+            usedStructuredData = true;
+          }
+          
+          // Check for damage_dice and damage_bonus fields
+          if (action.damage_dice || action.damage_bonus) {
+            console.log(`[Parser] Found structured damage fields: dice="${action.damage_dice}", bonus="${action.damage_bonus}"`);
+            
+            // Parse damage_dice (e.g., "1d6" or "2d8")
+            let diceDamage = 0;
+            if (action.damage_dice && typeof action.damage_dice === 'string') {
+              const diceMatch = action.damage_dice.match(/(\d+)d(\d+)/i);
+              if (diceMatch) {
+                const numDice = parseInt(diceMatch[1]);
+                const dieSize = parseInt(diceMatch[2]);
+                diceDamage = numDice * ((dieSize + 1) / 2); // Average of dice
+                console.log(`[Parser] Calculated dice damage: ${numDice}d${dieSize} = ${diceDamage}`);
+              }
+            }
+            
+            // Add damage bonus
+            let damageBonus = 0;
+            if (typeof action.damage_bonus === 'number') {
+              damageBonus = action.damage_bonus;
+            } else if (typeof action.damage_bonus === 'string') {
+              damageBonus = parseInt(action.damage_bonus) || 0;
+            }
+            
+            actionDPR = diceDamage + damageBonus;
+            console.log(`[Parser] Calculated structured damage: ${diceDamage} + ${damageBonus} = ${actionDPR}`);
+            
+            if (actionDPR > 0) {
+              totalDPR += actionDPR;
+              attackCount++;
+              usedStructuredData = true;
+            }
+          }
+          
+          // If we successfully used structured data, skip text parsing for this action
+          if (usedStructuredData) {
+            console.log(`[Parser] Used structured data for ${action.name}, DPR=${actionDPR}, Attack=${actionAttackBonus}`);
+            continue;
+          }
+          
+          // === FALLBACK TO TEXT PARSING ===
+          if (action.desc && typeof action.desc === 'string') {
+            const desc = action.desc;
+            console.log(`[Parser] Description: ${desc.substring(0, 100)}...`);
+            
+            // Look for attack bonus
+            const attackMatch = desc.match(/[+\-]\d+\s+to\s+hit/i);
+            if (attackMatch) {
+              const bonusMatch = attackMatch[0].match(/[+\-]\d+/);
+              if (bonusMatch) {
+                attackCount++;
+                const bonus = parseInt(bonusMatch[0]);
+                console.log(`[Parser] Found attack bonus: ${bonus}`);
+                if (bonus > highestAttackBonus) highestAttackBonus = bonus;
+              }
+            }
+            
+            // Look for damage
+            let damageFound = false;
+            const avgDamageMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/i);
+            if (avgDamageMatch) {
+              const avgDamage = parseInt(avgDamageMatch[1]);
+              console.log(`[Parser] Found pre-calculated damage: ${avgDamage}`);
+              totalDPR += avgDamage;
+              damageFound = true;
+              if (!attackMatch) attackCount++;
+            } else {
+              const diceMatch = desc.match(/(\d+)d(\d+)\s*([+\-]?\s*\d+)?/i);
+              if (diceMatch) {
+                if (!attackMatch) attackCount++;
+                const numDice = parseInt(diceMatch[1]);
+                const dieSize = parseInt(diceMatch[2]);
+                const modifier = diceMatch[3] ? parseInt(diceMatch[3].replace(/\s/g, '')) : 0;
+                const avgDamage = Math.floor(numDice * (dieSize + 1) / 2) + modifier;
+                console.log(`[Parser] Calculated damage from ${diceMatch[0]}: ${avgDamage}`);
+                totalDPR += avgDamage;
+                damageFound = true;
+              }
+            }
+            
+            if (!damageFound) {
+              console.log(`[Parser] No damage found in action`);
+            }
+          }
+        }
+      } else {
+        console.log(`[Parser] No actions array found`);
+      }
+      
+      console.log(`[Parser] Total DPR before multiattack: ${totalDPR}`);
+      
+      // Check for multiattack
+      let multiattackMultiplier = 1;
+      if (fm.actions && Array.isArray(fm.actions)) {
+        const multiattack = fm.actions.find((a: any) => 
+          a.name && a.name.toLowerCase().includes('multiattack')
+        );
+        
+        if (multiattack?.desc) {
+          console.log(`[Parser] Multiattack found: ${multiattack.desc}`);
+          const countMatch = multiattack.desc.match(/makes?\s+(two|three|four|five|\d+)\s+.*?attack/i);
+          if (countMatch) {
+            const countStr = countMatch[1].toLowerCase();
+            const countMap: Record<string, number> = { 'two': 2, 'three': 3, 'four': 4, 'five': 5 };
+            multiattackMultiplier = countMap[countStr] || parseInt(countStr) || 1;
+            console.log(`[Parser] Multiattack multiplier: ${multiattackMultiplier}`);
+          }
+        }
+      }
+      
+      // Apply multiattack multiplier
+      if (totalDPR > 0 && multiattackMultiplier > 1) {
+        console.log(`[Parser] Applying multiattack multiplier ${multiattackMultiplier} to DPR ${totalDPR}`);
+        totalDPR *= multiattackMultiplier;
+        console.log(`[Parser] Final DPR after multiattack: ${totalDPR}`);
+      }
+      
+      // If we couldn't parse DPR, return null to fall back to CR estimates
+      if (totalDPR === 0) {
+        console.log(`[Parser] No DPR found, returning null to use CR estimates`);
+        return null;
+      }
+      
+      // Use a reasonable default attack bonus if we couldn't parse it
+      if (highestAttackBonus === 0) {
+        highestAttackBonus = Math.max(2, Math.floor(totalDPR / 5));
+        console.log(`[Parser] No attack bonus found, estimating ${highestAttackBonus} based on DPR`);
+      }
+      
+      const result = {
+        hp: hp || 1,
+        ac: ac || 10,
+        dpr: totalDPR,
+        attackBonus: highestAttackBonus
+      };
+      console.log(`[Parser] SUCCESS: Returning`, result);
+      return result;
+    } catch (error) {
+      console.error("[Parser] Error parsing statblock:", filePath, error);
+      return null;
+    }
+  }
+
+  /**
+   * Parse HP from various formats: "45 (6d10+12)" or just "45"
+   */
+  parseHP(hpStr: any): number {
+    if (typeof hpStr === 'number') return hpStr;
+    if (typeof hpStr !== 'string') return 0;
+    
+    const match = hpStr.match(/^(\d+)/);
+    return match && match[1] ? parseInt(match[1]) : 0;
+  }
+
+  /**
+   * Parse AC from various formats: "13 (natural armor)" or just "13" or number
+   */
+  parseAC(acStr: any): number {
+    if (typeof acStr === 'number') return acStr;
+    if (typeof acStr !== 'string') return 10;
+    
+    const match = acStr.match(/^(\d+)/);
+    return match && match[1] ? parseInt(match[1]) : 10;
+  }
+
   async calculateEncounterDifficulty(): Promise<any> {
-    // Calculate enemy stats
+    // Calculate enemy stats with real statblock data when available
     let enemyTotalHP = 0;
     let enemyTotalAC = 0;
     let enemyTotalDPR = 0;
     let enemyTotalAttackBonus = 0;
     let enemyCount = 0;
-
+    
+    console.log("=== ENCOUNTER DIFFICULTY CALCULATION (EncounterBuilder) ===");
+    
     for (const creature of this.creatures) {
-      const crStats = this.getCRStats(creature.cr);
       const count = creature.count || 1;
-
-      const hp = creature.hp || crStats.hp;
-      const ac = creature.ac || crStats.ac;
+      
+      console.log(`\n--- Creature: ${creature.name} (x${count}) ---`);
+      console.log(`Path: ${creature.path || 'none'}`);
+      console.log(`CR: ${creature.cr || 'unknown'}`);
+      
+      // Try to get real stats from statblock if available
+      let realStats = null;
+      if (creature.path && typeof creature.path === 'string') {
+        console.log(`Attempting to parse statblock: ${creature.path}`);
+        realStats = await this.parseStatblockStats(creature.path);
+        console.log(`Parsed stats:`, realStats);
+      } else {
+        console.log(`No valid path, using CR estimates`);
+      }
+      
+      // Fall back to CR-based estimates if no statblock or parsing failed
+      const crStats = this.getCRStats(creature.cr);
+      console.log(`CR-based fallback stats:`, crStats);
+      
+      const hp = creature.hp || realStats?.hp || crStats.hp;
+      const ac = creature.ac || realStats?.ac || crStats.ac;
+      const dpr = realStats?.dpr || crStats.dpr;
+      const attackBonus = realStats?.attackBonus || crStats.attackBonus;
+      
+      const dprSource = realStats?.dpr ? '📊 STATBLOCK' : '📖 CR_TABLE';
+      const hpSource = realStats?.hp ? '📊 STATBLOCK' : creature.hp ? '✏️ MANUAL' : '📖 CR_TABLE';
+      const acSource = realStats?.ac ? '📊 STATBLOCK' : creature.ac ? '✏️ MANUAL' : '📖 CR_TABLE';
+      
+      console.log(`Final stats used: HP=${hp} (${hpSource}), AC=${ac} (${acSource}), DPR=${dpr} (${dprSource}), Attack=${attackBonus}`);
+      console.log(`Total contribution (x${count}): HP=${hp * count}, DPR=${dpr * count}`);
 
       enemyTotalHP += hp * count;
       enemyTotalAC += ac * count;
-      enemyTotalDPR += crStats.dpr * count;
-      enemyTotalAttackBonus += crStats.attackBonus * count;
+      enemyTotalDPR += dpr * count;
+      enemyTotalAttackBonus += attackBonus * count;
       enemyCount += count;
     }
+    
+    console.log(`\n=== TOTALS ===`);
+    console.log(`Total Enemies: ${enemyCount}`);
+    console.log(`Total Enemy HP: ${enemyTotalHP}`);
+    console.log(`Total Enemy DPR: ${enemyTotalDPR}`);
+    console.log(`Average Enemy AC: ${enemyCount > 0 ? (enemyTotalAC / enemyCount).toFixed(1) : 0}`);
+    console.log(`Average Enemy Attack Bonus: ${enemyCount > 0 ? (enemyTotalAttackBonus / enemyCount).toFixed(1) : 0}`)
 
     const avgEnemyAC = enemyCount > 0 ? enemyTotalAC / enemyCount : 13;
     const avgEnemyAttackBonus = enemyCount > 0 ? enemyTotalAttackBonus / enemyCount : 3;
@@ -6475,19 +7058,23 @@ class EncounterBuilder {
           const ac = c.ac || 10;
 
           // Determine name and display based on useColorNames setting
-          let creatureName = c.name;
-          let displayName = c.name;  // Default to creature name
+          // IMPORTANT: 'name' must be unique to prevent auto-numbering
+          // 'display' is used for visual representation in the tracker
+          // Initiative Tracker will auto-number duplicate names
+          let creatureName = c.name;  // Start with base name for bestiary lookup
+          let displayName = c.name;  // Always show at least the creature name
 
-          if (this.useColorNames && c.count > 1) {
+          if (c.count > 1 && this.useColorNames) {
             const colorIndex = i % colors.length;
-            // Make the name itself unique to prevent auto-numbering
+            // Make name unique to prevent Initiative Tracker from auto-numbering
             creatureName = `${c.name} (${colors[colorIndex]})`;
-            // Display name same as name for consistency
             displayName = creatureName;
           }
+          // For single creatures or multiple without colors, name and display are just the creature name
+          // Initiative Tracker will add numbers automatically for duplicates
 
           const creature = {
-            name: creatureName,  // Unique name with color to prevent auto-numbering
+            name: creatureName,  // Unique name for each creature instance
             display: displayName,  // Display name (always has a value now)
             initiative: 0,
             static: false,
