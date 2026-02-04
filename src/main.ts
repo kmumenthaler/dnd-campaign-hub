@@ -396,6 +396,2094 @@ LIMIT 1
   }
 }
 
+class CreatureSelectorModal extends Modal {
+  creatures: any[];
+  onSelect: (creature: any) => void;
+  searchInput!: HTMLInputElement;
+  resultsContainer!: HTMLElement;
+
+  constructor(app: App, creatures: any[], onSelect: (creature: any) => void) {
+    super(app);
+    this.creatures = creatures;
+    this.onSelect = onSelect;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("encounter-creature-selector");
+
+    contentEl.createEl("h2", { text: "Select Creature" });
+
+    // Search input
+    const searchContainer = contentEl.createDiv({ cls: "search-input-container" });
+    this.searchInput = searchContainer.createEl("input", {
+      type: "text",
+      placeholder: "Search creatures by name...",
+      cls: "search-input"
+    });
+
+    this.searchInput.addEventListener("input", () => this.updateResults());
+    this.searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const firstResult = this.resultsContainer.querySelector(".creature-item");
+        if (firstResult) {
+          (firstResult as HTMLElement).click();
+        }
+      }
+    });
+
+    // Results container
+    this.resultsContainer = contentEl.createDiv({ cls: "creature-results" });
+    
+    // Initial results
+    this.updateResults();
+
+    // Focus search input
+    setTimeout(() => this.searchInput.focus(), 100);
+  }
+
+  updateResults() {
+    this.resultsContainer.empty();
+    
+    const searchTerm = this.searchInput.value.toLowerCase();
+    const filtered = this.creatures.filter(c => 
+      (c.name || "").toLowerCase().includes(searchTerm)
+    );
+
+    if (filtered.length === 0) {
+      this.resultsContainer.createDiv({ 
+        text: "No creatures found", 
+        cls: "no-results" 
+      });
+      return;
+    }
+
+    // Show up to 50 results
+    const displayList = filtered.slice(0, 50);
+    
+    displayList.forEach(creature => {
+      const item = this.resultsContainer.createDiv({ cls: "creature-item" });
+      
+      const nameEl = item.createDiv({ cls: "creature-name" });
+      nameEl.setText(creature.name || "Unknown");
+      
+      const detailsEl = item.createDiv({ cls: "creature-details" });
+      const cr = creature.cr?.toString() || "?";
+      const source = creature.source || "Unknown";
+      detailsEl.setText(`CR ${cr} • ${source}`);
+      
+      item.addEventListener("click", () => {
+        this.onSelect(creature);
+        this.close();
+      });
+    });
+
+    if (filtered.length > 50) {
+      this.resultsContainer.createDiv({ 
+        text: `Showing 50 of ${filtered.length} results. Refine your search.`,
+        cls: "results-note"
+      });
+    }
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+class MultiCreatureSelectorModal extends Modal {
+  creatures: any[];
+  onSelect: (creatures: any[]) => void;
+  searchInput!: HTMLInputElement;
+  resultsContainer!: HTMLElement;
+  footerContainer!: HTMLElement;
+  selectedKeys = new Set<string>();
+  creatureByKey = new Map<string, any>();
+
+  constructor(app: App, creatures: any[], onSelect: (creatures: any[]) => void) {
+    super(app);
+    this.creatures = creatures;
+    this.onSelect = onSelect;
+    for (const c of creatures) {
+      this.creatureByKey.set(this.getKey(c), c);
+    }
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("encounter-creature-selector");
+
+    contentEl.createEl("h2", { text: "Select Creatures" });
+
+    const searchContainer = contentEl.createDiv({ cls: "search-input-container" });
+    this.searchInput = searchContainer.createEl("input", {
+      type: "text",
+      placeholder: "Search creatures by name...",
+      cls: "search-input"
+    });
+
+    this.searchInput.addEventListener("input", () => this.updateResults());
+
+    this.resultsContainer = contentEl.createDiv({ cls: "creature-results" });
+    this.footerContainer = contentEl.createDiv({ cls: "creature-selector-footer" });
+    this.footerContainer.style.display = "flex";
+    this.footerContainer.style.justifyContent = "space-between";
+    this.footerContainer.style.alignItems = "center";
+    this.footerContainer.style.marginTop = "10px";
+
+    const leftControls = this.footerContainer.createDiv();
+    leftControls.style.display = "flex";
+    leftControls.style.gap = "10px";
+
+    const selectVisibleBtn = leftControls.createEl("button", { text: "Select Visible" });
+    selectVisibleBtn.onclick = () => {
+      const visibleItems = this.resultsContainer.querySelectorAll(".creature-item[data-key]");
+      visibleItems.forEach((el) => {
+        const key = (el as HTMLElement).dataset.key;
+        if (key) this.selectedKeys.add(key);
+      });
+      this.updateResults();
+    };
+
+    const clearBtn = leftControls.createEl("button", { text: "Clear" });
+    clearBtn.onclick = () => {
+      this.selectedKeys.clear();
+      this.updateResults();
+    };
+
+    const actionControls = this.footerContainer.createDiv();
+    actionControls.style.display = "flex";
+    actionControls.style.gap = "10px";
+
+    const addSelectedBtn = actionControls.createEl("button", { text: "Add Selected" });
+    addSelectedBtn.onclick = () => {
+      const selectedCreatures = Array.from(this.selectedKeys)
+        .map((key) => this.creatureByKey.get(key))
+        .filter(Boolean);
+      if (selectedCreatures.length > 0) {
+        this.onSelect(selectedCreatures);
+        this.close();
+      }
+    };
+
+    const cancelBtn = actionControls.createEl("button", { text: "Cancel" });
+    cancelBtn.onclick = () => this.close();
+
+    this.updateResults();
+
+    setTimeout(() => this.searchInput.focus(), 100);
+  }
+
+  getKey(creature: any): string {
+    return creature?.path ? `${creature.path}::${creature.name}` : (creature?.name || "Unknown");
+  }
+
+  updateResults() {
+    this.resultsContainer.empty();
+
+    const searchTerm = this.searchInput.value.toLowerCase();
+    const filtered = this.creatures.filter(c =>
+      (c.name || "").toLowerCase().includes(searchTerm)
+    );
+
+    if (filtered.length === 0) {
+      this.resultsContainer.createDiv({
+        text: "No creatures found",
+        cls: "no-results"
+      });
+      return;
+    }
+
+    const displayList = filtered.slice(0, 50);
+
+    displayList.forEach(creature => {
+      const key = this.getKey(creature);
+      const item = this.resultsContainer.createDiv({ cls: "creature-item" });
+      item.dataset.key = key;
+      item.style.display = "flex";
+      item.style.alignItems = "center";
+      item.style.gap = "10px";
+
+      const checkbox = item.createEl("input", { type: "checkbox" });
+      checkbox.checked = this.selectedKeys.has(key);
+      checkbox.onchange = () => {
+        if (checkbox.checked) {
+          this.selectedKeys.add(key);
+        } else {
+          this.selectedKeys.delete(key);
+        }
+      };
+
+      const infoDiv = item.createDiv();
+      const nameEl = infoDiv.createDiv({ cls: "creature-name" });
+      nameEl.setText(creature.name || "Unknown");
+
+      const detailsEl = infoDiv.createDiv({ cls: "creature-details" });
+      const cr = creature.cr?.toString() || "?";
+      const source = creature.source || "Unknown";
+      detailsEl.setText(`CR ${cr} • ${source}`);
+
+      item.addEventListener("click", (evt) => {
+        if ((evt.target as HTMLElement).tagName.toLowerCase() === "input") return;
+        checkbox.checked = !checkbox.checked;
+        checkbox.onchange?.(new Event("change"));
+      });
+    });
+
+    if (filtered.length > 50) {
+      this.resultsContainer.createDiv({
+        text: `Showing 50 of ${filtered.length} results. Refine your search.`,
+        cls: "results-note"
+      });
+    }
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+class EncounterBuilderModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  encounterBuilder: EncounterBuilder;
+  encounterName = "";
+  creatures: EncounterCreature[] = [];
+  includeParty = true;
+  selectedPartyMembers: string[] = [];  // Selected party member names
+  selectedPartyId = "";
+  selectedPartyName = "";
+  useColorNames = false;
+  adventurePath = "";
+  scenePath = "";
+  campaignPath = "";
+  
+  // For editing existing encounters
+  isEdit = false;
+  originalEncounterPath = "";
+  
+  // UI containers
+  creatureListContainer: HTMLElement | null = null;
+  difficultyContainer: HTMLElement | null = null;
+  partySelectionContainer: HTMLElement | null = null;
+  partyMemberListContainer: HTMLElement | null = null;
+
+  constructor(app: App, plugin: DndCampaignHubPlugin, encounterPath?: string) {
+    super(app);
+    this.plugin = plugin;
+    this.encounterBuilder = new EncounterBuilder(app, plugin);
+    if (encounterPath) {
+      this.isEdit = true;
+      this.originalEncounterPath = encounterPath;
+    }
+  }
+
+  async onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    
+    // If editing, load existing encounter data
+    if (this.isEdit) {
+      await this.loadEncounterData();
+    }
+
+    contentEl.createEl("h2", { text: this.isEdit ? "⚔️ Edit Encounter" : "⚔️ Create New Encounter" });
+
+    // Encounter Name
+    new Setting(contentEl)
+      .setName("Encounter Name")
+      .setDesc("Give this encounter a memorable name")
+      .addText((text) =>
+        text
+          .setPlaceholder("Goblin Ambush")
+          .setValue(this.encounterName)
+          .onChange((value) => {
+            this.encounterName = value;
+          })
+      );
+
+    // Include Party
+    new Setting(contentEl)
+      .setName("Include Party Members")
+      .setDesc("Select party members to include in the encounter")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.includeParty)
+          .onChange(async (value) => {
+            this.includeParty = value;
+            await this.renderPartySelection();
+            this.updateDifficultyDisplay();
+          })
+      );
+
+    // Party Selection Container
+    this.partySelectionContainer = contentEl.createDiv();
+    this.partySelectionContainer.style.marginBottom = "15px";
+    await this.renderPartySelection();
+
+    // Party Member List Container
+    this.partyMemberListContainer = contentEl.createDiv({ cls: "dnd-party-member-list" });
+    this.partyMemberListContainer.style.marginBottom = "15px";
+    await this.renderPartyMemberList();
+
+    // Use Color Names
+    new Setting(contentEl)
+      .setName("Use Color Names")
+      .setDesc("Add color suffixes to creatures (e.g., 'Goblin Red', 'Goblin Blue')")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.useColorNames)
+          .onChange((value) => {
+            this.useColorNames = value;
+          })
+      );
+
+    // Creatures Section
+    contentEl.createEl("h3", { text: "Creatures" });
+    
+    // Creature list container
+    this.creatureListContainer = contentEl.createDiv({ cls: "dnd-creature-list" });
+    this.renderCreatureList();
+    
+    // Show creature input fields
+    await this.showCreatureInputFields(contentEl);
+
+    // Difficulty Display Section
+    contentEl.createEl("h3", { text: "Encounter Difficulty" });
+    this.difficultyContainer = contentEl.createDiv({ cls: "dnd-difficulty-container" });
+    await this.updateDifficultyDisplay();
+
+    // Action Buttons (placed at the end after all content)
+    const buttonContainer = new Setting(contentEl);
+    
+    buttonContainer.addButton((button) =>
+      button
+        .setButtonText(this.isEdit ? "Update Encounter" : "Create Encounter")
+        .setCta()
+        .onClick(() => {
+          this.saveEncounter();
+        })
+    );
+
+    if (this.isEdit) {
+      buttonContainer.addButton((button) =>
+        button
+          .setButtonText("Delete Encounter")
+          .setWarning()
+          .onClick(() => {
+            this.deleteEncounter();
+          })
+      );
+    }
+  }
+
+  async loadEncounterData() {
+    try {
+      const file = this.app.vault.getAbstractFileByPath(this.originalEncounterPath);
+      if (!(file instanceof TFile)) return;
+
+      const content = await this.app.vault.read(file);
+      const cache = this.app.metadataCache.getFileCache(file);
+      
+      if (cache?.frontmatter) {
+        this.encounterName = cache.frontmatter.name || "";
+        this.includeParty = cache.frontmatter.include_party !== false;
+        this.useColorNames = cache.frontmatter.use_color_names || false;
+        this.adventurePath = cache.frontmatter.adventure_path || "";
+        this.scenePath = cache.frontmatter.scene_path || "";
+        this.campaignPath = cache.frontmatter.campaign_path || "";
+        this.selectedPartyId = cache.frontmatter.selected_party_id || "";
+        this.selectedPartyName = cache.frontmatter.selected_party_name || "";
+        if (!this.selectedPartyId && this.selectedPartyName) {
+          this.selectedPartyId = this.selectedPartyName;
+        }
+        
+        // Load creatures
+        if (cache.frontmatter.creatures && Array.isArray(cache.frontmatter.creatures)) {
+          this.creatures = cache.frontmatter.creatures.map((c: any) => ({
+            name: c.name || "",
+            count: c.count || 1,
+            hp: c.hp,
+            ac: c.ac,
+            cr: c.cr,
+            source: c.source,
+            path: c.path
+          }));
+        }
+      }
+
+      this.syncEncounterBuilder();
+    } catch (error) {
+      console.error("Error loading encounter data:", error);
+      new Notice("Error loading encounter data");
+    }
+  }
+
+  syncEncounterBuilder() {
+    this.encounterBuilder.encounterName = this.encounterName;
+    this.encounterBuilder.creatures = [...this.creatures];
+    this.encounterBuilder.includeParty = this.includeParty;
+    this.encounterBuilder.useColorNames = this.useColorNames;
+    this.encounterBuilder.selectedPartyMembers = [...this.selectedPartyMembers];
+    this.encounterBuilder.selectedPartyId = this.selectedPartyId || "";
+    this.encounterBuilder.adventurePath = this.adventurePath;
+    this.encounterBuilder.scenePath = this.scenePath;
+    this.encounterBuilder.campaignPath = this.campaignPath;
+  }
+
+  async renderPartySelection() {
+    if (!this.partySelectionContainer) return;
+    this.partySelectionContainer.empty();
+
+    if (!this.includeParty) return;
+
+    try {
+      this.syncEncounterBuilder();
+      const parties = await this.encounterBuilder.getAvailableParties();
+
+      if (parties.length === 0) {
+        this.partySelectionContainer.createEl("p", {
+          text: "⚠️ No parties found in Initiative Tracker",
+          attr: { style: "color: var(--text-warning); font-style: italic; margin: 10px 0;" }
+        });
+        return;
+      }
+
+      if (!this.selectedPartyId) {
+        const defaultParty = await this.encounterBuilder.getResolvedParty();
+        if (defaultParty?.id) this.selectedPartyId = defaultParty.id;
+        if (defaultParty?.name) this.selectedPartyName = defaultParty.name;
+      }
+
+      const partySetting = new Setting(this.partySelectionContainer)
+        .setName("Party")
+        .setDesc("Choose which party to use for difficulty calculations");
+
+      partySetting.addDropdown((dropdown) => {
+        parties.forEach(party => {
+          dropdown.addOption(party.id, party.name);
+        });
+        dropdown.setValue(this.selectedPartyId || parties[0]!.id);
+        dropdown.onChange((value) => {
+          this.selectedPartyId = value;
+          const selected = parties.find(p => p.id === value);
+          this.selectedPartyName = selected?.name || "";
+          this.selectedPartyMembers = [];
+        });
+      });
+
+      partySetting.addButton((button) =>
+        button
+          .setButtonText("Apply Party")
+          .onClick(async () => {
+            await this.renderPartySelection();
+            await this.renderPartyMemberList();
+            this.updateDifficultyDisplay();
+          })
+      );
+
+      const partyMembers = await this.encounterBuilder.getAvailablePartyMembers();
+      
+      if (partyMembers.length === 0) {
+        this.partySelectionContainer.createEl("p", {
+          text: "⚠️ No party members found in Initiative Tracker",
+          attr: { style: "color: var(--text-warning); font-style: italic; margin: 10px 0;" }
+        });
+        return;
+      }
+
+      const selectionDiv = this.partySelectionContainer.createDiv();
+      selectionDiv.style.border = "1px solid var(--background-modifier-border)";
+      selectionDiv.style.padding = "10px";
+      selectionDiv.style.borderRadius = "5px";
+      selectionDiv.style.marginBottom = "10px";
+
+      selectionDiv.createEl("h4", { text: "Select Party Members", attr: { style: "margin-top: 0;" } });
+
+      for (const member of partyMembers) {
+        const checkboxDiv = selectionDiv.createDiv();
+        checkboxDiv.style.marginBottom = "5px";
+
+        const checkbox = checkboxDiv.createEl("input", { type: "checkbox" });
+        checkbox.checked = this.selectedPartyMembers.includes(member.name);
+        checkbox.style.marginRight = "10px";
+        checkbox.onchange = () => {
+          if (checkbox.checked) {
+            if (!this.selectedPartyMembers.includes(member.name)) {
+              this.selectedPartyMembers.push(member.name);
+            }
+          } else {
+            this.selectedPartyMembers = this.selectedPartyMembers.filter(n => n !== member.name);
+          }
+          this.renderPartyMemberList();
+          this.updateDifficultyDisplay();
+        };
+
+        const label = checkboxDiv.createEl("span", { 
+          text: `${member.name} (Level ${member.level}, HP: ${member.hp}, AC: ${member.ac})`
+        });
+        label.style.cursor = "pointer";
+        label.onclick = () => {
+          checkbox.checked = !checkbox.checked;
+          checkbox.onchange?.(new Event('change'));
+        };
+      }
+
+      // Select All / Deselect All buttons
+      const buttonsDiv = selectionDiv.createDiv();
+      buttonsDiv.style.marginTop = "10px";
+      buttonsDiv.style.display = "flex";
+      buttonsDiv.style.gap = "10px";
+
+      const selectAllBtn = buttonsDiv.createEl("button", { text: "Select All" });
+      selectAllBtn.style.fontSize = "0.85em";
+      selectAllBtn.onclick = () => {
+        this.selectedPartyMembers = partyMembers.map(m => m.name);
+        this.renderPartySelection();
+        this.renderPartyMemberList();
+        this.updateDifficultyDisplay();
+      };
+
+      const deselectAllBtn = buttonsDiv.createEl("button", { text: "Deselect All" });
+      deselectAllBtn.style.fontSize = "0.85em";
+      deselectAllBtn.onclick = () => {
+        this.selectedPartyMembers = [];
+        this.renderPartySelection();
+        this.renderPartyMemberList();
+        this.updateDifficultyDisplay();
+      };
+    } catch (error) {
+      console.error("Error rendering party selection:", error);
+    }
+  }
+
+  async renderPartyMemberList() {
+    if (!this.partyMemberListContainer) return;
+    this.partyMemberListContainer.empty();
+
+    if (!this.includeParty || this.selectedPartyMembers.length === 0) {
+      return;
+    }
+
+    try {
+      const partyMembers = await this.encounterBuilder.getAvailablePartyMembers();
+      const memberByName = new Map(partyMembers.map(m => [m.name, m]));
+
+      const headerDiv = this.partyMemberListContainer.createDiv({ cls: "dnd-party-member-header" });
+      headerDiv.style.marginBottom = "10px";
+      headerDiv.style.fontWeight = "600";
+      headerDiv.setText(`Selected Party Members (${this.selectedPartyMembers.length})`);
+
+      for (const memberName of this.selectedPartyMembers) {
+        const memberData = memberByName.get(memberName);
+        if (!memberData) continue;
+
+        const memberItem = this.partyMemberListContainer.createDiv({ cls: "dnd-creature-item" });
+        
+        const nameEl = memberItem.createSpan({ cls: "dnd-creature-name" });
+        nameEl.setText(memberName);
+        
+        const statsEl = memberItem.createSpan({ cls: "dnd-creature-stats" });
+        const stats: string[] = [];
+        stats.push(`Level: ${memberData.level}`);
+        stats.push(`HP: ${memberData.hp}`);
+        stats.push(`AC: ${memberData.ac}`);
+        statsEl.setText(` | ${stats.join(" | ")}`);
+        
+        const removeBtn = memberItem.createEl("button", {
+          text: "Remove",
+          cls: "dnd-creature-remove"
+        });
+        removeBtn.addEventListener("click", () => {
+          this.removePartyMember(memberName);
+        });
+      }
+    } catch (error) {
+      console.error("Error rendering party member list:", error);
+    }
+  }
+
+  removePartyMember(memberName: string) {
+    this.selectedPartyMembers = this.selectedPartyMembers.filter(n => n !== memberName);
+    this.renderPartySelection();
+    this.renderPartyMemberList();
+    this.updateDifficultyDisplay();
+  }
+
+  async getAvailablePartyMembers(): Promise<Array<{ name: string; level: number; hp: number; ac: number }>> {
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.getAvailablePartyMembers();
+  }
+
+  async showCreatureInputFields(container: HTMLElement) {
+    // === VAULT CREATURE SELECTION ===
+    const vaultCreatureSection = container.createDiv({ cls: "dnd-add-creature-vault" });
+    
+    let selectedCreature: { name: string; path: string; hp: number; ac: number; cr?: string } | null = null;
+    let vaultCreatureCount = "1";
+    let searchResults: HTMLElement | null = null;
+    
+    // Load creatures from vault
+    this.syncEncounterBuilder();
+    const vaultCreatures = await this.encounterBuilder.loadAllCreatures();
+    
+    console.log("Loaded creatures:", vaultCreatures.length, vaultCreatures.slice(0, 3).map(c => c.name));
+    
+    if (vaultCreatures.length > 0) {
+      const vaultCreatureSetting = new Setting(vaultCreatureSection)
+        .setName("Add from Vault")
+        .setDesc(`Search and select creatures from your vault (${vaultCreatures.length} available)`);
+      
+      // Create search input container
+      const searchContainer = vaultCreatureSetting.controlEl.createDiv({ cls: "dnd-creature-search-container" });
+      
+      const searchInput = searchContainer.createEl("input", {
+        type: "text",
+        placeholder: "Search creatures...",
+        cls: "dnd-creature-search-input"
+      });
+      
+      // Search results container
+      searchResults = searchContainer.createDiv({ cls: "dnd-creature-search-results" });
+      searchResults.style.display = "none";
+      
+      // Filter and display results
+      const showSearchResults = (query: string) => {
+        if (!searchResults) return;
+        
+        if (!query || query.length < 1) {
+          searchResults.style.display = "none";
+          return;
+        }
+        
+        const queryLower = query.toLowerCase().trim();
+        
+        const filtered = vaultCreatures.filter(c => {
+          return c.name.toLowerCase().includes(queryLower);
+        }).slice(0, 10); // Limit to 10 results
+        
+        searchResults.empty();
+        
+        if (filtered.length === 0) {
+          searchResults.createEl("div", {
+            text: "No creatures found",
+            cls: "dnd-creature-search-no-results"
+          });
+          searchResults.style.display = "block";
+          return;
+        }
+        
+        filtered.forEach(creature => {
+          const resultEl = searchResults!.createDiv({ cls: "dnd-creature-search-result" });
+          
+          const nameEl = resultEl.createDiv({ cls: "dnd-creature-search-result-name" });
+          nameEl.setText(creature.name);
+          
+          const statsEl = resultEl.createDiv({ cls: "dnd-creature-search-result-stats" });
+          const statsParts: string[] = [];
+          if (creature.cr) statsParts.push(`CR ${creature.cr}`);
+          statsParts.push(`HP ${creature.hp}`);
+          statsParts.push(`AC ${creature.ac}`);
+          statsEl.setText(statsParts.join(" | "));
+          
+          resultEl.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            selectedCreature = creature;
+            searchInput.value = creature.name;
+            if (searchResults) {
+              searchResults.style.display = "none";
+            }
+          });
+        });
+        
+        searchResults.style.display = "block";
+      };
+      
+      // Search input events
+      searchInput.addEventListener("input", (e) => {
+        const target = e.target as HTMLInputElement;
+        showSearchResults(target.value);
+      });
+      
+      searchInput.addEventListener("focus", (e) => {
+        const target = e.target as HTMLInputElement;
+        if (target.value.length >= 1) {
+          showSearchResults(target.value);
+        }
+      });
+      
+      searchInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && selectedCreature) {
+          e.preventDefault();
+          // Add creature
+          this.creatures.push({
+            name: selectedCreature.name,
+            count: parseInt(vaultCreatureCount) || 1,
+            hp: selectedCreature.hp,
+            ac: selectedCreature.ac,
+            cr: selectedCreature.cr,
+            source: "vault",
+            path: selectedCreature.path,
+            isCustom: false,
+            isFriendly: false,
+            isHidden: false
+          });
+          this.renderCreatureList();
+          this.updateDifficultyDisplay();
+          new Notice(`Added ${vaultCreatureCount}x ${selectedCreature.name}`);
+          searchInput.value = "";
+          selectedCreature = null;
+        }
+      });
+      
+      // Close search results when clicking outside
+      searchInput.addEventListener("blur", () => {
+        setTimeout(() => {
+          if (searchResults) {
+            searchResults.style.display = "none";
+          }
+        }, 250);
+      });
+      
+      // Count input
+      vaultCreatureSetting.addText(text => {
+        text.setPlaceholder("Count")
+          .setValue("1")
+          .onChange(value => vaultCreatureCount = value);
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "60px";
+      });
+      
+      // Add button
+      vaultCreatureSetting.addButton(btn => btn
+        .setButtonText("Add")
+        .setCta()
+        .onClick(() => {
+          if (!selectedCreature) {
+            new Notice("Please search and select a creature first!");
+            return;
+          }
+          
+          this.creatures.push({
+            name: selectedCreature.name,
+            count: parseInt(vaultCreatureCount) || 1,
+            hp: selectedCreature.hp,
+            ac: selectedCreature.ac,
+            cr: selectedCreature.cr,
+            source: "vault",
+            path: selectedCreature.path,
+            isCustom: false,
+            isFriendly: false,
+            isHidden: false
+          });
+          
+          this.renderCreatureList();
+          this.updateDifficultyDisplay();
+          new Notice(`Added ${vaultCreatureCount}x ${selectedCreature.name}`);
+          
+          // Clear search
+          searchInput.value = "";
+          selectedCreature = null;
+        }));
+    } else {
+      vaultCreatureSection.createEl("p", {
+        text: "⚠️ No creatures found in z_Beastiarity folder. Use manual entry below.",
+        cls: "setting-item-description mod-warning"
+      });
+    }
+    
+    // === MANUAL CREATURE ENTRY ===
+    const addCreatureSection = container.createDiv({ cls: "dnd-add-creature-manual" });
+    
+    let newCreatureName = "";
+    let newCreatureCount = "1";
+    let newCreatureHP = "";
+    let newCreatureAC = "";
+    let newCreatureCR = "";
+    
+    const addCreatureSetting = new Setting(addCreatureSection)
+      .setName("Add Custom Creature")
+      .setDesc("Enter creature details manually for custom or homebrew enemies");
+    
+    // Creature name input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("Name (e.g., Goblin)")
+        .onChange(value => newCreatureName = value);
+      text.inputEl.style.width = "120px";
+    });
+    
+    // Count input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("Count")
+        .setValue("1")
+        .onChange(value => newCreatureCount = value);
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "60px";
+    });
+    
+    // HP input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("HP")
+        .onChange(value => newCreatureHP = value);
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "60px";
+    });
+    
+    // AC input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("AC")
+        .onChange(value => newCreatureAC = value);
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "60px";
+    });
+    
+    // CR input
+    addCreatureSetting.addText(text => {
+      text.setPlaceholder("CR")
+        .onChange(value => newCreatureCR = value);
+      text.inputEl.style.width = "60px";
+    });
+    
+    // Add button
+    addCreatureSetting.addButton(btn => btn
+      .setButtonText("Add")
+      .setCta()
+      .onClick(() => {
+        if (!newCreatureName.trim()) {
+          new Notice("Please enter a creature name!");
+          return;
+        }
+        
+        this.creatures.push({
+          name: newCreatureName.trim(),
+          count: parseInt(newCreatureCount) || 1,
+          hp: newCreatureHP ? parseInt(newCreatureHP) : undefined,
+          ac: newCreatureAC ? parseInt(newCreatureAC) : undefined,
+          cr: newCreatureCR || undefined,
+          source: "manual",
+          path: undefined,
+          isCustom: true,
+          isFriendly: false,
+          isHidden: false
+        });
+        
+        this.renderCreatureList();
+        this.updateDifficultyDisplay();
+        new Notice(`Added ${newCreatureCount}x ${newCreatureName}`);
+      }));
+    
+    // Info text
+    container.createEl("p", {
+      text: "💡 Tip: Select creatures from your vault or add custom enemies on the fly. You can edit stats later in Initiative Tracker.",
+      cls: "setting-item-description"
+    });
+  }
+
+  removeCreature(index: number) {
+    this.creatures.splice(index, 1);
+    this.renderCreatureList();
+    this.updateDifficultyDisplay();
+  }
+
+  renderCreatureList() {
+    if (!this.creatureListContainer) return;
+    this.creatureListContainer.empty();
+
+    if (this.creatures.length === 0) {
+      this.creatureListContainer.createEl("p", {
+        text: "No creatures added yet. Add creatures below.",
+        cls: "setting-item-description"
+      });
+      return;
+    }
+
+    this.creatures.forEach((creature, index) => {
+      const creatureItem = this.creatureListContainer!.createDiv({ cls: "dnd-creature-item" });
+      
+      const nameEl = creatureItem.createSpan({ cls: "dnd-creature-name" });
+      nameEl.setText(`${creature.name} x${creature.count}`);
+      
+      const statsEl = creatureItem.createSpan({ cls: "dnd-creature-stats" });
+      const stats: string[] = [];
+      if (creature.hp) stats.push(`HP: ${creature.hp}`);
+      if (creature.ac) stats.push(`AC: ${creature.ac}`);
+      if (creature.cr) stats.push(`CR: ${creature.cr}`);
+      statsEl.setText(stats.length > 0 ? ` | ${stats.join(" | ")}` : "");
+      
+      const removeBtn = creatureItem.createEl("button", {
+        text: "Remove",
+        cls: "dnd-creature-remove"
+      });
+      removeBtn.addEventListener("click", () => {
+        this.removeCreature(index);
+      });
+    });
+  }
+
+  async updateDifficultyDisplay() {
+    if (!this.difficultyContainer) return;
+
+    this.difficultyContainer.empty();
+
+    if (this.creatures.length === 0) {
+      this.difficultyContainer.createEl("p", {
+        text: "Add creatures to see encounter difficulty analysis.",
+        cls: "setting-item-description"
+      });
+      return;
+    }
+
+    const loadingEl = this.difficultyContainer.createEl("p", { text: "Calculating difficulty..." });
+
+    this.syncEncounterBuilder();
+    const result = await this.encounterBuilder.calculateEncounterDifficulty();
+
+    loadingEl.remove();
+
+    const difficultyCard = this.difficultyContainer.createDiv({ cls: "dnd-difficulty-card" });
+
+    const header = difficultyCard.createDiv({ cls: "dnd-difficulty-header" });
+
+    const difficultyBadge = header.createEl("span", {
+      text: result.analysis.difficulty,
+      cls: "dnd-difficulty-badge"
+    });
+    difficultyBadge.style.backgroundColor = result.analysis.difficultyColor;
+
+    header.createEl("span", {
+      text: ` ~${result.analysis.roundsToDefeatEnemies} round${result.analysis.roundsToDefeatEnemies !== 1 ? 's' : ''}`,
+      cls: "dnd-rounds-estimate"
+    });
+
+    const statsGrid = difficultyCard.createDiv({ cls: "dnd-difficulty-stats-grid" });
+
+    const partyCol = statsGrid.createDiv({ cls: "dnd-stats-column" });
+    partyCol.createEl("h5", { text: `⚔️ Party (${result.partyStats.memberCount})` });
+    const partyStats = partyCol.createDiv();
+    partyStats.innerHTML = `
+      <div>HP Pool: <strong>${result.partyStats.totalHP}</strong></div>
+      <div>Avg AC: <strong>${result.partyStats.avgAC.toFixed(0)}</strong></div>
+      <div>Total DPR: <strong>${result.partyStats.totalDPR.toFixed(0)}</strong></div>
+      <div>Hit Chance: <strong>${(result.analysis.partyHitChance * 100).toFixed(0)}%</strong></div>
+      <div>Effective DPR: <strong>${result.analysis.partyEffectiveDPR.toFixed(0)}</strong></div>
+    `;
+
+    const enemyCol = statsGrid.createDiv({ cls: "dnd-stats-column" });
+    enemyCol.createEl("h5", { text: `👹 Enemies (${result.enemyStats.creatureCount})` });
+    const enemyStats = enemyCol.createDiv();
+    enemyStats.innerHTML = `
+      <div>HP Pool: <strong>${result.enemyStats.totalHP}</strong></div>
+      <div>Avg AC: <strong>${result.enemyStats.avgAC.toFixed(0)}</strong></div>
+      <div>Total DPR: <strong>${result.enemyStats.totalDPR.toFixed(0)}</strong></div>
+      <div>Hit Chance: <strong>${(result.analysis.enemyHitChance * 100).toFixed(0)}%</strong></div>
+      <div>Effective DPR: <strong>${result.analysis.enemyEffectiveDPR.toFixed(0)}</strong></div>
+    `;
+
+    const analysisSummary = difficultyCard.createDiv({ cls: "dnd-difficulty-analysis" });
+
+    const partyDamage3Rounds = result.analysis.partyEffectiveDPR * 3;
+    const enemyDamage3Rounds = result.analysis.enemyEffectiveDPR * 3;
+    const partyHPAfter3 = Math.max(0, result.partyStats.totalHP - enemyDamage3Rounds);
+    const enemyHPAfter3 = Math.max(0, result.enemyStats.totalHP - partyDamage3Rounds);
+
+    // Action economy display
+    const partyAEMod = result.analysis.partyActionEconomyMod || 1.0;
+    const enemyAEMod = result.analysis.enemyActionEconomyMod || 1.0;
+    const actionEconomyInfo = partyAEMod !== 1.0 || enemyAEMod !== 1.0
+      ? `<div style="margin-bottom: 8px; padding: 8px; background: var(--background-modifier-border); border-radius: 4px;">
+          <strong>⚖️ Action Economy:</strong> 
+          Party ${partyAEMod > 1 ? '✓' : partyAEMod < 1 ? '✗' : '='} 
+          ${(partyAEMod * 100).toFixed(0)}% efficiency | 
+          Enemies ${enemyAEMod > 1 ? '✓' : enemyAEMod < 1 ? '✗' : '='} 
+          ${(enemyAEMod * 100).toFixed(0)}% efficiency
+        </div>`
+      : '';
+
+    analysisSummary.innerHTML = `
+      ${actionEconomyInfo}
+      <div style="margin-bottom: 8px;"><strong>📊 3-Round Analysis:</strong></div>
+      <div>Party deals: <strong>${partyDamage3Rounds.toFixed(0)}</strong> damage → Enemies at <strong>${enemyHPAfter3.toFixed(0)}</strong> HP (${((enemyHPAfter3 / result.enemyStats.totalHP) * 100).toFixed(0)}%)</div>
+      <div>Enemies deal: <strong>${enemyDamage3Rounds.toFixed(0)}</strong> damage → Party at <strong>${partyHPAfter3.toFixed(0)}</strong> HP (${((partyHPAfter3 / result.partyStats.totalHP) * 100).toFixed(0)}%)</div>
+      <div style="margin-top: 8px; opacity: 0.8;">
+        Survival Ratio: ${result.analysis.survivalRatio.toFixed(2)}
+        (Party can survive ${result.analysis.roundsToDefeatParty} rounds, enemies survive ${result.analysis.roundsToDefeatEnemies} rounds)
+      </div>
+    `;
+
+    const partyMembers = await this.getPartyForDifficulty();
+    if (result.partyStats.memberCount === 0 || partyMembers.length === 0) {
+      const warningEl = difficultyCard.createDiv({ cls: "dnd-difficulty-warning" });
+      warningEl.innerHTML = `⚠️ <strong>No party registered!</strong> Using default estimates for 4 Level-3 PCs.
+        <br>Register PCs via "Create PC" to get accurate calculations.`;
+    }
+  }
+
+  /**
+   * Parse statblock YAML to extract real combat stats
+   * Returns hp, ac, dpr (damage per round), and attackBonus
+   */
+  async parseStatblockStats(filePath: string): Promise<{ hp: number; ac: number; dpr: number; attackBonus: number } | null> {
+    try {
+      console.log(`[Parser] Reading file: ${filePath}`);
+      const file = this.app.vault.getAbstractFileByPath(filePath);
+      if (!(file instanceof TFile)) {
+        console.log(`[Parser] File not found or not a TFile`);
+        return null;
+      }
+
+      const cache = this.app.metadataCache.getFileCache(file);
+      if (!cache?.frontmatter) {
+        console.log(`[Parser] No frontmatter found`);
+        return null;
+      }
+
+      const fm = cache.frontmatter;
+      console.log(`[Parser] Frontmatter keys:`, Object.keys(fm));
+      
+      // Extract basic stats
+      const hp = this.parseHP(fm.hp);
+      const ac = this.parseAC(fm.ac);
+      console.log(`[Parser] Parsed HP: ${hp}, AC: ${ac}`);
+      
+      // Calculate DPR and attack bonus from actions
+      let totalDPR = 0;
+      let highestAttackBonus = 0;
+      let attackCount = 0;
+      
+      // Check for actions array (where attacks are defined)
+      if (fm.actions && Array.isArray(fm.actions)) {
+        console.log(`[Parser] Found ${fm.actions.length} actions`);
+        
+        for (const action of fm.actions) {
+          if (!action.name) continue;
+          console.log(`[Parser] Action: "${action.name}"`);
+          
+          // === CHECK STRUCTURED FIELDS FIRST ===
+          // Many statblocks (especially from Fantasy Statblocks plugin) have structured data
+          let actionDPR = 0;
+          let actionAttackBonus = 0;
+          let usedStructuredData = false;
+          
+          // Check for attack_bonus field
+          if (typeof action.attack_bonus === 'number') {
+            actionAttackBonus = action.attack_bonus;
+            if (actionAttackBonus > highestAttackBonus) {
+              highestAttackBonus = actionAttackBonus;
+            }
+            console.log(`[Parser] Found structured attack_bonus: ${actionAttackBonus}`);
+            usedStructuredData = true;
+          }
+          
+          // Check for damage_dice and damage_bonus fields
+          if (action.damage_dice || action.damage_bonus) {
+            console.log(`[Parser] Found structured damage fields: dice="${action.damage_dice}", bonus="${action.damage_bonus}"`);
+            
+            // Parse damage_dice (e.g., "1d6" or "2d8")
+            let diceDamage = 0;
+            if (action.damage_dice && typeof action.damage_dice === 'string') {
+              const diceMatch = action.damage_dice.match(/(\d+)d(\d+)/i);
+              if (diceMatch) {
+                const numDice = parseInt(diceMatch[1]);
+                const dieSize = parseInt(diceMatch[2]);
+                diceDamage = numDice * ((dieSize + 1) / 2); // Average of dice
+                console.log(`[Parser] Calculated dice damage: ${numDice}d${dieSize} = ${diceDamage}`);
+              }
+            }
+            
+            // Add damage bonus
+            let damageBonus = 0;
+            if (typeof action.damage_bonus === 'number') {
+              damageBonus = action.damage_bonus;
+            } else if (typeof action.damage_bonus === 'string') {
+              damageBonus = parseInt(action.damage_bonus) || 0;
+            }
+            
+            actionDPR = diceDamage + damageBonus;
+            console.log(`[Parser] Calculated structured damage: ${diceDamage} + ${damageBonus} = ${actionDPR}`);
+            
+            if (actionDPR > 0) {
+              totalDPR += actionDPR;
+              attackCount++;
+              usedStructuredData = true;
+            }
+          }
+          
+          // If we successfully used structured data, skip text parsing for this action
+          if (usedStructuredData) {
+            console.log(`[Parser] Used structured data for ${action.name}, DPR=${actionDPR}, Attack=${actionAttackBonus}`);
+            continue;
+          }
+          
+          // === FALLBACK TO TEXT PARSING ===
+          // Parse attack actions from description text
+          if (action.desc && typeof action.desc === 'string') {
+            const desc = action.desc;
+            console.log(`[Parser] Description: ${desc.substring(0, 100)}...`);
+            
+            // Look for attack bonus: "+5 to hit" or "attack: +5"
+            const attackMatch = desc.match(/[+\-]\d+\s+to\s+hit/i);
+            if (attackMatch) {
+              const bonusMatch = attackMatch[0].match(/[+\-]\d+/);
+              if (bonusMatch) {
+                attackCount++; // Increment attack count
+                const bonus = parseInt(bonusMatch[0]);
+                console.log(`[Parser] Found attack bonus: ${bonus}`);
+                if (bonus > highestAttackBonus) highestAttackBonus = bonus;
+              }
+            }
+            
+            // Look for damage in various formats
+            // Format 1: "4 (1d6 + 1)" - average shown first
+            // Format 2: "(1d6+1)" - just dice
+            // Format 3: "1d6+1" or "2d6 + 3"
+            const damagePatterns = [
+              /(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/gi,  // "4 (1d6+1)"
+              /\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/gi,           // "(1d6+1)"
+              /(\d+)d(\d+)\s*([+\-]?\s*\d+)?(?!\))/gi          // "1d6+1"
+            ];
+            
+            let damageFound = false;
+            
+            // Try format 1 first (with pre-calculated average)
+            const avgDamageMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/i);
+            if (avgDamageMatch) {
+              const avgDamage = parseInt(avgDamageMatch[1]);
+              console.log(`[Parser] Found pre-calculated damage: ${avgDamage}`);
+              totalDPR += avgDamage;
+              damageFound = true;
+              if (!attackMatch) attackCount++; // Count this as an attack if we haven't already
+            } else {
+              // Try parsing dice notation
+              const diceMatch = desc.match(/(\d+)d(\d+)\s*([+\-]?\s*\d+)?/i);
+              if (diceMatch) {
+                if (!attackMatch) attackCount++; // Count this as an attack if we haven't already
+                const numDice = parseInt(diceMatch[1]);
+                const dieSize = parseInt(diceMatch[2]);
+                const modifier = diceMatch[3] ? parseInt(diceMatch[3].replace(/\s/g, '')) : 0;
+                const avgDamage = Math.floor(numDice * (dieSize + 1) / 2) + modifier;
+                console.log(`[Parser] Calculated damage from ${diceMatch[0]}: ${avgDamage}`);
+                totalDPR += avgDamage;
+                damageFound = true;
+              }
+            }
+            
+            if (!damageFound) {
+              console.log(`[Parser] No damage found in action`);
+            }
+          }
+        }
+      } else {
+        console.log(`[Parser] No actions array found`);
+      }
+      
+      console.log(`[Parser] Total DPR before multiattack: ${totalDPR}`);
+      
+      // Check for multiattack
+      let multiattackMultiplier = 1;
+      if (fm.actions && Array.isArray(fm.actions)) {
+        const multiattack = fm.actions.find((a: any) => 
+          a.name && a.name.toLowerCase().includes('multiattack')
+        );
+        
+        if (multiattack?.desc) {
+          console.log(`[Parser] Multiattack found: ${multiattack.desc}`);
+          // Look for "makes two attacks" or "makes three weapon attacks"
+          const countMatch = multiattack.desc.match(/makes?\s+(two|three|four|five|\d+)\s+.*?attack/i);
+          if (countMatch) {
+            const countStr = countMatch[1].toLowerCase();
+            const countMap: Record<string, number> = { 'two': 2, 'three': 3, 'four': 4, 'five': 5 };
+            multiattackMultiplier = countMap[countStr] || parseInt(countStr) || 1;
+            console.log(`[Parser] Multiattack multiplier: ${multiattackMultiplier}`);
+          }
+        }
+      }
+      
+      // Apply multiattack multiplier if we found actual attack damage
+      // Note: We don't strictly require attackCount > 0 because some statblocks 
+      // might have damage without explicit "to hit" text
+      if (totalDPR > 0 && multiattackMultiplier > 1) {
+        console.log(`[Parser] Applying multiattack multiplier ${multiattackMultiplier} to DPR ${totalDPR}`);
+        totalDPR *= multiattackMultiplier;
+        console.log(`[Parser] Final DPR after multiattack: ${totalDPR}`);
+      }
+      
+      // If we couldn't parse DPR, return null to fall back to CR estimates
+      // We allow attack bonus to be 0 as it's less critical than DPR
+      if (totalDPR === 0) {
+        console.log(`[Parser] No DPR found, returning null to use CR estimates`);
+        return null;
+      }
+      
+      // Use a reasonable default attack bonus if we couldn't parse it
+      if (highestAttackBonus === 0) {
+        // Estimate based on DPR (higher DPR usually means higher attack bonus)
+        highestAttackBonus = Math.max(2, Math.floor(totalDPR / 5));
+        console.log(`[Parser] No attack bonus found, estimating ${highestAttackBonus} based on DPR`);
+      }
+      
+      const result = {
+        hp: hp || 1,
+        ac: ac || 10,
+        dpr: totalDPR,
+        attackBonus: highestAttackBonus
+      };
+      console.log(`[Parser] SUCCESS: Returning`, result);
+      return result;
+    } catch (error) {
+      console.error("[Parser] Error parsing statblock:", filePath, error);
+      return null;
+    }
+  }
+
+  /**
+   * Parse HP from various formats: "45 (6d10+12)" or just "45"
+   */
+  parseHP(hpStr: any): number {
+    if (typeof hpStr === 'number') return hpStr;
+    if (typeof hpStr !== 'string') return 0;
+    
+    // Try to extract number before parentheses: "45 (6d10+12)"
+    const match = hpStr.match(/^(\d+)/);
+    return match && match[1] ? parseInt(match[1]) : 0;
+  }
+
+  /**
+   * Parse AC from various formats: "13 (natural armor)" or just "13" or number
+   */
+  parseAC(acStr: any): number {
+    if (typeof acStr === 'number') return acStr;
+    if (typeof acStr !== 'string') return 10;
+    
+    // Try to extract number: "13 (natural armor)" or "13"
+    const match = acStr.match(/^(\d+)/);
+    return match && match[1] ? parseInt(match[1]) : 10;
+  }
+
+  async calculateEncounterDifficulty(): Promise<any> {
+    // Calculate enemy stats with real statblock data when available
+    let enemyTotalHP = 0;
+    let enemyTotalAC = 0;
+    let enemyTotalDPR = 0;
+    let enemyTotalAttackBonus = 0;
+    let enemyCount = 0;
+    
+    console.log("=== ENCOUNTER DIFFICULTY CALCULATION ===");
+    
+    for (const creature of this.creatures) {
+      const count = creature.count || 1;
+      
+      console.log(`\n--- Creature: ${creature.name} (x${count}) ---`);
+      console.log(`Path: ${creature.path || 'none'}`);
+      console.log(`CR: ${creature.cr || 'unknown'}`);
+      
+      // Try to get real stats from statblock if available
+      let realStats = null;
+      if (creature.path && typeof creature.path === 'string') {
+        console.log(`Attempting to parse statblock: ${creature.path}`);
+        realStats = await this.parseStatblockStats(creature.path);
+        console.log(`Parsed stats:`, realStats);
+      } else {
+        console.log(`No valid path, using CR estimates`);
+      }
+      
+      // Fall back to CR-based estimates if no statblock or parsing failed
+      const crStats = this.getCRStats(creature.cr);
+      console.log(`CR-based fallback stats:`, crStats);
+      
+      const hp = creature.hp || realStats?.hp || crStats.hp;
+      const ac = creature.ac || realStats?.ac || crStats.ac;
+      const dpr = realStats?.dpr || crStats.dpr;
+      const attackBonus = realStats?.attackBonus || crStats.attackBonus;
+      
+      const dprSource = realStats?.dpr ? '📊 STATBLOCK' : '📖 CR_TABLE';
+      const hpSource = realStats?.hp ? '📊 STATBLOCK' : creature.hp ? '✏️ MANUAL' : '📖 CR_TABLE';
+      const acSource = realStats?.ac ? '📊 STATBLOCK' : creature.ac ? '✏️ MANUAL' : '📖 CR_TABLE';
+      
+      console.log(`Final stats used: HP=${hp} (${hpSource}), AC=${ac} (${acSource}), DPR=${dpr} (${dprSource}), Attack=${attackBonus}`);
+      console.log(`Total contribution (x${count}): HP=${hp * count}, DPR=${dpr * count}`);
+      
+      enemyTotalHP += hp * count;
+      enemyTotalAC += ac * count;
+      enemyTotalDPR += dpr * count;
+      enemyTotalAttackBonus += attackBonus * count;
+      enemyCount += count;
+    }
+    
+    console.log(`\n=== TOTALS ===`);
+    console.log(`Total Enemies: ${enemyCount}`);
+    console.log(`Total Enemy HP: ${enemyTotalHP}`);
+    console.log(`Total Enemy DPR: ${enemyTotalDPR}`);
+    console.log(`Average Enemy AC: ${enemyCount > 0 ? (enemyTotalAC / enemyCount).toFixed(1) : 0}`);
+    console.log(`Average Enemy Attack Bonus: ${enemyCount > 0 ? (enemyTotalAttackBonus / enemyCount).toFixed(1) : 0}`);
+    
+    const avgEnemyAC = enemyCount > 0 ? enemyTotalAC / enemyCount : 13;
+    const avgEnemyAttackBonus = enemyCount > 0 ? enemyTotalAttackBonus / enemyCount : 3;
+    
+    // Get party stats
+    const partyMembers = await this.getPartyForDifficulty();
+    
+    let partyTotalHP = 0;
+    let partyTotalAC = 0;
+    let partyTotalDPR = 0;
+    let partyTotalAttackBonus = 0;
+    let totalLevel = 0;
+    
+    for (const member of partyMembers) {
+      const levelStats = this.getLevelStats(member.level);
+      
+      const memberHP = Number(member.hp) || 0;
+      const memberAC = Number(member.ac) || 0;
+      
+      partyTotalHP += memberHP > 0 ? memberHP : levelStats.hp;
+      partyTotalAC += memberAC > 0 ? memberAC : levelStats.ac;
+      partyTotalDPR += levelStats.dpr;
+      partyTotalAttackBonus += levelStats.attackBonus;
+      totalLevel += member.level;
+    }
+    
+    const memberCount = partyMembers.length;
+    
+    let avgPartyAC: number;
+    let avgPartyAttackBonus: number;
+    let avgLevel: number;
+    let effectivePartyCount: number; // Track effective count for action economy
+    
+    if (memberCount > 0) {
+      avgPartyAC = partyTotalAC / memberCount;
+      avgPartyAttackBonus = partyTotalAttackBonus / memberCount;
+      avgLevel = totalLevel / memberCount;
+      effectivePartyCount = memberCount;
+    } else {
+      const defaultStats = this.getLevelStats(3);
+      partyTotalHP = defaultStats.hp * 4;
+      partyTotalDPR = defaultStats.dpr * 4;
+      avgPartyAC = defaultStats.ac;
+      avgPartyAttackBonus = defaultStats.attackBonus;
+      avgLevel = 3;
+      effectivePartyCount = 4; // Default to 4-person party
+    }
+    
+    // Calculate hit chances
+    const partyHitChance = this.calculateHitChance(avgPartyAttackBonus, avgEnemyAC);
+    const enemyHitChance = this.calculateHitChance(avgEnemyAttackBonus, avgPartyAC);
+    
+    // === ACTION ECONOMY ADJUSTMENT ===
+    // In D&D 5e, action economy affects combat through:
+    // 1. Focus Fire: More creatures can eliminate threats faster
+    // 2. Action Efficiency: Fewer creatures waste actions on downed targets
+    // 3. Target Distribution: Very few creatures can't threaten all enemies
+    
+    const partyActionCount = effectivePartyCount;
+    const enemyActionCount = enemyCount;
+    
+    // Calculate action economy modifiers based on creature count disparity
+    let partyActionEconomyMod = 1.0;
+    let enemyActionEconomyMod = 1.0;
+    
+    if (partyActionCount > 0 && enemyActionCount > 0) {
+      const actionRatio = partyActionCount / enemyActionCount;
+      
+      if (actionRatio > 2.0) {
+        // Extreme party advantage: 6+ PCs vs 1-2 enemies
+        // Party can focus fire and chain eliminate threats
+        partyActionEconomyMod = 1.0 + Math.min((actionRatio - 1) * 0.1, 0.25); // Up to +25%
+        // Very few enemies spread damage thin, but still somewhat effective
+        enemyActionEconomyMod = Math.max(0.85, 1.0 - (actionRatio - 2) * 0.05); // Down to 85%
+      } else if (actionRatio < 0.5) {
+        // Extreme enemy advantage: outnumbered 2:1 or worse
+        // Party spread too thin, can't focus effectively
+        const inverseRatio = enemyActionCount / partyActionCount;
+        partyActionEconomyMod = Math.max(0.85, 1.0 - (inverseRatio - 2) * 0.05); // Down to 85%
+        enemyActionEconomyMod = 1.0 + Math.min((inverseRatio - 1) * 0.1, 0.25); // Up to +25%
+      }
+      // Between 0.5-2.0 ratio: relatively balanced, minimal adjustment
+    }
+    
+    // Calculate effective DPR with action economy adjustments
+    const partyBaseDPR = this.calculateEffectiveDPR(partyTotalDPR, partyHitChance);
+    const enemyBaseDPR = this.calculateEffectiveDPR(enemyTotalDPR, enemyHitChance);
+    
+    const partyEffectiveDPR = partyBaseDPR * partyActionEconomyMod;
+    const enemyEffectiveDPR = enemyBaseDPR * enemyActionEconomyMod;
+    
+    // Calculate rounds to defeat
+    const roundsToDefeatEnemies = this.calculateRoundsToDefeat(enemyTotalHP, partyEffectiveDPR);
+    const roundsToDefeatParty = this.calculateRoundsToDefeat(partyTotalHP, enemyEffectiveDPR);
+    
+    // Survival ratio
+    const survivalRatio = roundsToDefeatParty / roundsToDefeatEnemies;
+    
+    // Determine difficulty
+    let difficulty: string;
+    let difficultyColor: string;
+    
+    if (survivalRatio >= 4 || roundsToDefeatEnemies <= 1) {
+      difficulty = "Trivial";
+      difficultyColor = "#888888";
+    } else if (survivalRatio >= 2.5) {
+      difficulty = "Easy";
+      difficultyColor = "#00aa00";
+    } else if (survivalRatio >= 1.5) {
+      difficulty = "Medium";
+      difficultyColor = "#aaaa00";
+    } else if (survivalRatio >= 1.0) {
+      difficulty = "Hard";
+      difficultyColor = "#ff8800";
+    } else if (survivalRatio >= 0.6) {
+      difficulty = "Deadly";
+      difficultyColor = "#ff0000";
+    } else {
+      difficulty = "TPK Risk";
+      difficultyColor = "#880000";
+    }
+    
+    // Generate summary
+    let summary = "";
+    if (partyMembers.length === 0) {
+      summary = `⚠️ No party found. Using default 4-player party (Level 3).\\n`;
+      summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}.`;
+    } else {
+      summary = `Party: ${memberCount} members (Avg Level ${avgLevel.toFixed(1)})\\n`;
+      summary += `Enemies: ${enemyCount} creatures\\n`;
+      summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}`;
+    }
+    
+    return {
+      enemyStats: {
+        totalHP: enemyTotalHP,
+        avgAC: avgEnemyAC,
+        totalDPR: enemyTotalDPR,
+        avgAttackBonus: avgEnemyAttackBonus,
+        creatureCount: enemyCount
+      },
+      partyStats: {
+        totalHP: partyTotalHP,
+        avgAC: avgPartyAC,
+        totalDPR: partyTotalDPR,
+        avgAttackBonus: avgPartyAttackBonus,
+        memberCount: memberCount,
+        avgLevel: avgLevel
+      },
+      analysis: {
+        partyHitChance,
+        enemyHitChance,
+        partyEffectiveDPR,
+        enemyEffectiveDPR,
+        partyActionEconomyMod,
+        enemyActionEconomyMod,
+        roundsToDefeatEnemies,
+        roundsToDefeatParty,
+        survivalRatio,
+        difficulty,
+        difficultyColor,
+        summary
+      }
+    };
+  }
+
+  generateUniqueId(): string {
+    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  // Helper methods (copied from SceneCreationModal)
+  getCRStats(cr: string | undefined): { hp: number; ac: number; dpr: number; attackBonus: number; xp: number } {
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.getCRStats(cr);
+  }
+
+  getLevelStats(level: number): { hp: number; ac: number; dpr: number; attackBonus: number } {
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.getLevelStats(level);
+  }
+
+  async getPartyForDifficulty(): Promise<Array<{ level: number; hp?: number; ac?: number }>> {
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.getPartyForDifficulty();
+  }
+
+  calculateHitChance(attackBonus: number, targetAC: number): number {
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.calculateHitChance(attackBonus, targetAC);
+  }
+
+  calculateEffectiveDPR(baseDPR: number, hitChance: number): number {
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.calculateEffectiveDPR(baseDPR, hitChance);
+  }
+
+  calculateRoundsToDefeat(totalHP: number, effectiveDPR: number): number {
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.calculateRoundsToDefeat(totalHP, effectiveDPR);
+  }
+
+  async saveEncounter() {
+    if (!this.encounterName.trim()) {
+      new Notice("Please enter an encounter name");
+      return;
+    }
+
+    if (this.creatures.length === 0) {
+      new Notice("Please add at least one creature");
+      return;
+    }
+
+    try {
+      // Determine encounter folder path
+      let encounterFolder = "z_Encounters";
+      
+      // Check if we're in a campaign context
+      const activeCampaignFile = this.app.workspace.getActiveFile();
+      if (activeCampaignFile) {
+        const campaignFolder = this.findCampaignFolder(activeCampaignFile.path);
+        if (campaignFolder) {
+          encounterFolder = `${campaignFolder}/z_Encounters`;
+          this.campaignPath = campaignFolder;
+        }
+      }
+
+      // Create folder if it doesn't exist
+      const folderExists = this.app.vault.getAbstractFileByPath(encounterFolder);
+      if (!folderExists) {
+        await this.app.vault.createFolder(encounterFolder);
+      }
+
+      // Generate encounter file content
+      this.syncEncounterBuilder();
+      const diffResult = await this.encounterBuilder.calculateEncounterDifficulty();
+      const encounterContent = await this.generateEncounterContent(diffResult);
+
+      // Save or update encounter file
+      const fileName = `${this.encounterName}.md`;
+      const encounterPath = `${encounterFolder}/${fileName}`;
+
+      if (this.isEdit && this.originalEncounterPath !== encounterPath) {
+        // If name changed, delete old file and create new one
+        const oldFile = this.app.vault.getAbstractFileByPath(this.originalEncounterPath);
+        if (oldFile instanceof TFile) {
+          await this.app.vault.delete(oldFile);
+        }
+      }
+
+      const existingFile = this.app.vault.getAbstractFileByPath(encounterPath);
+      let fileToOpen: TFile;
+      if (existingFile instanceof TFile) {
+        await this.app.vault.modify(existingFile, encounterContent);
+        new Notice(`Encounter "${this.encounterName}" updated!`);
+        fileToOpen = existingFile;
+      } else {
+        const newFile = await this.app.vault.create(encounterPath, encounterContent);
+        new Notice(`Encounter "${this.encounterName}" created!`);
+        fileToOpen = newFile;
+      }
+
+      // Save to Initiative Tracker
+      await this.saveToInitiativeTracker(encounterPath);
+
+      this.close();
+      
+      // Open the encounter note
+      const leaf = this.app.workspace.getLeaf(false);
+      await leaf.openFile(fileToOpen);
+    } catch (error) {
+      console.error("Error saving encounter:", error);
+      new Notice("Error saving encounter");
+    }
+  }
+
+  findCampaignFolder(filePath: string): string | null {
+    // Look for campaign folder in path (folders containing "ttrpgs" subdirectory)
+    const parts = filePath.split('/');
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const potentialCampaign = parts.slice(0, i + 1).join('/');
+      const ttrpgPath = `${potentialCampaign}/ttrpgs`;
+      if (this.app.vault.getAbstractFileByPath(ttrpgPath)) {
+        return potentialCampaign;
+      }
+    }
+    return null;
+  }
+
+  escapeYamlString(str: string): string {
+    if (!str) return '""';
+    // Escape backslashes first, then quotes
+    return '"' + str.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  }
+
+  async generateEncounterContent(diffResult: any): Promise<string> {
+    const currentDate = window.moment().format("YYYY-MM-DD");
+
+    let frontmatter = `---
+type: encounter
+name: ${this.escapeYamlString(this.encounterName)}
+creatures:`;
+
+    for (const creature of this.creatures) {
+      frontmatter += `\n  - name: ${this.escapeYamlString(creature.name)}
+    count: ${creature.count}`;
+      if (creature.hp) frontmatter += `\n    hp: ${creature.hp}`;
+      if (creature.ac) frontmatter += `\n    ac: ${creature.ac}`;
+      if (creature.cr) frontmatter += `\n    cr: ${this.escapeYamlString(creature.cr)}`;
+      if (creature.source) frontmatter += `\n    source: ${this.escapeYamlString(creature.source)}`;
+      if (creature.path) frontmatter += `\n    path: ${this.escapeYamlString(creature.path)}`;
+    }
+
+    frontmatter += `
+include_party: ${this.includeParty}
+use_color_names: ${this.useColorNames}`;
+
+  if (this.selectedPartyId) frontmatter += `\nselected_party_id: ${this.escapeYamlString(this.selectedPartyId)}`;
+  if (this.selectedPartyName) frontmatter += `\nselected_party_name: ${this.escapeYamlString(this.selectedPartyName)}`;
+
+    if (this.adventurePath) frontmatter += `\nadventure_path: ${this.escapeYamlString(this.adventurePath)}`;
+    if (this.scenePath) frontmatter += `\nscene_path: ${this.escapeYamlString(this.scenePath)}`;
+    if (this.campaignPath) frontmatter += `\ncampaign_path: ${this.escapeYamlString(this.campaignPath)}`;
+
+    frontmatter += `
+difficulty:
+  rating: ${this.escapeYamlString(diffResult.analysis.difficulty)}
+  color: ${this.escapeYamlString(diffResult.analysis.difficultyColor)}
+  party_count: ${diffResult.partyStats.memberCount}
+  party_avg_level: ${diffResult.partyStats.avgLevel.toFixed(1)}
+  party_total_hp: ${diffResult.partyStats.totalHP}
+  party_avg_ac: ${diffResult.partyStats.avgAC.toFixed(1)}
+  party_total_dpr: ${diffResult.partyStats.totalDPR.toFixed(1)}
+  party_hit_chance: ${(diffResult.analysis.partyHitChance * 100).toFixed(0)}
+  party_effective_dpr: ${diffResult.analysis.partyEffectiveDPR.toFixed(0)}
+  enemy_count: ${diffResult.enemyStats.creatureCount}
+  enemy_total_hp: ${diffResult.enemyStats.totalHP}
+  enemy_avg_ac: ${diffResult.enemyStats.avgAC.toFixed(1)}
+  enemy_total_dpr: ${diffResult.enemyStats.totalDPR.toFixed(1)}
+  enemy_hit_chance: ${(diffResult.analysis.enemyHitChance * 100).toFixed(0)}
+  enemy_effective_dpr: ${diffResult.analysis.enemyEffectiveDPR.toFixed(0)}
+  rounds_to_defeat: ${diffResult.analysis.roundsToDefeatEnemies}
+  rounds_party_survives: ${diffResult.analysis.roundsToDefeatParty}
+  survival_ratio: ${diffResult.analysis.survivalRatio.toFixed(2)}
+date: ${currentDate}
+---`;
+
+    const content = `${frontmatter}
+
+# ${this.encounterName}
+
+\`\`\`dataviewjs
+// Create action buttons
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
+
+// Open Initiative Tracker and load encounter button
+const openTrackerBtn = buttonContainer.createEl("button", { 
+  text: "⚔️ Open & Load in Tracker",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px; background-color: var(--interactive-accent); color: var(--text-on-accent);" }
+});
+openTrackerBtn.addEventListener("click", async () => {
+  const encounterName = dv.current().name;
+  const initiativeTracker = app.plugins?.plugins?.["initiative-tracker"];
+  
+  if (!initiativeTracker) {
+    new Notice("Initiative Tracker plugin not found");
+    return;
+  }
+  
+  const encounter = initiativeTracker.data?.encounters?.[encounterName];
+  if (!encounter) {
+    new Notice("Encounter \\"" + encounterName + "\\" not found. Try recreating it.");
+    return;
+  }
+  
+  // Use Initiative Tracker's internal tracker API to load the encounter
+  try {
+    if (initiativeTracker.tracker?.new) {
+      initiativeTracker.tracker.new(initiativeTracker, encounter);
+      new Notice("✅ Loaded encounter: " + encounterName);
+    } else {
+      new Notice("⚠️ Could not load encounter. Try using Load Encounter from Initiative Tracker menu.");
+    }
+  } catch (e) {
+    console.error("Error loading encounter:", e);
+    new Notice("⚠️ Could not load encounter: " + e.message);
+  }
+  
+  // Open Initiative Tracker view
+  app.commands.executeCommandById("initiative-tracker:open-tracker");
+});
+
+// Edit button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-encounter");
+});
+
+// Delete button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-encounter");
+});
+\`\`\`
+
+---
+
+## Difficulty Analysis
+
+\`\`\`dataviewjs
+const diff = dv.current().difficulty;
+if (!diff) {
+  dv.paragraph("*No difficulty data available.*");
+} else {
+  // Create difficulty card
+  const card = dv.el("div", "", { cls: "dnd-difficulty-card" });
+  
+  // Header with difficulty badge and rounds
+  const header = dv.el("div", "", { cls: "dnd-difficulty-header", container: card });
+  const badge = dv.el("span", diff.rating, { cls: "dnd-difficulty-badge", container: header });
+  badge.style.backgroundColor = diff.color;
+  dv.el("span", \` ~\${diff.rounds_to_defeat} round\${diff.rounds_to_defeat !== 1 ? 's' : ''}\`, { cls: "dnd-rounds-estimate", container: header });
+  
+  // Stats grid
+  const grid = dv.el("div", "", { cls: "dnd-difficulty-stats-grid", container: card });
+  
+  // Party column
+  const partyCol = dv.el("div", "", { cls: "dnd-stats-column", container: grid });
+  dv.el("h5", \`⚔️ Party (\${diff.party_count})\`, { container: partyCol });
+  const partyStats = dv.el("div", "", { container: partyCol });
+  partyStats.innerHTML = \`
+    <div>HP Pool: <strong>\${diff.party_total_hp}</strong></div>
+    <div>Avg AC: <strong>\${Math.round(diff.party_avg_ac)}</strong></div>
+    <div>Total DPR: <strong>\${Math.round(diff.party_total_dpr)}</strong></div>
+    <div>Hit Chance: <strong>\${diff.party_hit_chance}%</strong></div>
+    <div>Effective DPR: <strong>\${diff.party_effective_dpr}</strong></div>
+  \`;
+  
+  // Enemy column
+  const enemyCol = dv.el("div", "", { cls: "dnd-stats-column", container: grid });
+  dv.el("h5", \`👹 Enemies (\${diff.enemy_count})\`, { container: enemyCol });
+  const enemyStats = dv.el("div", "", { container: enemyCol });
+  enemyStats.innerHTML = \`
+    <div>HP Pool: <strong>\${diff.enemy_total_hp}</strong></div>
+    <div>Avg AC: <strong>\${Math.round(diff.enemy_avg_ac)}</strong></div>
+    <div>Total DPR: <strong>\${Math.round(diff.enemy_total_dpr)}</strong></div>
+    <div>Hit Chance: <strong>\${diff.enemy_hit_chance}%</strong></div>
+    <div>Effective DPR: <strong>\${diff.enemy_effective_dpr}</strong></div>
+  \`;
+  
+  // 3-round analysis
+  const analysis = dv.el("div", "", { cls: "dnd-difficulty-analysis", container: card });
+  const partyDamage3 = diff.party_effective_dpr * 3;
+  const enemyDamage3 = diff.enemy_effective_dpr * 3;
+  const partyHPAfter3 = Math.max(0, diff.party_total_hp - enemyDamage3);
+  const enemyHPAfter3 = Math.max(0, diff.enemy_total_hp - partyDamage3);
+  const partyHPPercent = Math.round((partyHPAfter3 / diff.party_total_hp) * 100);
+  const enemyHPPercent = Math.round((enemyHPAfter3 / diff.enemy_total_hp) * 100);
+  
+  analysis.innerHTML = \`
+    <div style="margin-bottom: 8px;"><strong>📊 3-Round Analysis:</strong></div>
+    <div>Party deals: <strong>\${Math.round(partyDamage3)}</strong> damage → Enemies at <strong>\${Math.round(enemyHPAfter3)}</strong> HP (\${enemyHPPercent}%)</div>
+    <div>Enemies deal: <strong>\${Math.round(enemyDamage3)}</strong> damage → Party at <strong>\${Math.round(partyHPAfter3)}</strong> HP (\${partyHPPercent}%)</div>
+    <div style="margin-top: 8px; opacity: 0.8;">
+      Survival Ratio: \${diff.survival_ratio}
+      (Party can survive \${diff.rounds_party_survives} rounds, enemies survive \${diff.rounds_to_defeat} rounds)
+    </div>
+  \`;
+}
+\`\`\`
+
+---
+
+## Creatures
+
+\`\`\`dataviewjs
+const creatures = dv.current().creatures || [];
+
+if (creatures.length === 0) {
+  dv.paragraph("*No creatures in this encounter.*");
+} else {
+  const table = creatures.map(c => {
+    return [
+      c.name,
+      c.count || 1,
+      c.cr || "?",
+      c.hp || "?",
+      c.ac || "?"
+    ];
+  });
+  
+  dv.table(["Creature", "Count", "CR", "HP", "AC"], table);
+}
+\`\`\`
+
+---
+
+## GM Notes
+
+_Add notes about tactics, environment, or special conditions here._
+`;
+
+    return content;
+  }
+
+  async saveToInitiativeTracker(encounterPath: string) {
+    try {
+      const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+      if (!initiativeTracker) {
+        console.log("Initiative Tracker plugin not found - skipping encounter save to tracker");
+        new Notice("⚠️ Initiative Tracker not found. Encounter saved to vault only.");
+        return;
+      }
+
+      // Build creature list for initiative tracker
+      const creatures: any[] = [];
+
+      // Add party members if requested
+      if (this.includeParty && this.selectedPartyMembers.length > 0) {
+        try {
+          this.syncEncounterBuilder();
+          const selectedPlayers = await this.encounterBuilder.getSelectedPartyPlayers();
+          console.log("Adding party members to encounter:", selectedPlayers.length);
+          for (const player of selectedPlayers) {
+            const hp = player.hp || player.currentMaxHP || 20;
+            const ac = player.ac || player.currentAC || 14;
+            creatures.push({
+              name: player.name || "Player",
+              display: "",
+              initiative: 0,
+              static: false,
+              modifier: Math.floor(((player.level || 1) - 1) / 4) + 2,
+              hp: hp,
+              currentMaxHP: hp,
+              currentHP: hp,
+              tempHP: player.thp || 0,
+              ac: ac,
+              currentAC: ac,
+              id: this.generateUniqueId(),
+              status: [],
+              enabled: true,
+              active: false,
+              hidden: false,
+              friendly: true,
+              player: true,
+              rollHP: false
+            });
+          }
+        } catch (error) {
+          console.error("Error getting party members for Initiative Tracker:", error);
+        }
+      }
+
+      // Helper function to generate unique IDs like Initiative Tracker does
+      const generateId = () => {
+        const chars = '0123456789abcdef';
+        let id = 'ID_';
+        for (let i = 0; i < 12; i++) {
+          id += chars[Math.floor(Math.random() * chars.length)];
+        }
+        return id;
+      };
+
+      // Color names for duplicate creatures
+      const colors = [
+        "Red", "Blue", "Green", "Yellow", "Purple", "Orange", 
+        "Pink", "Brown", "Black", "White", "Gray", "Cyan", 
+        "Magenta", "Lime", "Teal", "Indigo", "Violet", "Gold", 
+        "Silver", "Bronze"
+      ];
+
+      // Build creature data in Initiative Tracker format using flatMap
+      const enemyCreatures = this.creatures.flatMap(c => {
+        console.log(`Building creature: ${c.name}, HP: ${c.hp}, AC: ${c.ac}`);
+        const instances = [];
+        for (let i = 0; i < c.count; i++) {
+          const hp = c.hp || 1;
+          const ac = c.ac || 10;
+
+          // Determine name and display based on useColorNames setting
+          // IMPORTANT: 'name' is used for bestiary lookup and must be the base creature name
+          // 'display' is used for visual representation in the tracker
+          // Initiative Tracker will auto-number duplicate display names (Zombie -> Zombie 1, Zombie 2)
+          let displayName = c.name;  // Always show at least the creature name
+
+          if (c.count > 1 && this.useColorNames) {
+            const colorIndex = i % colors.length;
+            // Use display for color names
+            displayName = `${c.name} (${colors[colorIndex]})`;
+          }
+          // For single creatures or multiple without colors, display is just the creature name
+          // Initiative Tracker will add numbers automatically for duplicates
+
+          const creature = {
+            name: c.name,  // Base creature name for bestiary lookup
+            display: displayName,  // Display name (always has a value now)
+            initiative: 0,
+            static: false,
+            modifier: 0,  // Initiative modifier
+            hp: hp,
+            currentMaxHP: hp,  // Initiative Tracker uses currentMaxHP, not max
+            cr: c.cr || undefined,
+            ac: ac,  // AC as number
+            currentAC: ac,  // Initiative Tracker also tracks currentAC
+            id: generateId(),  // CRITICAL: Unique ID for each creature instance
+            currentHP: hp,  // Initiative Tracker uses currentHP, not hp
+            tempHP: 0,  // Initiative Tracker uses tempHP, not temp
+            status: [],  // Array of status effects
+            enabled: true,
+            active: false,  // Whether this creature is currently active in turn order
+            hidden: false,  // Hidden from players
+            friendly: false,  // Friendly to players
+            rollHP: false  // Whether to roll HP when adding to tracker
+          };
+          console.log(`Created creature instance:`, creature);
+          instances.push(creature);
+        }
+        return instances;
+      });
+
+      // Add enemy creatures to the main creatures array
+      creatures.push(...enemyCreatures);
+
+      console.log(`Saving encounter "${this.encounterName}" with ${creatures.length} creatures to Initiative Tracker`);
+      console.log("Initiative Tracker data structure available:", !!initiativeTracker.data);
+      console.log("Initiative Tracker saveSettings available:", !!initiativeTracker.saveSettings);
+
+      // Save encounter to Initiative Tracker's data structure
+      if (initiativeTracker.data) {
+        // Initialize encounters object if it doesn't exist
+        if (!initiativeTracker.data.encounters) {
+          console.log("Initializing encounters object in Initiative Tracker data");
+          initiativeTracker.data.encounters = {};
+        }
+
+        console.log("Current encounters in Initiative Tracker:", Object.keys(initiativeTracker.data.encounters));
+
+        // Save encounter in Initiative Tracker format
+        initiativeTracker.data.encounters[this.encounterName] = {
+          creatures: creatures,
+          state: false,
+          name: this.encounterName,
+          round: 1,
+          logFile: null,
+          rollHP: false
+        };
+
+        console.log(`Encounter "${this.encounterName}" added to data.encounters`);
+
+        // Persist the data
+        if (initiativeTracker.saveSettings) {
+          await initiativeTracker.saveSettings();
+          console.log(`✓ Successfully saved encounter "${this.encounterName}" to Initiative Tracker`);
+          new Notice(`✓ Encounter saved to Initiative Tracker with ${creatures.length} creatures`);
+        } else {
+          console.warn("Initiative Tracker doesn't have saveSettings method");
+          new Notice("⚠️ Could not persist encounter to Initiative Tracker");
+        }
+      } else {
+        console.warn("Initiative Tracker data not accessible");
+        new Notice("⚠️ Initiative Tracker data not accessible - encounter saved to vault only");
+      }
+    } catch (error) {
+      console.error("Error saving to Initiative Tracker:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      new Notice(`⚠️ Error saving to Initiative Tracker: ${errorMessage}`);
+    }
+  }
+
+  async deleteEncounter() {
+    if (!this.isEdit) return;
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      const modal = new Modal(this.app);
+      modal.contentEl.createEl("h3", { text: "Delete Encounter?" });
+      modal.contentEl.createEl("p", { text: `Are you sure you want to delete "${this.encounterName}"?` });
+      modal.contentEl.createEl("p", { 
+        text: "This will remove the encounter file and remove it from the Initiative Tracker.", 
+        cls: "mod-warning" 
+      });
+
+      const buttonContainer = modal.contentEl.createDiv();
+      buttonContainer.style.display = "flex";
+      buttonContainer.style.justifyContent = "flex-end";
+      buttonContainer.style.gap = "10px";
+      buttonContainer.style.marginTop = "20px";
+
+      const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
+      cancelBtn.onclick = () => {
+        modal.close();
+        resolve(false);
+      };
+
+      const deleteBtn = buttonContainer.createEl("button", { text: "Delete", cls: "mod-warning" });
+      deleteBtn.onclick = () => {
+        modal.close();
+        resolve(true);
+      };
+
+      modal.open();
+    });
+
+    if (!confirmed) return;
+
+    try {
+      // Delete the encounter file
+      const file = this.app.vault.getAbstractFileByPath(this.originalEncounterPath);
+      if (file instanceof TFile) {
+        await this.app.vault.delete(file);
+        console.log(`Deleted encounter file: ${this.originalEncounterPath}`);
+      }
+
+      // Remove from Initiative Tracker
+      const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+      console.log("Initiative Tracker plugin found:", !!initiativeTracker);
+      
+      if (initiativeTracker?.data?.encounters) {
+        console.log("Current encounters in Initiative Tracker:", Object.keys(initiativeTracker.data.encounters));
+        console.log(`Attempting to delete encounter: "${this.encounterName}"`);
+        console.log("Encounter exists in data:", !!initiativeTracker.data.encounters[this.encounterName]);
+        
+        if (initiativeTracker.data.encounters[this.encounterName]) {
+          delete initiativeTracker.data.encounters[this.encounterName];
+          console.log(`✓ Deleted encounter "${this.encounterName}" from data.encounters`);
+          
+          if (initiativeTracker.saveSettings) {
+            await initiativeTracker.saveSettings();
+            console.log("✓ Initiative Tracker settings saved after deletion");
+            new Notice(`✓ Encounter deleted from Initiative Tracker`);
+          } else {
+            console.warn("Initiative Tracker saveSettings not available");
+            new Notice("⚠️ Could not persist deletion to Initiative Tracker");
+          }
+        } else {
+          console.warn(`Encounter "${this.encounterName}" not found in Initiative Tracker`);
+          new Notice("⚠️ Encounter not found in Initiative Tracker");
+        }
+      } else {
+        console.warn("Initiative Tracker data.encounters not accessible");
+        new Notice("⚠️ Initiative Tracker data not accessible");
+      }
+
+      new Notice(`Encounter "${this.encounterName}" deleted from vault`);
+      this.close();
+    } catch (error) {
+      console.error("Error deleting encounter:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      new Notice(`Error deleting encounter: ${errorMessage}`);
+    }
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
 export default class DndCampaignHubPlugin extends Plugin {
   settings!: DndCampaignHubSettings;
   SessionCreationModal = SessionCreationModal;
@@ -504,6 +2592,79 @@ export default class DndCampaignHubPlugin extends Plugin {
         },
       ],
       callback: () => this.createTrap(),
+    });
+
+    this.addCommand({
+      id: "create-encounter",
+      name: "Create New Encounter",
+      callback: () => this.createEncounter(),
+    });
+
+    this.addCommand({
+      id: "edit-encounter",
+      name: "Edit Encounter",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          this.editEncounter(file.path);
+        } else {
+          new Notice("Please open an encounter note first");
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "delete-encounter",
+      name: "Delete Encounter",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "encounter") {
+            const encounterName = cache.frontmatter.name || file.basename;
+            const confirmed = await this.confirmDelete(file.name);
+            if (confirmed) {
+              // Delete from vault
+              await this.app.vault.delete(file);
+              console.log(`Deleted encounter file: ${file.path}`);
+              
+              // Remove from Initiative Tracker
+              const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+              console.log("Initiative Tracker plugin found:", !!initiativeTracker);
+              
+              if (initiativeTracker?.data?.encounters) {
+                console.log("Current encounters in Initiative Tracker:", Object.keys(initiativeTracker.data.encounters));
+                console.log(`Attempting to delete encounter: "${encounterName}"`);
+                console.log("Encounter exists in data:", !!initiativeTracker.data.encounters[encounterName]);
+                
+                if (initiativeTracker.data.encounters[encounterName]) {
+                  delete initiativeTracker.data.encounters[encounterName];
+                  console.log(`✓ Deleted encounter "${encounterName}" from data.encounters`);
+                  
+                  if (initiativeTracker.saveSettings) {
+                    await initiativeTracker.saveSettings();
+                    console.log("✓ Initiative Tracker settings saved after deletion");
+                    new Notice(`✓ Encounter "${encounterName}" deleted from vault and Initiative Tracker`);
+                  } else {
+                    console.warn("Initiative Tracker saveSettings not available");
+                    new Notice(`⚠️ Encounter deleted from vault but could not persist deletion to Initiative Tracker`);
+                  }
+                } else {
+                  console.warn(`Encounter "${encounterName}" not found in Initiative Tracker`);
+                  new Notice(`⚠️ Encounter deleted from vault but not found in Initiative Tracker`);
+                }
+              } else {
+                console.warn("Initiative Tracker data.encounters not accessible");
+                new Notice(`⚠️ Encounter deleted from vault but Initiative Tracker data not accessible`);
+              }
+            }
+          } else {
+            new Notice("This is not an encounter note");
+          }
+        } else {
+          new Notice("Please open an encounter note first");
+        }
+      },
     });
 
     this.addCommand({
@@ -932,6 +3093,50 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async createTrap() {
 		// Open Trap creation modal
 		new TrapCreationModal(this.app, this).open();
+	}
+
+	async createEncounter() {
+		// Open Encounter Builder modal
+		new EncounterBuilderModal(this.app, this).open();
+	}
+
+	async editEncounter(encounterPath: string) {
+		// Open Encounter Builder modal in edit mode
+		new EncounterBuilderModal(this.app, this, encounterPath).open();
+	}
+
+	async confirmDelete(fileName: string): Promise<boolean> {
+		return new Promise((resolve) => {
+			const modal = new Modal(this.app);
+			modal.titleEl.setText("Confirm Delete");
+			modal.contentEl.createEl("p", { text: `Are you sure you want to delete "${fileName}"?` });
+			modal.contentEl.createEl("p", { 
+				text: "This action cannot be undone.", 
+				attr: { style: "color: var(--text-error); font-weight: bold;" }
+			});
+
+			const buttonContainer = modal.contentEl.createDiv({ cls: "modal-button-container" });
+			buttonContainer.style.display = "flex";
+			buttonContainer.style.gap = "10px";
+			buttonContainer.style.justifyContent = "flex-end";
+			buttonContainer.style.marginTop = "20px";
+
+			const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
+			cancelBtn.onclick = () => {
+				resolve(false);
+				modal.close();
+			};
+
+			const deleteBtn = buttonContainer.createEl("button", { text: "Delete" });
+			deleteBtn.style.backgroundColor = "var(--interactive-accent)";
+			deleteBtn.style.color = "var(--text-on-accent)";
+			deleteBtn.onclick = () => {
+				resolve(true);
+				modal.close();
+			};
+
+			modal.open();
+		});
 	}
 
 	async createSession() {
@@ -1598,6 +3803,11 @@ class DndHubModal extends Modal {
       this.createActionButton(quickActionsContainer, "🗺️ New Adventure", () => {
         this.close();
         this.plugin.createAdventure();
+      });
+
+      this.createActionButton(quickActionsContainer, "⚔️ New Encounter", () => {
+        this.close();
+        this.plugin.createEncounter();
       });
     }
 
@@ -3962,8 +6172,1035 @@ interface TrapCountermeasure {
   effect?: string;
 }
 
+interface EncounterCreature {
+  name: string;
+  count: number;
+  hp?: number;
+  ac?: number;
+  cr?: string;
+  source?: string;
+  path?: string;  // Path to creature file for statblock plugin
+  isCustom?: boolean;  // Temporary custom creature
+  isFriendly?: boolean;  // Friendly NPC/creature
+  isHidden?: boolean;  // Hidden from players
+}
+
+interface EncounterData {
+  name: string;
+  creatures: EncounterCreature[];
+  includeParty: boolean;
+  useColorNames: boolean;
+  adventurePath?: string;
+  scenePath?: string;
+  campaignPath?: string;
+  difficulty?: {
+    rating: string;
+    color: string;
+    summary: string;
+    partyStats?: any;
+    enemyStats?: any;
+  };
+}
+
+class EncounterBuilder {
+  app: App;
+  plugin: DndCampaignHubPlugin;
+
+  encounterName = "";
+  creatures: EncounterCreature[] = [];
+  includeParty = true;
+  selectedPartyMembers: string[] = [];
+  selectedPartyId = "";
+  useColorNames = false;
+  adventurePath = "";
+  scenePath = "";
+  campaignPath = "";
+
+  constructor(app: App, plugin: DndCampaignHubPlugin) {
+    this.app = app;
+    this.plugin = plugin;
+  }
+
+  findCampaignFolder(filePath: string): string | null {
+    // Look for campaign folder in path (folders containing "ttrpgs" subdirectory)
+    const parts = filePath.split('/');
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const potentialCampaign = parts.slice(0, i + 1).join('/');
+      const ttrpgPath = `${potentialCampaign}/ttrpgs`;
+      if (this.app.vault.getAbstractFileByPath(ttrpgPath)) {
+        return potentialCampaign;
+      }
+    }
+    return null;
+  }
+
+  async getAvailablePartyMembers(): Promise<Array<{ name: string; level: number; hp: number; ac: number }>> {
+    const members: Array<{ name: string; level: number; hp: number; ac: number }> = [];
+
+    try {
+      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+      if (!initiativePlugin?.data) return members;
+
+      const party = this.resolveParty(initiativePlugin);
+      if (!party?.players) return members;
+
+      const players = this.getPartyPlayersFromParty(initiativePlugin, party, false);
+      for (const player of players) {
+        members.push({
+          name: player.name || "Unknown",
+          level: player.level || 1,
+          hp: player.hp || player.currentMaxHP || 20,
+          ac: player.ac || player.currentAC || 14
+        });
+      }
+    } catch (error) {
+      console.error("Error getting available party members:", error);
+    }
+
+    return members;
+  }
+
+  async getAvailableParties(): Promise<Array<{ id: string; name: string }>> {
+    const parties: Array<{ id: string; name: string }> = [];
+
+    try {
+      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+      if (!initiativePlugin?.data?.parties) return parties;
+
+      for (const party of initiativePlugin.data.parties) {
+        const id = party.id || party.name;
+        const name = party.name || "Unnamed Party";
+        parties.push({ id, name });
+      }
+
+      parties.sort((a, b) => a.name.localeCompare(b.name));
+    } catch (error) {
+      console.error("Error getting available parties:", error);
+    }
+
+    return parties;
+  }
+
+  async getResolvedParty(): Promise<{ id: string; name: string } | null> {
+    const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+    if (!initiativePlugin?.data) return null;
+
+    const party = this.resolveParty(initiativePlugin);
+    if (!party) return null;
+
+    return { id: party.id || party.name, name: party.name || "Unnamed Party" };
+  }
+
+  async getPartyForDifficulty(): Promise<Array<{ level: number; hp?: number; ac?: number }>> {
+    if (!this.includeParty) return [];
+
+    const partyMembers: Array<{ level: number; hp?: number; ac?: number }> = [];
+
+    try {
+      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+      if (!initiativePlugin?.data) return partyMembers;
+
+      const party = this.resolveParty(initiativePlugin);
+      if (!party?.players) return partyMembers;
+
+      const players = this.getPartyPlayersFromParty(initiativePlugin, party, true);
+      for (const player of players) {
+        partyMembers.push({
+          level: player.level || 1,
+          hp: player.hp || player.currentMaxHP,
+          ac: player.ac || player.currentAC
+        });
+      }
+    } catch (error) {
+      console.error("Error getting party for difficulty:", error);
+    }
+
+    return partyMembers;
+  }
+
+  async getSelectedPartyPlayers(): Promise<any[]> {
+    try {
+      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+      if (!initiativePlugin?.data) return [];
+
+      const party = this.resolveParty(initiativePlugin);
+      if (!party?.players) return [];
+
+      return this.getPartyPlayersFromParty(initiativePlugin, party, true);
+    } catch (error) {
+      console.error("Error getting selected party players:", error);
+      return [];
+    }
+  }
+
+  resolveParty(initiativePlugin: any, campaignNameOverride?: string): any | null {
+    const parties: any[] = initiativePlugin?.data?.parties || [];
+    if (parties.length === 0) return null;
+
+    if (this.selectedPartyId) {
+      const selected = parties.find((p: any) => (p.id || p.name) === this.selectedPartyId);
+      if (selected) return selected;
+    }
+
+    let campaignName = campaignNameOverride || "";
+    if (!campaignName) {
+      const activeFile = this.app.workspace.getActiveFile();
+      if (activeFile) {
+        const campaignFolder = this.findCampaignFolder(activeFile.path);
+        if (campaignFolder) {
+          campaignName = campaignFolder.split('/').pop() || "";
+        }
+      }
+    }
+
+    if (campaignName) {
+      const partyName = `${campaignName} Party`;
+      const namedParty = parties.find((p: any) => p.name === partyName);
+      if (namedParty) return namedParty;
+    }
+
+    if (initiativePlugin?.data?.defaultParty) {
+      const defaultParty = parties.find((p: any) => p.id === initiativePlugin.data.defaultParty);
+      if (defaultParty) return defaultParty;
+    }
+
+    return parties[0] || null;
+  }
+
+  getPartyPlayersFromParty(initiativePlugin: any, party: any, filterSelected = true): any[] {
+    const players: any[] = initiativePlugin?.data?.players || [];
+    const playerById = new Map(players.map(p => [p.id, p]));
+    const playerByName = new Map(players.map(p => [p.name, p]));
+
+    const selectedNames = filterSelected && this.selectedPartyMembers.length > 0
+      ? new Set(this.selectedPartyMembers)
+      : null;
+
+    const results: any[] = [];
+    for (const entry of party.players || []) {
+      const player = playerById.get(entry) || playerByName.get(entry);
+      if (!player) continue;
+      if (selectedNames && !selectedNames.has(player.name)) continue;
+      results.push(player);
+    }
+
+    return results;
+  }
+
+  getCRStats(cr: string | undefined): { hp: number; ac: number; dpr: number; attackBonus: number; xp: number } {
+    // CR stats table from D&D 5e DMG
+    const crTable: { [key: string]: { hp: number; ac: number; dpr: number; attackBonus: number; xp: number } } = {
+      "0": { hp: 5, ac: 13, dpr: 1, attackBonus: 3, xp: 10 },
+      "1/8": { hp: 10, ac: 13, dpr: 2, attackBonus: 3, xp: 25 },
+      "1/4": { hp: 20, ac: 13, dpr: 3, attackBonus: 3, xp: 50 },
+      "1/2": { hp: 35, ac: 13, dpr: 5, attackBonus: 3, xp: 100 },
+      "1": { hp: 70, ac: 13, dpr: 8, attackBonus: 3, xp: 200 },
+      "2": { hp: 85, ac: 13, dpr: 15, attackBonus: 3, xp: 450 },
+      "3": { hp: 100, ac: 13, dpr: 21, attackBonus: 4, xp: 700 },
+      "4": { hp: 115, ac: 14, dpr: 27, attackBonus: 5, xp: 1100 },
+      "5": { hp: 130, ac: 15, dpr: 33, attackBonus: 6, xp: 1800 },
+      "6": { hp: 145, ac: 15, dpr: 39, attackBonus: 6, xp: 2300 },
+      "7": { hp: 160, ac: 15, dpr: 45, attackBonus: 6, xp: 2900 },
+      "8": { hp: 175, ac: 16, dpr: 51, attackBonus: 7, xp: 3900 },
+      "9": { hp: 190, ac: 16, dpr: 57, attackBonus: 7, xp: 5000 },
+      "10": { hp: 205, ac: 17, dpr: 63, attackBonus: 7, xp: 5900 },
+      "11": { hp: 220, ac: 17, dpr: 69, attackBonus: 7, xp: 7200 },
+      "12": { hp: 235, ac: 17, dpr: 75, attackBonus: 8, xp: 8400 },
+      "13": { hp: 250, ac: 18, dpr: 81, attackBonus: 8, xp: 10000 },
+      "14": { hp: 265, ac: 18, dpr: 87, attackBonus: 8, xp: 11500 },
+      "15": { hp: 280, ac: 18, dpr: 93, attackBonus: 8, xp: 13000 },
+      "16": { hp: 295, ac: 18, dpr: 99, attackBonus: 9, xp: 15000 },
+      "17": { hp: 310, ac: 19, dpr: 105, attackBonus: 10, xp: 18000 },
+      "18": { hp: 325, ac: 19, dpr: 111, attackBonus: 10, xp: 20000 },
+      "19": { hp: 340, ac: 19, dpr: 117, attackBonus: 10, xp: 22000 },
+      "20": { hp: 355, ac: 19, dpr: 123, attackBonus: 10, xp: 25000 },
+      "21": { hp: 400, ac: 19, dpr: 140, attackBonus: 11, xp: 33000 },
+      "22": { hp: 450, ac: 19, dpr: 150, attackBonus: 11, xp: 41000 },
+      "23": { hp: 500, ac: 19, dpr: 160, attackBonus: 11, xp: 50000 },
+      "24": { hp: 550, ac: 19, dpr: 170, attackBonus: 12, xp: 62000 },
+      "25": { hp: 600, ac: 19, dpr: 180, attackBonus: 12, xp: 75000 },
+      "26": { hp: 650, ac: 19, dpr: 190, attackBonus: 12, xp: 90000 },
+      "27": { hp: 700, ac: 19, dpr: 200, attackBonus: 13, xp: 105000 },
+      "28": { hp: 750, ac: 19, dpr: 210, attackBonus: 13, xp: 120000 },
+      "29": { hp: 800, ac: 19, dpr: 220, attackBonus: 13, xp: 135000 },
+      "30": { hp: 850, ac: 19, dpr: 230, attackBonus: 14, xp: 155000 }
+    };
+
+    return crTable[cr || "1/4"] || crTable["1/4"]!;
+  }
+
+  getLevelStats(level: number): { hp: number; ac: number; dpr: number; attackBonus: number } {
+    // Level-based stats from D&D 5e Player's Handbook averages
+    // Updated DPR to be more realistic for actual play
+    const baseHP = 8; // Average starting HP
+    const hpPerLevel = 5; // Average HP gain per level
+    const baseAC = 12;
+    const acIncreaseInterval = 4; // AC increases every 4 levels
+    const baseDPR = 8; // Starting DPR at level 1 (more realistic)
+    const dprPerLevel = 2.5; // DPR increases more significantly per level
+    const baseAttackBonus = 2;
+    const proficiencyBonus = Math.floor((level - 1) / 4) + 2;
+
+    return {
+      hp: baseHP + hpPerLevel * (level - 1),
+      ac: baseAC + Math.floor(level / acIncreaseInterval),
+      dpr: baseDPR + dprPerLevel * (level - 1),
+      attackBonus: baseAttackBonus + proficiencyBonus
+    };
+  }
+
+  calculateHitChance(attackBonus: number, targetAC: number): number {
+    const rollNeeded = Math.max(2, Math.min(20, targetAC - attackBonus));
+    return Math.max(0.05, Math.min(0.95, (21 - rollNeeded) / 20));
+  }
+
+  calculateEffectiveDPR(baseDPR: number, hitChance: number): number {
+    return baseDPR * hitChance;
+  }
+
+  calculateRoundsToDefeat(totalHP: number, effectiveDPR: number): number {
+    if (effectiveDPR <= 0) return 999;
+    return Math.max(1, Math.ceil(totalHP / effectiveDPR));
+  }
+
+  /**
+   * Parse statblock YAML to extract real combat stats
+   * Returns hp, ac, dpr (damage per round), and attackBonus
+   */
+  async parseStatblockStats(filePath: string): Promise<{ hp: number; ac: number; dpr: number; attackBonus: number } | null> {
+    try {
+      console.log(`[Parser] Reading file: ${filePath}`);
+      const file = this.app.vault.getAbstractFileByPath(filePath);
+      if (!(file instanceof TFile)) {
+        console.log(`[Parser] File not found or not a TFile`);
+        return null;
+      }
+
+      const cache = this.app.metadataCache.getFileCache(file);
+      if (!cache?.frontmatter) {
+        console.log(`[Parser] No frontmatter found`);
+        return null;
+      }
+
+      const fm = cache.frontmatter;
+      console.log(`[Parser] Frontmatter keys:`, Object.keys(fm));
+      
+      // Extract basic stats
+      const hp = this.parseHP(fm.hp);
+      const ac = this.parseAC(fm.ac);
+      console.log(`[Parser] Parsed HP: ${hp}, AC: ${ac}`);
+      
+      // Calculate DPR and attack bonus from actions
+      let totalDPR = 0;
+      let highestAttackBonus = 0;
+      let attackCount = 0;
+      
+      // Check for actions array (where attacks are defined)
+      if (fm.actions && Array.isArray(fm.actions)) {
+        console.log(`[Parser] Found ${fm.actions.length} actions`);
+        
+        for (const action of fm.actions) {
+          if (!action.name) continue;
+          console.log(`[Parser] Action: "${action.name}"`);
+          
+          // === CHECK STRUCTURED FIELDS FIRST ===
+          let actionDPR = 0;
+          let actionAttackBonus = 0;
+          let usedStructuredData = false;
+          
+          // Check for attack_bonus field
+          if (typeof action.attack_bonus === 'number') {
+            actionAttackBonus = action.attack_bonus;
+            if (actionAttackBonus > highestAttackBonus) {
+              highestAttackBonus = actionAttackBonus;
+            }
+            console.log(`[Parser] Found structured attack_bonus: ${actionAttackBonus}`);
+            usedStructuredData = true;
+          }
+          
+          // Check for damage_dice and damage_bonus fields
+          if (action.damage_dice || action.damage_bonus) {
+            console.log(`[Parser] Found structured damage fields: dice="${action.damage_dice}", bonus="${action.damage_bonus}"`);
+            
+            // Parse damage_dice (e.g., "1d6" or "2d8")
+            let diceDamage = 0;
+            if (action.damage_dice && typeof action.damage_dice === 'string') {
+              const diceMatch = action.damage_dice.match(/(\d+)d(\d+)/i);
+              if (diceMatch) {
+                const numDice = parseInt(diceMatch[1]);
+                const dieSize = parseInt(diceMatch[2]);
+                diceDamage = numDice * ((dieSize + 1) / 2); // Average of dice
+                console.log(`[Parser] Calculated dice damage: ${numDice}d${dieSize} = ${diceDamage}`);
+              }
+            }
+            
+            // Add damage bonus
+            let damageBonus = 0;
+            if (typeof action.damage_bonus === 'number') {
+              damageBonus = action.damage_bonus;
+            } else if (typeof action.damage_bonus === 'string') {
+              damageBonus = parseInt(action.damage_bonus) || 0;
+            }
+            
+            actionDPR = diceDamage + damageBonus;
+            console.log(`[Parser] Calculated structured damage: ${diceDamage} + ${damageBonus} = ${actionDPR}`);
+            
+            if (actionDPR > 0) {
+              totalDPR += actionDPR;
+              attackCount++;
+              usedStructuredData = true;
+            }
+          }
+          
+          // If we successfully used structured data, skip text parsing for this action
+          if (usedStructuredData) {
+            console.log(`[Parser] Used structured data for ${action.name}, DPR=${actionDPR}, Attack=${actionAttackBonus}`);
+            continue;
+          }
+          
+          // === FALLBACK TO TEXT PARSING ===
+          if (action.desc && typeof action.desc === 'string') {
+            const desc = action.desc;
+            console.log(`[Parser] Description: ${desc.substring(0, 100)}...`);
+            
+            // Look for attack bonus
+            const attackMatch = desc.match(/[+\-]\d+\s+to\s+hit/i);
+            if (attackMatch) {
+              const bonusMatch = attackMatch[0].match(/[+\-]\d+/);
+              if (bonusMatch) {
+                attackCount++;
+                const bonus = parseInt(bonusMatch[0]);
+                console.log(`[Parser] Found attack bonus: ${bonus}`);
+                if (bonus > highestAttackBonus) highestAttackBonus = bonus;
+              }
+            }
+            
+            // Look for damage
+            let damageFound = false;
+            const avgDamageMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/i);
+            if (avgDamageMatch) {
+              const avgDamage = parseInt(avgDamageMatch[1]);
+              console.log(`[Parser] Found pre-calculated damage: ${avgDamage}`);
+              totalDPR += avgDamage;
+              damageFound = true;
+              if (!attackMatch) attackCount++;
+            } else {
+              const diceMatch = desc.match(/(\d+)d(\d+)\s*([+\-]?\s*\d+)?/i);
+              if (diceMatch) {
+                if (!attackMatch) attackCount++;
+                const numDice = parseInt(diceMatch[1]);
+                const dieSize = parseInt(diceMatch[2]);
+                const modifier = diceMatch[3] ? parseInt(diceMatch[3].replace(/\s/g, '')) : 0;
+                const avgDamage = Math.floor(numDice * (dieSize + 1) / 2) + modifier;
+                console.log(`[Parser] Calculated damage from ${diceMatch[0]}: ${avgDamage}`);
+                totalDPR += avgDamage;
+                damageFound = true;
+              }
+            }
+            
+            if (!damageFound) {
+              console.log(`[Parser] No damage found in action`);
+            }
+          }
+        }
+      } else {
+        console.log(`[Parser] No actions array found`);
+      }
+      
+      console.log(`[Parser] Total DPR before multiattack: ${totalDPR}`);
+      
+      // Check for multiattack
+      let multiattackMultiplier = 1;
+      if (fm.actions && Array.isArray(fm.actions)) {
+        const multiattack = fm.actions.find((a: any) => 
+          a.name && a.name.toLowerCase().includes('multiattack')
+        );
+        
+        if (multiattack?.desc) {
+          console.log(`[Parser] Multiattack found: ${multiattack.desc}`);
+          const countMatch = multiattack.desc.match(/makes?\s+(two|three|four|five|\d+)\s+.*?attack/i);
+          if (countMatch) {
+            const countStr = countMatch[1].toLowerCase();
+            const countMap: Record<string, number> = { 'two': 2, 'three': 3, 'four': 4, 'five': 5 };
+            multiattackMultiplier = countMap[countStr] || parseInt(countStr) || 1;
+            console.log(`[Parser] Multiattack multiplier: ${multiattackMultiplier}`);
+          }
+        }
+      }
+      
+      // Apply multiattack multiplier
+      if (totalDPR > 0 && multiattackMultiplier > 1) {
+        console.log(`[Parser] Applying multiattack multiplier ${multiattackMultiplier} to DPR ${totalDPR}`);
+        totalDPR *= multiattackMultiplier;
+        console.log(`[Parser] Final DPR after multiattack: ${totalDPR}`);
+      }
+      
+      // If we couldn't parse DPR, return null to fall back to CR estimates
+      if (totalDPR === 0) {
+        console.log(`[Parser] No DPR found, returning null to use CR estimates`);
+        return null;
+      }
+      
+      // Use a reasonable default attack bonus if we couldn't parse it
+      if (highestAttackBonus === 0) {
+        highestAttackBonus = Math.max(2, Math.floor(totalDPR / 5));
+        console.log(`[Parser] No attack bonus found, estimating ${highestAttackBonus} based on DPR`);
+      }
+      
+      const result = {
+        hp: hp || 1,
+        ac: ac || 10,
+        dpr: totalDPR,
+        attackBonus: highestAttackBonus
+      };
+      console.log(`[Parser] SUCCESS: Returning`, result);
+      return result;
+    } catch (error) {
+      console.error("[Parser] Error parsing statblock:", filePath, error);
+      return null;
+    }
+  }
+
+  /**
+   * Parse HP from various formats: "45 (6d10+12)" or just "45"
+   */
+  parseHP(hpStr: any): number {
+    if (typeof hpStr === 'number') return hpStr;
+    if (typeof hpStr !== 'string') return 0;
+    
+    const match = hpStr.match(/^(\d+)/);
+    return match && match[1] ? parseInt(match[1]) : 0;
+  }
+
+  /**
+   * Parse AC from various formats: "13 (natural armor)" or just "13" or number
+   */
+  parseAC(acStr: any): number {
+    if (typeof acStr === 'number') return acStr;
+    if (typeof acStr !== 'string') return 10;
+    
+    const match = acStr.match(/^(\d+)/);
+    return match && match[1] ? parseInt(match[1]) : 10;
+  }
+
+  async calculateEncounterDifficulty(): Promise<any> {
+    // Calculate enemy stats with real statblock data when available
+    let enemyTotalHP = 0;
+    let enemyTotalAC = 0;
+    let enemyTotalDPR = 0;
+    let enemyTotalAttackBonus = 0;
+    let enemyCount = 0;
+    
+    console.log("=== ENCOUNTER DIFFICULTY CALCULATION (EncounterBuilder) ===");
+    
+    for (const creature of this.creatures) {
+      const count = creature.count || 1;
+      
+      console.log(`\n--- Creature: ${creature.name} (x${count}) ---`);
+      console.log(`Path: ${creature.path || 'none'}`);
+      console.log(`CR: ${creature.cr || 'unknown'}`);
+      
+      // Try to get real stats from statblock if available
+      let realStats = null;
+      if (creature.path && typeof creature.path === 'string') {
+        console.log(`Attempting to parse statblock: ${creature.path}`);
+        realStats = await this.parseStatblockStats(creature.path);
+        console.log(`Parsed stats:`, realStats);
+      } else {
+        console.log(`No valid path, using CR estimates`);
+      }
+      
+      // Fall back to CR-based estimates if no statblock or parsing failed
+      const crStats = this.getCRStats(creature.cr);
+      console.log(`CR-based fallback stats:`, crStats);
+      
+      const hp = creature.hp || realStats?.hp || crStats.hp;
+      const ac = creature.ac || realStats?.ac || crStats.ac;
+      const dpr = realStats?.dpr || crStats.dpr;
+      const attackBonus = realStats?.attackBonus || crStats.attackBonus;
+      
+      const dprSource = realStats?.dpr ? '📊 STATBLOCK' : '📖 CR_TABLE';
+      const hpSource = realStats?.hp ? '📊 STATBLOCK' : creature.hp ? '✏️ MANUAL' : '📖 CR_TABLE';
+      const acSource = realStats?.ac ? '📊 STATBLOCK' : creature.ac ? '✏️ MANUAL' : '📖 CR_TABLE';
+      
+      console.log(`Final stats used: HP=${hp} (${hpSource}), AC=${ac} (${acSource}), DPR=${dpr} (${dprSource}), Attack=${attackBonus}`);
+      console.log(`Total contribution (x${count}): HP=${hp * count}, DPR=${dpr * count}`);
+
+      enemyTotalHP += hp * count;
+      enemyTotalAC += ac * count;
+      enemyTotalDPR += dpr * count;
+      enemyTotalAttackBonus += attackBonus * count;
+      enemyCount += count;
+    }
+    
+    console.log(`\n=== TOTALS ===`);
+    console.log(`Total Enemies: ${enemyCount}`);
+    console.log(`Total Enemy HP: ${enemyTotalHP}`);
+    console.log(`Total Enemy DPR: ${enemyTotalDPR}`);
+    console.log(`Average Enemy AC: ${enemyCount > 0 ? (enemyTotalAC / enemyCount).toFixed(1) : 0}`);
+    console.log(`Average Enemy Attack Bonus: ${enemyCount > 0 ? (enemyTotalAttackBonus / enemyCount).toFixed(1) : 0}`)
+
+    const avgEnemyAC = enemyCount > 0 ? enemyTotalAC / enemyCount : 13;
+    const avgEnemyAttackBonus = enemyCount > 0 ? enemyTotalAttackBonus / enemyCount : 3;
+
+    // Get party stats
+    const partyMembers = await this.getPartyForDifficulty();
+
+    let partyTotalHP = 0;
+    let partyTotalAC = 0;
+    let partyTotalDPR = 0;
+    let partyTotalAttackBonus = 0;
+    let totalLevel = 0;
+
+    for (const member of partyMembers) {
+      const levelStats = this.getLevelStats(member.level);
+
+      const memberHP = Number(member.hp) || 0;
+      const memberAC = Number(member.ac) || 0;
+
+      partyTotalHP += memberHP > 0 ? memberHP : levelStats.hp;
+      partyTotalAC += memberAC > 0 ? memberAC : levelStats.ac;
+      partyTotalDPR += levelStats.dpr;
+      partyTotalAttackBonus += levelStats.attackBonus;
+      totalLevel += member.level;
+    }
+
+    const memberCount = partyMembers.length;
+
+    let avgPartyAC: number;
+    let avgPartyAttackBonus: number;
+    let avgLevel: number;
+
+    if (memberCount > 0) {
+      avgPartyAC = partyTotalAC / memberCount;
+      avgPartyAttackBonus = partyTotalAttackBonus / memberCount;
+      avgLevel = totalLevel / memberCount;
+    } else {
+      const defaultStats = this.getLevelStats(3);
+      partyTotalHP = defaultStats.hp * 4;
+      partyTotalDPR = defaultStats.dpr * 4;
+      avgPartyAC = defaultStats.ac;
+      avgPartyAttackBonus = defaultStats.attackBonus;
+      avgLevel = 3;
+    }
+
+    // Calculate hit chances
+    const partyHitChance = this.calculateHitChance(avgPartyAttackBonus, avgEnemyAC);
+    const enemyHitChance = this.calculateHitChance(avgEnemyAttackBonus, avgPartyAC);
+
+    // Calculate effective DPR
+    const partyEffectiveDPR = this.calculateEffectiveDPR(partyTotalDPR, partyHitChance);
+    const enemyEffectiveDPR = this.calculateEffectiveDPR(enemyTotalDPR, enemyHitChance);
+
+    // Calculate rounds to defeat
+    const roundsToDefeatEnemies = this.calculateRoundsToDefeat(enemyTotalHP, partyEffectiveDPR);
+    const roundsToDefeatParty = this.calculateRoundsToDefeat(partyTotalHP, enemyEffectiveDPR);
+
+    // Survival ratio
+    const survivalRatio = roundsToDefeatParty / roundsToDefeatEnemies;
+
+    // Determine difficulty
+    let difficulty: string;
+    let difficultyColor: string;
+
+    if (survivalRatio >= 4 || roundsToDefeatEnemies <= 1) {
+      difficulty = "Trivial";
+      difficultyColor = "#888888";
+    } else if (survivalRatio >= 2.5) {
+      difficulty = "Easy";
+      difficultyColor = "#00aa00";
+    } else if (survivalRatio >= 1.5) {
+      difficulty = "Medium";
+      difficultyColor = "#aaaa00";
+    } else if (survivalRatio >= 1.0) {
+      difficulty = "Hard";
+      difficultyColor = "#ff8800";
+    } else if (survivalRatio >= 0.6) {
+      difficulty = "Deadly";
+      difficultyColor = "#ff0000";
+    } else {
+      difficulty = "TPK Risk";
+      difficultyColor = "#880000";
+    }
+
+    // Generate summary
+    let summary = "";
+    if (partyMembers.length === 0) {
+      summary = `⚠️ No party found. Using default 4-player party (Level 3).\n`;
+      summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}.`;
+    } else {
+      summary = `Party: ${memberCount} members (Avg Level ${avgLevel.toFixed(1)})\n`;
+      summary += `Enemies: ${enemyCount} creatures\n`;
+      summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}`;
+    }
+
+    return {
+      enemyStats: {
+        totalHP: enemyTotalHP,
+        avgAC: avgEnemyAC,
+        totalDPR: enemyTotalDPR,
+        avgAttackBonus: avgEnemyAttackBonus,
+        creatureCount: enemyCount
+      },
+      partyStats: {
+        totalHP: partyTotalHP,
+        avgAC: avgPartyAC,
+        totalDPR: partyTotalDPR,
+        avgAttackBonus: avgPartyAttackBonus,
+        memberCount: memberCount,
+        avgLevel: avgLevel
+      },
+      analysis: {
+        partyHitChance,
+        enemyHitChance,
+        partyEffectiveDPR,
+        enemyEffectiveDPR,
+        roundsToDefeatEnemies,
+        roundsToDefeatParty,
+        survivalRatio,
+        difficulty,
+        difficultyColor,
+        summary
+      }
+    };
+  }
+
+  async searchVaultCreatures(query: string): Promise<Array<{ name: string; path: string; hp: number; ac: number; cr?: string }>> {
+    const creatures: Array<{ name: string; path: string; hp: number; ac: number; cr?: string }> = [];
+
+    // Check multiple possible creature/monster folder locations
+    const possiblePaths = [
+      "z_Beastiarity",
+      "My Vault/z_Beastiarity",
+      "nvdh-ttrpg-vault/monsters",
+      "monsters"
+    ];
+
+    const beastiaryFolders: TFolder[] = [];
+    for (const path of possiblePaths) {
+      const folder = this.app.vault.getAbstractFileByPath(path);
+      if (folder instanceof TFolder) {
+        beastiaryFolders.push(folder);
+      }
+    }
+
+    if (beastiaryFolders.length === 0) return creatures;
+
+    const queryLower = query.toLowerCase();
+
+    // Recursively search all files in beastiary
+    const searchFolder = async (folder: TFolder) => {
+      for (const child of folder.children) {
+        if (child instanceof TFile && child.extension === "md") {
+          try {
+            const cache = this.app.metadataCache.getFileCache(child);
+
+            // Check if file has statblock
+            if (cache?.frontmatter && cache.frontmatter.statblock === true) {
+              const name = cache.frontmatter.name || child.basename;
+
+              // Filter by query
+              if (!query || name.toLowerCase().includes(queryLower)) {
+                creatures.push({
+                  name: name,
+                  path: child.path,
+                  hp: cache.frontmatter.hp || 1,
+                  ac: cache.frontmatter.ac || 10,
+                  cr: cache.frontmatter.cr?.toString() || undefined
+                });
+              }
+            }
+          } catch (error) {
+            console.error(`Error reading creature file ${child.path}:`, error);
+          }
+        } else if (child instanceof TFolder) {
+          await searchFolder(child);
+        }
+      }
+    };
+
+    // Search all found beastiary folders
+    for (const folder of beastiaryFolders) {
+      await searchFolder(folder);
+    }
+
+    // Sort alphabetically
+    creatures.sort((a, b) => a.name.localeCompare(b.name));
+
+    return creatures;
+  }
+
+  async loadAllCreatures(): Promise<Array<{ name: string; path: string; hp: number; ac: number; cr?: string }>> {
+    const vaultCreatures = await this.searchVaultCreatures("");
+    const statblocksCreatures = await this.getStatblocksPluginCreatures();
+
+    // Merge and deduplicate by name (vault takes priority)
+    const allCreatures = [...vaultCreatures];
+    const vaultNames = new Set(vaultCreatures.map(c => c.name.toLowerCase()));
+
+    for (const creature of statblocksCreatures) {
+      if (!vaultNames.has(creature.name.toLowerCase())) {
+        allCreatures.push(creature);
+      }
+    }
+
+    // Sort alphabetically
+    allCreatures.sort((a, b) => a.name.localeCompare(b.name));
+
+    return allCreatures;
+  }
+
+  async getStatblocksPluginCreatures(): Promise<Array<{ name: string; path: string; hp: number; ac: number; cr?: string }>> {
+    const creatures: Array<{ name: string; path: string; hp: number; ac: number; cr?: string }> = [];
+
+    try {
+      const statblocksPlugin = (this.app as any).plugins?.plugins?.["obsidian-5e-statblocks"];
+      if (!statblocksPlugin) {
+        console.log("5e Statblocks plugin not found");
+        return creatures;
+      }
+
+      let bestiaryCreatures: any[] = [];
+
+      if (statblocksPlugin.api?.getBestiaryCreatures) {
+        const apiCreatures = statblocksPlugin.api.getBestiaryCreatures();
+        if (Array.isArray(apiCreatures)) {
+          bestiaryCreatures = apiCreatures;
+        }
+      }
+
+      if (bestiaryCreatures.length === 0 && statblocksPlugin.data?.monsters) {
+        const monstersData = statblocksPlugin.data.monsters;
+        if (Array.isArray(monstersData)) {
+          bestiaryCreatures = monstersData;
+        } else if (typeof monstersData === "object") {
+          bestiaryCreatures = Object.values(monstersData);
+        }
+      }
+
+      if (bestiaryCreatures.length === 0) {
+        console.log("No creatures found via Statblocks API or data.monsters");
+        return creatures;
+      }
+
+      console.log(`Loading ${bestiaryCreatures.length} creatures from 5e Statblocks plugin`);
+
+      for (const monster of bestiaryCreatures) {
+        if (!monster || typeof monster !== "object") continue;
+
+        creatures.push({
+          name: monster.name || "Unknown",
+          path: monster.path || "[SRD]",
+          hp: monster.hp || 1,
+          ac: typeof monster.ac === "number" ? monster.ac : (parseInt(monster.ac) || 10),
+          cr: monster.cr?.toString() || undefined
+        });
+      }
+
+      console.log(`Loaded ${creatures.length} creatures from 5e Statblocks plugin`);
+      if (creatures.length > 0) {
+        console.log("First 5 creatures:", creatures.slice(0, 5).map(c => c.name));
+      }
+    } catch (error) {
+      console.error("Error accessing 5e Statblocks plugin creatures:", error);
+    }
+
+    return creatures;
+  }
+
+  async createInitiativeTrackerEncounter(scenePath: string) {
+    if (this.creatures.length === 0) return;
+
+    try {
+      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+      if (!initiativePlugin) {
+        new Notice("⚠️ Initiative Tracker plugin not found. Encounter data saved to scene frontmatter only.");
+        console.log("Initiative Tracker plugin not found");
+        return;
+      }
+
+      console.log("Initiative Tracker plugin found:", initiativePlugin);
+      console.log("Available properties:", Object.keys(initiativePlugin));
+
+      // Debug: Log creature data before building encounter
+      console.log("Creatures to add:", this.creatures);
+
+      // Helper function to generate unique IDs like Initiative Tracker does
+      const generateId = () => {
+        const chars = '0123456789abcdef';
+        let id = 'ID_';
+        for (let i = 0; i < 12; i++) {
+          id += chars[Math.floor(Math.random() * chars.length)];
+        }
+        return id;
+      };
+
+      // Color names for duplicate creatures
+      const colors = [
+        "Red", "Blue", "Green", "Yellow", "Purple", "Orange",
+        "Pink", "Brown", "Black", "White", "Gray", "Cyan",
+        "Magenta", "Lime", "Teal", "Indigo", "Violet", "Gold",
+        "Silver", "Bronze"
+      ];
+
+      // Get campaign party members if requested
+      let partyMembers: any[] = [];
+      if (this.includeParty) {
+        partyMembers = await this.getCampaignPartyMembers(initiativePlugin);
+      }
+
+      // Build creature data in Initiative Tracker format
+      const creatures = this.creatures.flatMap(c => {
+        console.log(`Building creature: ${c.name}, HP: ${c.hp}, AC: ${c.ac}`);
+        const instances = [];
+        for (let i = 0; i < c.count; i++) {
+          const hp = c.hp || 1;
+          const ac = c.ac || 10;
+
+          // Determine name and display based on useColorNames setting
+          // IMPORTANT: 'name' must be unique to prevent auto-numbering
+          // 'display' is used for visual representation in the tracker
+          // Initiative Tracker will auto-number duplicate names
+          let creatureName = c.name;  // Start with base name for bestiary lookup
+          let displayName = c.name;  // Always show at least the creature name
+
+          if (c.count > 1 && this.useColorNames) {
+            const colorIndex = i % colors.length;
+            // Make name unique to prevent Initiative Tracker from auto-numbering
+            creatureName = `${c.name} (${colors[colorIndex]})`;
+            displayName = creatureName;
+          }
+          // For single creatures or multiple without colors, name and display are just the creature name
+          // Initiative Tracker will add numbers automatically for duplicates
+
+          const creature = {
+            name: creatureName,  // Unique name for each creature instance
+            display: displayName,  // Display name (always has a value now)
+            initiative: 0,
+            static: false,
+            modifier: 0,  // Initiative modifier
+            hp: hp,
+            currentMaxHP: hp,  // Initiative Tracker uses currentMaxHP, not max
+            cr: c.cr || undefined,
+            ac: ac,  // AC as number
+            currentAC: ac,  // Initiative Tracker also tracks currentAC
+            id: generateId(),  // CRITICAL: Unique ID for each creature instance
+            currentHP: hp,  // Initiative Tracker uses currentHP, not hp
+            tempHP: 0,  // Initiative Tracker uses tempHP, not temp
+            status: [],  // Array of status effects
+            enabled: true,
+            active: false,  // Whether this creature is currently active in turn order
+            hidden: false,  // Hidden from players
+            friendly: false,  // Friendly to players
+            rollHP: false,  // Whether to roll HP when adding to tracker
+            note: c.path || "",  // Path to statblock file for Fantasy Statblock plugin
+            path: c.path || ""   // Also store path field for compatibility
+          };
+          console.log(`Created creature instance:`, creature);
+          instances.push(creature);
+        }
+        return instances;
+      });
+
+      // Save encounter to Initiative Tracker's data.encounters for later loading
+      if (initiativePlugin.data && typeof initiativePlugin.data.encounters === 'object') {
+        console.log("Saving encounter to Initiative Tracker data...");
+
+        // Combine party members and creatures
+        const allCombatants = [...partyMembers, ...creatures];
+
+        // Initiative Tracker stores encounters as: data.encounters[name] = { creatures, state, name, round, ... }
+        initiativePlugin.data.encounters[this.encounterName] = {
+          creatures: allCombatants,
+          state: false,
+          name: this.encounterName,
+          round: 1,
+          logFile: null,
+          rollHP: false
+        };
+
+        // Save settings to persist the encounter
+        if (initiativePlugin.saveSettings) {
+          await initiativePlugin.saveSettings();
+          console.log(`Encounter "${this.encounterName}" saved to Initiative Tracker`);
+          new Notice(`✅ Encounter "${this.encounterName}" saved! Use "Load Encounter" in Initiative Tracker to start combat.`);
+        }
+      } else {
+        console.log("Could not access Initiative Tracker data structure");
+        new Notice(`⚠️ Encounter data saved to scene frontmatter only. Load manually in Initiative Tracker.`);
+      }
+
+      // Link encounter to scene
+      await this.linkEncounterToScene(scenePath);
+
+    } catch (error) {
+      console.error("Error creating Initiative Tracker encounter:", error);
+      new Notice("⚠️ Could not save encounter to Initiative Tracker. Check console for details.");
+    }
+  }
+
+  async getCampaignPartyMembers(initiativePlugin: any): Promise<any[]> {
+    try {
+      // Get campaign name from adventure path
+      const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
+      if (!(adventureFile instanceof TFile)) return [];
+
+      const adventureContent = await this.app.vault.read(adventureFile);
+      const campaignMatch = adventureContent.match(/^campaign:\s*([^\r\n]+)$/m);
+      const campaignName = (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
+
+      // Find the campaign's party
+      const party = this.resolveParty(initiativePlugin, campaignName);
+
+      if (!party || !party.players || party.players.length === 0) {
+        console.log(`No party found for campaign "${campaignName}"`);
+        return [];
+      }
+
+      // Get all player data for party members
+      const partyMembers: any[] = [];
+      const players = this.getPartyPlayersFromParty(initiativePlugin, party, true);
+      for (const player of players) {
+        partyMembers.push({
+          ...player,
+          initiative: 0,
+          active: false,
+          enabled: true
+        });
+      }
+
+      console.log(`Found ${partyMembers.length} party members for "${campaignName}"`);
+      return partyMembers;
+    } catch (error) {
+      console.error("Error fetching party members:", error);
+      return [];
+    }
+  }
+
+  async linkEncounterToScene(scenePath: string) {
+    try {
+      const sceneFile = this.app.vault.getAbstractFileByPath(scenePath);
+      if (!(sceneFile instanceof TFile)) return;
+
+      let content = await this.app.vault.read(sceneFile);
+
+      // Update tracker_encounter field in frontmatter
+      content = content.replace(
+        /^tracker_encounter:\s*$/m,
+        `tracker_encounter: "${this.encounterName}"`
+      );
+
+      await this.app.vault.modify(sceneFile, content);
+
+    } catch (error) {
+      console.error("Error linking encounter to scene:", error);
+    }
+  }
+}
+
 class SceneCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
+  encounterBuilder: EncounterBuilder;
   adventurePath = "";
   sceneName = "";
   act = "1";
@@ -3995,6 +7232,7 @@ class SceneCreationModal extends Modal {
   constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string) {
     super(app);
     this.plugin = plugin;
+    this.encounterBuilder = new EncounterBuilder(app, plugin);
     if (adventurePath) {
       this.adventurePath = adventurePath;
     }
@@ -4455,6 +7693,14 @@ class SceneCreationModal extends Modal {
     await this.app.vault.create(filePath, sceneContent);
   }
 
+  syncEncounterBuilder() {
+    this.encounterBuilder.encounterName = this.encounterName;
+    this.encounterBuilder.creatures = [...this.creatures];
+    this.encounterBuilder.includeParty = this.includeParty;
+    this.encounterBuilder.useColorNames = this.useColorNames;
+    this.encounterBuilder.adventurePath = this.adventurePath;
+  }
+
   /**
    * Show/hide encounter builder section based on scene type
    */
@@ -4555,7 +7801,8 @@ class SceneCreationModal extends Modal {
     let searchResults: HTMLElement | null = null;
     
     // Load creatures from vault
-    const vaultCreatures = await this.loadAllCreatures();
+    this.syncEncounterBuilder();
+    const vaultCreatures = await this.encounterBuilder.loadAllCreatures();
     
     console.log("Loaded creatures:", vaultCreatures.length, vaultCreatures.slice(0, 3).map(c => c.name));
     
@@ -4877,56 +8124,14 @@ class SceneCreationModal extends Modal {
    * Returns: { dpr, attackBonus, ac, hp }
    */
   getCRStats(cr: string | undefined): { dpr: number; attackBonus: number; ac: number; hp: number } {
-    const crNum = this.parseCR(cr);
-    
-    // Based on D&D 5e DMG Monster Statistics by CR table
-    const crTable: { [key: number]: { dpr: number; attackBonus: number; ac: number; hp: number } } = {
-      0:    { dpr: 1,   attackBonus: 3,  ac: 13, hp: 6 },
-      0.125:{ dpr: 3,   attackBonus: 3,  ac: 13, hp: 21 },
-      0.25: { dpr: 5,   attackBonus: 3,  ac: 13, hp: 43 },
-      0.5:  { dpr: 7,   attackBonus: 3,  ac: 13, hp: 60 },
-      1:    { dpr: 12,  attackBonus: 3,  ac: 13, hp: 78 },
-      2:    { dpr: 18,  attackBonus: 3,  ac: 13, hp: 93 },
-      3:    { dpr: 24,  attackBonus: 4,  ac: 13, hp: 108 },
-      4:    { dpr: 30,  attackBonus: 5,  ac: 14, hp: 123 },
-      5:    { dpr: 36,  attackBonus: 6,  ac: 15, hp: 138 },
-      6:    { dpr: 42,  attackBonus: 6,  ac: 15, hp: 153 },
-      7:    { dpr: 48,  attackBonus: 6,  ac: 15, hp: 168 },
-      8:    { dpr: 54,  attackBonus: 7,  ac: 16, hp: 183 },
-      9:    { dpr: 60,  attackBonus: 7,  ac: 16, hp: 198 },
-      10:   { dpr: 66,  attackBonus: 7,  ac: 17, hp: 213 },
-      11:   { dpr: 72,  attackBonus: 8,  ac: 17, hp: 228 },
-      12:   { dpr: 78,  attackBonus: 8,  ac: 17, hp: 243 },
-      13:   { dpr: 84,  attackBonus: 8,  ac: 18, hp: 258 },
-      14:   { dpr: 90,  attackBonus: 8,  ac: 18, hp: 273 },
-      15:   { dpr: 96,  attackBonus: 8,  ac: 18, hp: 288 },
-      16:   { dpr: 102, attackBonus: 9,  ac: 18, hp: 303 },
-      17:   { dpr: 108, attackBonus: 10, ac: 19, hp: 318 },
-      18:   { dpr: 114, attackBonus: 10, ac: 19, hp: 333 },
-      19:   { dpr: 120, attackBonus: 10, ac: 19, hp: 348 },
-      20:   { dpr: 132, attackBonus: 10, ac: 19, hp: 378 },
-      21:   { dpr: 150, attackBonus: 11, ac: 19, hp: 423 },
-      22:   { dpr: 168, attackBonus: 11, ac: 19, hp: 468 },
-      23:   { dpr: 186, attackBonus: 11, ac: 19, hp: 513 },
-      24:   { dpr: 204, attackBonus: 12, ac: 19, hp: 558 },
-      25:   { dpr: 222, attackBonus: 12, ac: 19, hp: 603 },
-      26:   { dpr: 240, attackBonus: 12, ac: 19, hp: 648 },
-      27:   { dpr: 258, attackBonus: 13, ac: 19, hp: 693 },
-      28:   { dpr: 276, attackBonus: 13, ac: 19, hp: 738 },
-      29:   { dpr: 294, attackBonus: 13, ac: 19, hp: 783 },
-      30:   { dpr: 312, attackBonus: 14, ac: 19, hp: 850 }
+    this.syncEncounterBuilder();
+    const stats = this.encounterBuilder.getCRStats(cr);
+    return {
+      dpr: stats.dpr,
+      attackBonus: stats.attackBonus,
+      ac: stats.ac,
+      hp: stats.hp
     };
-    
-    // Find closest CR
-    const crValues = Object.keys(crTable).map(Number).sort((a, b) => a - b);
-    let closestCR = 0;
-    for (const cv of crValues) {
-      if (cv <= crNum) closestCR = cv;
-      else break;
-    }
-    
-    const defaultStats = { dpr: 1, attackBonus: 3, ac: 13, hp: 6 };
-    return crTable[closestCR] ?? defaultStats;
   }
 
   /**
@@ -4934,33 +8139,14 @@ class SceneCreationModal extends Modal {
    * Returns: { dpr, attackBonus, ac, hp }
    */
   getLevelStats(level: number): { dpr: number; attackBonus: number; ac: number; hp: number } {
-    // Average PC stats by level (assuming typical builds)
-    const levelTable: { [key: number]: { dpr: number; attackBonus: number; ac: number; hp: number } } = {
-      1:  { dpr: 10,  attackBonus: 5, ac: 14, hp: 12 },
-      2:  { dpr: 12,  attackBonus: 5, ac: 14, hp: 18 },
-      3:  { dpr: 15,  attackBonus: 5, ac: 15, hp: 24 },
-      4:  { dpr: 18,  attackBonus: 6, ac: 16, hp: 32 },
-      5:  { dpr: 25,  attackBonus: 7, ac: 16, hp: 40 },
-      6:  { dpr: 28,  attackBonus: 7, ac: 17, hp: 48 },
-      7:  { dpr: 32,  attackBonus: 7, ac: 17, hp: 56 },
-      8:  { dpr: 36,  attackBonus: 8, ac: 17, hp: 64 },
-      9:  { dpr: 40,  attackBonus: 8, ac: 18, hp: 72 },
-      10: { dpr: 44,  attackBonus: 8, ac: 18, hp: 80 },
-      11: { dpr: 50,  attackBonus: 9, ac: 18, hp: 90 },
-      12: { dpr: 54,  attackBonus: 9, ac: 18, hp: 100 },
-      13: { dpr: 58,  attackBonus: 9, ac: 19, hp: 110 },
-      14: { dpr: 62,  attackBonus: 10, ac: 19, hp: 120 },
-      15: { dpr: 66,  attackBonus: 10, ac: 19, hp: 130 },
-      16: { dpr: 70,  attackBonus: 10, ac: 19, hp: 140 },
-      17: { dpr: 76,  attackBonus: 11, ac: 19, hp: 150 },
-      18: { dpr: 80,  attackBonus: 11, ac: 19, hp: 160 },
-      19: { dpr: 84,  attackBonus: 11, ac: 19, hp: 170 },
-      20: { dpr: 90,  attackBonus: 11, ac: 20, hp: 180 }
+    this.syncEncounterBuilder();
+    const stats = this.encounterBuilder.getLevelStats(level);
+    return {
+      dpr: stats.dpr,
+      attackBonus: stats.attackBonus,
+      ac: stats.ac,
+      hp: stats.hp
     };
-    
-    const clampedLevel = Math.min(20, Math.max(1, level));
-    const defaultStats = { dpr: 10, attackBonus: 5, ac: 14, hp: 12 };
-    return levelTable[clampedLevel] ?? defaultStats;
   }
 
   /**
@@ -4984,69 +8170,38 @@ class SceneCreationModal extends Modal {
    * Calculate hit probability (bounded between 5% and 95%)
    */
   calculateHitChance(attackBonus: number, targetAC: number): number {
-    // Need to roll (targetAC - attackBonus) or higher on d20
-    // Nat 1 always misses, Nat 20 always hits
-    const neededRoll = targetAC - attackBonus;
-    const successChance = (21 - neededRoll) / 20;
-    return Math.min(0.95, Math.max(0.05, successChance));
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.calculateHitChance(attackBonus, targetAC);
   }
 
   /**
    * Calculate expected damage per round considering hit chance
    */
   calculateEffectiveDPR(baseDPR: number, hitChance: number): number {
-    return baseDPR * hitChance;
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.calculateEffectiveDPR(baseDPR, hitChance);
   }
 
   /**
    * Calculate rounds to defeat a group (HP pool / effective DPR)
    */
   calculateRoundsToDefeat(totalHP: number, effectiveDPR: number): number {
-    if (effectiveDPR <= 0) return Infinity;
-    return Math.ceil(totalHP / effectiveDPR);
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.calculateRoundsToDefeat(totalHP, effectiveDPR);
   }
 
   /**
    * Get party members from Initiative Tracker for difficulty calculation
    */
   async getPartyForDifficulty(): Promise<Array<{ name: string; hp: number; ac: number; level: number }>> {
-    const partyMembers: Array<{ name: string; hp: number; ac: number; level: number }> = [];
-    
-    try {
-      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-      if (!initiativePlugin?.data) return partyMembers;
-      
-      // Get campaign name from adventure path
-      const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
-      if (!(adventureFile instanceof TFile)) return partyMembers;
-      
-      const adventureContent = await this.app.vault.read(adventureFile);
-      const campaignMatch = adventureContent.match(/^campaign:\s*([^\r\n]+)$/m);
-      const campaignName = (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
-      
-      // Find the campaign's party
-      const partyName = `${campaignName} Party`;
-      const party = initiativePlugin.data.parties?.find((p: any) => p.name === partyName);
-      
-      if (!party?.players) return partyMembers;
-      
-      // Get player details
-      for (const playerName of party.players) {
-        const player = initiativePlugin.data.players?.find((p: any) => p.name === playerName);
-        if (player) {
-          partyMembers.push({
-            name: player.name || "Unknown",
-            hp: player.hp || player.currentMaxHP || 20,
-            ac: player.ac || player.currentAC || 14,
-            level: player.level || 1
-          });
-        }
-      }
-    } catch (error) {
-      console.error("Error getting party for difficulty:", error);
-    }
-    
-    return partyMembers;
+    this.syncEncounterBuilder();
+    const members = await this.encounterBuilder.getAvailablePartyMembers();
+    return members.map(member => ({
+      name: member.name,
+      hp: member.hp,
+      ac: member.ac,
+      level: member.level
+    }));
   }
 
   /**
@@ -5258,7 +8413,8 @@ class SceneCreationModal extends Modal {
     // Show loading
     const loadingEl = this.difficultyContainer.createEl("p", { text: "Calculating difficulty..." });
     
-    const result = await this.calculateEncounterDifficulty();
+    this.syncEncounterBuilder();
+    const result = await this.encounterBuilder.calculateEncounterDifficulty();
     
     loadingEl.remove();
     
@@ -5365,68 +8521,8 @@ class SceneCreationModal extends Modal {
     ac: number;
     cr?: string;
   }>> {
-    const creatures: Array<{ name: string; path: string; hp: number; ac: number; cr?: string }> = [];
-    
-    // Check multiple possible creature/monster folder locations
-    const possiblePaths = [
-      "z_Beastiarity",
-      "My Vault/z_Beastiarity",
-      "nvdh-ttrpg-vault/monsters",
-      "monsters"
-    ];
-    
-    const beastiaryFolders: TFolder[] = [];
-    for (const path of possiblePaths) {
-      const folder = this.app.vault.getAbstractFileByPath(path);
-      if (folder instanceof TFolder) {
-        beastiaryFolders.push(folder);
-      }
-    }
-    
-    if (beastiaryFolders.length === 0) return creatures;
-    
-    const queryLower = query.toLowerCase();
-    
-    // Recursively search all files in beastiary
-    const searchFolder = async (folder: TFolder) => {
-      for (const child of folder.children) {
-        if (child instanceof TFile && child.extension === "md") {
-          try {
-            const cache = this.app.metadataCache.getFileCache(child);
-            
-            // Check if file has statblock
-            if (cache?.frontmatter && cache.frontmatter.statblock === true) {
-              const name = cache.frontmatter.name || child.basename;
-              
-              // Filter by query
-              if (!query || name.toLowerCase().includes(queryLower)) {
-                creatures.push({
-                  name: name,
-                  path: child.path,
-                  hp: cache.frontmatter.hp || 1,
-                  ac: cache.frontmatter.ac || 10,
-                  cr: cache.frontmatter.cr?.toString() || undefined
-                });
-              }
-            }
-          } catch (error) {
-            console.error(`Error reading creature file ${child.path}:`, error);
-          }
-        } else if (child instanceof TFolder) {
-          await searchFolder(child);
-        }
-      }
-    };
-    
-    // Search all found beastiary folders
-    for (const folder of beastiaryFolders) {
-      await searchFolder(folder);
-    }
-    
-    // Sort alphabetically
-    creatures.sort((a, b) => a.name.localeCompare(b.name));
-    
-    return creatures;
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.searchVaultCreatures(query);
   }
   
   /**
@@ -5439,23 +8535,8 @@ class SceneCreationModal extends Modal {
     ac: number;
     cr?: string;
   }>> {
-    const vaultCreatures = await this.searchVaultCreatures("");
-    const statblocksCreatures = await this.getStatblocksPluginCreatures();
-    
-    // Merge and deduplicate by name (vault takes priority)
-    const allCreatures = [...vaultCreatures];
-    const vaultNames = new Set(vaultCreatures.map(c => c.name.toLowerCase()));
-    
-    for (const creature of statblocksCreatures) {
-      if (!vaultNames.has(creature.name.toLowerCase())) {
-        allCreatures.push(creature);
-      }
-    }
-    
-    // Sort alphabetically
-    allCreatures.sort((a, b) => a.name.localeCompare(b.name));
-    
-    return allCreatures;
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.loadAllCreatures();
   }
   
   /**
@@ -5468,46 +8549,8 @@ class SceneCreationModal extends Modal {
     ac: number;
     cr?: string;
   }>> {
-    const creatures: Array<{ name: string; path: string; hp: number; ac: number; cr?: string }> = [];
-    
-    try {
-      const statblocksPlugin = (this.app as any).plugins?.plugins?.["obsidian-5e-statblocks"];
-      if (!statblocksPlugin || !statblocksPlugin.api) {
-        console.log("5e Statblocks plugin or API not found");
-        return creatures;
-      }
-      
-      // Use the API's getBestiaryCreatures() method to get all creatures
-      const bestiaryCreatures = statblocksPlugin.api.getBestiaryCreatures();
-      
-      if (!Array.isArray(bestiaryCreatures)) {
-        console.log("getBestiaryCreatures() did not return an array");
-        return creatures;
-      }
-      
-      console.log(`Loading ${bestiaryCreatures.length} creatures from 5e Statblocks plugin`);
-      
-      for (const monster of bestiaryCreatures) {
-        if (!monster || typeof monster !== 'object') continue;
-        
-        creatures.push({
-          name: monster.name || "Unknown",
-          path: monster.path || "[SRD]",
-          hp: monster.hp || 1,
-          ac: typeof monster.ac === 'number' ? monster.ac : (parseInt(monster.ac) || 10),
-          cr: monster.cr?.toString() || undefined
-        });
-      }
-      
-      console.log(`Loaded ${creatures.length} creatures from 5e Statblocks plugin`);
-      if (creatures.length > 0) {
-        console.log("First 5 creatures:", creatures.slice(0, 5).map(c => c.name));
-      }
-    } catch (error) {
-      console.error("Error accessing 5e Statblocks plugin creatures:", error);
-    }
-    
-    return creatures;
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.getStatblocksPluginCreatures();
   }
 
   /**
@@ -5515,197 +8558,25 @@ class SceneCreationModal extends Modal {
    */
   async createInitiativeTrackerEncounter(scenePath: string) {
     if (!this.createEncounter || this.creatures.length === 0) return;
-    
-    try {
-      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-      if (!initiativePlugin) {
-        new Notice("⚠️ Initiative Tracker plugin not found. Encounter data saved to scene frontmatter only.");
-        console.log("Initiative Tracker plugin not found");
-        return;
-      }
-      
-      console.log("Initiative Tracker plugin found:", initiativePlugin);
-      console.log("Available properties:", Object.keys(initiativePlugin));
-      
-      // Debug: Log creature data before building encounter
-      console.log("Creatures to add:", this.creatures);
-      
-      // Helper function to generate unique IDs like Initiative Tracker does
-      const generateId = () => {
-        const chars = '0123456789abcdef';
-        let id = 'ID_';
-        for (let i = 0; i < 12; i++) {
-          id += chars[Math.floor(Math.random() * chars.length)];
-        }
-        return id;
-      };
-      
-      // Color names for duplicate creatures
-      const colors = [
-        "Red", "Blue", "Green", "Yellow", "Purple", "Orange", 
-        "Pink", "Brown", "Black", "White", "Gray", "Cyan", 
-        "Magenta", "Lime", "Teal", "Indigo", "Violet", "Gold", 
-        "Silver", "Bronze"
-      ];
-      
-      // Get campaign party members if requested
-      let partyMembers: any[] = [];
-      if (this.includeParty) {
-        partyMembers = await this.getCampaignPartyMembers(initiativePlugin);
-      }
-      
-      // Build creature data in Initiative Tracker format
-      const creatures = this.creatures.flatMap(c => {
-        console.log(`Building creature: ${c.name}, HP: ${c.hp}, AC: ${c.ac}`);
-        const instances = [];
-        for (let i = 0; i < c.count; i++) {
-          const hp = c.hp || 1;
-          const ac = c.ac || 10;
-          
-          // Determine name and display based on useColorNames setting
-          let creatureName = c.name;
-          let displayName = c.name;  // Default to creature name
-          
-          if (this.useColorNames && c.count > 1) {
-            const colorIndex = i % colors.length;
-            // Make the name itself unique to prevent auto-numbering
-            creatureName = `${c.name} (${colors[colorIndex]})`;
-            // Display name same as name for consistency
-            displayName = creatureName;
-          }
-          
-          const creature = {
-            name: creatureName,  // Unique name with color to prevent auto-numbering
-            display: displayName,  // Display name (always has a value now)
-            initiative: 0,
-            static: false,
-            modifier: 0,  // Initiative modifier
-            hp: hp,
-            currentMaxHP: hp,  // Initiative Tracker uses currentMaxHP, not max
-            cr: c.cr || undefined,
-            ac: ac,  // AC as number
-            currentAC: ac,  // Initiative Tracker also tracks currentAC
-            id: generateId(),  // CRITICAL: Unique ID for each creature instance
-            currentHP: hp,  // Initiative Tracker uses currentHP, not hp
-            tempHP: 0,  // Initiative Tracker uses tempHP, not temp
-            status: [],  // Array of status effects
-            enabled: true,
-            active: false,  // Whether this creature is currently active in turn order
-            hidden: false,  // Hidden from players
-            friendly: false,  // Friendly to players
-            rollHP: false,  // Whether to roll HP when adding to tracker
-            note: c.path || "",  // Path to statblock file for Fantasy Statblock plugin
-            path: c.path || ""   // Also store path field for compatibility
-          };
-          console.log(`Created creature instance:`, creature);
-          instances.push(creature);
-        }
-        return instances;
-      });
-      
-      // Save encounter to Initiative Tracker's data.encounters for later loading
-      if (initiativePlugin.data && typeof initiativePlugin.data.encounters === 'object') {
-        console.log("Saving encounter to Initiative Tracker data...");
-        
-        // Combine party members and creatures
-        const allCombatants = [...partyMembers, ...creatures];
-        
-        // Initiative Tracker stores encounters as: data.encounters[name] = { creatures, state, name, round, ... }
-        initiativePlugin.data.encounters[this.encounterName] = {
-          creatures: allCombatants,
-          state: false,
-          name: this.encounterName,
-          round: 1,
-          logFile: null,
-          rollHP: false
-        };
-        
-        // Save settings to persist the encounter
-        if (initiativePlugin.saveSettings) {
-          await initiativePlugin.saveSettings();
-          console.log(`Encounter "${this.encounterName}" saved to Initiative Tracker`);
-          new Notice(`✅ Encounter "${this.encounterName}" saved! Use "Load Encounter" in Initiative Tracker to start combat.`);
-        }
-      } else {
-        console.log("Could not access Initiative Tracker data structure");
-        new Notice(`⚠️ Encounter data saved to scene frontmatter only. Load manually in Initiative Tracker.`);
-      }
-      
-      // Link encounter to scene
-      await this.linkEncounterToScene(scenePath);
-      
-    } catch (error) {
-      console.error("Error creating Initiative Tracker encounter:", error);
-      new Notice("⚠️ Could not save encounter to Initiative Tracker. Check console for details.");
-    }
+
+    this.syncEncounterBuilder();
+    await this.encounterBuilder.createInitiativeTrackerEncounter(scenePath);
   }
 
   /**
    * Get party members for the current campaign
    */
   async getCampaignPartyMembers(initiativePlugin: any): Promise<any[]> {
-    try {
-      // Get campaign name from adventure path
-      const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
-      if (!(adventureFile instanceof TFile)) return [];
-      
-      const adventureContent = await this.app.vault.read(adventureFile);
-      const campaignMatch = adventureContent.match(/^campaign:\s*([^\r\n]+)$/m);
-      const campaignName = (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
-      
-      // Find the campaign's party
-      const partyName = `${campaignName} Party`;
-      const party = initiativePlugin.data.parties?.find((p: any) => p.name === partyName);
-      
-      if (!party || !party.players || party.players.length === 0) {
-        console.log(`No party found for campaign "${campaignName}"`);
-        return [];
-      }
-      
-      // Get all player data for party members
-      const partyMembers: any[] = [];
-      for (const playerId of party.players) {
-        const player = initiativePlugin.data.players?.find((p: any) => p.id === playerId);
-        if (player) {
-          // Clone the player data to avoid modifying the original
-          partyMembers.push({
-            ...player,
-            initiative: 0,  // Reset initiative for new encounter
-            active: false,
-            enabled: true
-          });
-        }
-      }
-      
-      console.log(`Found ${partyMembers.length} party members for "${campaignName}"`);
-      return partyMembers;
-    } catch (error) {
-      console.error("Error fetching party members:", error);
-      return [];
-    }
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.getCampaignPartyMembers(initiativePlugin);
   }
 
   /**
    * Link encounter to scene by updating tracker_encounter frontmatter field
    */
   async linkEncounterToScene(scenePath: string) {
-    try {
-      const sceneFile = this.app.vault.getAbstractFileByPath(scenePath);
-      if (!(sceneFile instanceof TFile)) return;
-      
-      let content = await this.app.vault.read(sceneFile);
-      
-      // Update tracker_encounter field in frontmatter
-      content = content.replace(
-        /^tracker_encounter:\s*$/m,
-        `tracker_encounter: "${this.encounterName}"`
-      );
-      
-      await this.app.vault.modify(sceneFile, content);
-      
-    } catch (error) {
-      console.error("Error linking encounter to scene:", error);
-    }
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.linkEncounterToScene(scenePath);
   }
 
   onClose() {
