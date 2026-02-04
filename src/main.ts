@@ -6418,27 +6418,46 @@ class EncounterBuilder {
     }
 
     let campaignName = campaignNameOverride || "";
+    
+    // Use campaignPath if available (e.g., "ttrpgs/Frozen Sick (SOLINA)")
+    if (!campaignName && this.campaignPath) {
+      const pathParts = this.campaignPath.split('/');
+      campaignName = pathParts[pathParts.length - 1] || "";
+      console.log(`[EncounterBuilder] Using campaignPath to resolve party: "${campaignName}"`);
+    }
+    
     if (!campaignName) {
       const activeFile = this.app.workspace.getActiveFile();
       if (activeFile) {
         const campaignFolder = this.findCampaignFolder(activeFile.path);
         if (campaignFolder) {
           campaignName = campaignFolder.split('/').pop() || "";
+          console.log(`[EncounterBuilder] Resolved campaign from active file: "${campaignName}"`);
         }
       }
     }
 
     if (campaignName) {
       const partyName = `${campaignName} Party`;
+      console.log(`[EncounterBuilder] Looking for party: "${partyName}"`);
       const namedParty = parties.find((p: any) => p.name === partyName);
-      if (namedParty) return namedParty;
+      if (namedParty) {
+        console.log(`[EncounterBuilder] Found party: "${namedParty.name}" with ${namedParty.players?.length || 0} players`);
+        return namedParty;
+      } else {
+        console.log(`[EncounterBuilder] Party "${partyName}" not found. Available parties:`, parties.map(p => p.name));
+      }
     }
 
     if (initiativePlugin?.data?.defaultParty) {
       const defaultParty = parties.find((p: any) => p.id === initiativePlugin.data.defaultParty);
-      if (defaultParty) return defaultParty;
+      if (defaultParty) {
+        console.log(`[EncounterBuilder] Using default party: "${defaultParty.name}"`);
+        return defaultParty;
+      }
     }
 
+    console.log(`[EncounterBuilder] No matching party found, using first available party`);
     return parties[0] || null;
   }
 
