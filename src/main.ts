@@ -2583,6 +2583,76 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "edit-scene",
+      name: "Edit Scene",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          this.editScene(file.path);
+        } else {
+          new Notice("Please open a scene note first");
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "delete-scene",
+      name: "Delete Scene",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "scene") {
+            const sceneName = cache.frontmatter.name || file.basename;
+            const encounterName = cache.frontmatter.tracker_encounter;
+            const confirmed = await this.confirmDelete(file.name);
+            if (confirmed) {
+              // Delete from vault
+              await this.app.vault.delete(file);
+              console.log(`Deleted scene file: ${file.path}`);
+              
+              // Remove encounter from Initiative Tracker if it exists
+              if (encounterName) {
+                const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+                console.log("Initiative Tracker plugin found:", !!initiativeTracker);
+                
+                if (initiativeTracker?.data?.encounters) {
+                  console.log(`Attempting to delete encounter: "${encounterName}"`);
+                  
+                  if (initiativeTracker.data.encounters[encounterName]) {
+                    delete initiativeTracker.data.encounters[encounterName];
+                    console.log(`✓ Deleted encounter "${encounterName}" from data.encounters`);
+                    
+                    if (initiativeTracker.saveSettings) {
+                      await initiativeTracker.saveSettings();
+                      console.log("✓ Initiative Tracker settings saved after deletion");
+                      new Notice(`✓ Scene "${sceneName}" and its encounter deleted`);
+                    } else {
+                      console.warn("Initiative Tracker saveSettings not available");
+                      new Notice(`⚠️ Scene deleted but could not persist encounter deletion`);
+                    }
+                  } else {
+                    console.warn(`Encounter "${encounterName}" not found in Initiative Tracker`);
+                    new Notice(`✓ Scene "${sceneName}" deleted from vault`);
+                  }
+                } else {
+                  console.warn("Initiative Tracker data.encounters not accessible");
+                  new Notice(`✓ Scene "${sceneName}" deleted from vault`);
+                }
+              } else {
+                new Notice(`✓ Scene "${sceneName}" deleted from vault`);
+              }
+            }
+          } else {
+            new Notice("This is not a scene note");
+          }
+        } else {
+          new Notice("Please open a scene note first");
+        }
+      },
+    });
+
+    this.addCommand({
       id: "create-trap",
       name: "Create New Trap",
       hotkeys: [
@@ -3103,6 +3173,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async editEncounter(encounterPath: string) {
 		// Open Encounter Builder modal in edit mode
 		new EncounterBuilderModal(this.app, this, encounterPath).open();
+	}
+
+	async editScene(scenePath: string) {
+		// Open Scene creation modal in edit mode
+		new SceneCreationModal(this.app, this, undefined, scenePath).open();
 	}
 
 	async confirmDelete(fileName: string): Promise<boolean> {
@@ -7202,6 +7277,7 @@ class SceneCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
   encounterBuilder: EncounterBuilder;
   adventurePath = "";
+  campaignPath = "";  // Track campaign for party resolution
   sceneName = "";
   act = "1";
   sceneNumber = "1";
@@ -7228,13 +7304,104 @@ class SceneCreationModal extends Modal {
   encounterSection: HTMLElement | null = null;
   difficultyContainer: HTMLElement | null = null;
   creatureListContainer: HTMLElement | null = null;
+  
+  // For editing existing scenes
+  isEdit = false;
+  originalScenePath = "";
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, scenePath?: string) {
     super(app);
     this.plugin = plugin;
     this.encounterBuilder = new EncounterBuilder(app, plugin);
     if (adventurePath) {
       this.adventurePath = adventurePath;
+    }
+    if (scenePath) {
+      this.isEdit = true;
+      this.originalScenePath = scenePath;
+    }
+  }
+
+  async loadSceneData() {
+    try {
+      const sceneFile = this.app.vault.getAbstractFileByPath(this.originalScenePath);
+      if (!(sceneFile instanceof TFile)) {
+        new Notice("Scene file not found!");
+        return;
+      }
+
+      const cache = this.app.metadataCache.getFileCache(sceneFile);
+      const frontmatter = cache?.frontmatter;
+
+      if (!frontmatter) {
+        new Notice("Could not read scene data!");
+        return;
+      }
+
+      // Load basic scene properties
+      this.sceneName = frontmatter.name || sceneFile.basename;
+      this.act = String(frontmatter.act || "1");
+      this.sceneNumber = String(frontmatter.scene_number || "1");
+      this.duration = frontmatter.duration || "30min";
+      this.type = frontmatter.type || "exploration";
+      this.difficulty = frontmatter.difficulty || "medium";
+
+      // Load encounter properties if combat scene
+      if (this.type === "combat") {
+        this.createEncounter = !!frontmatter.tracker_encounter;
+        this.encounterName = frontmatter.tracker_encounter || "";
+        
+        // Load creatures from encounter_creatures or YAML field
+        const creaturesData = frontmatter.encounter_creatures;
+        if (creaturesData && Array.isArray(creaturesData)) {
+          this.creatures = creaturesData.map((c: any) => ({
+            name: c.name || "Unknown",
+            count: c.count || 1,
+            hp: c.hp,
+            ac: c.ac,
+            cr: c.cr,
+            source: c.source || "vault",
+            path: c.path
+          }));
+        }
+        
+        // Note: We can't determine useColorNames from saved data reliably,
+        // so we'll leave it as default false for edits
+      }
+
+      // Extract adventure path from scene path
+      // Path format: adventures/Adventure Name/Act 1 - Setup/Scene 1 - Name.md
+      // or: adventures/Adventure Name - Scenes/Scene 1 - Name.md
+      const pathParts = this.originalScenePath.split('/');
+      let adventureIndex = -1;
+      
+      for (let i = 0; i < pathParts.length; i++) {
+        if (pathParts[i] === "Adventures" || pathParts[i] === "adventures") {
+          adventureIndex = i;
+          break;
+        }
+      }
+      
+      if (adventureIndex >= 0 && pathParts.length > adventureIndex + 1) {
+        const adventureName = pathParts[adventureIndex + 1]!.replace(/ - Scenes$/, '');
+        // Try to find the adventure file
+        const possiblePaths = [
+          `${pathParts.slice(0, adventureIndex + 2).join('/')}/${adventureName}.md`,
+          `${pathParts.slice(0, adventureIndex + 1).join('/')}/${adventureName}.md`
+        ];
+        
+        for (const path of possiblePaths) {
+          const file = this.app.vault.getAbstractFileByPath(path);
+          if (file instanceof TFile) {
+            this.adventurePath = path;
+            break;
+          }
+        }
+      }
+
+    } catch (error) {
+      console.error("Error loading scene data:", error);
+      new Notice("Error loading scene data");
     }
   }
 
@@ -7242,7 +7409,12 @@ class SceneCreationModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
 
-    contentEl.createEl("h2", { text: "🎬 Create New Scene" });
+    // Load existing scene data if editing
+    if (this.isEdit) {
+      await this.loadSceneData();
+    }
+
+    contentEl.createEl("h2", { text: this.isEdit ? "✏️ Edit Scene" : "🎬 Create New Scene" });
 
     // Get all adventures from GM campaigns
     const allAdventures = await this.getAllAdventures();
@@ -7517,6 +7689,9 @@ class SceneCreationModal extends Modal {
       const worldMatch = adventureContent.match(/^world:\s*([^\r\n]+)$/m);
       const campaignName = (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
       const worldName = (worldMatch?.[1]?.trim() || campaignName).replace(/^["']|["']$/g, '');
+      
+      // Set campaignPath for party resolution
+      this.campaignPath = `ttrpgs/${campaignName}`;
 
       // Determine folder structure
       const adventureFolder = adventureFile.parent;
@@ -7699,6 +7874,7 @@ class SceneCreationModal extends Modal {
     this.encounterBuilder.includeParty = this.includeParty;
     this.encounterBuilder.useColorNames = this.useColorNames;
     this.encounterBuilder.adventurePath = this.adventurePath;
+    this.encounterBuilder.campaignPath = this.campaignPath;
   }
 
   /**
@@ -7742,14 +7918,15 @@ class SceneCreationModal extends Modal {
             this.useColorNames = value;
           }));
       
-      new Setting(this.encounterSection)
-        .setName("Include Party Members")
-        .setDesc("Automatically add the campaign's party to this encounter")
-        .addToggle(toggle => toggle
-          .setValue(this.includeParty)
-          .onChange(value => {
-            this.includeParty = value;
-          }));
+      // Always include party for combat scenes - auto-detected from campaign
+      this.includeParty = true;
+      
+      const partyInfo = this.encounterSection.createEl("p", {
+        text: "ℹ️ The campaign's party will be automatically included in this encounter",
+        cls: "setting-item-description"
+      });
+      partyInfo.style.fontStyle = "italic";
+      partyInfo.style.opacity = "0.8";
       
       // Show the builder fields
       this.showEncounterBuilderFields();
