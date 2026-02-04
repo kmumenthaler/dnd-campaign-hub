@@ -738,8 +738,11 @@ scene_type: {{TYPE}}
 difficulty: {{DIFFICULTY}}
 status: planned
 tracker_encounter: {{TRACKER_ENCOUNTER}}
+encounter_file: {{ENCOUNTER_FILE}}
 encounter_creatures: {{ENCOUNTER_CREATURES}}
 encounter_difficulty: {{ENCOUNTER_DIFFICULTY}}
+selected_party_id: "{{SELECTED_PARTY_ID}}"
+selected_party_members: {{SELECTED_PARTY_MEMBERS}}
 date: {{DATE}}
 ---
 
@@ -793,6 +796,15 @@ if (trackerEncounter && trackerEncounter !== "") {
       return;
     }
     
+    // Ensure all creatures have proper status array
+    if (encounter.creatures) {
+      for (const creature of encounter.creatures) {
+        if (!creature.status) {
+          creature.status = [];
+        }
+      }
+    }
+    
     // Use Initiative Tracker's internal tracker API to load the encounter
     try {
       if (initiativeTracker.tracker?.new) {
@@ -811,15 +823,6 @@ if (trackerEncounter && trackerEncounter !== "") {
   });
 }
 \`\`\`
-
----
-
-\`\`\`button
-name 🪤 Create Trap
-type command
-action D&D Campaign Hub: Create New Trap
-\`\`\`
-^button-new-trap
 
 ---
 
