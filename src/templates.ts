@@ -738,8 +738,11 @@ scene_type: {{TYPE}}
 difficulty: {{DIFFICULTY}}
 status: planned
 tracker_encounter: {{TRACKER_ENCOUNTER}}
+encounter_file: {{ENCOUNTER_FILE}}
 encounter_creatures: {{ENCOUNTER_CREATURES}}
 encounter_difficulty: {{ENCOUNTER_DIFFICULTY}}
+selected_party_id: "{{SELECTED_PARTY_ID}}"
+selected_party_members: {{SELECTED_PARTY_MEMBERS}}
 date: {{DATE}}
 ---
 
@@ -748,12 +751,78 @@ date: {{DATE}}
 **Duration:** {{DURATION}} | **Type:** {{TYPE}} | **Difficulty:** {{DIFFICULTY}}  
 **Act:** {{ACT_NUMBER}} | **Adventure:** [[{{ADVENTURE_NAME}}]]
 
-\`\`\`button
-name 🪤 Create Trap
-type command
-action D&D Campaign Hub: Create New Trap
+\`\`\`dataviewjs
+// Action buttons for scene management
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
+
+// Edit Scene button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit Scene",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-scene");
+});
+
+// Delete Scene button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete Scene",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-scene");
+});
+
+// Open Tracker button (if combat scene with encounter)
+const trackerEncounter = dv.current().tracker_encounter;
+if (trackerEncounter && trackerEncounter !== "") {
+  const openTrackerBtn = buttonContainer.createEl("button", { 
+    text: "⚔️ Open & Load in Tracker",
+    attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px; background-color: var(--interactive-accent); color: var(--text-on-accent);" }
+  });
+  openTrackerBtn.addEventListener("click", async () => {
+    const initiativeTracker = app.plugins?.plugins?.["initiative-tracker"];
+    
+    if (!initiativeTracker) {
+      new Notice("Initiative Tracker plugin not found");
+      return;
+    }
+    
+    const encounter = initiativeTracker.data?.encounters?.[trackerEncounter];
+    if (!encounter) {
+      new Notice("Encounter \\"" + trackerEncounter + "\\" not found. Try recreating it.");
+      return;
+    }
+    
+    // Ensure all creatures have proper status array
+    if (encounter.creatures) {
+      for (const creature of encounter.creatures) {
+        if (!creature.status) {
+          creature.status = [];
+        }
+      }
+    }
+    
+    // Use Initiative Tracker's internal tracker API to load the encounter
+    try {
+      if (initiativeTracker.tracker?.new) {
+        initiativeTracker.tracker.new(initiativeTracker, encounter);
+        new Notice("✅ Loaded encounter: " + trackerEncounter);
+      } else {
+        new Notice("⚠️ Could not load encounter. Try using Load Encounter from Initiative Tracker menu.");
+      }
+    } catch (e) {
+      console.error("Error loading encounter:", e);
+      new Notice("⚠️ Could not load encounter: " + e.message);
+    }
+    
+    // Open Initiative Tracker view
+    app.commands.executeCommandById("initiative-tracker:open-tracker");
+  });
+}
 \`\`\`
-^button-new-trap
 
 ---
 

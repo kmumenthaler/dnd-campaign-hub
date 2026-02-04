@@ -2583,6 +2583,76 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "edit-scene",
+      name: "Edit Scene",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          this.editScene(file.path);
+        } else {
+          new Notice("Please open a scene note first");
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "delete-scene",
+      name: "Delete Scene",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "scene") {
+            const sceneName = cache.frontmatter.name || file.basename;
+            const encounterName = cache.frontmatter.tracker_encounter;
+            const confirmed = await this.confirmDelete(file.name);
+            if (confirmed) {
+              // Delete from vault
+              await this.app.vault.delete(file);
+              console.log(`Deleted scene file: ${file.path}`);
+              
+              // Remove encounter from Initiative Tracker if it exists
+              if (encounterName) {
+                const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+                console.log("Initiative Tracker plugin found:", !!initiativeTracker);
+                
+                if (initiativeTracker?.data?.encounters) {
+                  console.log(`Attempting to delete encounter: "${encounterName}"`);
+                  
+                  if (initiativeTracker.data.encounters[encounterName]) {
+                    delete initiativeTracker.data.encounters[encounterName];
+                    console.log(`✓ Deleted encounter "${encounterName}" from data.encounters`);
+                    
+                    if (initiativeTracker.saveSettings) {
+                      await initiativeTracker.saveSettings();
+                      console.log("✓ Initiative Tracker settings saved after deletion");
+                      new Notice(`✓ Scene "${sceneName}" and its encounter deleted`);
+                    } else {
+                      console.warn("Initiative Tracker saveSettings not available");
+                      new Notice(`⚠️ Scene deleted but could not persist encounter deletion`);
+                    }
+                  } else {
+                    console.warn(`Encounter "${encounterName}" not found in Initiative Tracker`);
+                    new Notice(`✓ Scene "${sceneName}" deleted from vault`);
+                  }
+                } else {
+                  console.warn("Initiative Tracker data.encounters not accessible");
+                  new Notice(`✓ Scene "${sceneName}" deleted from vault`);
+                }
+              } else {
+                new Notice(`✓ Scene "${sceneName}" deleted from vault`);
+              }
+            }
+          } else {
+            new Notice("This is not a scene note");
+          }
+        } else {
+          new Notice("Please open a scene note first");
+        }
+      },
+    });
+
+    this.addCommand({
       id: "create-trap",
       name: "Create New Trap",
       hotkeys: [
@@ -2612,6 +2682,19 @@ export default class DndCampaignHubPlugin extends Plugin {
         }
       },
     });
+
+    // Register file watcher for encounter modifications
+    this.registerEvent(
+      this.app.vault.on('modify', async (file) => {
+        if (file instanceof TFile && file.path.startsWith('z_Encounters/')) {
+          console.log(`[File Watcher] Encounter modified: ${file.path}`);
+          // Wait for metadata cache to update
+          setTimeout(async () => {
+            await this.syncEncounterToScenes(file);
+          }, 100);
+        }
+      })
+    );
 
     this.addCommand({
       id: "delete-encounter",
@@ -3105,6 +3188,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 		new EncounterBuilderModal(this.app, this, encounterPath).open();
 	}
 
+	async editScene(scenePath: string) {
+		// Open Scene creation modal in edit mode
+		new SceneCreationModal(this.app, this, undefined, scenePath).open();
+	}
+
 	async confirmDelete(fileName: string): Promise<boolean> {
 		return new Promise((resolve) => {
 			const modal = new Modal(this.app);
@@ -3137,6 +3225,307 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			modal.open();
 		});
+	}
+
+	/**
+	 * Sync encounter modifications back to linked scenes and Initiative Tracker
+	 * Called when an encounter file is modified in z_Encounters folder
+	 */
+	async syncEncounterToScenes(encounterFile: TFile) {
+		try {
+			console.log(`[SyncEncounter] Starting sync for: ${encounterFile.path}`);
+
+			// Wait a moment for metadata cache to update, then read file directly
+			await new Promise(resolve => setTimeout(resolve, 100));
+
+			// Read the file content directly and parse frontmatter
+			const content = await this.app.vault.read(encounterFile);
+			const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+			
+			if (!frontmatterMatch || !frontmatterMatch[1]) {
+				console.log(`[SyncEncounter] No frontmatter found in encounter`);
+				return;
+			}
+
+			// Parse YAML frontmatter manually
+			const frontmatterText = frontmatterMatch[1];
+			const lines = frontmatterText.split('\n');
+			
+			let encounterName = encounterFile.basename;
+			let encounterCreatures: any[] = [];
+			let encounterDifficulty = 'easy';
+			let selectedPartyId: string | null = null;
+			let useColorNames = false;
+			
+			// Parse creatures array
+			let inCreaturesArray = false;
+			let currentCreature: any = null;
+			
+			for (const line of lines) {
+				const trimmed = line.trim();
+				
+				// Check for top-level fields (no indentation at start of line)
+				const isTopLevel = line.length > 0 && line[0] !== ' ' && line[0] !== '\t';
+				
+				if (trimmed.startsWith('name:') && isTopLevel) {
+					encounterName = trimmed.substring(5).trim().replace(/^["']|["']$/g, '');
+				} else if (trimmed === 'creatures:' && isTopLevel) {
+					inCreaturesArray = true;
+					if (currentCreature) {
+						encounterCreatures.push(currentCreature);
+						currentCreature = null;
+					}
+				} else if (isTopLevel && trimmed.includes(':') && inCreaturesArray) {
+					// Any top-level field ends the creatures array
+					inCreaturesArray = false;
+					if (currentCreature) {
+						encounterCreatures.push(currentCreature);
+						currentCreature = null;
+					}
+					
+					// Process the field we just encountered
+					if (trimmed.startsWith('selected_party_id:')) {
+						selectedPartyId = trimmed.substring(18).trim().replace(/^["']|["']$/g, '') || null;
+					} else if (trimmed.startsWith('use_color_names:')) {
+						useColorNames = trimmed.substring(16).trim().toLowerCase() === 'true';
+					}
+				} else if (inCreaturesArray && trimmed.startsWith('- name:')) {
+					if (currentCreature) {
+						encounterCreatures.push(currentCreature);
+					}
+					currentCreature = {
+						name: trimmed.substring(7).trim().replace(/^["']|["']$/g, ''),
+						count: 1,
+						hp: null,
+						ac: null,
+						cr: null,
+						path: null,
+						source: null
+					};
+				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('count:')) {
+					currentCreature.count = parseInt(trimmed.substring(6).trim());
+				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('hp:')) {
+					currentCreature.hp = parseInt(trimmed.substring(3).trim());
+				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('ac:')) {
+					currentCreature.ac = parseInt(trimmed.substring(3).trim());
+				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('cr:')) {
+					currentCreature.cr = trimmed.substring(3).trim().replace(/^["']|["']$/g, '');
+				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('path:')) {
+					currentCreature.path = trimmed.substring(5).trim().replace(/^["']|["']$/g, '');
+				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('source:')) {
+					currentCreature.source = trimmed.substring(7).trim().replace(/^["']|["']$/g, '');
+				} else if (!inCreaturesArray && trimmed.startsWith('selected_party_id:')) {
+					selectedPartyId = trimmed.substring(18).trim().replace(/^["']|["']$/g, '') || null;
+				} else if (!inCreaturesArray && trimmed.startsWith('use_color_names:')) {
+					useColorNames = trimmed.substring(16).trim().toLowerCase() === 'true';
+				}
+			}
+			
+			// Add last creature if exists
+			if (currentCreature) {
+				encounterCreatures.push(currentCreature);
+			}
+
+			console.log(`[SyncEncounter] Parsed encounter data:`, {
+				name: encounterName,
+				creatures: encounterCreatures.length,
+				creaturesDetails: encounterCreatures,
+				difficulty: encounterDifficulty,
+				partyId: selectedPartyId,
+				useColorNames
+			});
+
+			// Find all scenes that link to this encounter
+			const encounterWikiLink = `[[${encounterFile.path}]]`;
+			const scenesLinking: TFile[] = [];
+
+			// Search through all scene files
+			for (const file of this.app.vault.getMarkdownFiles()) {
+				const cache = this.app.metadataCache.getFileCache(file);
+				if (cache?.frontmatter?.type === 'scene') {
+					const sceneEncounterFile = cache.frontmatter.encounter_file;
+					if (sceneEncounterFile && 
+						(sceneEncounterFile === encounterWikiLink || 
+						 sceneEncounterFile === encounterFile.path ||
+						 sceneEncounterFile.includes(encounterFile.basename))) {
+						scenesLinking.push(file);
+					}
+				}
+			}
+
+			console.log(`[SyncEncounter] Found ${scenesLinking.length} scenes linking to this encounter`);
+
+			// Update each scene's frontmatter
+			for (const sceneFile of scenesLinking) {
+				await this.updateSceneFrontmatter(sceneFile, {
+					encounter_creatures: JSON.stringify(encounterCreatures),
+					encounter_difficulty: encounterDifficulty,
+					selected_party_id: selectedPartyId
+				});
+				console.log(`[SyncEncounter] Updated scene: ${sceneFile.path}`);
+			}
+
+			// Update Initiative Tracker encounter
+			await this.updateInitiativeTrackerEncounter(encounterName, encounterCreatures, selectedPartyId, useColorNames);
+
+			if (scenesLinking.length > 0) {
+				new Notice(`✅ Encounter "${encounterName}" synced to ${scenesLinking.length} scene(s)`);
+			}
+		} catch (error) {
+			console.error('[SyncEncounter] Error:', error);
+			new Notice('⚠️ Error syncing encounter to scenes');
+		}
+	}
+
+	/**
+	 * Update a scene's frontmatter fields
+	 */
+	async updateSceneFrontmatter(sceneFile: TFile, updates: Record<string, any>) {
+		const content = await this.app.vault.read(sceneFile);
+		const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+		
+		if (!frontmatterMatch || !frontmatterMatch[1]) {
+			console.error(`No frontmatter found in ${sceneFile.path}`);
+			return;
+		}
+
+		let frontmatter = frontmatterMatch[1];
+
+		// Update each field
+		for (const [key, value] of Object.entries(updates)) {
+			const fieldMatch = frontmatter.match(new RegExp(`^${key}:\\s*(.*)$`, 'm'));
+			if (fieldMatch) {
+				// Update existing field
+				frontmatter = frontmatter.replace(
+					new RegExp(`^${key}:\\s*.*$`, 'm'),
+					`${key}: ${value}`
+				);
+			} else {
+				// Add new field at the end
+				frontmatter = `${frontmatter}\n${key}: ${value}`;
+			}
+		}
+
+		const newContent = content.replace(
+			/^---\n[\s\S]*?\n---/,
+			`---\n${frontmatter}\n---`
+		);
+
+		await this.app.vault.modify(sceneFile, newContent);
+	}
+
+	/**
+	 * Update Initiative Tracker encounter data
+	 */
+	async updateInitiativeTrackerEncounter(encounterName: string, creatures: any[], selectedPartyId: string | null, useColorNames: boolean = false) {
+		try {
+			console.log(`[UpdateTracker] Starting update for encounter: ${encounterName}`);
+			console.log(`[UpdateTracker] Creatures:`, creatures);
+			console.log(`[UpdateTracker] Party ID: ${selectedPartyId}, Use color names: ${useColorNames}`);
+
+			const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+			if (!initiativePlugin?.data?.encounters) {
+				console.log('[UpdateTracker] Initiative Tracker not available');
+				return;
+			}
+
+			// Check if encounter exists in Initiative Tracker
+			if (!initiativePlugin.data.encounters[encounterName]) {
+				console.log(`[UpdateTracker] Encounter "${encounterName}" not found in tracker`);
+				return;
+			}
+
+			// Helper function to generate unique IDs like Initiative Tracker does
+			const generateId = () => {
+				const chars = '0123456789abcdef';
+				let id = 'ID_';
+				for (let i = 0; i < 12; i++) {
+					id += chars[Math.floor(Math.random() * chars.length)];
+				}
+				return id;
+			};
+
+			// Get party members if a party is selected
+			let partyMembers: any[] = [];
+			if (selectedPartyId && initiativePlugin.data.parties) {
+				const party = Object.values(initiativePlugin.data.parties).find((p: any) => p.id === selectedPartyId);
+				if (party && (party as any).players) {
+					partyMembers = (party as any).players.map((player: any) => ({
+						...player,
+						id: player.id || generateId(),
+						status: player.status || []
+					}));
+					console.log(`[UpdateTracker] Loaded ${partyMembers.length} party members from party: ${(party as any).name}`);
+				}
+			}
+
+			// Convert creatures to Initiative Tracker format
+			const colors = ['Red', 'Blue', 'Green', 'Yellow', 'Purple', 'Orange', 'Pink', 'Brown'];
+			
+			const trackerCreatures = await Promise.all(creatures.map(async (c: any) => {
+				const instances: any[] = [];
+				const count = c.count || 1;
+				
+				console.log(`[UpdateTracker] Processing creature: ${c.name}, count: ${count}, HP: ${c.hp}, AC: ${c.ac}`);
+				
+				for (let i = 0; i < count; i++) {
+					let creatureName = c.name;
+					let displayName = c.name;
+
+					// Use the encounter-level useColorNames setting
+					if (count > 1 && useColorNames) {
+						const colorIndex = i % colors.length;
+						creatureName = `${c.name} (${colors[colorIndex]})`;
+						displayName = creatureName;
+					}
+
+					instances.push({
+						name: creatureName,
+						display: displayName,
+						initiative: 0,
+						static: false,
+						modifier: 0,
+						hp: c.hp || 1,
+						currentMaxHP: c.hp || 1,
+						cr: c.cr || undefined,
+						ac: c.ac || 10,
+						currentAC: c.ac || 10,
+						id: generateId(),
+						currentHP: c.hp || 1,
+						tempHP: 0,
+						status: [],  // CRITICAL: Initialize empty status array
+						enabled: true,
+						active: false,
+						hidden: false,
+						friendly: false,
+						rollHP: false,
+						note: c.path || '',
+						path: c.path || ''
+					});
+				}
+				return instances;
+			}));
+
+			const flatCreatures = trackerCreatures.flat();
+			const allCombatants = [...partyMembers, ...flatCreatures];
+
+			console.log(`[UpdateTracker] Total combatants: ${allCombatants.length} (${partyMembers.length} party + ${flatCreatures.length} creatures)`);
+
+			// Update the encounter in Initiative Tracker
+			initiativePlugin.data.encounters[encounterName] = {
+				...initiativePlugin.data.encounters[encounterName],
+				creatures: allCombatants
+			};
+
+			// Save settings
+			if (initiativePlugin.saveSettings) {
+				await initiativePlugin.saveSettings();
+				console.log(`[UpdateTracker] ✅ Successfully updated encounter "${encounterName}" in Initiative Tracker`);
+				new Notice(`✅ Initiative Tracker updated with latest encounter data`);
+			}
+		} catch (error) {
+			console.error('[UpdateTracker] Error updating Initiative Tracker:', error);
+		}
 	}
 
 	async createSession() {
@@ -6343,27 +6732,46 @@ class EncounterBuilder {
     }
 
     let campaignName = campaignNameOverride || "";
+    
+    // Use campaignPath if available (e.g., "ttrpgs/Frozen Sick (SOLINA)")
+    if (!campaignName && this.campaignPath) {
+      const pathParts = this.campaignPath.split('/');
+      campaignName = pathParts[pathParts.length - 1] || "";
+      console.log(`[EncounterBuilder] Using campaignPath to resolve party: "${campaignName}"`);
+    }
+    
     if (!campaignName) {
       const activeFile = this.app.workspace.getActiveFile();
       if (activeFile) {
         const campaignFolder = this.findCampaignFolder(activeFile.path);
         if (campaignFolder) {
           campaignName = campaignFolder.split('/').pop() || "";
+          console.log(`[EncounterBuilder] Resolved campaign from active file: "${campaignName}"`);
         }
       }
     }
 
     if (campaignName) {
       const partyName = `${campaignName} Party`;
+      console.log(`[EncounterBuilder] Looking for party: "${partyName}"`);
       const namedParty = parties.find((p: any) => p.name === partyName);
-      if (namedParty) return namedParty;
+      if (namedParty) {
+        console.log(`[EncounterBuilder] Found party: "${namedParty.name}" with ${namedParty.players?.length || 0} players`);
+        return namedParty;
+      } else {
+        console.log(`[EncounterBuilder] Party "${partyName}" not found. Available parties:`, parties.map(p => p.name));
+      }
     }
 
     if (initiativePlugin?.data?.defaultParty) {
       const defaultParty = parties.find((p: any) => p.id === initiativePlugin.data.defaultParty);
-      if (defaultParty) return defaultParty;
+      if (defaultParty) {
+        console.log(`[EncounterBuilder] Using default party: "${defaultParty.name}"`);
+        return defaultParty;
+      }
     }
 
+    console.log(`[EncounterBuilder] No matching party found, using first available party`);
     return parties[0] || null;
   }
 
@@ -7202,6 +7610,7 @@ class SceneCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
   encounterBuilder: EncounterBuilder;
   adventurePath = "";
+  campaignPath = "";  // Track campaign for party resolution
   sceneName = "";
   act = "1";
   sceneNumber = "1";
@@ -7214,6 +7623,9 @@ class SceneCreationModal extends Modal {
   encounterName = "";
   useColorNames = false;
   includeParty = true;  // Include party members in encounter
+  selectedPartyMembers: string[] = [];  // Selected party member names
+  selectedPartyId = "";
+  selectedPartyName = "";
   creatures: Array<{
     name: string;
     count: number;
@@ -7228,13 +7640,123 @@ class SceneCreationModal extends Modal {
   encounterSection: HTMLElement | null = null;
   difficultyContainer: HTMLElement | null = null;
   creatureListContainer: HTMLElement | null = null;
+  partySelectionContainer: HTMLElement | null = null;
+  partyMemberListContainer: HTMLElement | null = null;
+  
+  // For editing existing scenes
+  isEdit = false;
+  originalScenePath = "";
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, scenePath?: string) {
     super(app);
     this.plugin = plugin;
     this.encounterBuilder = new EncounterBuilder(app, plugin);
     if (adventurePath) {
       this.adventurePath = adventurePath;
+    }
+    if (scenePath) {
+      this.isEdit = true;
+      this.originalScenePath = scenePath;
+    }
+  }
+
+  async loadSceneData() {
+    try {
+      const sceneFile = this.app.vault.getAbstractFileByPath(this.originalScenePath);
+      if (!(sceneFile instanceof TFile)) {
+        new Notice("Scene file not found!");
+        return;
+      }
+
+      const cache = this.app.metadataCache.getFileCache(sceneFile);
+      const frontmatter = cache?.frontmatter;
+
+      if (!frontmatter) {
+        new Notice("Could not read scene data!");
+        return;
+      }
+
+      // Load basic scene properties
+      this.sceneName = frontmatter.name || sceneFile.basename;
+      this.act = String(frontmatter.act || "1");
+      this.sceneNumber = String(frontmatter.scene_number || "1");
+      this.duration = frontmatter.duration || "30min";
+      this.type = frontmatter.scene_type || frontmatter.type || "exploration";
+      this.difficulty = frontmatter.difficulty || "medium";
+
+      // Load encounter properties if combat scene
+      if (this.type === "combat") {
+        this.createEncounter = !!frontmatter.tracker_encounter;
+        this.encounterName = frontmatter.tracker_encounter || "";
+        
+        // Load creatures from encounter_creatures or YAML field
+        const creaturesData = frontmatter.encounter_creatures;
+        if (creaturesData && Array.isArray(creaturesData)) {
+          this.creatures = creaturesData.map((c: any) => ({
+            name: c.name || "Unknown",
+            count: c.count || 1,
+            hp: c.hp,
+            ac: c.ac,
+            cr: c.cr,
+            source: c.source || "vault",
+            path: c.path
+          }));
+        }
+        
+        // Load party selection
+        this.selectedPartyId = frontmatter.selected_party_id || "";
+        if (frontmatter.selected_party_members && Array.isArray(frontmatter.selected_party_members)) {
+          this.selectedPartyMembers = [...frontmatter.selected_party_members];
+        }
+        
+        console.log(`[Scene Edit] Loaded party selection: id=${this.selectedPartyId}, members=${this.selectedPartyMembers.length}`);
+      }
+
+      // Extract adventure path from scene path
+      // Path format: adventures/Adventure Name/Act 1 - Setup/Scene 1 - Name.md
+      // or: adventures/Adventure Name - Scenes/Scene 1 - Name.md
+      const pathParts = this.originalScenePath.split('/');
+      let adventureIndex = -1;
+      
+      for (let i = 0; i < pathParts.length; i++) {
+        if (pathParts[i] === "Adventures" || pathParts[i] === "adventures") {
+          adventureIndex = i;
+          break;
+        }
+      }
+      
+      if (adventureIndex >= 0 && pathParts.length > adventureIndex + 1) {
+        const adventureName = pathParts[adventureIndex + 1]!.replace(/ - Scenes$/, '');
+        // Try to find the adventure file
+        const possiblePaths = [
+          `${pathParts.slice(0, adventureIndex + 2).join('/')}/${adventureName}.md`,
+          `${pathParts.slice(0, adventureIndex + 1).join('/')}/${adventureName}.md`
+        ];
+        
+        for (const path of possiblePaths) {
+          const file = this.app.vault.getAbstractFileByPath(path);
+          if (file instanceof TFile) {
+            this.adventurePath = path;
+            
+            // Load campaignPath from adventure frontmatter
+            try {
+              const adventureContent = await this.app.vault.read(file);
+              const campaignMatch = adventureContent.match(/^campaign:\s*([^\r\n]+)$/m);
+              const campaignName = (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
+              this.campaignPath = `ttrpgs/${campaignName}`;
+              console.log(`[Scene Edit] Loaded campaignPath: ${this.campaignPath}`);
+            } catch (err) {
+              console.error("Error loading campaign from adventure:", err);
+            }
+            
+            break;
+          }
+        }
+      }
+
+    } catch (error) {
+      console.error("Error loading scene data:", error);
+      new Notice("Error loading scene data");
     }
   }
 
@@ -7242,7 +7764,12 @@ class SceneCreationModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
 
-    contentEl.createEl("h2", { text: "🎬 Create New Scene" });
+    // Load existing scene data if editing
+    if (this.isEdit) {
+      await this.loadSceneData();
+    }
+
+    contentEl.createEl("h2", { text: this.isEdit ? "✏️ Edit Scene" : "🎬 Create New Scene" });
 
     // Get all adventures from GM campaigns
     const allAdventures = await this.getAllAdventures();
@@ -7357,10 +7884,10 @@ class SceneCreationModal extends Modal {
     this.encounterSection = contentEl.createDiv({ cls: "dnd-encounter-section" });
     this.showEncounterBuilderIfCombat();
 
-    // Create button
+    // Create/Update button
     new Setting(contentEl)
       .addButton(btn => btn
-        .setButtonText("Create Scene")
+        .setButtonText(this.isEdit ? "Save Changes" : "Create Scene")
         .setCta()
         .onClick(async () => {
           if (!this.sceneName) {
@@ -7517,6 +8044,9 @@ class SceneCreationModal extends Modal {
       const worldMatch = adventureContent.match(/^world:\s*([^\r\n]+)$/m);
       const campaignName = (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
       const worldName = (worldMatch?.[1]?.trim() || campaignName).replace(/^["']|["']$/g, '');
+      
+      // Set campaignPath for party resolution
+      this.campaignPath = `ttrpgs/${campaignName}`;
 
       // Determine folder structure
       const adventureFolder = adventureFile.parent;
@@ -7598,11 +8128,20 @@ class SceneCreationModal extends Modal {
         difficulty: this.difficulty
       };
 
-      await this.createSceneNote(scenePath, sceneData, campaignName, worldName, adventureFile.basename, currentDate);
-
-      // Create Initiative Tracker encounter if requested
+      // Create Initiative Tracker encounter and save encounter file if requested
+      let encounterFilePath = "";
       if (this.createEncounter && this.creatures.length > 0) {
-        await this.createInitiativeTrackerEncounter(scenePath);
+        const savedPath = await this.saveEncounterFile();
+        if (savedPath) {
+          encounterFilePath = savedPath;
+        }
+      }
+
+      await this.createSceneNote(scenePath, sceneData, campaignName, worldName, adventureFile.basename, currentDate, encounterFilePath);
+
+      // Save to Initiative Tracker after scene is created
+      if (this.createEncounter && this.creatures.length > 0) {
+        await this.encounterBuilder.createInitiativeTrackerEncounter(scenePath);
       }
 
       // Open the new scene
@@ -7650,10 +8189,12 @@ class SceneCreationModal extends Modal {
     campaignName: string,
     worldName: string,
     adventureName: string,
-    currentDate: string
+    currentDate: string,
+    encounterFilePath = ""
   ) {
     // Prepare encounter data for frontmatter
     const trackerEncounter = this.encounterName || "";
+    const encounterFile = encounterFilePath ? `"[[${encounterFilePath}]]"` : '""';
     const encounterCreaturesJson = this.creatures.length > 0 
       ? JSON.stringify(this.creatures) 
       : "[]";
@@ -7687,8 +8228,11 @@ class SceneCreationModal extends Modal {
       .replace(/{{WORLD}}/g, worldName)
       .replace(/{{DATE}}/g, currentDate)
       .replace(/{{TRACKER_ENCOUNTER}}/g, trackerEncounter)
+      .replace(/{{ENCOUNTER_FILE}}/g, encounterFile)
       .replace(/{{ENCOUNTER_CREATURES}}/g, encounterCreaturesJson)
-      .replace(/{{ENCOUNTER_DIFFICULTY}}/g, encounterDifficultyJson);
+      .replace(/{{ENCOUNTER_DIFFICULTY}}/g, encounterDifficultyJson)
+      .replace(/{{SELECTED_PARTY_ID}}/g, this.selectedPartyId || "")
+      .replace(/{{SELECTED_PARTY_MEMBERS}}/g, JSON.stringify(this.selectedPartyMembers));
 
     await this.app.vault.create(filePath, sceneContent);
   }
@@ -7698,7 +8242,10 @@ class SceneCreationModal extends Modal {
     this.encounterBuilder.creatures = [...this.creatures];
     this.encounterBuilder.includeParty = this.includeParty;
     this.encounterBuilder.useColorNames = this.useColorNames;
+    this.encounterBuilder.selectedPartyMembers = [...this.selectedPartyMembers];
+    this.encounterBuilder.selectedPartyId = this.selectedPartyId || "";
     this.encounterBuilder.adventurePath = this.adventurePath;
+    this.encounterBuilder.campaignPath = this.campaignPath;
   }
 
   /**
@@ -7744,12 +8291,23 @@ class SceneCreationModal extends Modal {
       
       new Setting(this.encounterSection)
         .setName("Include Party Members")
-        .setDesc("Automatically add the campaign's party to this encounter")
+        .setDesc("Add party members to this encounter for difficulty calculation")
         .addToggle(toggle => toggle
           .setValue(this.includeParty)
-          .onChange(value => {
+          .onChange(async (value) => {
             this.includeParty = value;
+            await this.renderPartySelection();
+            await this.renderPartyMemberList();
+            this.updateDifficultyDisplay();
           }));
+      
+      // Party selection container
+      this.partySelectionContainer = this.encounterSection.createDiv({ cls: "dnd-party-selection" });
+      this.renderPartySelection();
+      
+      // Party member list container
+      this.partyMemberListContainer = this.encounterSection.createDiv({ cls: "dnd-party-member-list" });
+      this.renderPartyMemberList();
       
       // Show the builder fields
       this.showEncounterBuilderFields();
@@ -8190,6 +8748,190 @@ class SceneCreationModal extends Modal {
     return this.encounterBuilder.calculateRoundsToDefeat(totalHP, effectiveDPR);
   }
 
+  async renderPartySelection() {
+    if (!this.partySelectionContainer) return;
+    this.partySelectionContainer.empty();
+
+    if (!this.includeParty) return;
+
+    try {
+      this.syncEncounterBuilder();
+      const parties = await this.encounterBuilder.getAvailableParties();
+
+      if (parties.length === 0) {
+        this.partySelectionContainer.createEl("p", {
+          text: "⚠️ No parties found in Initiative Tracker",
+          attr: { style: "color: var(--text-warning); font-style: italic; margin: 10px 0;" }
+        });
+        return;
+      }
+
+      if (!this.selectedPartyId) {
+        const defaultParty = await this.encounterBuilder.getResolvedParty();
+        if (defaultParty?.id) this.selectedPartyId = defaultParty.id;
+        if (defaultParty?.name) this.selectedPartyName = defaultParty.name;
+      }
+
+      const partySetting = new Setting(this.partySelectionContainer)
+        .setName("Party")
+        .setDesc("Choose which party to use for difficulty calculations");
+
+      partySetting.addDropdown((dropdown) => {
+        parties.forEach(party => {
+          dropdown.addOption(party.id, party.name);
+        });
+        dropdown.setValue(this.selectedPartyId || parties[0]!.id);
+        dropdown.onChange((value) => {
+          this.selectedPartyId = value;
+          const selected = parties.find(p => p.id === value);
+          this.selectedPartyName = selected?.name || "";
+          this.selectedPartyMembers = [];
+        });
+      });
+
+      partySetting.addButton((button) =>
+        button
+          .setButtonText("Apply Party")
+          .onClick(async () => {
+            await this.renderPartySelection();
+            await this.renderPartyMemberList();
+            this.updateDifficultyDisplay();
+          })
+      );
+
+      const partyMembers = await this.encounterBuilder.getAvailablePartyMembers();
+      
+      if (partyMembers.length === 0) {
+        this.partySelectionContainer.createEl("p", {
+          text: "⚠️ No party members found in Initiative Tracker",
+          attr: { style: "color: var(--text-warning); font-style: italic; margin: 10px 0;" }
+        });
+        return;
+      }
+
+      const selectionDiv = this.partySelectionContainer.createDiv();
+      selectionDiv.style.border = "1px solid var(--background-modifier-border)";
+      selectionDiv.style.padding = "10px";
+      selectionDiv.style.borderRadius = "5px";
+      selectionDiv.style.marginBottom = "10px";
+
+      selectionDiv.createEl("h4", { text: "Select Party Members", attr: { style: "margin-top: 0;" } });
+
+      for (const member of partyMembers) {
+        const checkboxDiv = selectionDiv.createDiv();
+        checkboxDiv.style.marginBottom = "5px";
+
+        const checkbox = checkboxDiv.createEl("input", { type: "checkbox" });
+        checkbox.checked = this.selectedPartyMembers.includes(member.name);
+        checkbox.style.marginRight = "10px";
+        checkbox.onchange = () => {
+          if (checkbox.checked) {
+            if (!this.selectedPartyMembers.includes(member.name)) {
+              this.selectedPartyMembers.push(member.name);
+            }
+          } else {
+            this.selectedPartyMembers = this.selectedPartyMembers.filter(n => n !== member.name);
+          }
+          this.renderPartyMemberList();
+          this.updateDifficultyDisplay();
+        };
+
+        const label = checkboxDiv.createEl("span", { 
+          text: `${member.name} (Level ${member.level}, HP: ${member.hp}, AC: ${member.ac})`
+        });
+        label.style.cursor = "pointer";
+        label.onclick = () => {
+          checkbox.checked = !checkbox.checked;
+          checkbox.onchange?.(new Event('change'));
+        };
+      }
+
+      // Select All / Deselect All buttons
+      const buttonsDiv = selectionDiv.createDiv();
+      buttonsDiv.style.marginTop = "10px";
+      buttonsDiv.style.display = "flex";
+      buttonsDiv.style.gap = "10px";
+
+      const selectAllBtn = buttonsDiv.createEl("button", { text: "Select All" });
+      selectAllBtn.style.fontSize = "0.85em";
+      selectAllBtn.onclick = () => {
+        this.selectedPartyMembers = partyMembers.map(m => m.name);
+        this.renderPartySelection();
+        this.renderPartyMemberList();
+        this.updateDifficultyDisplay();
+      };
+
+      const deselectAllBtn = buttonsDiv.createEl("button", { text: "Deselect All" });
+      deselectAllBtn.style.fontSize = "0.85em";
+      deselectAllBtn.onclick = () => {
+        this.selectedPartyMembers = [];
+        this.renderPartySelection();
+        this.renderPartyMemberList();
+        this.updateDifficultyDisplay();
+      };
+    } catch (error) {
+      console.error("Error rendering party selection:", error);
+    }
+  }
+
+  async renderPartyMemberList() {
+    if (!this.partyMemberListContainer) return;
+    this.partyMemberListContainer.empty();
+
+    if (!this.includeParty || this.selectedPartyMembers.length === 0) {
+      return;
+    }
+
+    try {
+      const partyMembers = await this.encounterBuilder.getAvailablePartyMembers();
+      const memberByName = new Map(partyMembers.map(m => [m.name, m]));
+
+      const headerDiv = this.partyMemberListContainer.createDiv({ cls: "dnd-party-member-header" });
+      headerDiv.style.marginBottom = "10px";
+      headerDiv.style.fontWeight = "600";
+      headerDiv.setText(`Selected Party Members (${this.selectedPartyMembers.length})`);
+
+      for (const memberName of this.selectedPartyMembers) {
+        const memberData = memberByName.get(memberName);
+        if (!memberData) continue;
+
+        const memberItem = this.partyMemberListContainer.createDiv({ cls: "dnd-creature-item" });
+        
+        const nameEl = memberItem.createSpan({ cls: "dnd-creature-name" });
+        nameEl.setText(memberName);
+        
+        const statsEl = memberItem.createSpan({ cls: "dnd-creature-stats" });
+        const stats: string[] = [];
+        stats.push(`Level: ${memberData.level}`);
+        stats.push(`HP: ${memberData.hp}`);
+        stats.push(`AC: ${memberData.ac}`);
+        statsEl.setText(` | ${stats.join(" | ")}`);
+        
+        const removeBtn = memberItem.createEl("button", {
+          text: "Remove",
+          cls: "dnd-creature-remove"
+        });
+        removeBtn.addEventListener("click", () => {
+          this.removePartyMember(memberName);
+        });
+      }
+    } catch (error) {
+      console.error("Error rendering party member list:", error);
+    }
+  }
+
+  removePartyMember(memberName: string) {
+    this.selectedPartyMembers = this.selectedPartyMembers.filter(n => n !== memberName);
+    this.renderPartySelection();
+    this.renderPartyMemberList();
+    this.updateDifficultyDisplay();
+  }
+
+  async getAvailablePartyMembers(): Promise<Array<{ name: string; level: number; hp: number; ac: number }>> {
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.getAvailablePartyMembers();
+  }
+
   /**
    * Get party members from Initiative Tracker for difficulty calculation
    */
@@ -8511,6 +9253,13 @@ class SceneCreationModal extends Modal {
   }
 
   /**
+   * Alias for updateDifficultyCalculation to match EncounterBuilderModal interface
+   */
+  async updateDifficultyDisplay() {
+    return this.updateDifficultyCalculation();
+  }
+
+  /**
    * Search vault for creature files in z_Beastiarity
    * Parses creature statblocks from frontmatter
    */
@@ -8555,12 +9304,307 @@ class SceneCreationModal extends Modal {
 
   /**
    * Create encounter in Initiative Tracker and link to scene
+   * Note: The encounter file is saved earlier in createSceneFile
    */
   async createInitiativeTrackerEncounter(scenePath: string) {
     if (!this.createEncounter || this.creatures.length === 0) return;
 
     this.syncEncounterBuilder();
+    
+    // Save to Initiative Tracker plugin
     await this.encounterBuilder.createInitiativeTrackerEncounter(scenePath);
+  }
+
+  /**
+   * Save encounter file to z_Encounters folder
+   * Uses the same proven approach as EncounterBuilderModal.saveEncounter()
+   */
+  async saveEncounterFile() {
+    if (!this.encounterName || this.creatures.length === 0) {
+      console.log("[SceneCreation - saveEncounterFile] Skipping - no encounter name or creatures");
+      return null;
+    }
+
+    if (!this.campaignPath) {
+      console.error("[SceneCreation - saveEncounterFile] No campaignPath set!");
+      new Notice("⚠️ Cannot save encounter: campaign path not found");
+      return null;
+    }
+
+    try {
+      // Use vault's root z_Encounters folder (same as EncounterBuilderModal)
+      const encounterFolder = "z_Encounters";
+      
+      console.log("[SceneCreation - saveEncounterFile] Saving encounter:", this.encounterName);
+      console.log("[SceneCreation - saveEncounterFile] Campaign:", this.campaignPath);
+      console.log("[SceneCreation - saveEncounterFile] Folder:", encounterFolder);
+      
+      // Create folder if it doesn't exist
+      const folderExists = this.app.vault.getAbstractFileByPath(encounterFolder);
+      if (!folderExists) {
+        console.log("[SceneCreation - saveEncounterFile] Creating folder...");
+        await this.app.vault.createFolder(encounterFolder);
+      }
+
+      // Generate encounter file content (same as EncounterBuilderModal)
+      this.syncEncounterBuilder();
+      const diffResult = await this.encounterBuilder.calculateEncounterDifficulty();
+      const encounterContent = await this.generateEncounterContent(diffResult);
+
+      // Save encounter file
+      const fileName = `${this.encounterName}.md`;
+      const encounterPath = `${encounterFolder}/${fileName}`;
+      
+      console.log("[SceneCreation - saveEncounterFile] File path:", encounterPath);
+
+      const existingFile = this.app.vault.getAbstractFileByPath(encounterPath);
+      if (existingFile instanceof TFile) {
+        console.log("[SceneCreation - saveEncounterFile] Updating existing file");
+        await this.app.vault.modify(existingFile, encounterContent);
+      } else {
+        console.log("[SceneCreation - saveEncounterFile] Creating new file");
+        await this.app.vault.create(encounterPath, encounterContent);
+      }
+
+      console.log(`[SceneCreation - saveEncounterFile] ✅ Success! Path: ${encounterPath}`);
+      new Notice(`✅ Encounter "${this.encounterName}" saved to z_Encounters`);
+      
+      return encounterPath;
+    } catch (error) {
+      console.error("[SceneCreation - saveEncounterFile] ERROR:", error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      new Notice(`⚠️ Could not save encounter file: ${errorMsg}`);
+      return null;
+    }
+  }
+
+  escapeYamlString(str: string): string {
+    if (!str) return '""';
+    return '"' + str.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  }
+
+  /**
+   * Generate encounter file content using the EXACT same format as EncounterBuilderModal
+   */
+  async generateEncounterContent(diffResult: any): Promise<string> {
+    const currentDate = window.moment().format("YYYY-MM-DD");
+
+    let frontmatter = `---
+type: encounter
+name: ${this.escapeYamlString(this.encounterName)}
+creatures:`;
+
+    for (const creature of this.creatures) {
+      frontmatter += `\n  - name: ${this.escapeYamlString(creature.name)}
+    count: ${creature.count}`;
+      if (creature.hp) frontmatter += `\n    hp: ${creature.hp}`;
+      if (creature.ac) frontmatter += `\n    ac: ${creature.ac}`;
+      if (creature.cr) frontmatter += `\n    cr: ${this.escapeYamlString(creature.cr)}`;
+      if (creature.source) frontmatter += `\n    source: ${this.escapeYamlString(creature.source)}`;
+      if (creature.path) frontmatter += `\n    path: ${this.escapeYamlString(creature.path)}`;
+    }
+
+    frontmatter += `
+include_party: ${this.includeParty}
+use_color_names: ${this.useColorNames}`;
+
+    if (this.selectedPartyId) frontmatter += `\nselected_party_id: ${this.escapeYamlString(this.selectedPartyId)}`;
+    if (this.selectedPartyMembers.length > 0) {
+      const selectedPartyName = this.selectedPartyMembers.join(", ");
+      frontmatter += `\nselected_party_name: ${this.escapeYamlString(selectedPartyName)}`;
+    }
+
+    if (this.adventurePath) frontmatter += `\nadventure_path: ${this.escapeYamlString(this.adventurePath)}`;
+    if (this.campaignPath) frontmatter += `\ncampaign_path: ${this.escapeYamlString(this.campaignPath)}`;
+
+    frontmatter += `
+difficulty:
+  rating: ${this.escapeYamlString(diffResult.analysis.difficulty)}
+  color: ${this.escapeYamlString(diffResult.analysis.difficultyColor)}
+  party_count: ${diffResult.partyStats.memberCount}
+  party_avg_level: ${diffResult.partyStats.avgLevel.toFixed(1)}
+  party_total_hp: ${diffResult.partyStats.totalHP}
+  party_avg_ac: ${diffResult.partyStats.avgAC.toFixed(1)}
+  party_total_dpr: ${diffResult.partyStats.totalDPR.toFixed(1)}
+  party_hit_chance: ${(diffResult.analysis.partyHitChance * 100).toFixed(0)}
+  party_effective_dpr: ${diffResult.analysis.partyEffectiveDPR.toFixed(0)}
+  enemy_count: ${diffResult.enemyStats.creatureCount}
+  enemy_total_hp: ${diffResult.enemyStats.totalHP}
+  enemy_avg_ac: ${diffResult.enemyStats.avgAC.toFixed(1)}
+  enemy_total_dpr: ${diffResult.enemyStats.totalDPR.toFixed(1)}
+  enemy_hit_chance: ${(diffResult.analysis.enemyHitChance * 100).toFixed(0)}
+  enemy_effective_dpr: ${diffResult.analysis.enemyEffectiveDPR.toFixed(0)}
+  rounds_to_defeat: ${diffResult.analysis.roundsToDefeatEnemies}
+  rounds_party_survives: ${diffResult.analysis.roundsToDefeatParty}
+  survival_ratio: ${diffResult.analysis.survivalRatio.toFixed(2)}
+date: ${currentDate}
+---`;
+
+    // Use EXACT same content structure as EncounterBuilderModal
+    const content = `${frontmatter}
+
+# ${this.encounterName}
+
+\`\`\`dataviewjs
+// Create action buttons
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
+
+// Open Initiative Tracker and load encounter button
+const openTrackerBtn = buttonContainer.createEl("button", { 
+  text: "⚔️ Open & Load in Tracker",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px; background-color: var(--interactive-accent); color: var(--text-on-accent);" }
+});
+openTrackerBtn.addEventListener("click", async () => {
+  const encounterName = dv.current().name;
+  const initiativeTracker = app.plugins?.plugins?.["initiative-tracker"];
+  
+  if (!initiativeTracker) {
+    new Notice("Initiative Tracker plugin not found");
+    return;
+  }
+  
+  const encounter = initiativeTracker.data?.encounters?.[encounterName];
+  if (!encounter) {
+    new Notice("Encounter \\"" + encounterName + "\\" not found. Try recreating it.");
+    return;
+  }
+  
+  // Use Initiative Tracker's internal tracker API to load the encounter
+  try {
+    if (initiativeTracker.tracker?.new) {
+      initiativeTracker.tracker.new(initiativeTracker, encounter);
+      new Notice("✅ Loaded encounter: " + encounterName);
+    } else {
+      new Notice("⚠️ Could not load encounter. Try using Load Encounter from Initiative Tracker menu.");
+    }
+  } catch (e) {
+    console.error("Error loading encounter:", e);
+    new Notice("⚠️ Could not load encounter: " + e.message);
+  }
+  
+  // Open Initiative Tracker view
+  app.commands.executeCommandById("initiative-tracker:open-tracker");
+});
+
+// Edit button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-encounter");
+});
+
+// Delete button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-encounter");
+});
+\`\`\`
+
+---
+
+## Difficulty Analysis
+
+\`\`\`dataviewjs
+const diff = dv.current().difficulty;
+if (!diff) {
+  dv.paragraph("*No difficulty data available.*");
+} else {
+  // Create difficulty card
+  const card = dv.el("div", "", { cls: "dnd-difficulty-card" });
+  
+  // Header with difficulty badge and rounds
+  const header = dv.el("div", "", { cls: "dnd-difficulty-header", container: card });
+  const badge = dv.el("span", diff.rating, { cls: "dnd-difficulty-badge", container: header });
+  badge.style.backgroundColor = diff.color;
+  dv.el("span", \` ~\${diff.rounds_to_defeat} round\${diff.rounds_to_defeat !== 1 ? 's' : ''}\`, { cls: "dnd-rounds-estimate", container: header });
+  
+  // Stats grid
+  const grid = dv.el("div", "", { cls: "dnd-difficulty-stats-grid", container: card });
+  
+  // Party column
+  const partyCol = dv.el("div", "", { cls: "dnd-stats-column", container: grid });
+  dv.el("h5", \`⚔️ Party (\${diff.party_count})\`, { container: partyCol });
+  const partyStats = dv.el("div", "", { container: partyCol });
+  partyStats.innerHTML = \`
+    <div>HP Pool: <strong>\${diff.party_total_hp}</strong></div>
+    <div>Avg AC: <strong>\${Math.round(diff.party_avg_ac)}</strong></div>
+    <div>Total DPR: <strong>\${Math.round(diff.party_total_dpr)}</strong></div>
+    <div>Hit Chance: <strong>\${diff.party_hit_chance}%</strong></div>
+    <div>Effective DPR: <strong>\${diff.party_effective_dpr}</strong></div>
+  \`;
+  
+  // Enemy column
+  const enemyCol = dv.el("div", "", { cls: "dnd-stats-column", container: grid });
+  dv.el("h5", \`👹 Enemies (\${diff.enemy_count})\`, { container: enemyCol });
+  const enemyStats = dv.el("div", "", { container: enemyCol });
+  enemyStats.innerHTML = \`
+    <div>HP Pool: <strong>\${diff.enemy_total_hp}</strong></div>
+    <div>Avg AC: <strong>\${Math.round(diff.enemy_avg_ac)}</strong></div>
+    <div>Total DPR: <strong>\${Math.round(diff.enemy_total_dpr)}</strong></div>
+    <div>Hit Chance: <strong>\${diff.enemy_hit_chance}%</strong></div>
+    <div>Effective DPR: <strong>\${diff.enemy_effective_dpr}</strong></div>
+  \`;
+  
+  // 3-round analysis
+  const analysis = dv.el("div", "", { cls: "dnd-difficulty-analysis", container: card });
+  const partyDamage3 = diff.party_effective_dpr * 3;
+  const enemyDamage3 = diff.enemy_effective_dpr * 3;
+  const partyHPAfter3 = Math.max(0, diff.party_total_hp - enemyDamage3);
+  const enemyHPAfter3 = Math.max(0, diff.enemy_total_hp - partyDamage3);
+  const partyHPPercent = Math.round((partyHPAfter3 / diff.party_total_hp) * 100);
+  const enemyHPPercent = Math.round((enemyHPAfter3 / diff.enemy_total_hp) * 100);
+  
+  analysis.innerHTML = \`
+    <div style="margin-bottom: 8px;"><strong>📊 3-Round Analysis:</strong></div>
+    <div>Party deals: <strong>\${Math.round(partyDamage3)}</strong> damage → Enemies at <strong>\${Math.round(enemyHPAfter3)}</strong> HP (\${enemyHPPercent}%)</div>
+    <div>Enemies deal: <strong>\${Math.round(enemyDamage3)}</strong> damage → Party at <strong>\${Math.round(partyHPAfter3)}</strong> HP (\${partyHPPercent}%)</div>
+    <div style="margin-top: 8px; opacity: 0.8;">
+      Survival Ratio: \${diff.survival_ratio}
+      (Party can survive \${diff.rounds_party_survives} rounds, enemies survive \${diff.rounds_to_defeat} rounds)
+    </div>
+  \`;
+}
+\`\`\`
+
+---
+
+## Creatures
+
+\`\`\`dataviewjs
+const creatures = dv.current().creatures || [];
+
+if (creatures.length === 0) {
+  dv.paragraph("*No creatures in this encounter.*");
+} else {
+  const table = creatures.map(c => {
+    return [
+      c.name,
+      c.count || 1,
+      c.cr || "?",
+      c.hp || "?",
+      c.ac || "?"
+    ];
+  });
+  
+  dv.table(["Creature", "Count", "CR", "HP", "AC"], table);
+}
+\`\`\`
+
+---
+
+## GM Notes
+
+_Add notes about tactics, environment, or special conditions here._
+`;
+
+    return content;
   }
 
   /**
