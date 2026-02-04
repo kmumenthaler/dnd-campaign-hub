@@ -1557,6 +1557,10 @@ class EncounterBuilderModal extends Modal {
     };
   }
 
+  generateUniqueId(): string {
+    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
   // Helper methods (copied from SceneCreationModal)
   getCRStats(cr: string | undefined): { hp: number; ac: number; dpr: number; attackBonus: number; xp: number } {
     this.syncEncounterBuilder();
@@ -1743,54 +1747,41 @@ const buttonContainer = dv.el("div", "", {
   attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
 });
 
-// Load in Initiative Tracker button
-const loadBtn = buttonContainer.createEl("button", { 
-  text: "⚔️ Load in Initiative Tracker",
+// Open Initiative Tracker and load encounter button
+const openTrackerBtn = buttonContainer.createEl("button", { 
+  text: "⚔️ Open & Load in Tracker",
   attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px; background-color: var(--interactive-accent); color: var(--text-on-accent);" }
 });
-loadBtn.addEventListener("click", async () => {
+openTrackerBtn.addEventListener("click", async () => {
   const encounterName = dv.current().name;
-  console.log("[Load Button] Loading encounter:", encounterName);
   const initiativeTracker = app.plugins?.plugins?.["initiative-tracker"];
   
   if (!initiativeTracker) {
-    console.error("[Load Button] Initiative Tracker plugin not found");
     new Notice("Initiative Tracker plugin not found");
     return;
   }
   
-  console.log("[Load Button] Initiative Tracker found:", !!initiativeTracker);
-  console.log("[Load Button] Available encounters:", Object.keys(initiativeTracker.data?.encounters || {}));
-  
-  if (!initiativeTracker.data?.encounters?.[encounterName]) {
-    console.error("[Load Button] Encounter not found in IT data");
-    new Notice(\`Encounter "\${encounterName}" not found in Initiative Tracker\`);
+  const encounter = initiativeTracker.data?.encounters?.[encounterName];
+  if (!encounter) {
+    new Notice("Encounter \\"" + encounterName + "\\" not found. Try recreating it.");
     return;
   }
   
-  // Get the encounter and log its structure
-  const encounter = initiativeTracker.data.encounters[encounterName];
-  console.log("[Load Button] Encounter data:", {
-    name: encounter.name,
-    creatureCount: encounter.creatures?.length,
-    creatures: encounter.creatures,
-    currentState: encounter.state
-  });
-  
-  // Set the active encounter
-  encounter.state = true;
-  initiativeTracker.data.state = encounter;
-  console.log("[Load Button] Set encounter state to true and assigned to data.state");
-  
-  // Save to trigger view update
-  await initiativeTracker.saveSettings();
-  console.log("[Load Button] Saved settings");
+  // Use Initiative Tracker's internal tracker API to load the encounter
+  try {
+    if (initiativeTracker.tracker?.new) {
+      initiativeTracker.tracker.new(initiativeTracker, encounter);
+      new Notice("✅ Loaded encounter: " + encounterName);
+    } else {
+      new Notice("⚠️ Could not load encounter. Try using Load Encounter from Initiative Tracker menu.");
+    }
+  } catch (e) {
+    console.error("Error loading encounter:", e);
+    new Notice("⚠️ Could not load encounter: " + e.message);
+  }
   
   // Open Initiative Tracker view
-  console.log("[Load Button] Opening Initiative Tracker view");
   app.commands.executeCommandById("initiative-tracker:open-tracker");
-  
-  new Notice(\`✅ Loaded "\${encounterName}" in Initiative Tracker\`);
 });
 
 // Edit button
@@ -1931,12 +1922,28 @@ _Add notes about tactics, environment, or special conditions here._
           const selectedPlayers = await this.encounterBuilder.getSelectedPartyPlayers();
           console.log("Adding party members to encounter:", selectedPlayers.length);
           for (const player of selectedPlayers) {
+            const hp = player.hp || player.currentMaxHP || 20;
+            const ac = player.ac || player.currentAC || 14;
             creatures.push({
               name: player.name || "Player",
-              hp: player.hp || player.currentMaxHP || 20,
-              ac: player.ac || player.currentAC || 14,
+              display: "",
+              initiative: 0,
+              static: false,
               modifier: Math.floor(((player.level || 1) - 1) / 4) + 2,
-              player: true
+              hp: hp,
+              currentMaxHP: hp,
+              currentHP: hp,
+              tempHP: player.thp || 0,
+              ac: ac,
+              currentAC: ac,
+              id: this.generateUniqueId(),
+              status: [],
+              enabled: true,
+              active: false,
+              hidden: false,
+              friendly: true,
+              player: true,
+              rollHP: false
             });
           }
         } catch (error) {
@@ -1944,44 +1951,76 @@ _Add notes about tactics, environment, or special conditions here._
         }
       }
 
-      // Add enemy creatures
-      const colorNames = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange", "Black", "White"];
-      console.log("Adding creatures to encounter:", this.creatures.length);
-      for (const creature of this.creatures) {
-        const crStats = this.getCRStats(creature.cr);
-        const hp = creature.hp || crStats.hp;
-        const ac = creature.ac || crStats.ac;
-
-        if (this.useColorNames && creature.count > 1) {
-          // Add creatures with color suffixes
-          for (let i = 0; i < creature.count; i++) {
-            const colorSuffix = i < colorNames.length ? ` ${colorNames[i]}` : ` ${i + 1}`;
-            creatures.push({
-              name: `${creature.name}${colorSuffix}`,
-              hp: hp,
-              ac: ac,
-              modifier: crStats.attackBonus,
-              player: false,
-              friendly: creature.isFriendly || false,
-              hidden: creature.isHidden || false
-            });
-          }
-        } else {
-          // Add creatures with number suffix if count > 1
-          for (let i = 0; i < creature.count; i++) {
-            const nameSuffix = creature.count > 1 ? ` ${i + 1}` : "";
-            creatures.push({
-              name: `${creature.name}${nameSuffix}`,
-              hp: hp,
-              ac: ac,
-              modifier: crStats.attackBonus,
-              player: false,
-              friendly: creature.isFriendly || false,
-              hidden: creature.isHidden || false
-            });
-          }
+      // Helper function to generate unique IDs like Initiative Tracker does
+      const generateId = () => {
+        const chars = '0123456789abcdef';
+        let id = 'ID_';
+        for (let i = 0; i < 12; i++) {
+          id += chars[Math.floor(Math.random() * chars.length)];
         }
-      }
+        return id;
+      };
+
+      // Color names for duplicate creatures
+      const colors = [
+        "Red", "Blue", "Green", "Yellow", "Purple", "Orange", 
+        "Pink", "Brown", "Black", "White", "Gray", "Cyan", 
+        "Magenta", "Lime", "Teal", "Indigo", "Violet", "Gold", 
+        "Silver", "Bronze"
+      ];
+
+      // Build creature data in Initiative Tracker format using flatMap
+      const enemyCreatures = this.creatures.flatMap(c => {
+        console.log(`Building creature: ${c.name}, HP: ${c.hp}, AC: ${c.ac}`);
+        const instances = [];
+        for (let i = 0; i < c.count; i++) {
+          const hp = c.hp || 1;
+          const ac = c.ac || 10;
+
+          // Determine name and display based on useColorNames setting
+          // IMPORTANT: 'name' is used for bestiary lookup and must be the base creature name
+          // 'display' is used for visual representation in the tracker
+          let displayName = "";
+
+          if (c.count > 1) {
+            if (this.useColorNames) {
+              const colorIndex = i % colors.length;
+              // Use display for color names, keep name as base for bestiary lookup
+              displayName = `${c.name} (${colors[colorIndex]})`;
+            } else {
+              displayName = c.name;  // Empty display for auto-numbering
+            }
+          }
+
+          const creature = {
+            name: c.name,  // Base creature name for bestiary lookup
+            display: displayName,  // Display name (empty for auto-numbering, or colored name)
+            initiative: 0,
+            static: false,
+            modifier: 0,  // Initiative modifier
+            hp: hp,
+            currentMaxHP: hp,  // Initiative Tracker uses currentMaxHP, not max
+            cr: c.cr || undefined,
+            ac: ac,  // AC as number
+            currentAC: ac,  // Initiative Tracker also tracks currentAC
+            id: generateId(),  // CRITICAL: Unique ID for each creature instance
+            currentHP: hp,  // Initiative Tracker uses currentHP, not hp
+            tempHP: 0,  // Initiative Tracker uses tempHP, not temp
+            status: [],  // Array of status effects
+            enabled: true,
+            active: false,  // Whether this creature is currently active in turn order
+            hidden: false,  // Hidden from players
+            friendly: false,  // Friendly to players
+            rollHP: false  // Whether to roll HP when adding to tracker
+          };
+          console.log(`Created creature instance:`, creature);
+          instances.push(creature);
+        }
+        return instances;
+      });
+
+      // Add enemy creatures to the main creatures array
+      creatures.push(...enemyCreatures);
 
       console.log(`Saving encounter "${this.encounterName}" with ${creatures.length} creatures to Initiative Tracker`);
       console.log("Initiative Tracker data structure available:", !!initiativeTracker.data);
