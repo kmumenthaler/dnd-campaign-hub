@@ -750,14 +750,14 @@ class EncounterBuilderModal extends Modal {
     this.renderCreatureList();
     
     // Show creature input fields
-    this.showCreatureInputFields(contentEl);
+    await this.showCreatureInputFields(contentEl);
 
     // Difficulty Display Section
     contentEl.createEl("h3", { text: "Encounter Difficulty" });
     this.difficultyContainer = contentEl.createDiv({ cls: "dnd-difficulty-container" });
-    this.updateDifficultyDisplay();
+    await this.updateDifficultyDisplay();
 
-    // Action Buttons
+    // Action Buttons (placed at the end after all content)
     const buttonContainer = new Setting(contentEl);
     
     buttonContainer.addButton((button) =>
@@ -1637,18 +1637,25 @@ class EncounterBuilderModal extends Modal {
       }
 
       const existingFile = this.app.vault.getAbstractFileByPath(encounterPath);
+      let fileToOpen: TFile;
       if (existingFile instanceof TFile) {
         await this.app.vault.modify(existingFile, encounterContent);
         new Notice(`Encounter "${this.encounterName}" updated!`);
+        fileToOpen = existingFile;
       } else {
-        await this.app.vault.create(encounterPath, encounterContent);
+        const newFile = await this.app.vault.create(encounterPath, encounterContent);
         new Notice(`Encounter "${this.encounterName}" created!`);
+        fileToOpen = newFile;
       }
 
       // Save to Initiative Tracker
       await this.saveToInitiativeTracker(encounterPath);
 
       this.close();
+      
+      // Open the encounter note
+      const leaf = this.app.workspace.getLeaf(false);
+      await leaf.openFile(fileToOpen);
     } catch (error) {
       console.error("Error saving encounter:", error);
       new Notice("Error saving encounter");
@@ -1709,8 +1716,19 @@ difficulty:
   color: ${this.escapeYamlString(diffResult.analysis.difficultyColor)}
   party_count: ${diffResult.partyStats.memberCount}
   party_avg_level: ${diffResult.partyStats.avgLevel.toFixed(1)}
+  party_total_hp: ${diffResult.partyStats.totalHP}
+  party_avg_ac: ${diffResult.partyStats.avgAC.toFixed(1)}
+  party_total_dpr: ${diffResult.partyStats.totalDPR.toFixed(1)}
+  party_hit_chance: ${(diffResult.analysis.partyHitChance * 100).toFixed(0)}
+  party_effective_dpr: ${diffResult.analysis.partyEffectiveDPR.toFixed(0)}
   enemy_count: ${diffResult.enemyStats.creatureCount}
+  enemy_total_hp: ${diffResult.enemyStats.totalHP}
+  enemy_avg_ac: ${diffResult.enemyStats.avgAC.toFixed(1)}
+  enemy_total_dpr: ${diffResult.enemyStats.totalDPR.toFixed(1)}
+  enemy_hit_chance: ${(diffResult.analysis.enemyHitChance * 100).toFixed(0)}
+  enemy_effective_dpr: ${diffResult.analysis.enemyEffectiveDPR.toFixed(0)}
   rounds_to_defeat: ${diffResult.analysis.roundsToDefeatEnemies}
+  rounds_party_survives: ${diffResult.analysis.roundsToDefeatParty}
   survival_ratio: ${diffResult.analysis.survivalRatio.toFixed(2)}
 date: ${currentDate}
 ---`;
@@ -1719,9 +1737,146 @@ date: ${currentDate}
 
 # ${this.encounterName}
 
-## Difficulty: <span style="color: ${diffResult.analysis.difficultyColor}; font-weight: bold;">${diffResult.analysis.difficulty}</span>
+\`\`\`dataviewjs
+// Create action buttons
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
 
-${diffResult.analysis.summary}
+// Load in Initiative Tracker button
+const loadBtn = buttonContainer.createEl("button", { 
+  text: "⚔️ Load in Initiative Tracker",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px; background-color: var(--interactive-accent); color: var(--text-on-accent);" }
+});
+loadBtn.addEventListener("click", async () => {
+  const encounterName = dv.current().name;
+  console.log("[Load Button] Loading encounter:", encounterName);
+  const initiativeTracker = app.plugins?.plugins?.["initiative-tracker"];
+  
+  if (!initiativeTracker) {
+    console.error("[Load Button] Initiative Tracker plugin not found");
+    new Notice("Initiative Tracker plugin not found");
+    return;
+  }
+  
+  console.log("[Load Button] Initiative Tracker found:", !!initiativeTracker);
+  console.log("[Load Button] Available encounters:", Object.keys(initiativeTracker.data?.encounters || {}));
+  
+  if (!initiativeTracker.data?.encounters?.[encounterName]) {
+    console.error("[Load Button] Encounter not found in IT data");
+    new Notice(\`Encounter "\${encounterName}" not found in Initiative Tracker\`);
+    return;
+  }
+  
+  // Get the encounter and log its structure
+  const encounter = initiativeTracker.data.encounters[encounterName];
+  console.log("[Load Button] Encounter data:", {
+    name: encounter.name,
+    creatureCount: encounter.creatures?.length,
+    creatures: encounter.creatures,
+    currentState: encounter.state
+  });
+  
+  // Set the active encounter
+  encounter.state = true;
+  initiativeTracker.data.state = encounter;
+  console.log("[Load Button] Set encounter state to true and assigned to data.state");
+  
+  // Save to trigger view update
+  await initiativeTracker.saveSettings();
+  console.log("[Load Button] Saved settings");
+  
+  // Open Initiative Tracker view
+  console.log("[Load Button] Opening Initiative Tracker view");
+  app.commands.executeCommandById("initiative-tracker:open-tracker");
+  
+  new Notice(\`✅ Loaded "\${encounterName}" in Initiative Tracker\`);
+});
+
+// Edit button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-encounter");
+});
+
+// Delete button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-encounter");
+});
+\`\`\`
+
+---
+
+## Difficulty Analysis
+
+\`\`\`dataviewjs
+const diff = dv.current().difficulty;
+if (!diff) {
+  dv.paragraph("*No difficulty data available.*");
+} else {
+  // Create difficulty card
+  const card = dv.el("div", "", { cls: "dnd-difficulty-card" });
+  
+  // Header with difficulty badge and rounds
+  const header = dv.el("div", "", { cls: "dnd-difficulty-header", container: card });
+  const badge = dv.el("span", diff.rating, { cls: "dnd-difficulty-badge", container: header });
+  badge.style.backgroundColor = diff.color;
+  dv.el("span", \` ~\${diff.rounds_to_defeat} round\${diff.rounds_to_defeat !== 1 ? 's' : ''}\`, { cls: "dnd-rounds-estimate", container: header });
+  
+  // Stats grid
+  const grid = dv.el("div", "", { cls: "dnd-difficulty-stats-grid", container: card });
+  
+  // Party column
+  const partyCol = dv.el("div", "", { cls: "dnd-stats-column", container: grid });
+  dv.el("h5", \`⚔️ Party (\${diff.party_count})\`, { container: partyCol });
+  const partyStats = dv.el("div", "", { container: partyCol });
+  partyStats.innerHTML = \`
+    <div>HP Pool: <strong>\${diff.party_total_hp}</strong></div>
+    <div>Avg AC: <strong>\${Math.round(diff.party_avg_ac)}</strong></div>
+    <div>Total DPR: <strong>\${Math.round(diff.party_total_dpr)}</strong></div>
+    <div>Hit Chance: <strong>\${diff.party_hit_chance}%</strong></div>
+    <div>Effective DPR: <strong>\${diff.party_effective_dpr}</strong></div>
+  \`;
+  
+  // Enemy column
+  const enemyCol = dv.el("div", "", { cls: "dnd-stats-column", container: grid });
+  dv.el("h5", \`👹 Enemies (\${diff.enemy_count})\`, { container: enemyCol });
+  const enemyStats = dv.el("div", "", { container: enemyCol });
+  enemyStats.innerHTML = \`
+    <div>HP Pool: <strong>\${diff.enemy_total_hp}</strong></div>
+    <div>Avg AC: <strong>\${Math.round(diff.enemy_avg_ac)}</strong></div>
+    <div>Total DPR: <strong>\${Math.round(diff.enemy_total_dpr)}</strong></div>
+    <div>Hit Chance: <strong>\${diff.enemy_hit_chance}%</strong></div>
+    <div>Effective DPR: <strong>\${diff.enemy_effective_dpr}</strong></div>
+  \`;
+  
+  // 3-round analysis
+  const analysis = dv.el("div", "", { cls: "dnd-difficulty-analysis", container: card });
+  const partyDamage3 = diff.party_effective_dpr * 3;
+  const enemyDamage3 = diff.enemy_effective_dpr * 3;
+  const partyHPAfter3 = Math.max(0, diff.party_total_hp - enemyDamage3);
+  const enemyHPAfter3 = Math.max(0, diff.enemy_total_hp - partyDamage3);
+  const partyHPPercent = Math.round((partyHPAfter3 / diff.party_total_hp) * 100);
+  const enemyHPPercent = Math.round((enemyHPAfter3 / diff.enemy_total_hp) * 100);
+  
+  analysis.innerHTML = \`
+    <div style="margin-bottom: 8px;"><strong>📊 3-Round Analysis:</strong></div>
+    <div>Party deals: <strong>\${Math.round(partyDamage3)}</strong> damage → Enemies at <strong>\${Math.round(enemyHPAfter3)}</strong> HP (\${enemyHPPercent}%)</div>
+    <div>Enemies deal: <strong>\${Math.round(enemyDamage3)}</strong> damage → Party at <strong>\${Math.round(partyHPAfter3)}</strong> HP (\${partyHPPercent}%)</div>
+    <div style="margin-top: 8px; opacity: 0.8;">
+      Survival Ratio: \${diff.survival_ratio}
+      (Party can survive \${diff.rounds_party_survives} rounds, enemies survive \${diff.rounds_to_defeat} rounds)
+    </div>
+  \`;
+}
+\`\`\`
 
 ---
 
@@ -1733,44 +1888,19 @@ const creatures = dv.current().creatures || [];
 if (creatures.length === 0) {
   dv.paragraph("*No creatures in this encounter.*");
 } else {
-  for (const creature of creatures) {
-    const crDisplay = creature.cr ? \` (CR \${creature.cr})\` : "";
-    const countDisplay = creature.count > 1 ? \` x\${creature.count}\` : "";
-    dv.header(4, \`\${creature.name}\${crDisplay}\${countDisplay}\`);
-    
-    if (creature.hp) {
-      dv.paragraph(\`**HP:** \${creature.hp}\`);
-    }
-    if (creature.ac) {
-      dv.paragraph(\`**AC:** \${creature.ac}\`);
-    }
-    dv.paragraph("");
-  }
+  const table = creatures.map(c => {
+    return [
+      c.name,
+      c.count || 1,
+      c.cr || "?",
+      c.hp || "?",
+      c.ac || "?"
+    ];
+  });
+  
+  dv.table(["Creature", "Count", "CR", "HP", "AC"], table);
 }
 \`\`\`
-
----
-
-## Statistics
-
-### Party
-- **Members:** ${diffResult.partyStats.memberCount}
-- **Avg Level:** ${diffResult.partyStats.avgLevel.toFixed(1)}
-- **Total HP:** ${diffResult.partyStats.totalHP}
-- **Avg AC:** ${diffResult.partyStats.avgAC.toFixed(1)}
-- **Total DPR:** ${diffResult.partyStats.totalDPR.toFixed(1)}
-
-### Enemies
-- **Count:** ${diffResult.enemyStats.creatureCount}
-- **Total HP:** ${diffResult.enemyStats.totalHP}
-- **Avg AC:** ${diffResult.enemyStats.avgAC.toFixed(1)}
-- **Total DPR:** ${diffResult.enemyStats.totalDPR.toFixed(1)}
-
-### Analysis
-- **Party Hit Chance:** ${(diffResult.analysis.partyHitChance * 100).toFixed(1)}%
-- **Enemy Hit Chance:** ${(diffResult.analysis.enemyHitChance * 100).toFixed(1)}%
-- **Expected Rounds:** ${diffResult.analysis.roundsToDefeatEnemies}
-- **Survival Ratio:** ${diffResult.analysis.survivalRatio.toFixed(2)}
 
 ---
 
@@ -1784,9 +1914,10 @@ _Add notes about tactics, environment, or special conditions here._
 
   async saveToInitiativeTracker(encounterPath: string) {
     try {
-      const initiativeTracker = (this.app as any).plugins.getPlugin("initiative-tracker");
+      const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
       if (!initiativeTracker) {
-        console.log("Initiative Tracker plugin not found");
+        console.log("Initiative Tracker plugin not found - skipping encounter save to tracker");
+        new Notice("⚠️ Initiative Tracker not found. Encounter saved to vault only.");
         return;
       }
 
@@ -1798,6 +1929,7 @@ _Add notes about tactics, environment, or special conditions here._
         try {
           this.syncEncounterBuilder();
           const selectedPlayers = await this.encounterBuilder.getSelectedPartyPlayers();
+          console.log("Adding party members to encounter:", selectedPlayers.length);
           for (const player of selectedPlayers) {
             creatures.push({
               name: player.name || "Player",
@@ -1814,6 +1946,7 @@ _Add notes about tactics, environment, or special conditions here._
 
       // Add enemy creatures
       const colorNames = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange", "Black", "White"];
+      console.log("Adding creatures to encounter:", this.creatures.length);
       for (const creature of this.creatures) {
         const crStats = this.getCRStats(creature.cr);
         const hp = creature.hp || crStats.hp;
@@ -1850,13 +1983,49 @@ _Add notes about tactics, environment, or special conditions here._
         }
       }
 
-      // Save encounter to Initiative Tracker
-      if (initiativeTracker.saveEncounter) {
-        await initiativeTracker.saveEncounter(this.encounterName, creatures);
-        console.log(`Saved encounter "${this.encounterName}" to Initiative Tracker`);
+      console.log(`Saving encounter "${this.encounterName}" with ${creatures.length} creatures to Initiative Tracker`);
+      console.log("Initiative Tracker data structure available:", !!initiativeTracker.data);
+      console.log("Initiative Tracker saveSettings available:", !!initiativeTracker.saveSettings);
+
+      // Save encounter to Initiative Tracker's data structure
+      if (initiativeTracker.data) {
+        // Initialize encounters object if it doesn't exist
+        if (!initiativeTracker.data.encounters) {
+          console.log("Initializing encounters object in Initiative Tracker data");
+          initiativeTracker.data.encounters = {};
+        }
+
+        console.log("Current encounters in Initiative Tracker:", Object.keys(initiativeTracker.data.encounters));
+
+        // Save encounter in Initiative Tracker format
+        initiativeTracker.data.encounters[this.encounterName] = {
+          creatures: creatures,
+          state: false,
+          name: this.encounterName,
+          round: 1,
+          logFile: null,
+          rollHP: false
+        };
+
+        console.log(`Encounter "${this.encounterName}" added to data.encounters`);
+
+        // Persist the data
+        if (initiativeTracker.saveSettings) {
+          await initiativeTracker.saveSettings();
+          console.log(`✓ Successfully saved encounter "${this.encounterName}" to Initiative Tracker`);
+          new Notice(`✓ Encounter saved to Initiative Tracker with ${creatures.length} creatures`);
+        } else {
+          console.warn("Initiative Tracker doesn't have saveSettings method");
+          new Notice("⚠️ Could not persist encounter to Initiative Tracker");
+        }
+      } else {
+        console.warn("Initiative Tracker data not accessible");
+        new Notice("⚠️ Initiative Tracker data not accessible - encounter saved to vault only");
       }
     } catch (error) {
       console.error("Error saving to Initiative Tracker:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      new Notice(`⚠️ Error saving to Initiative Tracker: ${errorMessage}`);
     }
   }
 
@@ -1900,19 +2069,45 @@ _Add notes about tactics, environment, or special conditions here._
       const file = this.app.vault.getAbstractFileByPath(this.originalEncounterPath);
       if (file instanceof TFile) {
         await this.app.vault.delete(file);
+        console.log(`Deleted encounter file: ${this.originalEncounterPath}`);
       }
 
       // Remove from Initiative Tracker
-      const initiativeTracker = (this.app as any).plugins.getPlugin("initiative-tracker");
-      if (initiativeTracker && initiativeTracker.deleteEncounter) {
-        await initiativeTracker.deleteEncounter(this.encounterName);
+      const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+      console.log("Initiative Tracker plugin found:", !!initiativeTracker);
+      
+      if (initiativeTracker?.data?.encounters) {
+        console.log("Current encounters in Initiative Tracker:", Object.keys(initiativeTracker.data.encounters));
+        console.log(`Attempting to delete encounter: "${this.encounterName}"`);
+        console.log("Encounter exists in data:", !!initiativeTracker.data.encounters[this.encounterName]);
+        
+        if (initiativeTracker.data.encounters[this.encounterName]) {
+          delete initiativeTracker.data.encounters[this.encounterName];
+          console.log(`✓ Deleted encounter "${this.encounterName}" from data.encounters`);
+          
+          if (initiativeTracker.saveSettings) {
+            await initiativeTracker.saveSettings();
+            console.log("✓ Initiative Tracker settings saved after deletion");
+            new Notice(`✓ Encounter deleted from Initiative Tracker`);
+          } else {
+            console.warn("Initiative Tracker saveSettings not available");
+            new Notice("⚠️ Could not persist deletion to Initiative Tracker");
+          }
+        } else {
+          console.warn(`Encounter "${this.encounterName}" not found in Initiative Tracker`);
+          new Notice("⚠️ Encounter not found in Initiative Tracker");
+        }
+      } else {
+        console.warn("Initiative Tracker data.encounters not accessible");
+        new Notice("⚠️ Initiative Tracker data not accessible");
       }
 
-      new Notice(`Encounter "${this.encounterName}" deleted`);
+      new Notice(`Encounter "${this.encounterName}" deleted from vault`);
       this.close();
     } catch (error) {
       console.error("Error deleting encounter:", error);
-      new Notice("Error deleting encounter");
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      new Notice(`Error deleting encounter: ${errorMessage}`);
     }
   }
 
@@ -2036,6 +2231,73 @@ export default class DndCampaignHubPlugin extends Plugin {
       id: "create-encounter",
       name: "Create New Encounter",
       callback: () => this.createEncounter(),
+    });
+
+    this.addCommand({
+      id: "edit-encounter",
+      name: "Edit Encounter",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          this.editEncounter(file.path);
+        } else {
+          new Notice("Please open an encounter note first");
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "delete-encounter",
+      name: "Delete Encounter",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "encounter") {
+            const encounterName = cache.frontmatter.name || file.basename;
+            const confirmed = await this.confirmDelete(file.name);
+            if (confirmed) {
+              // Delete from vault
+              await this.app.vault.delete(file);
+              console.log(`Deleted encounter file: ${file.path}`);
+              
+              // Remove from Initiative Tracker
+              const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+              console.log("Initiative Tracker plugin found:", !!initiativeTracker);
+              
+              if (initiativeTracker?.data?.encounters) {
+                console.log("Current encounters in Initiative Tracker:", Object.keys(initiativeTracker.data.encounters));
+                console.log(`Attempting to delete encounter: "${encounterName}"`);
+                console.log("Encounter exists in data:", !!initiativeTracker.data.encounters[encounterName]);
+                
+                if (initiativeTracker.data.encounters[encounterName]) {
+                  delete initiativeTracker.data.encounters[encounterName];
+                  console.log(`✓ Deleted encounter "${encounterName}" from data.encounters`);
+                  
+                  if (initiativeTracker.saveSettings) {
+                    await initiativeTracker.saveSettings();
+                    console.log("✓ Initiative Tracker settings saved after deletion");
+                    new Notice(`✓ Encounter "${encounterName}" deleted from vault and Initiative Tracker`);
+                  } else {
+                    console.warn("Initiative Tracker saveSettings not available");
+                    new Notice(`⚠️ Encounter deleted from vault but could not persist deletion to Initiative Tracker`);
+                  }
+                } else {
+                  console.warn(`Encounter "${encounterName}" not found in Initiative Tracker`);
+                  new Notice(`⚠️ Encounter deleted from vault but not found in Initiative Tracker`);
+                }
+              } else {
+                console.warn("Initiative Tracker data.encounters not accessible");
+                new Notice(`⚠️ Encounter deleted from vault but Initiative Tracker data not accessible`);
+              }
+            }
+          } else {
+            new Notice("This is not an encounter note");
+          }
+        } else {
+          new Notice("Please open an encounter note first");
+        }
+      },
     });
 
     this.addCommand({
@@ -2469,6 +2731,45 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async createEncounter() {
 		// Open Encounter Builder modal
 		new EncounterBuilderModal(this.app, this).open();
+	}
+
+	async editEncounter(encounterPath: string) {
+		// Open Encounter Builder modal in edit mode
+		new EncounterBuilderModal(this.app, this, encounterPath).open();
+	}
+
+	async confirmDelete(fileName: string): Promise<boolean> {
+		return new Promise((resolve) => {
+			const modal = new Modal(this.app);
+			modal.titleEl.setText("Confirm Delete");
+			modal.contentEl.createEl("p", { text: `Are you sure you want to delete "${fileName}"?` });
+			modal.contentEl.createEl("p", { 
+				text: "This action cannot be undone.", 
+				attr: { style: "color: var(--text-error); font-weight: bold;" }
+			});
+
+			const buttonContainer = modal.contentEl.createDiv({ cls: "modal-button-container" });
+			buttonContainer.style.display = "flex";
+			buttonContainer.style.gap = "10px";
+			buttonContainer.style.justifyContent = "flex-end";
+			buttonContainer.style.marginTop = "20px";
+
+			const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
+			cancelBtn.onclick = () => {
+				resolve(false);
+				modal.close();
+			};
+
+			const deleteBtn = buttonContainer.createEl("button", { text: "Delete" });
+			deleteBtn.style.backgroundColor = "var(--interactive-accent)";
+			deleteBtn.style.color = "var(--text-on-accent)";
+			deleteBtn.onclick = () => {
+				resolve(true);
+				modal.close();
+			};
+
+			modal.open();
+		});
 	}
 
 	async createSession() {
@@ -5763,12 +6064,13 @@ class EncounterBuilder {
 
   getLevelStats(level: number): { hp: number; ac: number; dpr: number; attackBonus: number } {
     // Level-based stats from D&D 5e Player's Handbook averages
+    // Updated DPR to be more realistic for actual play
     const baseHP = 8; // Average starting HP
     const hpPerLevel = 5; // Average HP gain per level
     const baseAC = 12;
     const acIncreaseInterval = 4; // AC increases every 4 levels
-    const baseDPR = 5;
-    const dprPerLevel = 1.5;
+    const baseDPR = 8; // Starting DPR at level 1 (more realistic)
+    const dprPerLevel = 2.5; // DPR increases more significantly per level
     const baseAttackBonus = 2;
     const proficiencyBonus = Math.floor((level - 1) / 4) + 2;
 
