@@ -7309,6 +7309,9 @@ class SceneCreationModal extends Modal {
   encounterName = "";
   useColorNames = false;
   includeParty = true;  // Include party members in encounter
+  selectedPartyMembers: string[] = [];  // Selected party member names
+  selectedPartyId = "";
+  selectedPartyName = "";
   creatures: Array<{
     name: string;
     count: number;
@@ -7323,6 +7326,8 @@ class SceneCreationModal extends Modal {
   encounterSection: HTMLElement | null = null;
   difficultyContainer: HTMLElement | null = null;
   creatureListContainer: HTMLElement | null = null;
+  partySelectionContainer: HTMLElement | null = null;
+  partyMemberListContainer: HTMLElement | null = null;
   
   // For editing existing scenes
   isEdit = false;
@@ -7892,6 +7897,8 @@ class SceneCreationModal extends Modal {
     this.encounterBuilder.creatures = [...this.creatures];
     this.encounterBuilder.includeParty = this.includeParty;
     this.encounterBuilder.useColorNames = this.useColorNames;
+    this.encounterBuilder.selectedPartyMembers = [...this.selectedPartyMembers];
+    this.encounterBuilder.selectedPartyId = this.selectedPartyId || "";
     this.encounterBuilder.adventurePath = this.adventurePath;
     this.encounterBuilder.campaignPath = this.campaignPath;
   }
@@ -7937,15 +7944,25 @@ class SceneCreationModal extends Modal {
             this.useColorNames = value;
           }));
       
-      // Always include party for combat scenes - auto-detected from campaign
-      this.includeParty = true;
+      new Setting(this.encounterSection)
+        .setName("Include Party Members")
+        .setDesc("Add party members to this encounter for difficulty calculation")
+        .addToggle(toggle => toggle
+          .setValue(this.includeParty)
+          .onChange(async (value) => {
+            this.includeParty = value;
+            await this.renderPartySelection();
+            await this.renderPartyMemberList();
+            this.updateDifficultyDisplay();
+          }));
       
-      const partyInfo = this.encounterSection.createEl("p", {
-        text: "ℹ️ The campaign's party will be automatically included in this encounter",
-        cls: "setting-item-description"
-      });
-      partyInfo.style.fontStyle = "italic";
-      partyInfo.style.opacity = "0.8";
+      // Party selection container
+      this.partySelectionContainer = this.encounterSection.createDiv({ cls: "dnd-party-selection" });
+      this.renderPartySelection();
+      
+      // Party member list container
+      this.partyMemberListContainer = this.encounterSection.createDiv({ cls: "dnd-party-member-list" });
+      this.renderPartyMemberList();
       
       // Show the builder fields
       this.showEncounterBuilderFields();
@@ -8384,6 +8401,190 @@ class SceneCreationModal extends Modal {
   calculateRoundsToDefeat(totalHP: number, effectiveDPR: number): number {
     this.syncEncounterBuilder();
     return this.encounterBuilder.calculateRoundsToDefeat(totalHP, effectiveDPR);
+  }
+
+  async renderPartySelection() {
+    if (!this.partySelectionContainer) return;
+    this.partySelectionContainer.empty();
+
+    if (!this.includeParty) return;
+
+    try {
+      this.syncEncounterBuilder();
+      const parties = await this.encounterBuilder.getAvailableParties();
+
+      if (parties.length === 0) {
+        this.partySelectionContainer.createEl("p", {
+          text: "⚠️ No parties found in Initiative Tracker",
+          attr: { style: "color: var(--text-warning); font-style: italic; margin: 10px 0;" }
+        });
+        return;
+      }
+
+      if (!this.selectedPartyId) {
+        const defaultParty = await this.encounterBuilder.getResolvedParty();
+        if (defaultParty?.id) this.selectedPartyId = defaultParty.id;
+        if (defaultParty?.name) this.selectedPartyName = defaultParty.name;
+      }
+
+      const partySetting = new Setting(this.partySelectionContainer)
+        .setName("Party")
+        .setDesc("Choose which party to use for difficulty calculations");
+
+      partySetting.addDropdown((dropdown) => {
+        parties.forEach(party => {
+          dropdown.addOption(party.id, party.name);
+        });
+        dropdown.setValue(this.selectedPartyId || parties[0]!.id);
+        dropdown.onChange((value) => {
+          this.selectedPartyId = value;
+          const selected = parties.find(p => p.id === value);
+          this.selectedPartyName = selected?.name || "";
+          this.selectedPartyMembers = [];
+        });
+      });
+
+      partySetting.addButton((button) =>
+        button
+          .setButtonText("Apply Party")
+          .onClick(async () => {
+            await this.renderPartySelection();
+            await this.renderPartyMemberList();
+            this.updateDifficultyDisplay();
+          })
+      );
+
+      const partyMembers = await this.encounterBuilder.getAvailablePartyMembers();
+      
+      if (partyMembers.length === 0) {
+        this.partySelectionContainer.createEl("p", {
+          text: "⚠️ No party members found in Initiative Tracker",
+          attr: { style: "color: var(--text-warning); font-style: italic; margin: 10px 0;" }
+        });
+        return;
+      }
+
+      const selectionDiv = this.partySelectionContainer.createDiv();
+      selectionDiv.style.border = "1px solid var(--background-modifier-border)";
+      selectionDiv.style.padding = "10px";
+      selectionDiv.style.borderRadius = "5px";
+      selectionDiv.style.marginBottom = "10px";
+
+      selectionDiv.createEl("h4", { text: "Select Party Members", attr: { style: "margin-top: 0;" } });
+
+      for (const member of partyMembers) {
+        const checkboxDiv = selectionDiv.createDiv();
+        checkboxDiv.style.marginBottom = "5px";
+
+        const checkbox = checkboxDiv.createEl("input", { type: "checkbox" });
+        checkbox.checked = this.selectedPartyMembers.includes(member.name);
+        checkbox.style.marginRight = "10px";
+        checkbox.onchange = () => {
+          if (checkbox.checked) {
+            if (!this.selectedPartyMembers.includes(member.name)) {
+              this.selectedPartyMembers.push(member.name);
+            }
+          } else {
+            this.selectedPartyMembers = this.selectedPartyMembers.filter(n => n !== member.name);
+          }
+          this.renderPartyMemberList();
+          this.updateDifficultyDisplay();
+        };
+
+        const label = checkboxDiv.createEl("span", { 
+          text: `${member.name} (Level ${member.level}, HP: ${member.hp}, AC: ${member.ac})`
+        });
+        label.style.cursor = "pointer";
+        label.onclick = () => {
+          checkbox.checked = !checkbox.checked;
+          checkbox.onchange?.(new Event('change'));
+        };
+      }
+
+      // Select All / Deselect All buttons
+      const buttonsDiv = selectionDiv.createDiv();
+      buttonsDiv.style.marginTop = "10px";
+      buttonsDiv.style.display = "flex";
+      buttonsDiv.style.gap = "10px";
+
+      const selectAllBtn = buttonsDiv.createEl("button", { text: "Select All" });
+      selectAllBtn.style.fontSize = "0.85em";
+      selectAllBtn.onclick = () => {
+        this.selectedPartyMembers = partyMembers.map(m => m.name);
+        this.renderPartySelection();
+        this.renderPartyMemberList();
+        this.updateDifficultyDisplay();
+      };
+
+      const deselectAllBtn = buttonsDiv.createEl("button", { text: "Deselect All" });
+      deselectAllBtn.style.fontSize = "0.85em";
+      deselectAllBtn.onclick = () => {
+        this.selectedPartyMembers = [];
+        this.renderPartySelection();
+        this.renderPartyMemberList();
+        this.updateDifficultyDisplay();
+      };
+    } catch (error) {
+      console.error("Error rendering party selection:", error);
+    }
+  }
+
+  async renderPartyMemberList() {
+    if (!this.partyMemberListContainer) return;
+    this.partyMemberListContainer.empty();
+
+    if (!this.includeParty || this.selectedPartyMembers.length === 0) {
+      return;
+    }
+
+    try {
+      const partyMembers = await this.encounterBuilder.getAvailablePartyMembers();
+      const memberByName = new Map(partyMembers.map(m => [m.name, m]));
+
+      const headerDiv = this.partyMemberListContainer.createDiv({ cls: "dnd-party-member-header" });
+      headerDiv.style.marginBottom = "10px";
+      headerDiv.style.fontWeight = "600";
+      headerDiv.setText(`Selected Party Members (${this.selectedPartyMembers.length})`);
+
+      for (const memberName of this.selectedPartyMembers) {
+        const memberData = memberByName.get(memberName);
+        if (!memberData) continue;
+
+        const memberItem = this.partyMemberListContainer.createDiv({ cls: "dnd-creature-item" });
+        
+        const nameEl = memberItem.createSpan({ cls: "dnd-creature-name" });
+        nameEl.setText(memberName);
+        
+        const statsEl = memberItem.createSpan({ cls: "dnd-creature-stats" });
+        const stats: string[] = [];
+        stats.push(`Level: ${memberData.level}`);
+        stats.push(`HP: ${memberData.hp}`);
+        stats.push(`AC: ${memberData.ac}`);
+        statsEl.setText(` | ${stats.join(" | ")}`);
+        
+        const removeBtn = memberItem.createEl("button", {
+          text: "Remove",
+          cls: "dnd-creature-remove"
+        });
+        removeBtn.addEventListener("click", () => {
+          this.removePartyMember(memberName);
+        });
+      }
+    } catch (error) {
+      console.error("Error rendering party member list:", error);
+    }
+  }
+
+  removePartyMember(memberName: string) {
+    this.selectedPartyMembers = this.selectedPartyMembers.filter(n => n !== memberName);
+    this.renderPartySelection();
+    this.renderPartyMemberList();
+    this.updateDifficultyDisplay();
+  }
+
+  async getAvailablePartyMembers(): Promise<Array<{ name: string; level: number; hp: number; ac: number }>> {
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.getAvailablePartyMembers();
   }
 
   /**
