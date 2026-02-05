@@ -36,7 +36,8 @@ const TEMPLATE_VERSIONS = {
   faction: "1.0.0",
   item: "1.0.0",
   spell: "1.0.0",
-  campaign: "1.0.0"
+  campaign: "1.0.0",
+  trap: "1.1.0" // Updated with Edit/Delete buttons
 };
 
 /**
@@ -133,6 +134,13 @@ class MigrationManager {
     };
 
     await processFolder(campaignFolder);
+    
+    // Also check root-level z_Traps folder (for traps created before campaign structure)
+    const rootTrapsFolder = this.app.vault.getAbstractFileByPath("z_Traps");
+    if (rootTrapsFolder instanceof TFolder) {
+      await processFolder(rootTrapsFolder);
+    }
+    
     return filesNeedingMigration;
   }
 
@@ -322,6 +330,68 @@ LIMIT 1
   }
 
   /**
+   * Apply trap v1.1.0 migration (Edit/Delete buttons)
+   */
+  async migrateTrapTo1_1_0(file: TFile): Promise<void> {
+    console.log(`Migrating trap ${file.path} to v1.1.0`);
+
+    const content = await this.app.vault.read(file);
+    
+    // Check if edit/delete buttons already exist
+    if (content.includes("Edit Trap") && content.includes("Delete Trap")) {
+      console.log("Edit/Delete buttons already exist, just updating version");
+      await this.updateTemplateVersion(file, "1.1.0");
+      return;
+    }
+
+    // Find the trap name heading (# Trap Name)
+    const headingMatch = content.match(/^(# .+)$/m);
+    
+    if (headingMatch) {
+      const buttonSection = `
+
+\`\`\`dataviewjs
+// Action buttons for trap management
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
+
+// Edit Trap button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit Trap",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-trap");
+});
+
+// Delete Trap button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete Trap",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-trap");
+});
+\`\`\`
+`;
+
+      // Insert button section after the heading
+      const newContent = content.replace(
+        headingMatch[0],
+        `${headingMatch[0]}${buttonSection}`
+      );
+
+      await this.app.vault.modify(file, newContent);
+    }
+
+    // Update template version
+    await this.updateTemplateVersion(file, "1.1.0");
+
+    console.log(`Trap ${file.path} migrated to v1.1.0 successfully`);
+  }
+
+  /**
    * Apply migration based on file type and version
    */
   async migrateFile(file: TFile): Promise<boolean> {
@@ -356,6 +426,14 @@ LIMIT 1
         }
         if (this.compareVersions(currentVersion, "1.2.0") < 0) {
           await this.migrateSceneTo1_2_0(file);
+          return true;
+        }
+      }
+
+      // Trap-specific migrations
+      if (fileType === "trap") {
+        if (this.compareVersions(currentVersion, "1.1.0") < 0) {
+          await this.migrateTrapTo1_1_0(file);
           return true;
         }
       }
@@ -2659,6 +2737,48 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "edit-trap",
+      name: "Edit Trap",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          this.editTrap(file.path);
+        } else {
+          new Notice("Please open a trap note first");
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "delete-trap",
+      name: "Delete Trap",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "trap") {
+            const trapName = cache.frontmatter.trap_name || file.basename;
+            const confirmed = await this.confirmDelete(file.name);
+            if (confirmed) {
+              // Delete trap statblocks from Fantasy Statblocks first
+              await this.deleteTrapStatblocks(trapName);
+              
+              // Delete from vault
+              await this.app.vault.delete(file);
+              console.log(`Deleted trap file: ${file.path}`);
+              
+              new Notice(`✓ Trap "${trapName}" deleted`);
+            }
+          } else {
+            new Notice("This is not a trap note");
+          }
+        } else {
+          new Notice("Please open a trap note first");
+        }
+      },
+    });
+
+    this.addCommand({
       id: "create-encounter",
       name: "Create New Encounter",
       callback: () => this.createEncounter(),
@@ -3170,6 +3290,44 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async createTrap() {
 		// Open Trap creation modal
 		new TrapCreationModal(this.app, this).open();
+	}
+
+	async editTrap(trapPath: string) {
+		// Open Trap creation modal in edit mode
+		new TrapCreationModal(this.app, this, undefined, undefined, trapPath).open();
+	}
+
+	async deleteTrapStatblocks(trapName: string) {
+		try {
+			const statblocksPlugin = (this.app as any).plugins.getPlugin("obsidian-5e-statblocks");
+			if (!statblocksPlugin) {
+				console.warn("Fantasy Statblocks plugin not found.");
+				return;
+			}
+
+			const homebrewSource = `Trap: ${trapName}`;
+			let deletedCount = 0;
+
+			// Try to delete from data.monsters
+			if (statblocksPlugin.data?.monsters && Array.isArray(statblocksPlugin.data.monsters)) {
+				const originalLength = statblocksPlugin.data.monsters.length;
+				
+				// Remove all statblocks with matching source (includes all elements for complex traps)
+				statblocksPlugin.data.monsters = statblocksPlugin.data.monsters.filter(
+					(m: any) => m.source !== homebrewSource
+				);
+				
+				deletedCount = originalLength - statblocksPlugin.data.monsters.length;
+				
+				if (deletedCount > 0) {
+					// Save plugin data
+					await statblocksPlugin.saveData(statblocksPlugin.data);
+					console.log(`Deleted ${deletedCount} trap statblock(s) from Fantasy Statblocks`);
+				}
+			}
+		} catch (error) {
+			console.error("Error deleting trap statblocks:", error);
+		}
 	}
 
 	async createEncounter() {
@@ -9650,17 +9808,33 @@ class TrapCreationModal extends Modal {
   elementsContainer: HTMLElement | null = null;
   countermeasuresContainer: HTMLElement | null = null;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, scenePath?: string) {
+  // For editing existing traps
+  isEdit = false;
+  originalTrapPath = "";
+  originalTrapName = "";
+  originalElements: TrapElement[] = [];
+
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, scenePath?: string, trapPath?: string) {
     super(app);
     this.plugin = plugin;
     if (adventurePath) this.adventurePath = adventurePath;
     if (scenePath) this.scenePath = scenePath;
+    if (trapPath) {
+      this.isEdit = true;
+      this.originalTrapPath = trapPath;
+    }
   }
 
-  onOpen() {
+  async onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h2", { text: "Create New Trap" });
+    
+    // Load existing trap data if editing
+    if (this.isEdit) {
+      await this.loadTrapData();
+    }
+    
+    contentEl.createEl("h2", { text: this.isEdit ? "✏️ Edit Trap" : "Create New Trap" });
 
     // Trap Name
     new Setting(contentEl)
@@ -9792,7 +9966,7 @@ class TrapCreationModal extends Modal {
     // Create Button
     new Setting(contentEl).addButton((button) =>
       button
-        .setButtonText("Create Trap")
+        .setButtonText(this.isEdit ? "Update Trap" : "Create Trap")
         .setCta()
         .onClick(() => {
           this.createTrap();
@@ -10164,6 +10338,72 @@ class TrapCreationModal extends Modal {
     });
   }
 
+  async loadTrapData() {
+    try {
+      const trapFile = this.app.vault.getAbstractFileByPath(this.originalTrapPath);
+      if (!(trapFile instanceof TFile)) {
+        new Notice("Trap file not found!");
+        return;
+      }
+
+      const cache = this.app.metadataCache.getFileCache(trapFile);
+      const frontmatter = cache?.frontmatter;
+
+      if (!frontmatter) {
+        new Notice("Could not read trap data!");
+        return;
+      }
+
+      // Load basic trap properties
+      this.trapName = frontmatter.trap_name || trapFile.basename;
+      this.originalTrapName = this.trapName; // Store original name for statblock updates
+      this.trapType = frontmatter.trap_type || 'simple';
+      this.threatLevel = frontmatter.threat_level || 'setback';
+      this.minLevel = frontmatter.min_level || 1;
+      this.maxLevel = frontmatter.max_level || 5;
+      this.trigger = frontmatter.trigger || "";
+      this.adventurePath = frontmatter.adventure || "";
+      this.scenePath = frontmatter.scene || "";
+
+      // Load elements
+      if (frontmatter.elements && Array.isArray(frontmatter.elements)) {
+        this.elements = frontmatter.elements.map((e: any) => ({
+          name: e.name || "",
+          element_type: e.element_type || 'active',
+          initiative: e.initiative,
+          attack_bonus: e.attack_bonus,
+          save_dc: e.save_dc,
+          save_ability: e.save_ability,
+          damage: e.damage,
+          additional_damage: e.additional_damage,
+          range: e.range,
+          on_success: e.on_success,
+          on_failure: e.on_failure,
+          effect: e.effect || "",
+          condition: e.condition
+        }));
+        // Store original elements to track deletions
+        this.originalElements = JSON.parse(JSON.stringify(this.elements));
+      }
+
+      // Load countermeasures
+      if (frontmatter.countermeasures && Array.isArray(frontmatter.countermeasures)) {
+        this.countermeasures = frontmatter.countermeasures.map((cm: any) => ({
+          method: cm.method || "",
+          description: cm.description,
+          dc: cm.dc,
+          checks_needed: cm.checks_needed || 1,
+          effect: cm.effect
+        }));
+      }
+
+      console.log(`[Trap Edit] Loaded trap data: ${this.trapName}, ${this.elements.length} elements`);
+    } catch (error) {
+      console.error("Error loading trap data:", error);
+      new Notice("Error loading trap data. Check console for details.");
+    }
+  }
+
   async createTrap() {
     if (!this.trapName) {
       new Notice("Please enter a trap name");
@@ -10192,47 +10432,101 @@ class TrapCreationModal extends Modal {
         }
       }
 
-      // Create trap file path in z_Traps folder
-      let trapsFolder = "z_Traps";
-      
-      // If we have a campaign, create in campaign's z_Traps folder
-      if (campaignName) {
-        trapsFolder = `${campaignName}/z_Traps`;
-      }
-      
-      // Ensure z_Traps folder exists
-      if (!(await this.app.vault.adapter.exists(trapsFolder))) {
-        await this.app.vault.createFolder(trapsFolder);
-      }
-      
-      const trapPath = `${trapsFolder}/${this.trapName}.md`;
+      let trapPath: string;
+      let trapFile: TFile | null = null;
 
-      // Check if file already exists
-      if (await this.app.vault.adapter.exists(trapPath)) {
-        new Notice(`A trap named "${this.trapName}" already exists!`);
-        return;
+      if (this.isEdit) {
+        // Editing existing trap
+        trapFile = this.app.vault.getAbstractFileByPath(this.originalTrapPath) as TFile;
+        if (!trapFile) {
+          new Notice("Original trap file not found!");
+          return;
+        }
+        trapPath = this.originalTrapPath;
+
+        // If trap name changed, handle file rename and statblock updates
+        if (this.trapName !== this.originalTrapName) {
+          // Delete old statblocks
+          await this.plugin.deleteTrapStatblocks(this.originalTrapName);
+          
+          // Rename file if name changed
+          const folder = trapPath.substring(0, trapPath.lastIndexOf('/'));
+          const newPath = `${folder}/${this.trapName}.md`;
+          
+          // Check if new name conflicts
+          if (await this.app.vault.adapter.exists(newPath)) {
+            new Notice(`A trap named "${this.trapName}" already exists!`);
+            return;
+          }
+          
+          await this.app.fileManager.renameFile(trapFile, newPath);
+          trapPath = newPath;
+          trapFile = this.app.vault.getAbstractFileByPath(newPath) as TFile;
+        } else {
+          // Same name - delete old statblocks and we'll recreate
+          await this.plugin.deleteTrapStatblocks(this.originalTrapName);
+        }
+
+        // Track removed elements for complex traps
+        if (this.trapType === 'complex') {
+          // Find elements that were removed
+          const currentElementNames = new Set(this.elements.map(e => e.name));
+          const removedElements = this.originalElements.filter(e => !currentElementNames.has(e.name));
+          
+          if (removedElements.length > 0) {
+            console.log(`[Trap Edit] Removed ${removedElements.length} elements, will delete their statblocks`);
+            // Note: We already deleted all statblocks above, so this is just logging
+          }
+        }
+      } else {
+        // Creating new trap
+        // Create trap file path in z_Traps folder
+        let trapsFolder = "z_Traps";
+        
+        // If we have a campaign, create in campaign's z_Traps folder
+        if (campaignName) {
+          trapsFolder = `${campaignName}/z_Traps`;
+        }
+        
+        // Ensure z_Traps folder exists
+        if (!(await this.app.vault.adapter.exists(trapsFolder))) {
+          await this.app.vault.createFolder(trapsFolder);
+        }
+        
+        trapPath = `${trapsFolder}/${this.trapName}.md`;
+
+        // Check if file already exists
+        if (await this.app.vault.adapter.exists(trapPath)) {
+          new Notice(`A trap named "${this.trapName}" already exists!`);
+          return;
+        }
       }
 
       // Create trap content with statblocks
       const trapContent = this.createTrapContent(campaignName, worldName);
 
-      // Create the file
-      await this.app.vault.create(trapPath, trapContent);
+      // Create or update the file
+      if (this.isEdit && trapFile) {
+        await this.app.vault.modify(trapFile, trapContent);
+        new Notice(`Trap "${this.trapName}" updated!`);
+      } else {
+        await this.app.vault.create(trapPath, trapContent);
+        new Notice(`Trap "${this.trapName}" created!`);
+        trapFile = this.app.vault.getAbstractFileByPath(trapPath) as TFile;
+      }
 
       // Save statblocks to Fantasy Statblocks plugin
       await this.saveStatblocks();
 
-      new Notice(`Trap "${this.trapName}" created!`);
       this.close();
 
-      // Open the new trap file
-      const trapFile = this.app.vault.getAbstractFileByPath(trapPath);
-      if (trapFile instanceof TFile) {
+      // Open the trap file
+      if (trapFile) {
         await this.app.workspace.getLeaf().openFile(trapFile);
       }
     } catch (error) {
-      console.error("Error creating trap:", error);
-      new Notice("Failed to create trap. Check console for details.");
+      console.error("Error creating/editing trap:", error);
+      new Notice("Failed to save trap. Check console for details.");
     }
   }
 
@@ -10255,7 +10549,7 @@ class TrapCreationModal extends Modal {
 
     return `---
 type: trap
-template_version: 1.0.0
+template_version: 1.1.0
 campaign: ${campaignName}
 adventure: ${this.adventurePath?.split('/').pop()?.replace('.md', '') || ''}
 world: ${worldName}
@@ -10272,6 +10566,31 @@ date: ${now}
 ---
 
 # ${this.trapName}
+
+\`\`\`dataviewjs
+// Action buttons for trap management
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
+
+// Edit Trap button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit Trap",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-trap");
+});
+
+// Delete Trap button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete Trap",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-trap");
+});
+\`\`\`
 
 ## Trap Details
 
@@ -10480,11 +10799,53 @@ if (countermeasures.length === 0) {
 
       // Save to Fantasy Statblocks bestiary
       if (homebrewCreatures.length > 0) {
-        await statblocksPlugin.saveMonsters(homebrewCreatures);
-        console.log(`Saved ${homebrewCreatures.length} trap statblock(s) to Fantasy Statblocks bestiary`);
+        console.log("Attempting to save trap statblocks:", homebrewCreatures);
+        
+        // Try multiple methods to save the monsters
+        if (statblocksPlugin.saveMonsters) {
+          // Method 1: Direct saveMonsters API
+          await statblocksPlugin.saveMonsters(homebrewCreatures);
+          console.log(`Saved ${homebrewCreatures.length} trap statblock(s) via saveMonsters`);
+        } else if (statblocksPlugin.api?.saveMonsters) {
+          // Method 2: API object saveMonsters
+          await statblocksPlugin.api.saveMonsters(homebrewCreatures);
+          console.log(`Saved ${homebrewCreatures.length} trap statblock(s) via api.saveMonsters`);
+        } else if (statblocksPlugin.data?.monsters) {
+          // Method 3: Direct data manipulation
+          if (!Array.isArray(statblocksPlugin.data.monsters)) {
+            statblocksPlugin.data.monsters = [];
+          }
+          
+          // Add each creature to the monsters array
+          for (const creature of homebrewCreatures) {
+            // Check if creature already exists (by name and source)
+            const existingIndex = statblocksPlugin.data.monsters.findIndex(
+              (m: any) => m.name === creature.name && m.source === creature.source
+            );
+            
+            if (existingIndex >= 0) {
+              // Replace existing creature
+              statblocksPlugin.data.monsters[existingIndex] = creature;
+              console.log(`Updated existing trap statblock: ${creature.name}`);
+            } else {
+              // Add new creature
+              statblocksPlugin.data.monsters.push(creature);
+              console.log(`Added new trap statblock: ${creature.name}`);
+            }
+          }
+          
+          // Save plugin data
+          await statblocksPlugin.saveData(statblocksPlugin.data);
+          console.log(`Saved ${homebrewCreatures.length} trap statblock(s) via data.monsters`);
+        } else {
+          console.warn("No valid method found to save monsters to Fantasy Statblocks plugin");
+          console.warn("Available plugin methods:", Object.keys(statblocksPlugin));
+          console.warn("Available plugin.api methods:", statblocksPlugin.api ? Object.keys(statblocksPlugin.api) : "No API");
+        }
       }
     } catch (error) {
       console.error("Error saving trap statblocks:", error);
+      console.error("Error details:", error instanceof Error ? error.message : String(error));
       // Don't fail the trap creation if statblock saving fails
     }
   }
@@ -10593,8 +10954,15 @@ if (countermeasures.length === 0) {
       }
     }
 
+    console.log(`[createComplexStatblocks] Processing ${this.elements.length} elements`);
+    console.log(`[createComplexStatblocks] Initiative groups: ${byInitiative.size}`);
+    console.log(`[createComplexStatblocks] Constant elements: ${constantElements.length}`);
+    console.log(`[createComplexStatblocks] Dynamic elements: ${dynamicElements.length}`);
+
     // Create statblock for each initiative group
     for (const [initiative, elements] of byInitiative.entries()) {
+      console.log(`[createComplexStatblocks] Creating statblock for initiative ${initiative} with ${elements.length} elements`);
+      
       const actions: any[] = elements.map(element => {
         let desc = "";
 
@@ -10673,8 +11041,12 @@ if (countermeasures.length === 0) {
         actions: actions,
         layout: "Basic 5e Layout"
       });
+      
+      console.log(`[createComplexStatblocks] Added statblock: ${this.trapName} (Initiative ${initiative})`);
     }
 
+    console.log(`[createComplexStatblocks] Total statblocks created: ${statblocks.length}`);
+    
     // Create constant effects statblock if any
     if (constantElements.length > 0) {
       const traits: any[] = constantElements.map(element => ({

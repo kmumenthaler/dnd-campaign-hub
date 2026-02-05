@@ -1082,7 +1082,7 @@ if (trackerEncounter && trackerEncounter !== "") {
 
 export const TRAP_TEMPLATE = `---
 type: trap
-template_version: 1.0.1
+template_version: 1.1.0
 campaign: 
 adventure: 
 world: 
@@ -1099,6 +1099,31 @@ date:
 ---
 
 # <% tp.frontmatter.trap_name || "Unnamed Trap" %>
+
+\`\`\`dataviewjs
+// Action buttons for trap management
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
+
+// Edit Trap button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit Trap",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-trap");
+});
+
+// Delete Trap button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete Trap",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-trap");
+});
+\`\`\`
 
 ## Trap Details
 
