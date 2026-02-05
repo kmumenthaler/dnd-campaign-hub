@@ -1,4 +1,4 @@
-﻿import { App, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, requestUrl } from "obsidian";
+import { App, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, requestUrl } from "obsidian";
 import {
   WORLD_TEMPLATE,
   SESSION_GM_TEMPLATE,
@@ -1742,7 +1742,91 @@ class EncounterBuilderModal extends Modal {
     return match && match[1] ? parseInt(match[1]) : 10;
   }
 
+  /**
+   * Consolidate trap elements (creatures with [SRD] path and initiative numbers)
+   * into single trap entities with trapData loaded from trap files
+   */
+  async consolidateTrapElements(): Promise<void> {
+    const trapGroups = new Map<string, any[]>();
+    const nonTraps: any[] = [];
+    
+    // Group creatures by trap name (before the "Initiative" part)
+    for (const creature of this.creatures) {
+      // Check if this looks like a trap element: has [SRD] path and name with "Initiative"
+      if (creature.path === "[SRD]" && creature.name.includes("(Initiative")) {
+        const baseName = creature.name.replace(/\s*\(Initiative\s+\d+\)/, '').trim();
+        if (!trapGroups.has(baseName)) {
+          trapGroups.set(baseName, []);
+        }
+        trapGroups.get(baseName)!.push(creature);
+      } else if (!creature.isTrap) {
+        // Keep non-trap creatures as-is
+        nonTraps.push(creature);
+      } else {
+        // Already a proper trap with trapData
+        nonTraps.push(creature);
+      }
+    }
+    
+    // Find and load trap files for each trap group
+    const consolidatedTraps: any[] = [];
+    for (const [trapName, elements] of trapGroups.entries()) {
+      console.log(`🪤 Consolidating trap: ${trapName} (${elements.length} elements)`);
+      
+      // Search for the trap file
+      let trapFile: TFile | null = null;
+      for (const file of this.app.vault.getMarkdownFiles()) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        if (cache?.frontmatter?.type === 'trap' && 
+            (cache.frontmatter.trap_name === trapName || file.basename === trapName)) {
+          trapFile = file;
+          break;
+        }
+      }
+      
+      if (trapFile) {
+        try {
+          const trapCache = this.app.metadataCache.getFileCache(trapFile);
+          if (trapCache?.frontmatter) {
+            const fm = trapCache.frontmatter;
+            const consolidatedTrap = {
+              name: trapName,
+              count: 1,
+              isTrap: true,
+              trapData: {
+                trapType: fm.trap_type || "complex",
+                threatLevel: fm.threat_level || "dangerous",
+                elements: fm.elements || []
+              },
+              // Preserve manual overrides from first element if any
+              hp: elements[0].hp,
+              ac: elements[0].ac,
+              cr: elements[0].cr,
+              path: trapFile.path
+            };
+            consolidatedTraps.push(consolidatedTrap);
+            console.log(`✅ Consolidated ${trapName} from ${elements.length} elements`);
+          }
+        } catch (error) {
+          console.error(`Error loading trap file for ${trapName}:`, error);
+          // If we can't load the trap, keep the elements as regular creatures
+          nonTraps.push(...elements);
+        }
+      } else {
+        console.warn(`⚠️ No trap file found for ${trapName}, keeping as separate creatures`);
+        nonTraps.push(...elements);
+      }
+    }
+    
+    // Replace creatures array with consolidated version
+    this.creatures = [...nonTraps, ...consolidatedTraps];
+    console.log(`📊 Consolidated ${trapGroups.size} traps, ${nonTraps.length} other creatures`);
+  }
+
   async calculateEncounterDifficulty(): Promise<any> {
+    // First, consolidate any trap elements
+    await this.consolidateTrapElements();
+    
     // Calculate enemy stats with real statblock data when available
     let enemyTotalHP = 0;
     let enemyTotalAC = 0;
@@ -1758,6 +1842,30 @@ class EncounterBuilderModal extends Modal {
       console.log(`\n--- Creature: ${creature.name} (x${count}) ---`);
       console.log(`Path: ${creature.path || 'none'}`);
       console.log(`CR: ${creature.cr || 'unknown'}`);
+      console.log(`Is Trap: ${creature.isTrap || false}`);
+      
+      // Handle traps differently from creatures
+      if (creature.isTrap && creature.trapData) {
+        console.log(`🪤 TRAP DETECTED - Using trap-specific calculation`);
+        const trapStats = await this.plugin.encounterBuilder.calculateTrapStats(creature.trapData);
+        console.log(`Trap stats:`, trapStats);
+        
+        const hp = trapStats.hp;
+        const ac = trapStats.ac;
+        const dpr = trapStats.dpr;
+        const attackBonus = trapStats.attackBonus;
+        
+        console.log(`Final trap stats: HP=${hp}, AC=${ac}, DPR=${dpr}, Attack=${attackBonus}, Effective CR=${trapStats.cr}`);
+        console.log(`Total contribution (x${count}): HP=0 (traps don't contribute to HP pool), DPR=${dpr * count}`);
+        
+        // Traps don't add to HP pool (they're hazards, not damage sponges)
+        // But they DO contribute DPR, AC (for difficulty calculation), and count as threats
+        enemyTotalAC += ac * count;
+        enemyTotalDPR += dpr * count;
+        enemyTotalAttackBonus += attackBonus * count;
+        enemyCount += count;
+        continue;
+      }
       
       // Try to get real stats from statblock if available
       let realStats = null;
@@ -2566,12 +2674,16 @@ export default class DndCampaignHubPlugin extends Plugin {
   settings!: DndCampaignHubSettings;
   SessionCreationModal = SessionCreationModal;
   migrationManager!: MigrationManager;
+  encounterBuilder!: EncounterBuilder;
 
   async onload() {
     await this.loadSettings();
 
     // Initialize the migration manager
     this.migrationManager = new MigrationManager(this.app, this);
+    
+    // Initialize the encounter builder
+    this.encounterBuilder = new EncounterBuilder(this.app, this);
 
     console.log("D&D Campaign Hub: Plugin loaded");
 
@@ -3466,6 +3578,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 					currentCreature.path = trimmed.substring(5).trim().replace(/^["']|["']$/g, '');
 				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('source:')) {
 					currentCreature.source = trimmed.substring(7).trim().replace(/^["']|["']$/g, '');
+				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('is_trap:')) {
+					currentCreature.isTrap = trimmed.substring(8).trim().toLowerCase() === 'true';
+				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('trap_path:')) {
+					// Store trap file path for later loading
+					currentCreature.trapPath = trimmed.substring(10).trim().replace(/^["']|["']$/g, '');
 				} else if (!inCreaturesArray && trimmed.startsWith('selected_party_id:')) {
 					selectedPartyId = trimmed.substring(18).trim().replace(/^["']|["']$/g, '') || null;
 				} else if (!inCreaturesArray && trimmed.startsWith('use_color_names:')) {
@@ -6733,6 +6850,12 @@ interface EncounterCreature {
   isCustom?: boolean;  // Temporary custom creature
   isFriendly?: boolean;  // Friendly NPC/creature
   isHidden?: boolean;  // Hidden from players
+  isTrap?: boolean;  // Trap hazard (uses trap calculation logic)
+  trapData?: {  // Trap-specific data for difficulty calculation
+    elements: TrapElement[];
+    threatLevel: 'setback' | 'dangerous' | 'deadly';
+    trapType: 'simple' | 'complex';
+  };
 }
 
 interface EncounterData {
@@ -7033,6 +7156,351 @@ class EncounterBuilder {
   }
 
   /**
+   * Detect if trap effect text indicates area-of-effect (multiple targets)
+   */
+  detectAoETargets(effectText: string): number {
+    if (!effectText) return 1;
+    
+    const text = effectText.toLowerCase();
+    
+    // Strong AoE indicators - likely hits all party members
+    const strongAoE = [
+      'each creature',
+      'all creatures',
+      'any creature',
+      'creatures in the',
+      'everyone in',
+      'all targets',
+      'each target',
+      'all characters'
+    ];
+    
+    for (const indicator of strongAoE) {
+      if (text.includes(indicator)) {
+        console.log(`[AoE Detection] Strong AoE indicator found: "${indicator}" - assuming 4 targets`);
+        return 4; // Average party size
+      }
+    }
+    
+    // Area indicators with size
+    const areaPatterns = [
+      /(\d+)-foot (radius|cone|cube|line|sphere|cylinder)/,
+      /(\d+)-foot.{0,20}(radius|cone|cube|line|sphere|cylinder)/,
+      /within (\d+) feet/
+    ];
+    
+    for (const pattern of areaPatterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        const size = parseInt(match[1]);
+        // Estimate targets based on area size
+        let targets = 1;
+        if (size >= 30) targets = 4; // Large area
+        else if (size >= 20) targets = 3; // Medium area
+        else if (size >= 10) targets = 2; // Small area
+        console.log(`[AoE Detection] ${size}-foot area detected - assuming ${targets} targets`);
+        return targets;
+      }
+    }
+    
+    // Moderate AoE indicators - likely hits 2-3 characters
+    const moderateAoE = [
+      'creatures within',
+      'multiple targets',
+      'targets within',
+      'nearby creatures',
+      'adjacent creatures'
+    ];
+    
+    for (const indicator of moderateAoE) {
+      if (text.includes(indicator)) {
+        console.log(`[AoE Detection] Moderate AoE indicator found: "${indicator}" - assuming 2 targets`);
+        return 2;
+      }
+    }
+    
+    // Single target indicators
+    const singleTarget = [
+      'one target',
+      'one creature',
+      'single target',
+      'the target',
+      'a target'
+    ];
+    
+    for (const indicator of singleTarget) {
+      if (text.includes(indicator)) {
+        console.log(`[AoE Detection] Single target indicator found: "${indicator}"`);
+        return 1;
+      }
+    }
+    
+    // No clear indicators - check if it mentions targeting at all
+    if (text.includes('target') || text.includes('creature')) {
+      console.log(`[AoE Detection] Generic targeting text - assuming 2 targets (conservative)`);
+      return 2; // Conservative estimate for unclear traps
+    }
+    
+    console.log(`[AoE Detection] No targeting indicators - assuming 1 target`);
+    return 1;
+  }
+
+  /**
+   * Calculate trap stats for encounter difficulty
+   * Traps are treated as hostile entities that deal damage but have different mechanics
+   */
+  calculateTrapStats(trapData: {
+    elements: TrapElement[];
+    threatLevel: 'setback' | 'dangerous' | 'deadly';
+    trapType: 'simple' | 'complex';
+  }): { hp: number; ac: number; dpr: number; attackBonus: number; cr: string } {
+    
+    console.log(`[Trap Stats] Starting calculation for ${trapData.trapType} trap, threat: ${trapData.threatLevel}`);
+    console.log(`[Trap Stats] Elements count: ${trapData.elements?.length || 0}`);
+    
+    let totalDamage = 0;
+    let maxDC = 0;
+    let maxAttackBonus = 0;
+    let elementCount = 0;
+    let maxAoETargets = 1;
+
+    // Parse damage from each element and detect AoE
+    for (const element of trapData.elements) {
+      console.log(`[Trap Stats] Processing element: ${element.name}`);
+      
+      if (element.damage) {
+        const avgDamage = this.parseTrapDamage(element.damage);
+        console.log(`[Trap Stats] - Damage: ${element.damage} → ${avgDamage} avg`);
+        totalDamage += avgDamage;
+        elementCount++;
+      }
+
+      if (element.additional_damage) {
+        const additionalDmg = this.parseTrapDamage(element.additional_damage);
+        console.log(`[Trap Stats] - Additional damage: ${element.additional_damage} → ${additionalDmg} avg`);
+        totalDamage += additionalDmg;
+      }
+
+      if (element.save_dc && element.save_dc > maxDC) {
+        maxDC = element.save_dc;
+        console.log(`[Trap Stats] - Save DC: ${element.save_dc}`);
+      }
+
+      if (element.attack_bonus && element.attack_bonus > maxAttackBonus) {
+        maxAttackBonus = element.attack_bonus;
+        console.log(`[Trap Stats] - Attack bonus: ${element.attack_bonus}`);
+      }
+      
+      // Check for AoE indicators in effect text
+      if (element.effect) {
+        console.log(`[Trap Stats] - Effect text: ${element.effect.substring(0, Math.min(100, element.effect.length))}...`);
+        const targets = this.detectAoETargets(element.effect);
+        if (targets > maxAoETargets) {
+          maxAoETargets = targets;
+        }
+      } else {
+        console.log(`[Trap Stats] - No effect text found`);
+      }
+    }
+
+    // Calculate DPR (damage per round)
+    // All trap elements deal their full damage (even if on different initiatives)
+    // Complex traps with multiple initiatives create sustained threat, not reduced damage
+    let dpr = totalDamage;
+
+    // Multiply DPR by number of targets for AoE traps
+    if (maxAoETargets > 1) {
+      console.log(`[Trap Stats] AoE trap detected - multiplying DPR by ${maxAoETargets} targets`);
+      dpr *= maxAoETargets;
+    }
+
+    // Apply threat level modifier to DPR
+    if (trapData.threatLevel === 'dangerous') {
+      dpr *= 1.25;
+    } else if (trapData.threatLevel === 'deadly') {
+      dpr *= 1.5;
+    } else if (trapData.threatLevel === 'setback') {
+      dpr *= 0.75;
+    }
+
+    // Determine attack bonus or save DC for hit chance calculation
+    // Prefer attack bonus if present, otherwise derive from save DC
+    const attackBonus = maxAttackBonus > 0 
+      ? maxAttackBonus 
+      : maxDC > 0 
+        ? Math.floor((maxDC - 8) / 0.8) // Approximate attack bonus from DC
+        : 5; // Default moderate attack bonus
+
+    // Traps have high AC (hard to damage) but can be disabled
+    // AC 15-20 depending on complexity and threat level
+    let ac = 15;
+    if (trapData.trapType === 'complex') ac += 2;
+    if (trapData.threatLevel === 'dangerous') ac += 1;
+    if (trapData.threatLevel === 'deadly') ac += 2;
+
+    // Traps have limited HP (they're not creatures)
+    // HP represents how much effort to disable/destroy
+    // Base HP is proportional to DPR and threat level
+    let hp = Math.max(1, Math.floor(dpr * 2));
+    if (trapData.threatLevel === 'dangerous') hp *= 1.5;
+    if (trapData.threatLevel === 'deadly') hp *= 2;
+
+    // Estimate CR based on DPR
+    let estimatedCR = this.estimateCRFromDPR(dpr);
+    
+    // Adjust CR based on save DC or attack bonus
+    if (maxDC > 0 || maxAttackBonus > 0) {
+      const dcOrAttack = maxDC > 0 ? maxDC : maxAttackBonus;
+      const crByDC = this.estimateCRFromDC(dcOrAttack);
+      estimatedCR = Math.round((estimatedCR + crByDC) / 2);
+    }
+
+    const crString = this.formatCR(estimatedCR);
+
+    console.log(`[Trap Stats] Base Damage: ${totalDamage}, AoE Targets: ${maxAoETargets}, DPR: ${dpr.toFixed(1)}, AC: ${ac}, HP: ${hp}, Attack: ${attackBonus}, CR: ${crString}`);
+
+    return {
+      hp,
+      ac,
+      dpr,
+      attackBonus,
+      cr: crString
+    };
+  }
+
+  /**
+   * Parse trap damage string to average damage value
+   * Examples: "4d10" -> 22, "2d6+3" -> 10, "45" -> 45
+   */
+  parseTrapDamage(damageStr: string | undefined): number {
+    if (!damageStr) return 0;
+    
+    console.log(`[Damage Parser] Input: "${damageStr}"`);
+    
+    let cleanDamage = damageStr.trim().toLowerCase();
+    
+    // Remove damage type (e.g., "4d10 fire" -> "4d10")
+    const parts = cleanDamage.split(' ');
+    cleanDamage = parts[0] || cleanDamage;
+    console.log(`[Damage Parser] After cleanup: "${cleanDamage}"`);
+
+    // Parse dice notation FIRST: XdY+Z or XdY-Z or XdY
+    const diceMatch = cleanDamage.match(/(\d+)d(\d+)([+-]\d+)?/);
+    if (diceMatch) {
+      const numDice = parseInt(diceMatch[1]!);
+      const dieSize = parseInt(diceMatch[2]!);
+      const modifier = diceMatch[3] ? parseInt(diceMatch[3]) : 0;
+      
+      // Average of XdY is X * (Y+1)/2
+      const avgRoll = numDice * (dieSize + 1) / 2;
+      const total = Math.floor(avgRoll + modifier);
+      console.log(`[Damage Parser] Dice: ${numDice}d${dieSize}${modifier >= 0 ? '+' : ''}${modifier || ''} = ${avgRoll} + ${modifier} = ${total}`);
+      return total;
+    }
+
+    // Check if it's just a number (static damage)
+    const staticDamage = parseInt(cleanDamage);
+    if (!isNaN(staticDamage)) {
+      console.log(`[Damage Parser] Parsed as static damage: ${staticDamage}`);
+      return staticDamage;
+    }
+
+    console.log(`[Damage Parser] No match, returning 0`);
+    return 0;
+  }
+
+  /**
+   * Estimate CR from DPR using D&D 5e CR table
+   */
+  estimateCRFromDPR(dpr: number): number {
+    const crDPRTable = [
+      { cr: 0, dpr: 1 },
+      { cr: 0.125, dpr: 2 },
+      { cr: 0.25, dpr: 3 },
+      { cr: 0.5, dpr: 5 },
+      { cr: 1, dpr: 8 },
+      { cr: 2, dpr: 15 },
+      { cr: 3, dpr: 21 },
+      { cr: 4, dpr: 27 },
+      { cr: 5, dpr: 33 },
+      { cr: 6, dpr: 39 },
+      { cr: 7, dpr: 45 },
+      { cr: 8, dpr: 51 },
+      { cr: 9, dpr: 57 },
+      { cr: 10, dpr: 63 },
+      { cr: 11, dpr: 69 },
+      { cr: 12, dpr: 75 },
+      { cr: 13, dpr: 81 },
+      { cr: 14, dpr: 87 },
+      { cr: 15, dpr: 93 },
+      { cr: 16, dpr: 99 },
+      { cr: 17, dpr: 105 },
+      { cr: 18, dpr: 111 },
+      { cr: 19, dpr: 117 },
+      { cr: 20, dpr: 123 }
+    ];
+
+    let closestCR = 0;
+    let minDiff = Infinity;
+
+    for (const entry of crDPRTable) {
+      const diff = Math.abs(entry.dpr - dpr);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestCR = entry.cr;
+      }
+    }
+
+    return closestCR;
+  }
+
+  /**
+   * Estimate CR from save DC or attack bonus
+   */
+  estimateCRFromDC(dc: number): number {
+    const crDCTable = [
+      { cr: 0, dc: 13 },
+      { cr: 1, dc: 13 },
+      { cr: 2, dc: 13 },
+      { cr: 3, dc: 13 },
+      { cr: 4, dc: 14 },
+      { cr: 5, dc: 15 },
+      { cr: 8, dc: 16 },
+      { cr: 11, dc: 17 },
+      { cr: 13, dc: 18 },
+      { cr: 17, dc: 19 },
+      { cr: 21, dc: 20 },
+      { cr: 24, dc: 21 },
+      { cr: 27, dc: 22 },
+      { cr: 29, dc: 23 },
+      { cr: 30, dc: 24 }
+    ];
+
+    let closestCR = 0;
+    let minDiff = Infinity;
+
+    for (const entry of crDCTable) {
+      const diff = Math.abs(entry.dc - dc);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestCR = entry.cr;
+      }
+    }
+
+    return closestCR;
+  }
+
+  /**
+   * Format CR as string (handles fractional CRs)
+   */
+  formatCR(cr: number): string {
+    if (cr === 0.125) return "1/8";
+    if (cr === 0.25) return "1/4";
+    if (cr === 0.5) return "1/2";
+    return cr.toString();
+  }
+
+  /**
    * Parse statblock YAML to extract real combat stats
    * Returns hp, ac, dpr (damage per round), and attackBonus
    */
@@ -7252,7 +7720,91 @@ class EncounterBuilder {
     return match && match[1] ? parseInt(match[1]) : 10;
   }
 
+  /**
+   * Consolidate trap elements (creatures with [SRD] path and initiative numbers)
+   * into single trap entities with trapData loaded from trap files
+   */
+  async consolidateTrapElements(): Promise<void> {
+    const trapGroups = new Map<string, any[]>();
+    const nonTraps: any[] = [];
+    
+    // Group creatures by trap name (before the "Initiative" part)
+    for (const creature of this.creatures) {
+      // Check if this looks like a trap element: has [SRD] path and name with "Initiative"
+      if (creature.path === "[SRD]" && creature.name.includes("(Initiative")) {
+        const baseName = creature.name.replace(/\s*\(Initiative\s+\d+\)/, '').trim();
+        if (!trapGroups.has(baseName)) {
+          trapGroups.set(baseName, []);
+        }
+        trapGroups.get(baseName)!.push(creature);
+      } else if (!creature.isTrap) {
+        // Keep non-trap creatures as-is
+        nonTraps.push(creature);
+      } else {
+        // Already a proper trap with trapData
+        nonTraps.push(creature);
+      }
+    }
+    
+    // Find and load trap files for each trap group
+    const consolidatedTraps: any[] = [];
+    for (const [trapName, elements] of trapGroups.entries()) {
+      console.log(`🪤 Consolidating trap: ${trapName} (${elements.length} elements)`);
+      
+      // Search for the trap file
+      let trapFile: TFile | null = null;
+      for (const file of this.app.vault.getMarkdownFiles()) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        if (cache?.frontmatter?.type === 'trap' && 
+            (cache.frontmatter.trap_name === trapName || file.basename === trapName)) {
+          trapFile = file;
+          break;
+        }
+      }
+      
+      if (trapFile) {
+        try {
+          const trapCache = this.app.metadataCache.getFileCache(trapFile);
+          if (trapCache?.frontmatter) {
+            const fm = trapCache.frontmatter;
+            const consolidatedTrap = {
+              name: trapName,
+              count: 1,
+              isTrap: true,
+              trapData: {
+                trapType: fm.trap_type || "complex",
+                threatLevel: fm.threat_level || "dangerous",
+                elements: fm.elements || []
+              },
+              // Preserve manual overrides from first element if any
+              hp: elements[0].hp,
+              ac: elements[0].ac,
+              cr: elements[0].cr,
+              path: trapFile.path
+            };
+            consolidatedTraps.push(consolidatedTrap);
+            console.log(`✅ Consolidated ${trapName} from ${elements.length} elements`);
+          }
+        } catch (error) {
+          console.error(`Error loading trap file for ${trapName}:`, error);
+          // If we can't load the trap, keep the elements as regular creatures
+          nonTraps.push(...elements);
+        }
+      } else {
+        console.warn(`⚠️ No trap file found for ${trapName}, keeping as separate creatures`);
+        nonTraps.push(...elements);
+      }
+    }
+    
+    // Replace creatures array with consolidated version
+    this.creatures = [...nonTraps, ...consolidatedTraps];
+    console.log(`📊 Consolidated ${trapGroups.size} traps, ${nonTraps.length} other creatures`);
+  }
+
   async calculateEncounterDifficulty(): Promise<any> {
+    // First, consolidate any trap elements
+    await this.consolidateTrapElements();
+    
     // Calculate enemy stats with real statblock data when available
     let enemyTotalHP = 0;
     let enemyTotalAC = 0;
@@ -7268,6 +7820,30 @@ class EncounterBuilder {
       console.log(`\n--- Creature: ${creature.name} (x${count}) ---`);
       console.log(`Path: ${creature.path || 'none'}`);
       console.log(`CR: ${creature.cr || 'unknown'}`);
+      console.log(`Is Trap: ${creature.isTrap || false}`);
+      
+      // Handle traps differently from creatures
+      if (creature.isTrap && creature.trapData) {
+        console.log(`🪤 TRAP DETECTED - Using trap-specific calculation`);
+        const trapStats = await this.calculateTrapStats(creature.trapData);
+        console.log(`Trap stats:`, trapStats);
+        
+        const hp = trapStats.hp;
+        const ac = trapStats.ac;
+        const dpr = trapStats.dpr;
+        const attackBonus = trapStats.attackBonus;
+        
+        console.log(`Final trap stats: HP=${hp}, AC=${ac}, DPR=${dpr}, Attack=${attackBonus}, Effective CR=${trapStats.cr}`);
+        console.log(`Total contribution (x${count}): HP=0 (traps don't contribute to HP pool), DPR=${dpr * count}`);
+        
+        // Traps don't add to HP pool (they're hazards, not damage sponges)
+        // But they DO contribute DPR, AC (for difficulty calculation), and count as threats
+        enemyTotalAC += ac * count;
+        enemyTotalDPR += dpr * count;
+        enemyTotalAttackBonus += attackBonus * count;
+        enemyCount += count;
+        continue;
+      }
       
       // Try to get real stats from statblock if available
       let realStats = null;
@@ -7853,14 +8429,40 @@ class SceneCreationModal extends Modal {
         // Load creatures from encounter_creatures or YAML field
         const creaturesData = frontmatter.encounter_creatures;
         if (creaturesData && Array.isArray(creaturesData)) {
-          this.creatures = creaturesData.map((c: any) => ({
-            name: c.name || "Unknown",
-            count: c.count || 1,
-            hp: c.hp,
-            ac: c.ac,
-            cr: c.cr,
-            source: c.source || "vault",
-            path: c.path
+          this.creatures = await Promise.all(creaturesData.map(async (c: any) => {
+            const creature: any = {
+              name: c.name || "Unknown",
+              count: c.count || 1,
+              hp: c.hp,
+              ac: c.ac,
+              cr: c.cr,
+              source: c.source || "vault",
+              path: c.path,
+              isTrap: c.is_trap || false
+            };
+            
+            // If it's a trap, load the trap data from the trap file
+            if (creature.isTrap && c.trap_path) {
+              try {
+                const trapFile = this.app.vault.getAbstractFileByPath(c.trap_path);
+                if (trapFile instanceof TFile) {
+                  const trapContent = await this.app.vault.read(trapFile);
+                  const trapCache = this.app.metadataCache.getFileCache(trapFile);
+                  if (trapCache?.frontmatter) {
+                    const fm = trapCache.frontmatter;
+                    creature.trapData = {
+                      traptrapType: fm.trap_type || "simple",
+                      threatLevel: fm.threat_level || "dangerous",
+                      elements: fm.elements || []
+                    };
+                  }
+                }
+              } catch (error) {
+                console.error(`Error loading trap data for ${creature.name}:`, error);
+              }
+            }
+            
+            return creature;
           }));
         }
         
