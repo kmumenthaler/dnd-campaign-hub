@@ -2196,8 +2196,14 @@ class EncounterBuilderModal extends Modal {
 
   escapeYamlString(str: string): string {
     if (!str) return '""';
-    // Escape backslashes first, then quotes
-    return '"' + str.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+    // Use single quotes for YAML strings - only need to escape single quotes within
+    // Single quotes are safer as they don't interpret escape sequences
+    if (str.includes("'")) {
+      // If string contains single quotes, double them (YAML escaping for single quotes)
+      return "'" + str.replace(/'/g, "''") + "'";
+    }
+    // If no single quotes, just wrap in single quotes
+    return "'" + str + "'";
   }
 
   async generateEncounterContent(diffResult: any): Promise<string> {
@@ -10143,8 +10149,16 @@ class SceneCreationModal extends Modal {
 
   escapeYamlString(str: string): string {
     if (!str) return '""';
-    return '"' + str.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+    // Use single quotes for YAML strings - only need to escape single quotes within
+    // Single quotes are safer as they don't interpret escape sequences
+    if (str.includes("'")) {
+      // If string contains single quotes, double them (YAML escaping for single quotes)
+      return "'" + str.replace(/'/g, "''") + "'";
+    }
+    // If no single quotes, just wrap in single quotes
+    return "'" + str + "'";
   }
+
 
   /**
    * Generate encounter file content using the EXACT same format as EncounterBuilderModal
