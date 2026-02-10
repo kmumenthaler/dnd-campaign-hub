@@ -6451,6 +6451,25 @@ class SessionPrepDashboard extends Modal {
       if (sceneFolders.length === 0) {
         sceneFolders.push(folderStructure);
       }
+    } else {
+      // Check if the adventure folder itself contains Act folders
+      // (case where adventure file is inside a folder with the same name)
+      for (const child of adventureFolder.children) {
+        if (child instanceof TFolder && child.name.startsWith("Act ")) {
+          sceneFolders.push(child);
+        }
+      }
+      // If no Act folders, check the adventure folder itself for scenes
+      if (sceneFolders.length === 0) {
+        for (const child of adventureFolder.children) {
+          if (child instanceof TFile && child.extension === "md" && 
+              child.path !== adventurePath && 
+              child.basename.match(/^Scene\s+\d+/)) {
+            sceneFolders.push(adventureFolder);
+            break;
+          }
+        }
+      }
     }
 
     // Scan all scene folders
