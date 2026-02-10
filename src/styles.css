@@ -822,6 +822,29 @@
   overflow: hidden;
 }
 
+/* Full-screen 3-column layout for main workspace */
+.run-dashboard-fullscreen-grid {
+  display: grid;
+  grid-template-columns: 300px 1fr 350px;
+  gap: 20px;
+  flex: 1;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.run-dashboard-column {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px;
+}
+
+.run-dashboard-center {
+  min-width: 400px;
+}
+
 .run-dashboard-left,
 .run-dashboard-right {
   display: flex;
@@ -1060,4 +1083,133 @@
 
 .quick-action-button:active {
   transform: translateY(0);
+}
+/* Adventure Details Section */
+.adventure-details-section {
+  min-height: 200px;
+}
+
+.adventure-detail-card {
+  background-color: var(--background-primary);
+  border: 2px solid var(--interactive-accent);
+  border-radius: 8px;
+  padding: 15px;
+}
+
+.adventure-title-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.adventure-title-bar h4 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-normal);
+}
+
+.adventure-details p {
+  margin: 6px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.adventure-detail-card button {
+  margin-top: 12px;
+  width: 100%;
+}
+
+/* Session Notes Section */
+.session-notes-section {
+  min-height: 250px;
+  max-height: 400px;
+}
+
+.session-notes-preview {
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 10px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.session-notes-preview h4 {
+  margin-top: 12px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--text-accent);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 4px;
+}
+
+.session-notes-preview h4:first-child {
+  margin-top: 0;
+}
+
+.session-notes-preview p {
+  margin: 6px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.session-notes-section button {
+  width: 100%;
+}
+
+/* Encounter Section */
+.encounter-section {
+  min-height: 300px;
+}
+
+.encounter-card {
+  background-color: var(--background-primary);
+  border: 2px solid var(--background-modifier-error);
+  border-radius: 8px;
+  padding: 15px;
+}
+
+.encounter-card strong {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: var(--text-normal);
+}
+
+.encounter-card p {
+  margin: 6px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.creature-list {
+  margin: 10px 0;
+  padding: 10px;
+  background-color: var(--background-secondary);
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.creature-item {
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--text-normal);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.creature-item:last-child {
+  border-bottom: none;
+}
+
+.encounter-card button {
+  margin-top: 10px;
+  margin-right: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
 }

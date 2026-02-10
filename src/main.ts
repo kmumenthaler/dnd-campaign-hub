@@ -4448,8 +4448,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			return;
 		}
 
-		// Open in right pane
-		const leaf = this.app.workspace.getRightLeaf(false);
+		// Open in main workspace (center) for full-screen dashboard
+		const leaf = this.app.workspace.getLeaf(false);
 		if (leaf) {
 			await leaf.setViewState({
 				type: SESSION_RUN_VIEW_TYPE,
@@ -6928,7 +6928,7 @@ class SessionRunDashboardView extends ItemView {
     // Header with session info
     const header = container.createEl("div", { cls: "run-dashboard-header" });
     const sessionName = this.currentSessionFile?.basename || "No Active Session";
-    header.createEl("h2", { text: `🎮 ${sessionName}` });
+    header.createEl("h2", { text: `🎮 Session Dashboard: ${sessionName}` });
     
     const campaignName = this.campaignPath.split('/').pop() || "Unknown Campaign";
     header.createEl("p", { 
@@ -6951,33 +6951,27 @@ class SessionRunDashboardView extends ItemView {
       this.render();
     });
 
-    // Main content grid
-    const mainGrid = container.createEl("div", { cls: "run-dashboard-grid" });
+    // Full-screen 3-column layout
+    const mainGrid = container.createEl("div", { cls: "run-dashboard-fullscreen-grid" });
 
-    // Left column
-    const leftCol = mainGrid.createEl("div", { cls: "run-dashboard-left" });
-    
-    // Timers section
+    // Left column - Tools & Actions
+    const leftCol = mainGrid.createEl("div", { cls: "run-dashboard-column" });
     await this.renderTimers(leftCol);
-    
-    // Dice roller section
     this.renderDiceRoller(leftCol);
+    await this.renderQuickActions(leftCol);
 
-    // Right column
-    const rightCol = mainGrid.createEl("div", { cls: "run-dashboard-right" });
-    
-    // Quick notes section
-    await this.renderQuickNotes(rightCol);
-    
-    // Current scene section
+    // Center column - Adventure & Session Content
+    const centerCol = mainGrid.createEl("div", { cls: "run-dashboard-column run-dashboard-center" });
+    await this.renderAdventureDetails(centerCol);
+    await this.renderSessionNotes(centerCol);
+    await this.renderEncounterView(centerCol);
+
+    // Right column - Scene & Combat
+    const rightCol = mainGrid.createEl("div", { cls: "run-dashboard-column" });
     await this.renderCurrentScene(rightCol);
-
-    // Bottom section
-    const bottomSection = container.createEl("div", { cls: "run-dashboard-bottom" });
-    await this.renderQuickActions(bottomSection);
+    await this.renderQuickNotes(rightCol);
 
     // Update timers display every second
-    // Clear previous interval if it exists
     if (this.timerUpdateInterval) {
       window.clearInterval(this.timerUpdateInterval);
     }
@@ -7225,6 +7219,181 @@ class SessionRunDashboardView extends ItemView {
         }
       });
     }
+  }
+
+  async renderAdventureDetails(container: HTMLElement) {
+    const section = container.createEl("div", { cls: "dashboard-section adventure-details-section" });
+    section.createEl("h3", { text: "🗺️ Current Adventure" });
+
+    const adventures = await this.getActiveAdventures();
+    
+    if (adventures.length === 0) {
+      section.createEl("p", { text: "No active adventures", cls: "empty-message" });
+      return;
+    }
+
+    // Show first active adventure
+    const adventure = adventures[0];
+    const adventureCard = section.createEl("div", { cls: "adventure-detail-card" });
+    
+    const title = adventureCard.createEl("div", { cls: "adventure-title-bar" });
+    title.createEl("h4", { text: adventure.name });
+    title.createEl("span", { 
+      cls: `status-badge status-${adventure.status}`,
+      text: adventure.status 
+    });
+
+    // Get adventure file for details
+    const adventureFile = this.app.vault.getAbstractFileByPath(adventure.path);
+    if (adventureFile instanceof TFile) {
+      const cache = this.app.metadataCache.getFileCache(adventureFile);
+      const fm = cache?.frontmatter;
+
+      if (fm) {
+        const details = adventureCard.createEl("div", { cls: "adventure-details" });
+        
+        if (fm.level_range) {
+          details.createEl("p", { text: `📊 Level: ${fm.level_range}` });
+        }
+        if (fm.current_act) {
+          details.createEl("p", { text: `🎬 Act: ${fm.current_act}` });
+        }
+        if (fm.expected_sessions) {
+          const sessionsPlayed = fm.sessions?.length || 0;
+          details.createEl("p", { 
+            text: `📅 Sessions: ${sessionsPlayed}/${fm.expected_sessions}` 
+          });
+        }
+      }
+    }
+
+    // Open adventure button
+    const openBtn = adventureCard.createEl("button", {
+      text: "📖 Open Adventure",
+      cls: "mod-cta"
+    });
+    openBtn.addEventListener("click", async () => {
+      await this.app.workspace.openLinkText(adventure.path, "", false);
+    });
+  }
+
+  async renderSessionNotes(container: HTMLElement) {
+    const section = container.createEl("div", { cls: "dashboard-section session-notes-section" });
+    section.createEl("h3", { text: "📝 Session Notes" });
+
+    if (!this.currentSessionFile) {
+      section.createEl("p", { text: "No active session", cls: "empty-message" });
+      return;
+    }
+
+    // Read current session content
+    try {
+      const content = await this.app.vault.read(this.currentSessionFile);
+      
+      // Extract key sections (summary, events, etc.)
+      const summaryMatch = content.match(/## Summary\n\n([\s\S]*?)(?=\n##|$)/);
+      const eventsMatch = content.match(/## Events\n\n([\s\S]*?)(?=\n##|$)/);
+      
+      const notesPreview = section.createEl("div", { cls: "session-notes-preview" });
+      
+      if (summaryMatch && summaryMatch[1].trim()) {
+        notesPreview.createEl("h4", { text: "Summary" });
+        notesPreview.createEl("p", { text: summaryMatch[1].trim().substring(0, 200) + "..." });
+      }
+      
+      if (eventsMatch && eventsMatch[1].trim()) {
+        notesPreview.createEl("h4", { text: "Events" });
+        notesPreview.createEl("p", { text: eventsMatch[1].trim().substring(0, 200) + "..." });
+      }
+
+      // Open full session button
+      const openBtn = section.createEl("button", {
+        text: "📄 Open Full Session Note",
+        cls: "mod-cta"
+      });
+      openBtn.addEventListener("click", async () => {
+        if (this.currentSessionFile) {
+          await this.app.workspace.openLinkText(this.currentSessionFile.path, "", false);
+        }
+      });
+    } catch (error) {
+      console.error("Error reading session file:", error);
+      section.createEl("p", { text: "Error loading session notes", cls: "empty-message" });
+    }
+  }
+
+  async renderEncounterView(container: HTMLElement) {
+    const section = container.createEl("div", { cls: "dashboard-section encounter-section" });
+    section.createEl("h3", { text: "⚔️ Active Encounter" });
+
+    // Check for encounters in current scene
+    const adventures = await this.getActiveAdventures();
+    if (adventures.length === 0) {
+      section.createEl("p", { text: "No active encounter", cls: "empty-message" });
+      return;
+    }
+
+    const scenes = await this.getScenesForAdventure(adventures[0].path);
+    const currentScene = scenes.find(s => s.status === "in-progress");
+    
+    if (!currentScene) {
+      section.createEl("p", { text: "No scene active. Start a scene to track encounters.", cls: "empty-message" });
+      
+      const startBtn = section.createEl("button", {
+        text: "🎬 View Scenes",
+        cls: "mod-cta"
+      });
+      startBtn.addEventListener("click", async () => {
+        await this.app.workspace.openLinkText(adventures[0].path, "", false);
+      });
+      return;
+    }
+
+    // Show scene encounter info
+    const encounterCard = section.createEl("div", { cls: "encounter-card" });
+    encounterCard.createEl("strong", { text: `Scene ${currentScene.number}: ${currentScene.name}` });
+    
+    // Get scene file to check for encounter
+    const sceneFile = this.app.vault.getAbstractFileByPath(currentScene.path);
+    if (sceneFile instanceof TFile) {
+      const cache = this.app.metadataCache.getFileCache(sceneFile);
+      const fm = cache?.frontmatter;
+      
+      if (fm?.encounter_creatures && fm.encounter_creatures.length > 0) {
+        encounterCard.createEl("p", { text: `🐉 Creatures: ${fm.encounter_creatures.length}` });
+        
+        // List creatures
+        const creatureList = encounterCard.createEl("div", { cls: "creature-list" });
+        for (const creature of fm.encounter_creatures) {
+          const creatureItem = creatureList.createEl("div", { cls: "creature-item" });
+          creatureItem.createEl("span", { text: `• ${creature}` });
+        }
+      } else {
+        encounterCard.createEl("p", { text: "No creatures defined for this scene", cls: "empty-message" });
+      }
+    }
+
+    // Initiative Tracker integration
+    const trackerBtn = encounterCard.createEl("button", {
+      text: "⚔️ Open Initiative Tracker",
+      cls: "mod-cta"
+    });
+    trackerBtn.addEventListener("click", () => {
+      const initiativePlugin = (this.app as any).plugins?.getPlugin("initiative-tracker");
+      if (initiativePlugin) {
+        (this.app as any).commands?.executeCommandById("initiative-tracker:open-tracker");
+      } else {
+        new Notice("Initiative Tracker plugin not installed");
+      }
+    });
+
+    // Open scene button
+    const openSceneBtn = encounterCard.createEl("button", {
+      text: "📖 Open Scene",
+    });
+    openSceneBtn.addEventListener("click", async () => {
+      await this.app.workspace.openLinkText(currentScene.path, "", false);
+    });
   }
 
   async getActiveAdventures() {
