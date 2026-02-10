@@ -929,6 +929,33 @@
   transform: scale(0.95);
 }
 
+.dice-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+.dice-history-header h4 {
+  margin: 0;
+}
+
+.dice-clear-button {
+  padding: 3px 8px;
+  font-size: 11px;
+  background-color: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dice-clear-button:hover {
+  filter: brightness(1.2);
+}
+
 .dice-history {
   max-height: 150px;
   overflow-y: auto;

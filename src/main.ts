@@ -6641,6 +6641,7 @@ class SessionRunDashboardView extends ItemView {
   diceHistory: Array<{roll: string; result: number; timestamp: number}> = [];
   quickNotesContent: string = "";
   autoSaveInterval: number | null = null;
+  timerUpdateInterval: number | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -6838,12 +6839,32 @@ class SessionRunDashboardView extends ItemView {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   }
 
-  rollDice(diceType: string) {
-    const sides = parseInt(diceType.substring(1)); // Remove 'd' prefix
-    const result = Math.floor(Math.random() * sides) + 1;
+  async rollDice(diceType: string) {
+    // Try to use Dice Roller plugin if available
+    const diceRollerPlugin = (this.app as any).plugins?.getPlugin("obsidian-dice-roller");
+    
+    let result: number;
+    let rollDisplay = diceType;
+    
+    if (diceRollerPlugin) {
+      try {
+        const roller = await diceRollerPlugin.getRoller("1" + diceType);
+        await roller.roll();
+        result = roller.result;
+      } catch (error) {
+        console.error("Dice Roller plugin error:", error);
+        // Fallback to built-in roller
+        const sides = parseInt(diceType.substring(1));
+        result = Math.floor(Math.random() * sides) + 1;
+      }
+    } else {
+      // Built-in dice roller
+      const sides = parseInt(diceType.substring(1)); // Remove 'd' prefix
+      result = Math.floor(Math.random() * sides) + 1;
+    }
     
     this.diceHistory.unshift({
-      roll: diceType,
+      roll: rollDisplay,
       result: result,
       timestamp: Date.now()
     });
@@ -6915,7 +6936,12 @@ class SessionRunDashboardView extends ItemView {
     await this.renderQuickActions(bottomSection);
 
     // Update timers display every second
-    window.setInterval(() => {
+    // Clear previous interval if it exists
+    if (this.timerUpdateInterval) {
+      window.clearInterval(this.timerUpdateInterval);
+    }
+    
+    this.timerUpdateInterval = window.setInterval(() => {
       const timerDisplays = container.querySelectorAll('.timer-display');
       timerDisplays.forEach((display, index) => {
         if (this.timers[index]) {
@@ -6988,7 +7014,17 @@ class SessionRunDashboardView extends ItemView {
 
     // Dice history
     if (this.diceHistory.length > 0) {
-      section.createEl("h4", { text: "History" });
+      const historyHeader = section.createEl("div", { cls: "dice-history-header" });
+      historyHeader.createEl("h4", { text: "History" });
+      const clearBtn = historyHeader.createEl("button", {
+        text: "🗑️ Clear",
+        cls: "dice-clear-button"
+      });
+      clearBtn.addEventListener("click", () => {
+        this.diceHistory = [];
+        this.render();
+      });
+      
       const history = section.createEl("div", { cls: "dice-history" });
       
       for (const roll of this.diceHistory.slice(0, 10)) {
@@ -7082,7 +7118,19 @@ class SessionRunDashboardView extends ItemView {
       cls: "quick-action-button"
     });
     initiativeBtn.addEventListener("click", () => {
-      (this.app as any).commands?.executeCommandById("initiative-tracker:open-tracker");
+      const initiativePlugin = (this.app as any).plugins?.getPlugin("initiative-tracker");
+      if (!initiativePlugin) {
+        new Notice("Initiative Tracker plugin not installed or enabled");
+        return;
+      }
+      
+      const commands = (this.app as any).commands;
+      if (commands) {
+        const executed = commands.executeCommandById("initiative-tracker:open-tracker");
+        if (!executed) {
+          new Notice("Could not open Initiative Tracker. Command may have changed.");
+        }
+      }
     });
 
     // Create NPC
@@ -7261,6 +7309,12 @@ class SessionRunDashboardView extends ItemView {
     if (this.autoSaveInterval) {
       window.clearInterval(this.autoSaveInterval);
       this.autoSaveInterval = null;
+    }
+    
+    // Stop timer updates
+    if (this.timerUpdateInterval) {
+      window.clearInterval(this.timerUpdateInterval);
+      this.timerUpdateInterval = null;
     }
     
     // Save any unsaved notes
