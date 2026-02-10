@@ -28,10 +28,10 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
 // Current template versions - increment when templates change
 const TEMPLATE_VERSIONS = {
   world: "1.0.0",
-  session: "1.2.0", // Updated with interactive scene checkboxes
+  session: "1.2.1", // Fixed escaping issues in interactive scene checkboxes
   npc: "1.0.0",
   pc: "1.0.0",
-  adventure: "1.1.0", // Updated with interactive scene checkboxes
+  adventure: "1.1.1", // Fixed escaping issues in interactive scene checkboxes
   scene: "1.2.0", // Updated with encounter_creatures field
   faction: "1.0.0",
   item: "1.1.0", // Updated with Edit/Delete buttons
@@ -544,10 +544,10 @@ deleteBtn.addEventListener("click", () => {
   }
 
   /**
-   * Apply session v1.2.0 migration (Interactive scene checkboxes)
+   * Apply session v1.2.1 migration (Interactive scene checkboxes - fixed escaping)
    */
-  async migrateSessionTo1_2_0(file: TFile): Promise<void> {
-    console.log(`Migrating session ${file.path} to v1.2.0`);
+  async migrateSessionTo1_2_1(file: TFile): Promise<void> {
+    console.log(`Migrating session ${file.path} to v1.2.1`);
 
     const newDataviewjsBlock = `\`\`\`dataviewjs
 // Get current session's adventure (if linked)
@@ -644,16 +644,16 @@ if (adventureLink) {
     }
 
     // Update template version
-    await this.updateTemplateVersion(file, "1.2.0");
+    await this.updateTemplateVersion(file, "1.2.1");
 
-    console.log(`Session ${file.path} migrated to v1.2.0 successfully`);
+    console.log(`Session ${file.path} migrated to v1.2.1 successfully`);
   }
 
   /**
-   * Apply adventure v1.1.0 migration (Interactive scene checkboxes)
+   * Apply adventure v1.1.1 migration (Interactive scene checkboxes - fixed escaping)
    */
-  async migrateAdventureTo1_1_0(file: TFile): Promise<void> {
-    console.log(`Migrating adventure ${file.path} to v1.1.0`);
+  async migrateAdventureTo1_1_1(file: TFile): Promise<void> {
+    console.log(`Migrating adventure ${file.path} to v1.1.1`);
 
     const newScenesBlock = `\`\`\`dataviewjs
 // Get all scenes for this adventure
@@ -784,9 +784,9 @@ if (allScenes.length === 0) {
     }
 
     // Update template version
-    await this.updateTemplateVersion(file, "1.1.0");
+    await this.updateTemplateVersion(file, "1.1.1");
 
-    console.log(`Adventure ${file.path} migrated to v1.1.0 successfully`);
+    console.log(`Adventure ${file.path} migrated to v1.1.1 successfully`);
   }
 
   /**
@@ -854,16 +854,16 @@ if (allScenes.length === 0) {
 
       // Session-specific migrations
       if (fileType === "session") {
-        if (this.compareVersions(currentVersion, "1.2.0") < 0) {
-          await this.migrateSessionTo1_2_0(file);
+        if (this.compareVersions(currentVersion, "1.2.1") < 0) {
+          await this.migrateSessionTo1_2_1(file);
           return true;
         }
       }
 
       // Adventure-specific migrations
       if (fileType === "adventure") {
-        if (this.compareVersions(currentVersion, "1.1.0") < 0) {
-          await this.migrateAdventureTo1_1_0(file);
+        if (this.compareVersions(currentVersion, "1.1.1") < 0) {
+          await this.migrateAdventureTo1_1_1(file);
           return true;
         }
       }
