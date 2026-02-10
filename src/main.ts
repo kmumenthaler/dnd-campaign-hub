@@ -9449,7 +9449,7 @@ class SceneCreationModal extends Modal {
         // Get original scene number from filename or frontmatter
         const originalBasename = originalFile.basename;
         const originalNumberMatch = originalBasename.match(/^Scene\s+(\d+)\s+-/);
-        const originalSceneNum = originalNumberMatch ? parseInt(originalNumberMatch[1]) : sceneNum;
+        const originalSceneNum = (originalNumberMatch && originalNumberMatch[1]) ? parseInt(originalNumberMatch[1]) : sceneNum;
 
         // Check if scene number changed
         const numberChanged = originalSceneNum !== sceneNum;
