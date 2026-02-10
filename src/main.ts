@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, requestUrl } from "obsidian";
+import { App, ItemView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
 import {
   WORLD_TEMPLATE,
   SESSION_GM_TEMPLATE,
@@ -3111,6 +3111,8 @@ _Add notes about tactics, environment, or special conditions here._
   }
 }
 
+const SESSION_PREP_VIEW_TYPE = "session-prep-dashboard";
+
 export default class DndCampaignHubPlugin extends Plugin {
   settings!: DndCampaignHubSettings;
   SessionCreationModal = SessionCreationModal;
@@ -3119,6 +3121,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+
+    // Register the Session Prep Dashboard view
+    this.registerView(
+      SESSION_PREP_VIEW_TYPE,
+      (leaf) => new SessionPrepDashboardView(leaf, this)
+    );
 
     // Initialize the migration manager
     this.migrationManager = new MigrationManager(this.app, this);
@@ -3181,6 +3189,12 @@ export default class DndCampaignHubPlugin extends Plugin {
       id: "create-session",
       name: "Create New Session",
       callback: () => this.createSession(),
+    });
+
+    this.addCommand({
+      id: "session-prep-dashboard",
+      name: "Open Session Prep Dashboard",
+      callback: () => this.openSessionPrepDashboard(),
     });
 
     this.addCommand({
@@ -4378,6 +4392,33 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const campaignPath = this.detectCampaignFromActiveFile() || this.settings.currentCampaign;
 		// Open session creation modal
 		new SessionCreationModal(this.app, this, undefined, campaignPath).open();
+	}
+
+	async openSessionPrepDashboard() {
+		// Detect campaign from active file or use default
+		const campaignPath = this.detectCampaignFromActiveFile() || this.settings.currentCampaign;
+		
+		// Check if view is already open
+		const existing = this.app.workspace.getLeavesOfType(SESSION_PREP_VIEW_TYPE);
+		if (existing.length > 0 && existing[0]) {
+			// Reveal existing view and update campaign
+			this.app.workspace.revealLeaf(existing[0]);
+			const view = existing[0].view as SessionPrepDashboardView;
+			view.setCampaign(campaignPath);
+			return;
+		}
+
+		// Open in right pane
+		const leaf = this.app.workspace.getRightLeaf(false);
+		if (leaf) {
+			await leaf.setViewState({
+				type: SESSION_PREP_VIEW_TYPE,
+				active: true,
+			});
+			const view = leaf.view as SessionPrepDashboardView;
+			view.setCampaign(campaignPath);
+			this.app.workspace.revealLeaf(leaf);
+		}
 	}
 
 	/**
@@ -6030,6 +6071,499 @@ class NPCCreationModal extends Modal {
   onClose() {
     const { contentEl } = this;
     contentEl.empty();
+  }
+}
+
+/**
+ * Session Prep Dashboard - Central hub for GM session preparation (View)
+ */
+class SessionPrepDashboardView extends ItemView {
+  plugin: DndCampaignHubPlugin;
+  campaignPath: string;
+
+  constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
+    super(leaf);
+    this.plugin = plugin;
+    this.campaignPath = plugin.settings.currentCampaign;
+  }
+
+  getViewType(): string {
+    return SESSION_PREP_VIEW_TYPE;
+  }
+
+  getDisplayText(): string {
+    return "Session Prep Dashboard";
+  }
+
+  getIcon(): string {
+    return "clipboard-list";
+  }
+
+  setCampaign(campaignPath: string) {
+    this.campaignPath = campaignPath;
+    this.render();
+  }
+
+  async onOpen() {
+    await this.render();
+  }
+
+  async render() {
+    const container = this.containerEl.children[1] as HTMLElement;
+    container.empty();
+    container.addClass("session-prep-dashboard");
+
+    // Header
+    const header = container.createEl("div", { cls: "dashboard-header" });
+    header.createEl("h2", { text: "📋 Session Prep Dashboard" });
+    
+    const campaignName = this.campaignPath.split('/').pop() || "Unknown Campaign";
+    header.createEl("p", { 
+      text: `Campaign: ${campaignName}`,
+      cls: "dashboard-campaign-name"
+    });
+
+    // Main content container
+    const mainContainer = container.createEl("div", { cls: "dashboard-main" });
+
+    // Left column - Adventures & Scenes
+    const leftColumn = mainContainer.createEl("div", { cls: "dashboard-column-left" });
+    await this.renderAdventuresAndScenes(leftColumn);
+
+    // Right column - Quick Reference
+    const rightColumn = mainContainer.createEl("div", { cls: "dashboard-column-right" });
+    await this.renderQuickReference(rightColumn);
+
+    // Bottom - Session Notes
+    const bottomSection = container.createEl("div", { cls: "dashboard-bottom" });
+    await this.renderSessionNotes(bottomSection);
+
+    // Action buttons
+    const actions = container.createEl("div", { cls: "dashboard-actions" });
+    
+    const createSessionBtn = actions.createEl("button", {
+      text: "📝 Create New Session",
+      cls: "mod-cta"
+    });
+    createSessionBtn.addEventListener("click", () => {
+      this.plugin.createSession();
+    });
+
+    const refreshBtn = actions.createEl("button", { text: "🔄 Refresh" });
+    refreshBtn.addEventListener("click", () => this.render());
+  }
+
+  async renderAdventuresAndScenes(container: HTMLElement) {
+    container.createEl("h3", { text: "🗺️ Active Adventures" });
+
+    // Get all adventures in this campaign
+    const adventures = await this.getActiveAdventures();
+
+    if (adventures.length === 0) {
+      container.createEl("p", { text: "No active adventures found." });
+      return;
+    }
+
+    for (const adventure of adventures) {
+      const adventureCard = container.createEl("div", { cls: "dashboard-adventure-card" });
+      
+      // Adventure header
+      const adventureHeader = adventureCard.createEl("div", { cls: "adventure-header" });
+      const adventureLink = adventureHeader.createEl("a", {
+        cls: "adventure-title",
+        href: adventure.path
+      });
+      adventureLink.textContent = `${adventure.name}`;
+      adventureLink.addEventListener("click", async (e) => {
+        e.preventDefault();
+        await this.app.workspace.openLinkText(adventure.path, "", false);
+      });
+
+      const statusBadge = adventureHeader.createEl("span", {
+        cls: `status-badge status-${adventure.status}`,
+        text: adventure.status
+      });
+
+      // Get scenes for this adventure
+      const scenes = await this.getScenesForAdventure(adventure.path);
+      
+      if (scenes.length === 0) {
+        adventureCard.createEl("p", { text: "No scenes yet" });
+        continue;
+      }
+
+      // Find next scene (first not-completed)
+      const nextScene = scenes.find(s => s.status !== "completed") || scenes[0];
+      const completedCount = scenes.filter(s => s.status === "completed").length;
+
+      // Progress bar
+      const progressContainer = adventureCard.createEl("div", { cls: "progress-container" });
+      progressContainer.createEl("span", { 
+        text: `Progress: ${completedCount}/${scenes.length} scenes completed`
+      });
+      const progressBar = progressContainer.createEl("div", { cls: "progress-bar" });
+      const progressFill = progressBar.createEl("div", { cls: "progress-fill" });
+      progressFill.style.width = `${(completedCount / scenes.length) * 100}%`;
+
+      // Next scene card
+      if (nextScene) {
+        const nextSceneCard = adventureCard.createEl("div", { cls: "next-scene-card" });
+        nextSceneCard.createEl("strong", { text: "🎬 Next Up:" });
+        
+        const sceneLink = nextSceneCard.createEl("a", {
+          cls: "scene-link",
+          href: nextScene.path
+        });
+        sceneLink.textContent = `Scene ${nextScene.number}: ${nextScene.name}`;
+        sceneLink.addEventListener("click", async (e) => {
+          e.preventDefault();
+          await this.app.workspace.openLinkText(nextScene.path, "", false);
+        });
+
+        // Scene preview
+        const scenePreview = nextSceneCard.createEl("div", { cls: "scene-preview" });
+        scenePreview.createEl("span", { 
+          text: `⏱️ ${nextScene.duration} | ${this.getSceneIcon(nextScene.type)} ${nextScene.type} | 🎲 ${nextScene.difficulty}`
+        });
+
+        // Quick scene details if available
+        if (nextScene.goal) {
+          scenePreview.createEl("p", { 
+            text: `Goal: ${nextScene.goal}`,
+            cls: "scene-goal"
+          });
+        }
+
+        // Open scene button
+        const openBtn = nextSceneCard.createEl("button", {
+          text: "Open Scene",
+          cls: "mod-cta"
+        });
+        openBtn.addEventListener("click", async () => {
+          await this.app.workspace.openLinkText(nextScene.path, "", false);
+        });
+      }
+
+      // Upcoming scenes (collapsed by default)
+      if (scenes.length > 1) {
+        const upcomingHeader = adventureCard.createEl("div", { cls: "upcoming-header" });
+        const toggleBtn = upcomingHeader.createEl("button", {
+          text: `▶ Show ${scenes.length - 1} more scenes`,
+          cls: "upcoming-toggle"
+        });
+
+        const upcomingList = adventureCard.createEl("div", { cls: "upcoming-scenes-list" });
+        upcomingList.style.display = "none";
+
+        for (const scene of scenes) {
+          if (scene.path === nextScene?.path) continue; // Skip the next scene
+
+          const sceneItem = upcomingList.createEl("div", { cls: "scene-list-item" });
+          const statusIcon = scene.status === "completed" ? "✅" : "⬜";
+          const sceneItemLink = sceneItem.createEl("a", { href: scene.path });
+          sceneItemLink.textContent = `${statusIcon} Scene ${scene.number}: ${scene.name}`;
+          sceneItemLink.addEventListener("click", async (e) => {
+            e.preventDefault();
+            await this.app.workspace.openLinkText(scene.path, "", false);
+          });
+
+          sceneItem.createEl("span", {
+            text: ` - ${this.getSceneIcon(scene.type)} ${scene.type}`,
+            cls: "scene-type"
+          });
+        }
+
+        let isExpanded = false;
+        toggleBtn.addEventListener("click", () => {
+          isExpanded = !isExpanded;
+          upcomingList.style.display = isExpanded ? "block" : "none";
+          toggleBtn.textContent = isExpanded 
+            ? `▼ Hide scenes` 
+            : `▶ Show ${scenes.length - 1} more scenes`;
+        });
+      }
+    }
+  }
+
+  async renderQuickReference(container: HTMLElement) {
+    container.createEl("h3", { text: "🔖 Quick Reference" });
+
+    // Recent NPCs
+    const npcsSection = container.createEl("div", { cls: "quick-ref-section" });
+    npcsSection.createEl("h4", { text: "👥 Recent NPCs" });
+    await this.renderRecentNPCs(npcsSection);
+
+    // Quick links
+    const linksSection = container.createEl("div", { cls: "quick-ref-section" });
+    linksSection.createEl("h4", { text: "⚡ Quick Actions" });
+    
+    const quickLinks = [
+      { text: "📝 Create New Session", cmd: "dnd-campaign-hub:create-session" },
+      { text: "🎬 Create New Scene", cmd: "dnd-campaign-hub:create-scene" },
+      { text: "👤 Create New NPC", cmd: "dnd-campaign-hub:create-npc" },
+      { text: "⚔️ Create Encounter", cmd: "dnd-campaign-hub:create-encounter" }
+    ];
+
+    for (const link of quickLinks) {
+      const btn = linksSection.createEl("button", {
+        text: link.text,
+        cls: "quick-action-btn"
+      });
+      btn.addEventListener("click", () => {
+        (this.app as any).commands?.executeCommandById(link.cmd);
+      });
+    }
+  }
+
+  async renderRecentNPCs(container: HTMLElement) {
+    // Get NPCs from the campaign
+    const npcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/NPCs`);
+    
+    if (!(npcsFolder instanceof TFolder)) {
+      container.createEl("p", { text: "No NPCs found" });
+      return;
+    }
+
+    const npcFiles: TFile[] = [];
+    for (const item of npcsFolder.children) {
+      if (item instanceof TFile && item.extension === "md") {
+        npcFiles.push(item);
+      }
+    }
+
+    // Sort by modification time (most recent first)
+    npcFiles.sort((a, b) => b.stat.mtime - a.stat.mtime);
+
+    // Show top 5
+    const recentNPCs = npcFiles.slice(0, 5);
+
+    if (recentNPCs.length === 0) {
+      container.createEl("p", { text: "No NPCs yet" });
+      return;
+    }
+
+    const npcList = container.createEl("div", { cls: "npc-list" });
+    for (const npc of recentNPCs) {
+      const npcItem = npcList.createEl("div", { cls: "npc-item" });
+      const npcLink = npcItem.createEl("a", { href: npc.path });
+      npcLink.textContent = `👤 ${npc.basename}`;
+      npcLink.addEventListener("click", async (e) => {
+        e.preventDefault();
+        await this.app.workspace.openLinkText(npc.path, "", false);
+      });
+    }
+  }
+
+  async renderSessionNotes(container: HTMLElement) {
+    container.createEl("h3", { text: "📓 Session Notes" });
+
+    // Get recent sessions
+    const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
+    
+    if (!(sessionsFolder instanceof TFolder)) {
+      container.createEl("p", { text: "No sessions folder found" });
+      return;
+    }
+
+    const sessionFiles: TFile[] = [];
+    for (const item of sessionsFolder.children) {
+      if (item instanceof TFile && item.extension === "md") {
+        sessionFiles.push(item);
+      }
+    }
+
+    // Sort by session number (descending)
+    sessionFiles.sort((a, b) => {
+      const aNum = this.extractSessionNumber(a.basename);
+      const bNum = this.extractSessionNumber(b.basename);
+      return bNum - aNum;
+    });
+
+    const lastSession = sessionFiles[0];
+    if (!lastSession) {
+      container.createEl("p", { text: "No sessions yet" });
+      return;
+    }
+
+    // Show last session summary
+    const sessionCard = container.createEl("div", { cls: "session-card" });
+    const sessionLink = sessionCard.createEl("a", { href: lastSession.path });
+    sessionLink.textContent = `Last Session: ${lastSession.basename}`;
+    sessionLink.addEventListener("click", async (e) => {
+      e.preventDefault();
+      await this.app.workspace.openLinkText(lastSession.path, "", false);
+    });
+
+    // Try to extract summary from last session
+    try {
+      const content = await this.app.vault.read(lastSession);
+      const summaryMatch = content.match(/##\s*Summary\s*\n\n([\s\S]*?)(?=\n##|$)/);
+      if (summaryMatch && summaryMatch[1]) {
+        const summary = summaryMatch[1].trim().substring(0, 200);
+        sessionCard.createEl("p", {
+          text: summary + (summaryMatch[1].length > 200 ? "..." : ""),
+          cls: "session-summary"
+        });
+      }
+    } catch (error) {
+      console.error("Error reading session file:", error);
+    }
+  }
+
+  async getActiveAdventures(): Promise<Array<{
+    path: string;
+    name: string;
+    status: string;
+  }>> {
+    const adventures: Array<{ path: string; name: string; status: string }> = [];
+    const adventuresFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Adventures`);
+
+    if (!(adventuresFolder instanceof TFolder)) {
+      return adventures;
+    }
+
+    for (const item of adventuresFolder.children) {
+      if (item instanceof TFile && item.extension === "md") {
+        const cache = this.app.metadataCache.getFileCache(item);
+        const status = cache?.frontmatter?.status || "planning";
+        
+        // Only show active adventures (not completed or on-hold)
+        if (status === "active" || status === "in-progress" || status === "planning") {
+          adventures.push({
+            path: item.path,
+            name: item.basename,
+            status: status
+          });
+        }
+      } else if (item instanceof TFolder) {
+        // Check for adventure in folder structure
+        const adventureFile = this.app.vault.getAbstractFileByPath(`${item.path}/${item.name}.md`);
+        if (adventureFile instanceof TFile) {
+          const cache = this.app.metadataCache.getFileCache(adventureFile);
+          const status = cache?.frontmatter?.status || "planning";
+          
+          if (status === "active" || status === "in-progress" || status === "planning") {
+            adventures.push({
+              path: adventureFile.path,
+              name: item.name,
+              status: status
+            });
+          }
+        }
+      }
+    }
+
+    return adventures;
+  }
+
+  async getScenesForAdventure(adventurePath: string): Promise<Array<{
+    path: string;
+    number: number;
+    name: string;
+    type: string;
+    duration: string;
+    difficulty: string;
+    status: string;
+    goal: string;
+  }>> {
+    const scenes: Array<any> = [];
+    const adventureFile = this.app.vault.getAbstractFileByPath(adventurePath);
+
+    if (!(adventureFile instanceof TFile)) return scenes;
+
+    const adventureFolder = adventureFile.parent;
+    if (!adventureFolder) return scenes;
+
+    // Check for flat structure
+    const flatScenesFolder = this.app.vault.getAbstractFileByPath(
+      `${adventureFolder.path}/${adventureFile.basename} - Scenes`
+    );
+
+    // Check for folder structure
+    const folderScenesPath = `${adventureFolder.path}/${adventureFile.basename}`;
+    const folderStructure = this.app.vault.getAbstractFileByPath(folderScenesPath);
+
+    let sceneFolders: TFolder[] = [];
+
+    if (flatScenesFolder instanceof TFolder) {
+      sceneFolders.push(flatScenesFolder);
+    } else if (folderStructure instanceof TFolder) {
+      for (const child of folderStructure.children) {
+        if (child instanceof TFolder && child.name.startsWith("Act ")) {
+          sceneFolders.push(child);
+        }
+      }
+      if (sceneFolders.length === 0) {
+        sceneFolders.push(folderStructure);
+      }
+    } else {
+      // Check if the adventure folder itself contains Act folders
+      // (case where adventure file is inside a folder with the same name)
+      for (const child of adventureFolder.children) {
+        if (child instanceof TFolder && child.name.startsWith("Act ")) {
+          sceneFolders.push(child);
+        }
+      }
+      // If no Act folders, check the adventure folder itself for scenes
+      if (sceneFolders.length === 0) {
+        for (const child of adventureFolder.children) {
+          if (child instanceof TFile && child.extension === "md" && 
+              child.path !== adventurePath && 
+              child.basename.match(/^Scene\s+\d+/)) {
+            sceneFolders.push(adventureFolder);
+            break;
+          }
+        }
+      }
+    }
+
+    // Scan all scene folders
+    for (const folder of sceneFolders) {
+      for (const item of folder.children) {
+        if (item instanceof TFile && item.extension === "md") {
+          const match = item.basename.match(/^Scene\s+(\d+)\s+-\s+(.+)$/);
+          if (match && match[1] && match[2]) {
+            const cache = this.app.metadataCache.getFileCache(item);
+            const frontmatter = cache?.frontmatter;
+
+            scenes.push({
+              path: item.path,
+              number: parseInt(match[1]),
+              name: match[2],
+              type: frontmatter?.scene_type || "exploration",
+              duration: frontmatter?.duration || "?",
+              difficulty: frontmatter?.difficulty || "medium",
+              status: frontmatter?.status || "not-started",
+              goal: ""  // We'll extract this if needed
+            });
+          }
+        }
+      }
+    }
+
+    // Sort by scene number
+    scenes.sort((a, b) => a.number - b.number);
+    return scenes;
+  }
+
+  getSceneIcon(type: string): string {
+    const icons: Record<string, string> = {
+      social: "🗣️",
+      combat: "⚔️",
+      exploration: "🔍",
+      puzzle: "🧩",
+      montage: "🎬"
+    };
+    return icons[type] || "📝";
+  }
+
+  extractSessionNumber(filename: string): number {
+    const match = filename.match(/Session\s+(\d+)/i);
+    return match && match[1] ? parseInt(match[1]) : 0;
+  }
+
+  async onClose() {
+    // Cleanup when view is closed
   }
 }
 

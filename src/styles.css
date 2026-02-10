@@ -458,3 +458,330 @@
 .dnd-difficulty-hard { background-color: #ff8800; }
 .dnd-difficulty-deadly { background-color: #ff0000; }
 .dnd-difficulty-tpk { background-color: #880000; }
+
+/* Session Prep Dashboard */
+.session-prep-dashboard .modal {
+  width: 90%;
+  max-width: 1200px;
+  height: 80vh;
+  max-height: 800px;
+}
+
+.session-prep-dashboard .modal-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-header {
+  border-bottom: 2px solid var(--background-modifier-border);
+  padding-bottom: 15px;
+  margin-bottom: 20px;
+}
+
+.dashboard-header h2 {
+  margin: 0 0 8px 0;
+  color: var(--text-normal);
+}
+
+.dashboard-campaign-name {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.dashboard-main {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  flex: 1;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.dashboard-column-left,
+.dashboard-column-right {
+  overflow-y: auto;
+  padding-right: 10px;
+}
+
+.dashboard-column-left h3,
+.dashboard-column-right h3 {
+  margin-top: 0;
+  color: var(--text-normal);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 8px;
+}
+
+.dashboard-bottom {
+  border-top: 2px solid var(--background-modifier-border);
+  padding-top: 15px;
+  margin-bottom: 15px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.dashboard-bottom h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.dashboard-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Adventure Cards */
+.dashboard-adventure-card {
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 15px;
+}
+
+.adventure-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.adventure-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--text-accent);
+  text-decoration: none;
+}
+
+.adventure-title:hover {
+  color: var(--text-accent-hover);
+}
+
+.status-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.status-active,
+.status-in-progress {
+  background-color: rgba(0, 170, 0, 0.3);
+  color: #00ff00;
+}
+
+.status-planning {
+  background-color: rgba(255, 136, 0, 0.3);
+  color: #ff8800;
+}
+
+.status-completed {
+  background-color: rgba(136, 136, 136, 0.3);
+  color: #888888;
+}
+
+/* Progress Bar */
+.progress-container {
+  margin: 10px 0;
+}
+
+.progress-container span {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+}
+
+.progress-bar {
+  height: 8px;
+  background-color: var(--background-modifier-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: var(--interactive-accent);
+  transition: width 0.3s ease;
+}
+
+/* Next Scene Card */
+.next-scene-card {
+  background-color: var(--background-primary);
+  border: 2px solid var(--interactive-accent);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 10px 0;
+}
+
+.next-scene-card strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-normal);
+}
+
+.scene-link {
+  font-size: 15px;
+  font-weight: bold;
+  color: var(--text-accent);
+  text-decoration: none;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.scene-link:hover {
+  color: var(--text-accent-hover);
+}
+
+.scene-preview {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.scene-goal {
+  margin-top: 8px;
+  padding: 8px;
+  background-color: var(--background-secondary);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 3px;
+  font-style: italic;
+}
+
+.next-scene-card button {
+  margin-top: 8px;
+}
+
+/* Upcoming Scenes  */
+.upcoming-header {
+  margin: 15px 0 10px 0;
+}
+
+.upcoming-toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 5px 0;
+}
+
+.upcoming-toggle:hover {
+  color: var(--text-normal);
+}
+
+.upcoming-scenes-list {
+  margin-left: 15px;
+}
+
+.scene-list-item {
+  padding: 6px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--background-modifier-border-hover);
+}
+
+.scene-list-item:last-child {
+  border-bottom: none;
+}
+
+.scene-list-item a {
+  color: var(--text-normal);
+  text-decoration: none;
+}
+
+.scene-list-item a:hover {
+  color: var(--text-accent);
+}
+
+.scene-type {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Quick Reference */
+.quick-ref-section {
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 15px;
+}
+
+.quick-ref-section h4 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: var(--text-normal);
+}
+
+.npc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.npc-item a {
+  color: var(--text-normal);
+  text-decoration: none;
+  font-size: 13px;
+  display: block;
+  padding: 4px;
+  border-radius: 3px;
+}
+
+.npc-item a:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-accent);
+}
+
+.quick-action-btn {
+  width: 100%;
+  padding: 8px;
+  margin: 4px 0;
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+
+.quick-action-btn:hover {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+/* Session Notes */
+.session-card {
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.session-card a {
+  color: var(--text-accent);
+  text-decoration: none;
+  font-weight: bold;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.session-card a:hover {
+  color: var(--text-accent-hover);
+}
+
+.session-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.4;
+  margin: 8px 0 0 0;
+}
