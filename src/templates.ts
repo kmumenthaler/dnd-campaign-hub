@@ -147,7 +147,7 @@ SORT file.ctime DESC
 
 export const SESSION_GM_TEMPLATE = `---
 type: session
-template_version: 1.0.0
+template_version: 1.1.0
 campaign: 
 world: 
 adventure: 
@@ -277,7 +277,7 @@ if (adventureLink) {
 
 export const SESSION_PLAYER_TEMPLATE = `---
 type: session
-template_version: 1.0.0
+template_version: 1.1.0
 campaign: 
 world: 
 sessionNum: 

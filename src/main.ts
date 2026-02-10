@@ -28,7 +28,7 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
 // Current template versions - increment when templates change
 const TEMPLATE_VERSIONS = {
   world: "1.0.0",
-  session: "1.0.0",
+  session: "1.1.0", // Updated with automatic recap from previous session
   npc: "1.0.0",
   pc: "1.0.0",
   adventure: "1.0.0",
