@@ -6733,15 +6733,17 @@ class SessionRunDashboardView extends ItemView {
     // Find current session file
     await this.detectCurrentSession();
     
-    // Set read-only mode by default
-    if (this.readOnlyMode) {
-      this.enableReadOnlyMode();
-    }
+    await this.render();
+    
+    // Enable read-only mode after a short delay to ensure workspace is ready
+    setTimeout(() => {
+      if (this.readOnlyMode) {
+        this.enableReadOnlyMode();
+      }
+    }, 300);
 
     // Start auto-save for quick notes
     this.startAutoSave();
-    
-    await this.render();
   }
 
   async detectCurrentSession() {
@@ -6997,39 +6999,50 @@ class SessionRunDashboardView extends ItemView {
     const mainLeaf = this.app.workspace.getMostRecentLeaf();
     if (!mainLeaf) return;
 
-    // Split workspace for session layout
-    // Layout: [Session Note] [Adventure/Scene] 
-    const rightLeaf = this.app.workspace.getLeaf('split', 'vertical');
-    
-    // Open current session in left pane
-    if (this.currentSessionFile) {
-      await mainLeaf.openFile(this.currentSessionFile);
-    }
-
     // Get active adventure and scene
     const adventures = await this.getActiveAdventures();
     const adventure = adventures.length > 0 ? adventures[0] : null;
     
     if (adventure) {
-      const adventureFile = this.app.vault.getAbstractFileByPath(adventure.path);
+      const scenes = await this.getScenesForAdventure(adventure.path);
+      const currentScene = scenes.find(s => s.status === "in-progress") || 
+                          scenes.find(s => s.status === "not-started");
       
-      if (adventureFile instanceof TFile) {
-        // Open adventure in right pane
-        await rightLeaf.openFile(adventureFile);
+      if (currentScene) {
+        // Open scene in main pane (largest view)
+        const sceneFile = this.app.vault.getAbstractFileByPath(currentScene.path);
+        if (sceneFile instanceof TFile) {
+          await mainLeaf.openFile(sceneFile);
+        }
         
-        // Check for active scene
-        const scenes = await this.getScenesForAdventure(adventure.path);
-        const currentScene = scenes.find(s => s.status === "in-progress");
+        // Split right for adventure
+        const adventureLeaf = this.app.workspace.getLeaf('split', 'vertical');
+        const adventureFile = this.app.vault.getAbstractFileByPath(adventure.path);
+        if (adventureFile instanceof TFile) {
+          await adventureLeaf.openFile(adventureFile);
+        }
         
-        if (currentScene) {
-          // Split right pane to show scene below adventure
-          const sceneLeaf = this.app.workspace.getLeaf('split', 'horizontal');
-          const sceneFile = this.app.vault.getAbstractFileByPath(currentScene.path);
-          if (sceneFile instanceof TFile) {
-            await sceneLeaf.openFile(sceneFile);
-          }
+        // Split bottom of adventure pane for session notes
+        if (this.currentSessionFile) {
+          const sessionLeaf = this.app.workspace.getLeaf('split', 'horizontal');
+          await sessionLeaf.openFile(this.currentSessionFile);
+        }
+      } else {
+        // No scene available, open adventure in main
+        const adventureFile = this.app.vault.getAbstractFileByPath(adventure.path);
+        if (adventureFile instanceof TFile) {
+          await mainLeaf.openFile(adventureFile);
+        }
+        
+        // Open session in split if available
+        if (this.currentSessionFile) {
+          const sessionLeaf = this.app.workspace.getLeaf('split', 'vertical');
+          await sessionLeaf.openFile(this.currentSessionFile);
         }
       }
+    } else if (this.currentSessionFile) {
+      // No adventure, just open session
+      await mainLeaf.openFile(this.currentSessionFile);
     }
 
     // Try to open Initiative Tracker if available
@@ -7040,6 +7053,13 @@ class SessionRunDashboardView extends ItemView {
         (this.app as any).commands?.executeCommandById("initiative-tracker:open-tracker");
       }, 500);
     }
+
+    // Enable read-only mode for the opened files
+    setTimeout(() => {
+      if (this.readOnlyMode) {
+        this.enableReadOnlyMode();
+      }
+    }, 800);
 
     new Notice("Session layout configured!");
   }
