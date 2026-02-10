@@ -28,10 +28,10 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
 // Current template versions - increment when templates change
 const TEMPLATE_VERSIONS = {
   world: "1.0.0",
-  session: "1.1.0", // Updated with automatic recap from previous session
+  session: "1.2.0", // Updated with interactive scene checkboxes
   npc: "1.0.0",
   pc: "1.0.0",
-  adventure: "1.0.0",
+  adventure: "1.1.0", // Updated with interactive scene checkboxes
   scene: "1.2.0", // Updated with encounter_creatures field
   faction: "1.0.0",
   item: "1.1.0", // Updated with Edit/Delete buttons
@@ -284,6 +284,35 @@ class MigrationManager {
   }
 
   /**
+   * Replace a dataviewjs code block that contains a specific marker text
+   */
+  async replaceDataviewjsBlock(
+    file: TFile,
+    markerText: string,
+    newBlock: string
+  ): Promise<boolean> {
+    const content = await this.app.vault.read(file);
+
+    // Find dataviewjs blocks
+    const blockRegex = /```dataviewjs\n([\s\S]*?)```/g;
+    let match;
+    let found = false;
+    
+    while ((match = blockRegex.exec(content)) !== null) {
+      if (match[1].includes(markerText)) {
+        // Replace this block
+        const oldBlock = match[0];
+        const newContent = content.replace(oldBlock, newBlock);
+        await this.app.vault.modify(file, newContent);
+        found = true;
+        break;
+      }
+    }
+
+    return found;
+  }
+
+  /**
    * Apply scene v1.1.0 migration (Initiative Tracker integration)
    */
   async migrateSceneTo1_1_0(file: TFile): Promise<void> {
@@ -515,6 +544,252 @@ deleteBtn.addEventListener("click", () => {
   }
 
   /**
+   * Apply session v1.2.0 migration (Interactive scene checkboxes)
+   */
+  async migrateSessionTo1_2_0(file: TFile): Promise<void> {
+    console.log(`Migrating session ${file.path} to v1.2.0`);
+
+    const newDataviewjsBlock = `\`\`\`dataviewjs
+// Get current session's adventure (if linked)
+const sessionFile = dv.current();
+let adventureLink = sessionFile.adventure;
+
+// Parse wikilink if present: "[[path]]" -> path
+if (adventureLink && typeof adventureLink === 'string') {
+  const match = adventureLink.match(/\\[\\[(.+?)\\]\\]/);
+  if (match) adventureLink = match[1];
+}
+
+if (adventureLink) {
+  // Get the adventure file
+  const adventurePage = dv.page(adventureLink);
+  
+  if (adventurePage) {
+    const adventureName = adventurePage.name || adventurePage.file.name;
+    const campaignFolder = adventurePage.campaign;
+    const adventureFolder = adventurePage.file.folder;
+    
+    // Find scenes in both flat and folder structures
+    let scenesFlat = dv.pages(\\\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\\\`)
+      .where(p => p.file.name.startsWith("Scene"));
+    let scenesFolder = dv.pages(\\\`"\${adventureFolder}"\\\`)
+      .where(p => p.file.name.startsWith("Scene"));
+    
+    let allScenes = [...scenesFlat, ...scenesFolder];
+    
+    if (allScenes.length > 0) {
+      // Sort by scene number
+      allScenes.sort((a, b) => {
+        const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\\\s+(\\\\d+)/)?.[1] || 0);
+        const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\\\s+(\\\\d+)/)?.[1] || 0);
+        return aNum - bNum;
+      });
+      
+      dv.header(4, "Adventure Scenes");
+      for (const scene of allScenes) {
+        const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
+        const duration = scene.duration || "?min";
+        const type = scene.type || "?";
+        
+        // Create clickable status button
+        const sceneDiv = dv.el('div', '', { cls: 'scene-item' });
+        const statusBtn = dv.el('button', status, { container: sceneDiv });
+        statusBtn.style.border = 'none';
+        statusBtn.style.background = 'transparent';
+        statusBtn.style.cursor = 'pointer';
+        statusBtn.style.fontSize = '1.2em';
+        statusBtn.title = 'Click to change status';
+        statusBtn.onclick = async () => {
+          const file = app.vault.getAbstractFileByPath(scene.file.path);
+          if (file) {
+            const content = await app.vault.read(file);
+            const currentStatus = scene.status || 'not-started';
+            const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
+                               currentStatus === 'in-progress' ? 'completed' : 'not-started';
+            const newContent = content.replace(
+              /^status:\\\\s*.+$/m,
+              \\\`status: \${nextStatus}\\\`
+            );
+            await app.vault.modify(file, newContent);
+          }
+        };
+        dv.span(' ', { container: sceneDiv });
+        dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
+        dv.span(\\\` - \\\\\\\`\${duration} | \${type}\\\\\\\`\\\`, { container: sceneDiv });
+      }
+    }
+  }
+} else {
+  dv.paragraph("*No adventure linked to this session.*");
+  dv.paragraph("To link an adventure, add it to the frontmatter:");
+  dv.paragraph(\\\`\\\\\\\`\\\\\\\`\\\\\\\`yaml\\\\nadventure: "[[Your Adventure Name]]"\\\\n\\\\\\\`\\\\\\\`\\\\\\\`\\\`);
+  dv.paragraph("Or create a new adventure:");
+  const createAdvBtn = dv.el('button', '🗺️ Create Adventure');
+  createAdvBtn.className = 'mod-cta';
+  createAdvBtn.style.marginTop = '10px';
+  createAdvBtn.onclick = () => {
+    app.commands.executeCommandById('dnd-campaign-hub:create-adventure');
+  };
+}
+\`\`\``;
+
+    const updated = await this.replaceDataviewjsBlock(
+      file,
+      "Get current session's adventure",
+      newDataviewjsBlock
+    );
+
+    if (updated) {
+      console.log("Updated session adventure scenes dataviewjs block");
+    }
+
+    // Update template version
+    await this.updateTemplateVersion(file, "1.2.0");
+
+    console.log(`Session ${file.path} migrated to v1.2.0 successfully`);
+  }
+
+  /**
+   * Apply adventure v1.1.0 migration (Interactive scene checkboxes)
+   */
+  async migrateAdventureTo1_1_0(file: TFile): Promise<void> {
+    console.log(`Migrating adventure ${file.path} to v1.1.0`);
+
+    const newScenesBlock = `\`\`\`dataviewjs
+// Get all scenes for this adventure
+const adventureName = dv.current().name || dv.current().file.name;
+const campaignFolder = dv.current().campaign;
+const adventureFolder = dv.current().file.folder;
+
+// Find scenes in both flat and folder structures
+// Flat: Adventures/Adventure - Scenes/
+// Folder: Adventures/Adventure/ (scenes directly or in Act subfolders)
+let scenesFlat = dv.pages(\\\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\\\`)
+  .where(p => p.file.name.startsWith("Scene"));
+let scenesFolder = dv.pages(\\\`"\${adventureFolder}"\\\`)
+  .where(p => p.file.name.startsWith("Scene"));
+
+let allScenes = [...scenesFlat, ...scenesFolder];
+
+if (allScenes.length === 0) {
+  dv.paragraph("*No scenes created yet. Use the button above to create your first scene.*");
+} else {
+  // Sort by scene number
+  allScenes.sort((a, b) => {
+    const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\\\s+(\\\\d+)/)?.[1] || 0);
+    const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\\\s+(\\\\d+)/)?.[1] || 0);
+    return aNum - bNum;
+  });
+
+  // Group by act if act numbers exist
+  const hasActs = allScenes.some(s => s.act);
+  
+  if (hasActs) {
+    // Display grouped by acts
+    const acts = {1: [], 2: [], 3: []};
+    allScenes.forEach(scene => {
+      const act = scene.act || 1;
+      if (acts[act]) acts[act].push(scene);
+    });
+
+    const actNames = {
+      1: "Act 1: Setup & Inciting Incident",
+      2: "Act 2: Rising Action & Confrontation",
+      3: "Act 3: Climax & Resolution"
+    };
+
+    for (const [actNum, actScenes] of Object.entries(acts)) {
+      if (actScenes.length > 0) {
+        dv.header(3, actNames[actNum]);
+        for (const scene of actScenes) {
+          const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
+          const duration = scene.duration || "?min";
+          const type = scene.type || "?";
+          const difficulty = scene.difficulty || "?";
+          
+          // Create clickable status button
+          const sceneDiv = dv.el('div', '', { cls: 'scene-item' });
+          const statusBtn = dv.el('button', status, { container: sceneDiv });
+          statusBtn.style.border = 'none';
+          statusBtn.style.background = 'transparent';
+          statusBtn.style.cursor = 'pointer';
+          statusBtn.style.fontSize = '1.2em';
+          statusBtn.title = 'Click to change status';
+          statusBtn.onclick = async () => {
+            const file = app.vault.getAbstractFileByPath(scene.file.path);
+            if (file) {
+              const content = await app.vault.read(file);
+              const currentStatus = scene.status || 'not-started';
+              const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
+                                 currentStatus === 'in-progress' ? 'completed' : 'not-started';
+              const newContent = content.replace(
+                /^status:\\\\s*.+$/m,
+                \\\`status: \${nextStatus}\\\`
+              );
+              await app.vault.modify(file, newContent);
+            }
+          };
+          dv.span(' **', { container: sceneDiv });
+          dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
+          dv.span(\\\`**  \\\\n\\\\\\\`\${duration} | \${type} | \${difficulty}\\\\\\\`\\\`, { container: sceneDiv });
+        }
+      }
+    }
+  } else {
+    // Display as simple list
+    for (const scene of allScenes) {
+      const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
+      const duration = scene.duration || "?min";
+      const type = scene.type || "?";
+      const difficulty = scene.difficulty || "?";
+      
+      // Create clickable status button
+      const sceneDiv = dv.el('div', '', { cls: 'scene-item' });
+      const statusBtn = dv.el('button', status, { container: sceneDiv });
+      statusBtn.style.border = 'none';
+      statusBtn.style.background = 'transparent';
+      statusBtn.style.cursor = 'pointer';
+      statusBtn.style.fontSize = '1.2em';
+      statusBtn.title = 'Click to change status';
+      statusBtn.onclick = async () => {
+        const file = app.vault.getAbstractFileByPath(scene.file.path);
+        if (file) {
+          const content = await app.vault.read(file);
+          const currentStatus = scene.status || 'not-started';
+          const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
+                             currentStatus === 'in-progress' ? 'completed' : 'not-started';
+          const newContent = content.replace(
+            /^status:\\\\s*.+$/m,
+            \\\`status: \${nextStatus}\\\`
+          );
+          await app.vault.modify(file, newContent);
+        }
+      };
+      dv.span(' **', { container: sceneDiv });
+      dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
+      dv.span(\\\`**  \\\\n\\\\\\\`\${duration} | \${type} | \${difficulty}\\\\\\\`\\\`, { container: sceneDiv });
+    }
+  }
+}
+\`\`\``;
+
+    const updated = await this.replaceDataviewjsBlock(
+      file,
+      "Get all scenes for this adventure",
+      newScenesBlock
+    );
+
+    if (updated) {
+      console.log("Updated adventure scenes dataviewjs block");
+    }
+
+    // Update template version
+    await this.updateTemplateVersion(file, "1.1.0");
+
+    console.log(`Adventure ${file.path} migrated to v1.1.0 successfully`);
+  }
+
+  /**
    * Apply migration based on file type and version
    */
   async migrateFile(file: TFile): Promise<boolean> {
@@ -573,6 +848,22 @@ deleteBtn.addEventListener("click", () => {
       if (fileType === "creature") {
         if (this.compareVersions(currentVersion, "1.1.0") < 0) {
           await this.migrateCreatureTo1_1_0(file);
+          return true;
+        }
+      }
+
+      // Session-specific migrations
+      if (fileType === "session") {
+        if (this.compareVersions(currentVersion, "1.2.0") < 0) {
+          await this.migrateSessionTo1_2_0(file);
+          return true;
+        }
+      }
+
+      // Adventure-specific migrations
+      if (fileType === "adventure") {
+        if (this.compareVersions(currentVersion, "1.1.0") < 0) {
+          await this.migrateAdventureTo1_1_0(file);
           return true;
         }
       }
