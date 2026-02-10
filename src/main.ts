@@ -6899,32 +6899,13 @@ class SessionRunDashboardView extends ItemView {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   }
 
-  async rollDice(diceType: string) {
-    // Try to use Dice Roller plugin if available
-    const diceRollerPlugin = (this.app as any).plugins?.getPlugin("obsidian-dice-roller");
-    
-    let result: number;
-    let rollDisplay = diceType;
-    
-    if (diceRollerPlugin) {
-      try {
-        const roller = await diceRollerPlugin.getRoller("1" + diceType);
-        await roller.roll();
-        result = roller.result;
-      } catch (error) {
-        console.error("Dice Roller plugin error:", error);
-        // Fallback to built-in roller
-        const sides = parseInt(diceType.substring(1));
-        result = Math.floor(Math.random() * sides) + 1;
-      }
-    } else {
-      // Built-in dice roller
-      const sides = parseInt(diceType.substring(1)); // Remove 'd' prefix
-      result = Math.floor(Math.random() * sides) + 1;
-    }
+  rollDice(diceType: string) {
+    // Built-in dice roller
+    const sides = parseInt(diceType.substring(1)); // Remove 'd' prefix (e.g., "d20" -> 20)
+    const result = Math.floor(Math.random() * sides) + 1;
     
     this.diceHistory.unshift({
-      roll: rollDisplay,
+      roll: diceType,
       result: result,
       timestamp: Date.now()
     });
@@ -6980,7 +6961,7 @@ class SessionRunDashboardView extends ItemView {
     await this.renderTimers(leftCol);
     
     // Dice roller section
-    await this.renderDiceRoller(leftCol);
+    this.renderDiceRoller(leftCol);
 
     // Right column
     const rightCol = mainGrid.createEl("div", { cls: "run-dashboard-right" });
@@ -7065,7 +7046,7 @@ class SessionRunDashboardView extends ItemView {
     });
   }
 
-  async renderDiceRoller(container: HTMLElement) {
+  renderDiceRoller(container: HTMLElement) {
     const section = container.createEl("div", { cls: "dashboard-section" });
     section.createEl("h3", { text: "🎲 Dice Roller" });
 
