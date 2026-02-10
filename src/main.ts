@@ -299,7 +299,7 @@ class MigrationManager {
     let found = false;
     
     while ((match = blockRegex.exec(content)) !== null) {
-      if (match[1].includes(markerText)) {
+      if (match[1] && match[1].includes(markerText)) {
         // Replace this block
         const oldBlock = match[0];
         const newContent = content.replace(oldBlock, newBlock);
