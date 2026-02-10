@@ -786,7 +786,100 @@
   margin: 8px 0 0 0;
 }
 
-/* Session Run Dashboard */
+/* Session Run Dashboard - Compact Sidebar Mode */
+.session-run-compact {
+  width: 100%;
+  max-width: 350px;
+}
+
+.run-dashboard-header-compact {
+  background-color: var(--background-secondary);
+  border-bottom: 2px solid var(--background-modifier-border);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.run-dashboard-header-compact h3 {
+  margin: 0 0 6px 0;
+  font-size: 14px;
+  color: var(--text-normal);
+}
+
+.session-name-compact {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 4px 0;
+}
+
+.mode-toggle-compact {
+  margin-top: 8px;
+}
+
+.mode-toggle-compact button {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+.run-dashboard-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 10px 10px 10px;
+}
+
+.run-dashboard-controls .dashboard-section {
+  padding: 10px;
+}
+
+.run-dashboard-controls .dashboard-section h3 {
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+/* Compact quick actions */
+.quick-actions-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quick-actions-compact button {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 12px;
+  text-align: left;
+}
+
+/* Compact dice roller */
+.run-dashboard-controls .dice-buttons {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.run-dashboard-controls .dice-button {
+  padding: 6px;
+  font-size: 12px;
+}
+
+/* Compact timers */
+.run-dashboard-controls .timer-card {
+  padding: 8px;
+  margin-bottom: 6px;
+}
+
+.run-dashboard-controls .timer-display {
+  font-size: 20px;
+  margin: 6px 0;
+}
+
+/* Compact quick notes */
+.run-dashboard-controls .quick-notes-textarea {
+  min-height: 100px;
+  font-size: 12px;
+}
+
+/* Original Session Run Dashboard Styles */
 .session-run-dashboard {
   height: 100%;
   display: flex;

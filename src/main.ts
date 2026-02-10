@@ -4438,26 +4438,29 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Detect campaign from active file or use default
 		const campaignPath = this.detectCampaignFromActiveFile() || this.settings.currentCampaign;
 		
-		// Check if view is already open
+		// Check if dashboard view is already open
 		const existing = this.app.workspace.getLeavesOfType(SESSION_RUN_VIEW_TYPE);
 		if (existing.length > 0 && existing[0]) {
-			// Reveal existing view and update campaign
 			this.app.workspace.revealLeaf(existing[0]);
 			const view = existing[0].view as SessionRunDashboardView;
 			view.setCampaign(campaignPath);
+			await view.setupSessionLayout();
 			return;
 		}
 
-		// Open in main workspace (center) for full-screen dashboard
-		const leaf = this.app.workspace.getLeaf(false);
-		if (leaf) {
-			await leaf.setViewState({
+		// Open dashboard control panel in left sidebar
+		const dashboardLeaf = this.app.workspace.getLeftLeaf(false);
+		if (dashboardLeaf) {
+			await dashboardLeaf.setViewState({
 				type: SESSION_RUN_VIEW_TYPE,
 				active: true,
 			});
-			const view = leaf.view as SessionRunDashboardView;
+			const view = dashboardLeaf.view as SessionRunDashboardView;
 			view.setCampaign(campaignPath);
-			this.app.workspace.revealLeaf(leaf);
+			this.app.workspace.revealLeaf(dashboardLeaf);
+			
+			// Setup the session layout with multiple panes
+			await view.setupSessionLayout();
 		}
 	}
 
@@ -6924,22 +6927,21 @@ class SessionRunDashboardView extends ItemView {
     
     container.empty();
     container.addClass("session-run-dashboard");
+    container.addClass("session-run-compact");
 
     // Header with session info
-    const header = container.createEl("div", { cls: "run-dashboard-header" });
+    const header = container.createEl("div", { cls: "run-dashboard-header-compact" });
     const sessionName = this.currentSessionFile?.basename || "No Active Session";
-    header.createEl("h2", { text: `🎮 Session Dashboard: ${sessionName}` });
-    
-    const campaignName = this.campaignPath.split('/').pop() || "Unknown Campaign";
+    header.createEl("h3", { text: `🎮 Session Control` });
     header.createEl("p", { 
-      text: `Campaign: ${campaignName}`,
-      cls: "dashboard-campaign-name"
+      text: sessionName,
+      cls: "session-name-compact"
     });
 
     // Read-only mode toggle
-    const modeToggle = header.createEl("div", { cls: "mode-toggle" });
+    const modeToggle = header.createEl("div", { cls: "mode-toggle-compact" });
     const toggleBtn = modeToggle.createEl("button", {
-      text: this.readOnlyMode ? "🔒 Read-Only ON" : "🔓 Read-Only OFF",
+      text: this.readOnlyMode ? "🔒 Read-Only" : "🔓 Editable",
       cls: this.readOnlyMode ? "mod-warning" : ""
     });
     toggleBtn.addEventListener("click", () => {
@@ -6951,25 +6953,29 @@ class SessionRunDashboardView extends ItemView {
       this.render();
     });
 
-    // Full-screen 3-column layout
-    const mainGrid = container.createEl("div", { cls: "run-dashboard-fullscreen-grid" });
+    // Compact single-column layout for control panel
+    const controlPanel = container.createEl("div", { cls: "run-dashboard-controls" });
 
-    // Left column - Tools & Actions
-    const leftCol = mainGrid.createEl("div", { cls: "run-dashboard-column" });
-    await this.renderTimers(leftCol);
-    this.renderDiceRoller(leftCol);
-    await this.renderQuickActions(leftCol);
+    // Timers section
+    await this.renderTimers(controlPanel);
+    
+    // Dice roller section
+    this.renderDiceRoller(controlPanel);
+    
+    // Quick notes section
+    await this.renderQuickNotes(controlPanel);
+    
+    // Quick actions section
+    await this.renderQuickActions(controlPanel);
 
-    // Center column - Adventure & Session Content
-    const centerCol = mainGrid.createEl("div", { cls: "run-dashboard-column run-dashboard-center" });
-    await this.renderAdventureDetails(centerCol);
-    await this.renderSessionNotes(centerCol);
-    await this.renderEncounterView(centerCol);
-
-    // Right column - Scene & Combat
-    const rightCol = mainGrid.createEl("div", { cls: "run-dashboard-column" });
-    await this.renderCurrentScene(rightCol);
-    await this.renderQuickNotes(rightCol);
+    // Setup Layout button
+    const layoutSection = container.createEl("div", { cls: "dashboard-section" });
+    const setupBtn = layoutSection.createEl("button", {
+      text: "📐 Setup Session Layout",
+      cls: "mod-cta"
+    });
+    setupBtn.style.width = "100%";
+    setupBtn.addEventListener("click", () => this.setupSessionLayout());
 
     // Update timers display every second
     if (this.timerUpdateInterval) {
@@ -6984,6 +6990,58 @@ class SessionRunDashboardView extends ItemView {
         }
       });
     }, 1000);
+  }
+
+  async setupSessionLayout() {
+    // Get the main workspace
+    const mainLeaf = this.app.workspace.getMostRecentLeaf();
+    if (!mainLeaf) return;
+
+    // Split workspace for session layout
+    // Layout: [Session Note] [Adventure/Scene] 
+    const rightLeaf = this.app.workspace.getLeaf('split', 'vertical');
+    
+    // Open current session in left pane
+    if (this.currentSessionFile) {
+      await mainLeaf.openFile(this.currentSessionFile);
+    }
+
+    // Get active adventure and scene
+    const adventures = await this.getActiveAdventures();
+    const adventure = adventures.length > 0 ? adventures[0] : null;
+    
+    if (adventure) {
+      const adventureFile = this.app.vault.getAbstractFileByPath(adventure.path);
+      
+      if (adventureFile instanceof TFile) {
+        // Open adventure in right pane
+        await rightLeaf.openFile(adventureFile);
+        
+        // Check for active scene
+        const scenes = await this.getScenesForAdventure(adventure.path);
+        const currentScene = scenes.find(s => s.status === "in-progress");
+        
+        if (currentScene) {
+          // Split right pane to show scene below adventure
+          const sceneLeaf = this.app.workspace.getLeaf('split', 'horizontal');
+          const sceneFile = this.app.vault.getAbstractFileByPath(currentScene.path);
+          if (sceneFile instanceof TFile) {
+            await sceneLeaf.openFile(sceneFile);
+          }
+        }
+      }
+    }
+
+    // Try to open Initiative Tracker if available
+    const initiativePlugin = (this.app as any).plugins?.getPlugin("initiative-tracker");
+    if (initiativePlugin) {
+      // Give a moment for the layout to settle, then open tracker
+      setTimeout(() => {
+        (this.app as any).commands?.executeCommandById("initiative-tracker:open-tracker");
+      }, 500);
+    }
+
+    new Notice("Session layout configured!");
   }
 
   async renderTimers(container: HTMLElement) {
@@ -7107,53 +7165,11 @@ class SessionRunDashboardView extends ItemView {
     });
   }
 
-  async renderCurrentScene(container: HTMLElement) {
-    const section = container.createEl("div", { cls: "dashboard-section" });
-    section.createEl("h3", { text: "🎬 Current Scene" });
-
-    // Get active adventures
-    const adventures = await this.getActiveAdventures();
-    
-    if (adventures.length === 0) {
-      section.createEl("p", { text: "No active adventures", cls: "empty-message" });
-      return;
-    }
-
-    for (const adventure of adventures) {
-      const scenes = await this.getScenesForAdventure(adventure.path);
-      const currentScene = scenes.find(s => s.status === "in-progress") || 
-                          scenes.find(s => s.status === "not-started");
-      
-      if (currentScene) {
-        const sceneCard = section.createEl("div", { cls: "current-scene-card" });
-        sceneCard.createEl("strong", { text: `Scene ${currentScene.number}: ${currentScene.name}` });
-        sceneCard.createEl("p", { 
-          text: `${this.getSceneIcon(currentScene.type)} ${currentScene.type} | 🎲 ${currentScene.difficulty}` 
-        });
-
-        const openBtn = sceneCard.createEl("button", {
-          text: "Open Scene",
-          cls: "mod-cta"
-        });
-        openBtn.addEventListener("click", async () => {
-          await this.app.workspace.openLinkText(currentScene.path, "", false);
-        });
-
-        const completeBtn = sceneCard.createEl("button", {
-          text: "✅ Mark Complete"
-        });
-        completeBtn.addEventListener("click", async () => {
-          await this.markSceneComplete(currentScene.path);
-          this.render();
-        });
-      }
-    }
-  }
-
   async renderQuickActions(container: HTMLElement) {
-    container.createEl("h3", { text: "⚡ Quick Actions" });
+    const section = container.createEl("div", { cls: "dashboard-section" });
+    section.createEl("h3", { text: "⚡ Quick Actions" });
     
-    const actions = container.createEl("div", { cls: "quick-actions-grid" });
+    const actions = section.createEl("div", { cls: "quick-actions-compact" });
 
     // Initiative Tracker
     const initiativeBtn = actions.createEl("button", {
@@ -7219,181 +7235,6 @@ class SessionRunDashboardView extends ItemView {
         }
       });
     }
-  }
-
-  async renderAdventureDetails(container: HTMLElement) {
-    const section = container.createEl("div", { cls: "dashboard-section adventure-details-section" });
-    section.createEl("h3", { text: "🗺️ Current Adventure" });
-
-    const adventures = await this.getActiveAdventures();
-    
-    if (adventures.length === 0) {
-      section.createEl("p", { text: "No active adventures", cls: "empty-message" });
-      return;
-    }
-
-    // Show first active adventure
-    const adventure = adventures[0];
-    const adventureCard = section.createEl("div", { cls: "adventure-detail-card" });
-    
-    const title = adventureCard.createEl("div", { cls: "adventure-title-bar" });
-    title.createEl("h4", { text: adventure.name });
-    title.createEl("span", { 
-      cls: `status-badge status-${adventure.status}`,
-      text: adventure.status 
-    });
-
-    // Get adventure file for details
-    const adventureFile = this.app.vault.getAbstractFileByPath(adventure.path);
-    if (adventureFile instanceof TFile) {
-      const cache = this.app.metadataCache.getFileCache(adventureFile);
-      const fm = cache?.frontmatter;
-
-      if (fm) {
-        const details = adventureCard.createEl("div", { cls: "adventure-details" });
-        
-        if (fm.level_range) {
-          details.createEl("p", { text: `📊 Level: ${fm.level_range}` });
-        }
-        if (fm.current_act) {
-          details.createEl("p", { text: `🎬 Act: ${fm.current_act}` });
-        }
-        if (fm.expected_sessions) {
-          const sessionsPlayed = fm.sessions?.length || 0;
-          details.createEl("p", { 
-            text: `📅 Sessions: ${sessionsPlayed}/${fm.expected_sessions}` 
-          });
-        }
-      }
-    }
-
-    // Open adventure button
-    const openBtn = adventureCard.createEl("button", {
-      text: "📖 Open Adventure",
-      cls: "mod-cta"
-    });
-    openBtn.addEventListener("click", async () => {
-      await this.app.workspace.openLinkText(adventure.path, "", false);
-    });
-  }
-
-  async renderSessionNotes(container: HTMLElement) {
-    const section = container.createEl("div", { cls: "dashboard-section session-notes-section" });
-    section.createEl("h3", { text: "📝 Session Notes" });
-
-    if (!this.currentSessionFile) {
-      section.createEl("p", { text: "No active session", cls: "empty-message" });
-      return;
-    }
-
-    // Read current session content
-    try {
-      const content = await this.app.vault.read(this.currentSessionFile);
-      
-      // Extract key sections (summary, events, etc.)
-      const summaryMatch = content.match(/## Summary\n\n([\s\S]*?)(?=\n##|$)/);
-      const eventsMatch = content.match(/## Events\n\n([\s\S]*?)(?=\n##|$)/);
-      
-      const notesPreview = section.createEl("div", { cls: "session-notes-preview" });
-      
-      if (summaryMatch && summaryMatch[1].trim()) {
-        notesPreview.createEl("h4", { text: "Summary" });
-        notesPreview.createEl("p", { text: summaryMatch[1].trim().substring(0, 200) + "..." });
-      }
-      
-      if (eventsMatch && eventsMatch[1].trim()) {
-        notesPreview.createEl("h4", { text: "Events" });
-        notesPreview.createEl("p", { text: eventsMatch[1].trim().substring(0, 200) + "..." });
-      }
-
-      // Open full session button
-      const openBtn = section.createEl("button", {
-        text: "📄 Open Full Session Note",
-        cls: "mod-cta"
-      });
-      openBtn.addEventListener("click", async () => {
-        if (this.currentSessionFile) {
-          await this.app.workspace.openLinkText(this.currentSessionFile.path, "", false);
-        }
-      });
-    } catch (error) {
-      console.error("Error reading session file:", error);
-      section.createEl("p", { text: "Error loading session notes", cls: "empty-message" });
-    }
-  }
-
-  async renderEncounterView(container: HTMLElement) {
-    const section = container.createEl("div", { cls: "dashboard-section encounter-section" });
-    section.createEl("h3", { text: "⚔️ Active Encounter" });
-
-    // Check for encounters in current scene
-    const adventures = await this.getActiveAdventures();
-    if (adventures.length === 0) {
-      section.createEl("p", { text: "No active encounter", cls: "empty-message" });
-      return;
-    }
-
-    const scenes = await this.getScenesForAdventure(adventures[0].path);
-    const currentScene = scenes.find(s => s.status === "in-progress");
-    
-    if (!currentScene) {
-      section.createEl("p", { text: "No scene active. Start a scene to track encounters.", cls: "empty-message" });
-      
-      const startBtn = section.createEl("button", {
-        text: "🎬 View Scenes",
-        cls: "mod-cta"
-      });
-      startBtn.addEventListener("click", async () => {
-        await this.app.workspace.openLinkText(adventures[0].path, "", false);
-      });
-      return;
-    }
-
-    // Show scene encounter info
-    const encounterCard = section.createEl("div", { cls: "encounter-card" });
-    encounterCard.createEl("strong", { text: `Scene ${currentScene.number}: ${currentScene.name}` });
-    
-    // Get scene file to check for encounter
-    const sceneFile = this.app.vault.getAbstractFileByPath(currentScene.path);
-    if (sceneFile instanceof TFile) {
-      const cache = this.app.metadataCache.getFileCache(sceneFile);
-      const fm = cache?.frontmatter;
-      
-      if (fm?.encounter_creatures && fm.encounter_creatures.length > 0) {
-        encounterCard.createEl("p", { text: `🐉 Creatures: ${fm.encounter_creatures.length}` });
-        
-        // List creatures
-        const creatureList = encounterCard.createEl("div", { cls: "creature-list" });
-        for (const creature of fm.encounter_creatures) {
-          const creatureItem = creatureList.createEl("div", { cls: "creature-item" });
-          creatureItem.createEl("span", { text: `• ${creature}` });
-        }
-      } else {
-        encounterCard.createEl("p", { text: "No creatures defined for this scene", cls: "empty-message" });
-      }
-    }
-
-    // Initiative Tracker integration
-    const trackerBtn = encounterCard.createEl("button", {
-      text: "⚔️ Open Initiative Tracker",
-      cls: "mod-cta"
-    });
-    trackerBtn.addEventListener("click", () => {
-      const initiativePlugin = (this.app as any).plugins?.getPlugin("initiative-tracker");
-      if (initiativePlugin) {
-        (this.app as any).commands?.executeCommandById("initiative-tracker:open-tracker");
-      } else {
-        new Notice("Initiative Tracker plugin not installed");
-      }
-    });
-
-    // Open scene button
-    const openSceneBtn = encounterCard.createEl("button", {
-      text: "📖 Open Scene",
-    });
-    openSceneBtn.addEventListener("click", async () => {
-      await this.app.workspace.openLinkText(currentScene.path, "", false);
-    });
   }
 
   async getActiveAdventures() {
