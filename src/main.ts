@@ -9030,7 +9030,14 @@ class SceneCreationModal extends Modal {
       }
 
       // Load basic scene properties
-      this.sceneName = frontmatter.name || sceneFile.basename;
+      // Extract scene name from filename (remove "Scene X - " prefix)
+      let extractedName = sceneFile.basename;
+      const nameMatch = sceneFile.basename.match(/^Scene\s+\d+\s+-\s+(.+)$/);
+      if (nameMatch && nameMatch[1]) {
+        extractedName = nameMatch[1];
+      }
+      
+      this.sceneName = frontmatter.name || extractedName;
       this.act = String(frontmatter.act || "1");
       this.sceneNumber = String(frontmatter.scene_number || "1");
       this.duration = frontmatter.duration || "30min";
