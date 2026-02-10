@@ -6630,6 +6630,66 @@ class SessionPrepDashboardView extends ItemView {
 }
 
 /**
+ * Timer Name Modal - Prompt for timer name
+ */
+class TimerNameModal extends Modal {
+  resolve: (value: string | null) => void;
+  defaultName: string;
+
+  constructor(app: App, defaultName: string, resolve: (value: string | null) => void) {
+    super(app);
+    this.defaultName = defaultName;
+    this.resolve = resolve;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "Add Timer" });
+
+    const input = contentEl.createEl("input", {
+      type: "text",
+      placeholder: "Enter timer name...",
+    });
+    input.value = this.defaultName;
+
+    const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
+
+    const cancelButton = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelButton.addEventListener("click", () => {
+      this.close();
+      this.resolve(null);
+    });
+
+    const createButton = buttonContainer.createEl("button", {
+      text: "Add",
+      cls: "mod-cta",
+    });
+    createButton.addEventListener("click", () => {
+      const name = input.value.trim();
+      if (name) {
+        this.close();
+        this.resolve(name);
+      }
+    });
+
+    input.focus();
+    input.select();
+    input.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        createButton.click();
+      }
+    });
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+/**
  * Session Run Dashboard - Active session management for GMs
  */
 class SessionRunDashboardView extends ItemView {
@@ -6992,11 +7052,16 @@ class SessionRunDashboardView extends ItemView {
     addTimerBtn.addEventListener("click", (e) => {
       e.preventDefault();
       console.log("Add timer button clicked");
-      const name = prompt("Timer name:", "Session Timer");
-      console.log("Timer name entered:", name);
-      if (name) {
-        this.addTimer(name);
-      }
+      
+      // Use modal instead of prompt (prompt() not supported in Electron)
+      new Promise<string | null>((resolve) => {
+        new TimerNameModal(this.app, "Session Timer", resolve).open();
+      }).then((name) => {
+        console.log("Timer name entered:", name);
+        if (name) {
+          this.addTimer(name);
+        }
+      });
     });
   }
 
