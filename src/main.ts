@@ -4444,7 +4444,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			this.app.workspace.revealLeaf(existing[0]);
 			const view = existing[0].view as SessionRunDashboardView;
 			view.setCampaign(campaignPath);
-			await view.setupSessionLayout();
+			// Don't auto-setup layout if already open - let user click the button
 			return;
 		}
 
@@ -6995,8 +6995,24 @@ class SessionRunDashboardView extends ItemView {
   }
 
   async setupSessionLayout() {
-    // Get the main workspace
-    const mainLeaf = this.app.workspace.getMostRecentLeaf();
+    // Close all leaves in the main workspace area (not sidebars) to start fresh
+    const rootSplit = this.app.workspace.rootSplit;
+    const leavesToClose: any[] = [];
+    
+    this.app.workspace.iterateRootLeaves((leaf) => {
+      // Don't close the dashboard control panel itself
+      if (leaf.view.getViewType() !== SESSION_RUN_VIEW_TYPE) {
+        leavesToClose.push(leaf);
+      }
+    });
+    
+    // Close leaves
+    for (const leaf of leavesToClose) {
+      leaf.detach();
+    }
+
+    // Get or create a fresh main leaf
+    const mainLeaf = this.app.workspace.getLeaf(false);
     if (!mainLeaf) return;
 
     // Get active adventure and scene
