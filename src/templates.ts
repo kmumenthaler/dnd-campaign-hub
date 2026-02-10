@@ -800,18 +800,23 @@ if (allScenes.length === 0) {
 - Level up at: 
 `;
 
-export const SCENE_TEMPLATE = `---
+// ============================================================================
+// SPECIALIZED SCENE TEMPLATES
+// ============================================================================
+
+// Base frontmatter and header shared across all scene types
+const SCENE_BASE_HEADER = (type: string) => `---
 type: scene
-template_version: 1.3.1
+template_version: 2.0.0
 adventure: "{{ADVENTURE_NAME}}"
 campaign: "{{CAMPAIGN}}"
 world: "{{WORLD}}"
 act: {{ACT_NUMBER}}
 scene_number: {{SCENE_NUMBER}}
 duration: {{DURATION}}
-scene_type: {{TYPE}}
+scene_type: ${type}
 difficulty: {{DIFFICULTY}}
-status: planned
+status: not-started
 tracker_encounter: {{TRACKER_ENCOUNTER}}
 encounter_file: {{ENCOUNTER_FILE}}
 encounter_creatures: {{ENCOUNTER_CREATURES}}
@@ -823,7 +828,7 @@ date: {{DATE}}
 
 # Scene {{SCENE_NUMBER}}: {{SCENE_NAME}}
 
-**Duration:** {{DURATION}} | **Type:** {{TYPE}} | **Difficulty:** {{DIFFICULTY}}  
+**Duration:** {{DURATION}} | **Type:** ${type.charAt(0).toUpperCase() + type.slice(1)} | **Difficulty:** {{DIFFICULTY}}  
 **Act:** {{ACT_NUMBER}} | **Adventure:** [[{{ADVENTURE_NAME}}]]
 
 \`\`\`dataviewjs
@@ -849,95 +854,148 @@ const deleteBtn = buttonContainer.createEl("button", {
 deleteBtn.addEventListener("click", () => {
   app.commands.executeCommandById("dnd-campaign-hub:delete-scene");
 });
-
-// Open Tracker button (if combat scene with encounter)
-const trackerEncounter = dv.current().tracker_encounter;
-if (trackerEncounter && trackerEncounter !== "") {
-  const openTrackerBtn = buttonContainer.createEl("button", { 
-    text: "⚔️ Open & Load in Tracker",
-    attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px; background-color: var(--interactive-accent); color: var(--text-on-accent);" }
-  });
-  openTrackerBtn.addEventListener("click", async () => {
-    const initiativeTracker = app.plugins?.plugins?.["initiative-tracker"];
-    
-    if (!initiativeTracker) {
-      new Notice("Initiative Tracker plugin not found");
-      return;
-    }
-    
-    const encounter = initiativeTracker.data?.encounters?.[trackerEncounter];
-    if (!encounter) {
-      new Notice("Encounter \\"" + trackerEncounter + "\\" not found. Try recreating it.");
-      return;
-    }
-    
-    // Ensure all creatures have proper status array
-    if (encounter.creatures) {
-      for (const creature of encounter.creatures) {
-        if (!creature.status) {
-          creature.status = [];
-        }
-      }
-    }
-    
-    // Use Initiative Tracker's internal tracker API to load the encounter
-    try {
-      if (initiativeTracker.tracker?.new) {
-        initiativeTracker.tracker.new(initiativeTracker, encounter);
-        new Notice("✅ Loaded encounter: " + trackerEncounter);
-      } else {
-        new Notice("⚠️ Could not load encounter. Try using Load Encounter from Initiative Tracker menu.");
-      }
-    } catch (e) {
-      console.error("Error loading encounter:", e);
-      new Notice("⚠️ Could not load encounter: " + e.message);
-    }
-    
-    // Open Initiative Tracker view
-    app.commands.executeCommandById("initiative-tracker:open-tracker");
-  });
-}
 \`\`\`
 
 ---
+`;
 
+// 1. SOCIAL SCENE - NPC interactions, negotiations, information gathering
+export const SCENE_SOCIAL_TEMPLATE = SCENE_BASE_HEADER('social') + `
 ## Scene Goal
 
-*What should happen in this scene?*
+*What information, alliance, or agreement should the players gain from this scene?*
 
 
 
-## Read-Aloud Text
+## Opening
 
-> *Boxed text to read to players when the scene begins*
+> **Read-Aloud Text:**  
+> *Set the scene - where are they, what's the atmosphere?*
 
 
 
-## Key Elements
+## NPCs Present
 
-- Important detail 1
-- Important detail 2
-- Important detail 3
+\`\`\`dataviewjs
+// List NPCs involved in this scene
+const npcs = [
+  // Add NPCs here as: { name: "NPC Name", role: "Quest Giver", motivation: "Wants X", attitude: "Friendly" }
+];
+
+if (npcs.length === 0) {
+  dv.paragraph("*No NPCs defined. Add them to this dataview block or link them below.*");
+} else {
+  for (const npc of npcs) {
+    dv.header(4, \`[[/\${npc.name}]] - \${npc.role}\`);
+    dv.paragraph(\`**Attitude:** \${npc.attitude}\`);
+    dv.paragraph(\`**Wants:** \${npc.motivation}\`);
+    dv.paragraph("");
+  }
+}
+\`\`\`
+
+**Key NPCs:**
+- [[NPC Name]] - Brief description, what they want
 
 ---
 
-## Encounters
+## Conversation Flow
 
-### Social Encounter
+### Opening Stance
+*How does the NPC initially react to the party?*
 
-**NPCs Present:**
-- [[NPC Name]] - Role, motivation, what they want
 
-**Skill Checks:**
-- Persuasion DC 12: 
-- Insight DC 15: 
-- Investigation DC 13: 
 
-**Possible Outcomes:**
+### What the NPC Knows
+- **Freely gives:** Information they'll share without prompting
+- **If asked:** Details they'll reveal if questioned
+- **If pressed (DC 15):** Secrets they're reluctant to share
+- **Won't tell:** Information they'll never reveal
+
+### What the NPC Wants
+*What's their goal in this conversation?*
+
+
+
+---
+
+## Skill Checks & Social Mechanics
+
+**Persuasion (DC {{DIFFICULTY_DC}}):**  
 - Success: 
 - Failure: 
 
-### Combat Encounter
+**Deception (DC {{DIFFICULTY_DC}}):**  
+- Success: 
+- Failure: 
+
+**Intimidation (DC {{DIFFICULTY_DC}}):**  
+- Success: 
+- Failure: 
+
+**Insight (DC {{DIFFICULTY_DC}}):**  
+- Success: Party realizes...
+- Failure: Party misses...
+
+---
+
+## Possible Outcomes
+
+- ✅ **Best Outcome:** If party succeeds fully → 
+- ⚖️ **Partial Success:** If party makes some progress → 
+- ❌ **Failure:** If party antagonizes NPC or fails checks → 
+
+---
+
+## Complications & Twists
+
+*What might interrupt or complicate this scene?*
+- 
+- 
+
+---
+
+## Moving Forward
+
+**Next Steps After This Scene:**
+- If successful: Party gains...
+- If failed: Party must...
+
+---
+
+## What Actually Happened
+
+**Session:** [[Session  X]]  
+**Date:** 
+
+*Fill in during/after the session*
+
+**Player Choices:**
+
+**Outcome:**
+
+**Consequences:**
+`;
+
+// 2. COMBAT SCENE - Fighting enemies
+export const SCENE_COMBAT_TEMPLATE = SCENE_BASE_HEADER('combat') + `
+## Scene Goal
+
+*What must the players accomplish in this fight?*  
+*(Defeat enemies / Protect someone / Survive rounds / Escape / Other)*
+
+
+
+## Opening
+
+> **Read-Aloud Text:**  
+> *How does combat begin? What do players see?*
+
+
+
+---
+
+## Combat Encounter
 
 \`\`\`dataviewjs
 const trackerEncounter = dv.current().tracker_encounter;
@@ -1114,33 +1172,55 @@ if (trackerEncounter && trackerEncounter !== "") {
 }
 \`\`\`
 
-**Tactics:**
-- Round 1: 
-- If bloodied: 
-- Retreat condition: 
+---
 
-**Battlefield:**
-- Map: ![[map.jpg]]
-- Terrain features: 
-- Hazards: 
-- Cover: 
+## Enemy Tactics
+
+### Round 1-2 (Opening)
+*How do enemies start fighting?*
+
+
+
+### Mid-Fight (If bloodied / losing)
+*How do tactics change?*
+
+
+
+### Desperate (Near death)
+*Do they flee, surrender, or fight to the death?*
+
+
 
 ---
 
-## What Players Might Do
+## Battlefield
 
-- **Option 1:** If PCs do X → Y happens
-- **Option 2:** If PCs do A → B happens
-- **Option 3:** If PCs try Z → Result
+**Map:** ![[map.jpg]]
+
+**Terrain Features:**
+- 
+- 
+
+**Cover & Line of Sight:**
+- 
+- 
+
+**Hazards:**
+- 
+- 
+
+**Interactive Elements:**
+- 
+- 
 
 ---
 
-## Treasure & Rewards
+## Victory & Treasure
 
-- [ ] Gold: 
-- [ ] Item: 
-- [ ] XP: 
-- [ ] Information: 
+- [ ] **XP:** 
+- [ ] **Gold:** 
+- [ ] **Magic Items:** 
+- [ ] **Information/Clues:** 
 
 ---
 
@@ -1149,11 +1229,397 @@ if (trackerEncounter && trackerEncounter !== "") {
 **Session:** [[Session X]]  
 **Date:** 
 
-*GM fills this during/after session*
+*Fill in during/after the session*
 
+**Rounds Lasted:**
 
+**Notable Moments:**
 
+**Casualties:**
+
+**Loot Taken:**
 `;
+
+// 3. EXPLORATION SCENE - Discovery, environment interaction, optional encounters
+export const SCENE_EXPLORATION_TEMPLATE = SCENE_BASE_HEADER('exploration') + `
+## Scene Goal
+
+*What should the players discover or experience?*
+
+
+
+## Initial Description
+
+> **Read-Aloud Text:**  
+> *Paint the picture - what do they see, hear, smell?*
+
+
+
+---
+
+## Points of Interest
+
+### 1. [Location/Object Name]
+
+**Description:**  
+
+
+**Investigation DC 12:**  
+- Success: 
+- Failure: 
+
+**Interaction:**  
+- If touched/opened: 
+- If attacked: 
+
+
+### 2. [Location/Object Name]
+
+**Description:**  
+
+
+**Investigation DC 15:**  
+- Success: 
+- Failure: 
+
+**Interaction:**  
+- If touched/opened: 
+- If attacked: 
+
+---
+
+## Secrets & Hidden Elements
+
+**Passive Perception DC 13:**  
+- Party notices: 
+
+**Active Search (Investigation/Perception DC 15):**  
+- Success: Party finds...
+- Failure: Party misses...
+
+**Secret/Concealed Area:**  
+- Location: 
+- How to find: 
+- What's inside: 
+
+---
+
+## Environmental Hazards
+
+- **Hazard 1:** Effect, save DC, damage
+- **Hazard 2:** Effect, save DC, damage
+
+---
+
+## Random Encounters (Optional)
+
+*Roll 1d6 every 10 minutes. On a 1, roll on encounter table:*
+
+| d6  | Encounter                      |
+| --- | ------------------------------ |
+| 1-2 | [[Creature]] x2                |
+| 3-4 | Environmental event            |
+| 5-6 | NPC wandering / Clue discovery |
+
+**If Combat Occurs:**
+- Quick enemy stats: 
+- Tactics: 
+- Treasure: 
+
+---
+
+## Discoveries & Rewards
+
+- [ ] **Clue/Information:** 
+- [ ] **Treasure:** 
+- [ ] **Map/Key/Tool:** 
+- [ ] **NPC encountered:** 
+
+---
+
+## Moving Forward
+
+**Exits & Connections:**
+- North: Leads to...
+- East: Leads to...
+- Hidden passage: Leads to...
+
+**What happens next?**
+
+
+---
+
+## What Actually Happened
+
+**Session:** [[Session X]]  
+**Date:** 
+
+*Fill in during/after the session*
+
+**What players investigated:**
+
+**What they found:**
+
+**What they missed:**
+`;
+
+// 4. PUZZLE SCENE - Riddles, mechanical challenges, intellectual problems
+export const SCENE_PUZZLE_TEMPLATE = SCENE_BASE_HEADER('puzzle') + `
+## Scene Goal
+
+*What blocks the party's progress, and what do they need to figure out?*
+
+
+
+## Setting the Scene
+
+> **Read-Aloud Text:**  
+> *Describe the puzzle room/mechanism*
+
+
+
+---
+
+## The Puzzle
+
+### Puzzle Type
+*Select: Riddle / Mechanical / Pattern / Logic / Word / Other*
+
+
+
+### Presentation
+*How is the puzzle presented to the players?*
+
+
+
+### The Solution
+*What is the actual solution? (Keep this hidden from players!)*
+
+
+
+---
+
+## Clues & Hints
+
+**Obvious (Free Information):**  
+- 
+- 
+
+**Investigation DC 12:**  
+- 
+- 
+
+**Hint 1 (If stuck for 10 minutes):**  
+
+
+**Hint 2 (If still stuck):**  
+
+
+**Hint 3 (If desperate - INT check DC 15):**  
+
+
+---
+
+## Attempting the Puzzle
+
+**Time Limit:** *(If any)*  
+
+
+**Skill Checks That Help:**
+- Intelligence (Investigation) DC {{DIFFICULTY_DC}}: 
+- Intelligence (Arcana/History/Religion) DC {{DIFFICULTY_DC}}: 
+- Wisdom (Perception) DC {{DIFFICULTY_DC}}: 
+
+**Alternative Solutions:**  
+*Can players bypass this with magic/skills?*
+- 
+- 
+
+---
+
+## Success & Failure
+
+**On Success:**  
+- What opens/activates: 
+- Reward: 
+- What happens next: 
+
+**On Partial Success:**  
+- 
+- 
+
+**On Failure/Wrong Answer:**  
+- Consequence: 
+- Can they retry? 
+- Damage/effect: 
+
+---
+
+## Forcing It
+
+**Can the puzzle be bypassed?**
+- Break DC (if applicable): 
+- Pick Lock DC (if applicable): 
+- Dispel Magic: 
+- Other: 
+
+---
+
+## What Actually Happened
+
+**Session:** [[Session X]]  
+**Date:** 
+
+*Fill in during/after the session*
+
+**How long it took:**
+
+**Their solution:**
+
+**Hints used:**
+
+**Outcome:**
+`;
+
+// 5. MONTAGE SCENE - Skill challenges, time compression, complex sequences
+export const SCENE_MONTAGE_TEMPLATE = SCENE_BASE_HEADER('montage') + `
+## Scene Goal
+
+*What is the party trying to accomplish over time?*  
+*(Examples: Travel journey, research, heist, social event, investigation)*
+
+
+
+## Montage Setup
+
+**Duration:** *(How much in-game time passes?)*  
+
+
+**Complexity:** *(How many successes needed before 3 failures?)*
+- Simple: 4 successes before 3 failures
+- Moderate: 6 successes before 3 failures
+- Complex: 8 successes before 3 failures
+
+---
+
+## Opening
+
+> **Read-Aloud Text:**  
+> *Set the stage for what they're undertaking*
+
+
+
+---
+
+## Skill Challenge Framework
+
+*Each player describestheir approach, then makes an appropriate skill check.*
+
+### Available Skills & DCs
+
+**Primary Skills** (Can be used multiple times):
+- **[Skill Name] DC {{DIFFICULTY_DC}}:** What this accomplishes
+- **[Skill Name] DC {{DIFFICULTY_DC}}:** What this accomplishes
+- **[Skill Name] DC {{DIFFICULTY_DC}}:** What this accomplishes
+
+**Secondary Skills** (Can be used once per PC):
+- **[Skill Name] DC {{DIFFICULTY_DC}}:** How this helps
+- **[Skill Name] DC {{DIFFICULTY_DC}}:** How this helps
+
+---
+
+## Milestones & Progress
+
+**After 2 Successes:**  
+*What progress is visible?*
+
+
+
+**After 4 Successes:**  
+*Major milestone - what changes?*
+
+
+
+**After 6 Successes:**  
+*Near completion - how close are they?*
+
+
+
+---
+
+## Complications & Events
+
+*On a failure, introduce a complication:*
+
+| Failure # | Complication                                  |
+| --------- | --------------------------------------------- |
+| 1st       | Minor setback:                                |
+| 2nd       | Moderate problem:                             |
+| 3rd       | Major crisis/mission fails:                   |
+
+**Random Events** (Optional - roll d6 each round):
+1. 
+2. 
+3. 
+4. 
+5. 
+6. 
+
+---
+
+## Outcomes
+
+### Success (Enough successes before 3 failures)
+- Full success: 
+- Reward: 
+- Next step: 
+
+### Partial Success (Some successes, 3 failures)
+- Mixed result: 
+- Consequences: 
+- What they still need to do: 
+
+### Failure (3 failures before enough successes)
+- Failed outcome: 
+- Consequences: 
+- Alternative path: 
+
+---
+
+## Time & Resources
+
+**Costs:**
+- Gold spent: 
+- Resources consumed: 
+- Time elapsed: 
+
+**Random Encounters** (If wilderness/dungeon montage):
+*Roll once during montage on 1d6 (1-2 = encounter)*
+
+
+
+---
+
+## What Actually Happened
+
+**Session:** [[Session X]]  
+**Date:** 
+
+*Fill in during/after the session*
+
+**Successes / Failures:**  / 
+
+**Skills used:**
+
+**Complications hit:**
+
+**Final outcome:**
+
+**Time/resources spent:**
+`;
+
+// Legacy template for backwards compatibility - defaults to exploration type
+export const SCENE_TEMPLATE = SCENE_EXPLORATION_TEMPLATE;
 
 export const TRAP_TEMPLATE = `---
 type: trap

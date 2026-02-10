@@ -7,6 +7,11 @@ import {
   PC_TEMPLATE,
   ADVENTURE_TEMPLATE,
   SCENE_TEMPLATE,
+  SCENE_SOCIAL_TEMPLATE,
+  SCENE_COMBAT_TEMPLATE,
+  SCENE_EXPLORATION_TEMPLATE,
+  SCENE_PUZZLE_TEMPLATE,
+  SCENE_MONTAGE_TEMPLATE,
   TRAP_TEMPLATE,
   FACTION_TEMPLATE,
   ITEM_TEMPLATE,
@@ -32,7 +37,7 @@ const TEMPLATE_VERSIONS = {
   npc: "1.0.0",
   pc: "1.0.0",
   adventure: "1.1.1", // Fixed escaping issues in interactive scene checkboxes
-  scene: "1.2.0", // Updated with encounter_creatures field
+  scene: "2.0.0", // Specialized scene templates (social, combat, exploration, puzzle, montage)
   faction: "1.0.0",
   item: "1.1.0", // Updated with Edit/Delete buttons
   spell: "1.0.0",
@@ -9233,9 +9238,11 @@ class SceneCreationModal extends Modal {
       .setName("Type")
       .setDesc("Primary scene type")
       .addDropdown(dropdown => dropdown
-        .addOption("social", "Social")
-        .addOption("combat", "Combat")
-        .addOption("exploration", "Exploration")
+        .addOption("social", "🗣️ Social - NPC interactions")
+        .addOption("combat", "⚔️ Combat - Fighting enemies")
+        .addOption("exploration", "🔍 Exploration - Discovery & investigation")
+        .addOption("puzzle", "🧩 Puzzle - Riddles & challenges")
+        .addOption("montage", "🎬 Montage - Skill challenge")
         .setValue(this.type)
         .onChange(value => {
           this.type = value;
@@ -9404,8 +9411,6 @@ class SceneCreationModal extends Modal {
         return;
       }
 
-      new Notice(`Creating scene "${this.sceneName}"...`);
-
       // Get adventure info
       const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
       if (!(adventureFile instanceof TFile)) {
@@ -9421,6 +9426,145 @@ class SceneCreationModal extends Modal {
       
       // Set campaignPath for party resolution
       this.campaignPath = `ttrpgs/${campaignName}`;
+
+      // ====================
+      // EDIT MODE: Update existing scene
+      // ====================
+      if (this.isEdit && this.originalScenePath) {
+        new Notice(`Updating scene "${this.sceneName}"...`);
+        
+        const originalFile = this.app.vault.getAbstractFileByPath(this.originalScenePath);
+        if (!(originalFile instanceof TFile)) {
+          new Notice("❌ Original scene file not found!");
+          return;
+        }
+
+        // Get original scene number from filename or frontmatter
+        const originalBasename = originalFile.basename;
+        const originalNumberMatch = originalBasename.match(/^Scene\s+(\d+)\s+-/);
+        const originalSceneNum = originalNumberMatch ? parseInt(originalNumberMatch[1]) : sceneNum;
+
+        // Check if scene number changed
+        const numberChanged = originalSceneNum !== sceneNum;
+
+        // Determine the target path
+        const adventureFolder = adventureFile.parent;
+        if (!adventureFolder) {
+          new Notice("❌ Adventure folder not found!");
+          return;
+        }
+
+        let targetPath: string;
+        
+        if (numberChanged) {
+          // Scene number changed - need to determine new path and potentially renumber
+          const flatScenesFolder = `${adventureFolder.path}/${adventureFile.basename} - Scenes`;
+          const flatExists = this.app.vault.getAbstractFileByPath(flatScenesFolder) instanceof TFolder;
+          const isFolderStructure = adventureFolder.name === adventureFile.basename;
+
+          if (flatExists) {
+            targetPath = `${flatScenesFolder}/Scene ${sceneNum} - ${this.sceneName}.md`;
+          } else if (isFolderStructure) {
+            const actFolderName = this.act === "1" ? "Act 1 - Setup" : 
+                                  this.act === "2" ? "Act 2 - Rising Action" : "Act 3 - Climax";
+            const actFolderPath = `${adventureFolder.path}/${actFolderName}`;
+            const actFolder = this.app.vault.getAbstractFileByPath(actFolderPath);
+            
+            if (actFolder instanceof TFolder) {
+              targetPath = `${actFolderPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
+            } else {
+              // Check if any act folders exist
+              const act1Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 1 - Setup`) instanceof TFolder;
+              const act2Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 2 - Rising Action`) instanceof TFolder;
+              const act3Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 3 - Climax`) instanceof TFolder;
+              
+              if (act1Exists || act2Exists || act3Exists) {
+                await this.plugin.ensureFolderExists(actFolderPath);
+                targetPath = `${actFolderPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
+              } else {
+                targetPath = `${adventureFolder.path}/Scene ${sceneNum} - ${this.sceneName}.md`;
+              }
+            }
+          } else {
+            new Notice("❌ Could not determine scene folder structure!");
+            return;
+          }
+
+          // Check if new number conflicts with existing scenes (excluding the current scene)
+          const existingScenes = await this.getExistingScenes(this.adventurePath);
+          const conflictingScenes = existingScenes.filter(s => 
+            s.number === sceneNum && s.path !== this.originalScenePath
+          );
+
+          if (conflictingScenes.length > 0) {
+            // Renumber conflicting scenes
+            const scenesToRenumber = existingScenes.filter(s => 
+              s.number >= sceneNum && s.path !== this.originalScenePath
+            );
+            await this.renumberScenes(scenesToRenumber, sceneNum);
+          }
+        } else {
+          // Scene number didn't change - update in place, but handle name/act changes
+          const parentPath = originalFile.parent?.path || "";
+          targetPath = `${parentPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
+        }
+
+        // Create the updated scene content
+        const currentDate: string = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
+        const sceneData = {
+          act: parseInt(this.act),
+          num: sceneNum,
+          name: this.sceneName,
+          duration: this.duration,
+          type: this.type,
+          difficulty: this.difficulty
+        };
+
+        // Handle encounter file
+        let encounterFilePath = "";
+        if (this.createEncounter && this.creatures.length > 0) {
+          const savedPath = await this.saveEncounterFile();
+          if (savedPath) {
+            encounterFilePath = savedPath;
+          }
+        }
+
+        // Update or recreate the scene note
+        const tempPath = targetPath + ".tmp";
+        await this.createSceneNote(tempPath, sceneData, campaignName, worldName, adventureFile.basename, currentDate, encounterFilePath);
+
+        // Read the new content
+        const tempFile = this.app.vault.getAbstractFileByPath(tempPath);
+        if (tempFile instanceof TFile) {
+          const newContent = await this.app.vault.read(tempFile);
+          await this.app.vault.delete(tempFile);
+
+          if (originalFile.path === targetPath) {
+            // Same path - just update content
+            await this.app.vault.modify(originalFile, newContent);
+          } else {
+            // Path changed - create new and delete old
+            await this.app.vault.create(targetPath, newContent);
+            await this.app.vault.delete(originalFile);
+          }
+        }
+
+        // Update Initiative Tracker encounter
+        if (this.createEncounter && this.creatures.length > 0) {
+          await this.encounterBuilder.createInitiativeTrackerEncounter(targetPath);
+        }
+
+        // Open the updated scene
+        await this.app.workspace.openLinkText(targetPath, "", true);
+
+        new Notice(`✅ Scene "${this.sceneName}" updated!`);
+        return;
+      }
+
+      // ====================
+      // CREATE MODE: Create new scene
+      // ====================
+      new Notice(`Creating scene "${this.sceneName}"...`);
 
       // Determine folder structure
       const adventureFolder = adventureFile.parent;
@@ -9529,7 +9673,7 @@ class SceneCreationModal extends Modal {
   }
 
   async renumberScenes(scenes: Array<{ path: string; number: number; name: string }>, insertAt: number) {
-    // Renumber scenes from highest to lowest to avoid conflicts
+    // Renumber scenes from highest to lowest to avoid conflicts during rename
     const sorted = [...scenes].sort((a, b) => b.number - a.number);
     
     for (const scene of sorted) {
@@ -9537,23 +9681,50 @@ class SceneCreationModal extends Modal {
       if (!(oldFile instanceof TFile)) continue;
 
       const newNumber = scene.number + 1;
-      const newPath = scene.path.replace(
-        /Scene\s+\d+\s+-/,
-        `Scene ${newNumber} -`
-      );
+      
+      // Construct new filename preserving exact scene name
+      const oldFilename = oldFile.basename; // e.g., "Scene 5 - Tavern Fight"
+      const sceneNameMatch = oldFilename.match(/^Scene\s+\d+\s+-\s+(.+)$/);
+      const sceneName = sceneNameMatch?.[1] || scene.name;
+      const newFilename = `Scene ${newNumber} - ${sceneName}`;
+      
+      // Build new path
+      const parentPath = oldFile.parent?.path || "";
+      const newPath = `${parentPath}/${newFilename}.md`;
 
-      // Read content and update scene_number in frontmatter
+      // Skip if source and destination are the same (shouldn't happen, but safety check)
+      if (oldFile.path === newPath) {
+        console.warn(`Skipping rename: ${oldFile.path} already has correct name`);
+        continue;
+      }
+
+      // Read and update content
       let content = await this.app.vault.read(oldFile);
+      
+      // Update scene_number in frontmatter
       content = content.replace(
         /^scene_number:\s*\d+$/m,
         `scene_number: ${newNumber}`
       );
-
-      // Create new file with updated content
-      await this.app.vault.create(newPath, content);
       
-      // Delete old file
-      await this.app.vault.delete(oldFile);
+      // Update the h1 header if it exists
+      content = content.replace(
+        /^# Scene\s+\d+:/m,
+        `# Scene ${newNumber}:`
+      );
+
+      try {
+        // Create new file with updated content
+        await this.app.vault.create(newPath, content);
+        
+        // Delete old file only after successful creation
+        await this.app.vault.delete(oldFile);
+        
+        console.log(`Renumbered: ${oldFile.path} → ${newPath}`);
+      } catch (error) {
+        console.error(`Error renumbering scene ${oldFile.path}:`, error);
+        new Notice(`⚠️ Could not renumber ${oldFilename}`);
+      }
     }
   }
 
@@ -9590,7 +9761,36 @@ class SceneCreationModal extends Modal {
       });
     }
     
-    const sceneContent = SCENE_TEMPLATE
+    // Select the appropriate template based on scene type
+    let templateToUse = SCENE_EXPLORATION_TEMPLATE; // Default
+    switch (scene.type) {
+      case 'social':
+        templateToUse = SCENE_SOCIAL_TEMPLATE;
+        break;
+      case 'combat':
+        templateToUse = SCENE_COMBAT_TEMPLATE;
+        break;
+      case 'exploration':
+        templateToUse = SCENE_EXPLORATION_TEMPLATE;
+        break;
+      case 'puzzle':
+        templateToUse = SCENE_PUZZLE_TEMPLATE;
+        break;
+      case 'montage':
+        templateToUse = SCENE_MONTAGE_TEMPLATE;
+        break;
+    }
+    
+    // Calculate difficulty DC based on difficulty level
+    const difficultyDCs: Record<string, string> = {
+      'easy': '12',
+      'medium': '15',
+      'hard': '18',
+      'deadly': '20'
+    };
+    const difficultyDC = difficultyDCs[scene.difficulty] || '15';
+    
+    const sceneContent = templateToUse
       .replace(/{{SCENE_NUMBER}}/g, scene.num.toString())
       .replace(/{{SCENE_NAME}}/g, scene.name)
       .replace(/{{ADVENTURE_NAME}}/g, adventureName)
@@ -9598,6 +9798,7 @@ class SceneCreationModal extends Modal {
       .replace(/{{DURATION}}/g, scene.duration)
       .replace(/{{TYPE}}/g, scene.type)
       .replace(/{{DIFFICULTY}}/g, scene.difficulty)
+      .replace(/{{DIFFICULTY_DC}}/g, difficultyDC)
       .replace(/{{CAMPAIGN}}/g, campaignName)
       .replace(/{{WORLD}}/g, worldName)
       .replace(/{{DATE}}/g, currentDate)
