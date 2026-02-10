@@ -6659,13 +6659,28 @@ class SessionRunDashboardView extends ItemView {
   }
 
   async detectCurrentSession() {
+    // First try Sessions subfolder
     const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
-    if (!(sessionsFolder instanceof TFolder)) return;
-
     const sessionFiles: TFile[] = [];
-    for (const item of sessionsFolder.children) {
-      if (item instanceof TFile && item.extension === "md") {
-        sessionFiles.push(item);
+
+    if (sessionsFolder instanceof TFolder) {
+      // Sessions are in a subfolder
+      for (const item of sessionsFolder.children) {
+        if (item instanceof TFile && item.extension === "md") {
+          sessionFiles.push(item);
+        }
+      }
+    } else {
+      // Sessions are at campaign root level (same level as world.md)
+      const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
+      if (campaignFolder instanceof TFolder) {
+        for (const item of campaignFolder.children) {
+          if (item instanceof TFile && 
+              item.extension === "md" && 
+              item.basename.match(/^Session\s+\d+/i)) {
+            sessionFiles.push(item);
+          }
+        }
       }
     }
 
