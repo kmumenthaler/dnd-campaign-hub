@@ -7240,8 +7240,8 @@ class SessionRunDashboardView extends ItemView {
         const cache = this.app.metadataCache.getFileCache(item);
         const status = cache?.frontmatter?.status || "planning";
         
-        // Only show active adventures for running games
-        if (status === "active" || status === "in-progress") {
+        // Show active, in-progress, and planning adventures (not completed or on-hold)
+        if (status === "active" || status === "in-progress" || status === "planning") {
           adventures.push({
             path: item.path,
             name: item.basename,
@@ -7255,7 +7255,7 @@ class SessionRunDashboardView extends ItemView {
           const cache = this.app.metadataCache.getFileCache(adventureFile);
           const status = cache?.frontmatter?.status || "planning";
           
-          if (status === "active" || status === "in-progress") {
+          if (status === "active" || status === "in-progress" || status === "planning") {
             adventures.push({
               path: adventureFile.path,
               name: item.name,
