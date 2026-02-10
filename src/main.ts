@@ -6088,6 +6088,31 @@ class SessionCreationModal extends Modal {
       const fileName = `${nextNumber.toString().padStart(3, '0')}_${dateStr}.md`;
       const filePath = `${campaignPath}/${fileName}`;
 
+      // Find previous session for recap
+      let recapContent = "";
+      if (nextNumber > 1) {
+        const prevNumber = nextNumber - 1;
+        const campaignFolder = this.app.vault.getAbstractFileByPath(campaignPath);
+        
+        if (campaignFolder instanceof TFolder) {
+          // Find the previous session file (format: 001_20260120.md)
+          const prevSessionFile = campaignFolder.children.find(
+            f => f instanceof TFile && f.name.match(new RegExp(`^${prevNumber.toString().padStart(3, '0')}_\\d{8}\\.md$`))
+          );
+          
+          if (prevSessionFile instanceof TFile) {
+            // Get filename without extension
+            const prevSessionName = prevSessionFile.basename;
+            recapContent = `\n![[${prevSessionName}#^summary]]\n`;
+          }
+        }
+      }
+
+      // Replace the Recap section with previous session's summary (if available)
+      if (recapContent) {
+        sessionContent = sessionContent.replace(/## Recap\s*\n/m, `## Recap\n${recapContent}`);
+      }
+
       // Replace placeholders in template using proper regex patterns
       sessionContent = sessionContent
         .replace(/campaign:\s*([^\r\n]\w*)$/m, `campaign: ${campaignName}`)
