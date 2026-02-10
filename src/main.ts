@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, requestUrl } from "obsidian";
+import { App, ItemView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
 import {
   WORLD_TEMPLATE,
   SESSION_GM_TEMPLATE,
@@ -3111,6 +3111,8 @@ _Add notes about tactics, environment, or special conditions here._
   }
 }
 
+const SESSION_PREP_VIEW_TYPE = "session-prep-dashboard";
+
 export default class DndCampaignHubPlugin extends Plugin {
   settings!: DndCampaignHubSettings;
   SessionCreationModal = SessionCreationModal;
@@ -3119,6 +3121,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+
+    // Register the Session Prep Dashboard view
+    this.registerView(
+      SESSION_PREP_VIEW_TYPE,
+      (leaf) => new SessionPrepDashboardView(leaf, this)
+    );
 
     // Initialize the migration manager
     this.migrationManager = new MigrationManager(this.app, this);
@@ -4389,8 +4397,28 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async openSessionPrepDashboard() {
 		// Detect campaign from active file or use default
 		const campaignPath = this.detectCampaignFromActiveFile() || this.settings.currentCampaign;
-		// Open session prep dashboard
-		new SessionPrepDashboard(this.app, this, campaignPath).open();
+		
+		// Check if view is already open
+		const existing = this.app.workspace.getLeavesOfType(SESSION_PREP_VIEW_TYPE);
+		if (existing.length > 0 && existing[0]) {
+			// Reveal existing view and update campaign
+			this.app.workspace.revealLeaf(existing[0]);
+			const view = existing[0].view as SessionPrepDashboardView;
+			view.setCampaign(campaignPath);
+			return;
+		}
+
+		// Open in right pane
+		const leaf = this.app.workspace.getRightLeaf(false);
+		if (leaf) {
+			await leaf.setViewState({
+				type: SESSION_PREP_VIEW_TYPE,
+				active: true,
+			});
+			const view = leaf.view as SessionPrepDashboardView;
+			view.setCampaign(campaignPath);
+			this.app.workspace.revealLeaf(leaf);
+		}
 	}
 
 	/**
@@ -6047,25 +6075,46 @@ class NPCCreationModal extends Modal {
 }
 
 /**
- * Session Prep Dashboard - Central hub for GM session preparation
+ * Session Prep Dashboard - Central hub for GM session preparation (View)
  */
-class SessionPrepDashboard extends Modal {
+class SessionPrepDashboardView extends ItemView {
   plugin: DndCampaignHubPlugin;
   campaignPath: string;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, campaignPath: string) {
-    super(app);
+  constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
+    super(leaf);
     this.plugin = plugin;
+    this.campaignPath = plugin.settings.currentCampaign;
+  }
+
+  getViewType(): string {
+    return SESSION_PREP_VIEW_TYPE;
+  }
+
+  getDisplayText(): string {
+    return "Session Prep Dashboard";
+  }
+
+  getIcon(): string {
+    return "clipboard-list";
+  }
+
+  setCampaign(campaignPath: string) {
     this.campaignPath = campaignPath;
+    this.render();
   }
 
   async onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("session-prep-dashboard");
+    await this.render();
+  }
+
+  async render() {
+    const container = this.containerEl.children[1] as HTMLElement;
+    container.empty();
+    container.addClass("session-prep-dashboard");
 
     // Header
-    const header = contentEl.createEl("div", { cls: "dashboard-header" });
+    const header = container.createEl("div", { cls: "dashboard-header" });
     header.createEl("h2", { text: "📋 Session Prep Dashboard" });
     
     const campaignName = this.campaignPath.split('/').pop() || "Unknown Campaign";
@@ -6075,7 +6124,7 @@ class SessionPrepDashboard extends Modal {
     });
 
     // Main content container
-    const mainContainer = contentEl.createEl("div", { cls: "dashboard-main" });
+    const mainContainer = container.createEl("div", { cls: "dashboard-main" });
 
     // Left column - Adventures & Scenes
     const leftColumn = mainContainer.createEl("div", { cls: "dashboard-column-left" });
@@ -6086,23 +6135,22 @@ class SessionPrepDashboard extends Modal {
     await this.renderQuickReference(rightColumn);
 
     // Bottom - Session Notes
-    const bottomSection = contentEl.createEl("div", { cls: "dashboard-bottom" });
+    const bottomSection = container.createEl("div", { cls: "dashboard-bottom" });
     await this.renderSessionNotes(bottomSection);
 
     // Action buttons
-    const actions = contentEl.createEl("div", { cls: "dashboard-actions" });
+    const actions = container.createEl("div", { cls: "dashboard-actions" });
     
     const createSessionBtn = actions.createEl("button", {
       text: "📝 Create New Session",
       cls: "mod-cta"
     });
     createSessionBtn.addEventListener("click", () => {
-      this.close();
       this.plugin.createSession();
     });
 
-    const closeBtn = actions.createEl("button", { text: "Close" });
-    closeBtn.addEventListener("click", () => this.close());
+    const refreshBtn = actions.createEl("button", { text: "🔄 Refresh" });
+    refreshBtn.addEventListener("click", () => this.render());
   }
 
   async renderAdventuresAndScenes(container: HTMLElement) {
@@ -6170,7 +6218,6 @@ class SessionPrepDashboard extends Modal {
         sceneLink.addEventListener("click", async (e) => {
           e.preventDefault();
           await this.app.workspace.openLinkText(nextScene.path, "", false);
-          this.close();
         });
 
         // Scene preview
@@ -6194,7 +6241,6 @@ class SessionPrepDashboard extends Modal {
         });
         openBtn.addEventListener("click", async () => {
           await this.app.workspace.openLinkText(nextScene.path, "", false);
-          this.close();
         });
       }
 
@@ -6264,7 +6310,6 @@ class SessionPrepDashboard extends Modal {
         cls: "quick-action-btn"
       });
       btn.addEventListener("click", () => {
-        this.close();
         (this.app as any).commands?.executeCommandById(link.cmd);
       });
     }
@@ -6517,9 +6562,8 @@ class SessionPrepDashboard extends Modal {
     return match && match[1] ? parseInt(match[1]) : 0;
   }
 
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
+  async onClose() {
+    // Cleanup when view is closed
   }
 }
 
