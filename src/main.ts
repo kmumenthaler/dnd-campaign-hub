@@ -7118,7 +7118,9 @@ class SessionRunDashboardView extends ItemView {
     section.createEl("h3", { text: "🎬 Current Scene" });
 
     // Get active adventures
+    console.log("Looking for adventures in:", `${this.campaignPath}/Adventures`);
     const adventures = await this.getActiveAdventures();
+    console.log("Found adventures:", adventures);
     
     if (adventures.length === 0) {
       section.createEl("p", { text: "No active adventures", cls: "empty-message" });
@@ -7127,6 +7129,7 @@ class SessionRunDashboardView extends ItemView {
 
     for (const adventure of adventures) {
       const scenes = await this.getScenesForAdventure(adventure.path);
+      console.log(`Scenes for ${adventure.name}:`, scenes);
       const currentScene = scenes.find(s => s.status === "in-progress") || 
                           scenes.find(s => s.status === "not-started");
       
@@ -7229,14 +7232,22 @@ class SessionRunDashboardView extends ItemView {
 
   async getActiveAdventures() {
     const adventures: Array<{path: string; name: string; status: string}> = [];
-    const adventuresFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Adventures`);
+    const adventuresPath = `${this.campaignPath}/Adventures`;
+    console.log("Checking adventures folder:", adventuresPath);
+    const adventuresFolder = this.app.vault.getAbstractFileByPath(adventuresPath);
 
-    if (!(adventuresFolder instanceof TFolder)) return adventures;
+    if (!(adventuresFolder instanceof TFolder)) {
+      console.log("Adventures folder not found or not a folder");
+      return adventures;
+    }
+
+    console.log("Found adventures folder, checking children:", adventuresFolder.children.length);
 
     for (const item of adventuresFolder.children) {
       if (item instanceof TFile && item.extension === "md") {
         const cache = this.app.metadataCache.getFileCache(item);
         const status = cache?.frontmatter?.status || "planning";
+        console.log(`File ${item.basename}: status=${status}`);
         
         if (status === "active" || status === "in-progress") {
           adventures.push({
@@ -7250,6 +7261,7 @@ class SessionRunDashboardView extends ItemView {
         if (adventureFile instanceof TFile) {
           const cache = this.app.metadataCache.getFileCache(adventureFile);
           const status = cache?.frontmatter?.status || "planning";
+          console.log(`Folder ${item.name}: status=${status}`);
           
           if (status === "active" || status === "in-progress") {
             adventures.push({
