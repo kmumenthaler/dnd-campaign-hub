@@ -6989,8 +6989,11 @@ class SessionRunDashboardView extends ItemView {
       text: "+ Add Timer",
       cls: "mod-cta"
     });
-    addTimerBtn.addEventListener("click", () => {
+    addTimerBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      console.log("Add timer button clicked");
       const name = prompt("Timer name:", "Session Timer");
+      console.log("Timer name entered:", name);
       if (name) {
         this.addTimer(name);
       }
@@ -7117,18 +7120,31 @@ class SessionRunDashboardView extends ItemView {
       text: "⚔️ Open Initiative Tracker",
       cls: "quick-action-button"
     });
-    initiativeBtn.addEventListener("click", () => {
+    initiativeBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      console.log("Initiative tracker button clicked");
+      
       const initiativePlugin = (this.app as any).plugins?.getPlugin("initiative-tracker");
+      console.log("Initiative plugin found:", !!initiativePlugin);
+      
       if (!initiativePlugin) {
         new Notice("Initiative Tracker plugin not installed or enabled");
         return;
       }
       
       const commands = (this.app as any).commands;
+      console.log("Commands object:", !!commands);
+      
       if (commands) {
-        const executed = commands.executeCommandById("initiative-tracker:open-tracker");
-        if (!executed) {
-          new Notice("Could not open Initiative Tracker. Command may have changed.");
+        try {
+          const executed = commands.executeCommandById("initiative-tracker:open-tracker");
+          console.log("Command executed:", executed);
+          if (!executed) {
+            new Notice("Could not open Initiative Tracker. Command may have changed.");
+          }
+        } catch (error) {
+          console.error("Error executing command:", error);
+          new Notice("Error opening Initiative Tracker: " + (error as Error).message);
         }
       }
     });
