@@ -6399,23 +6399,38 @@ class SessionPrepDashboardView extends ItemView {
 
     // Get recent sessions
     const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
-    
-    if (!(sessionsFolder instanceof TFolder)) {
-      container.createEl("p", { text: "No sessions folder found" });
-      return;
-    }
-
     const sessionFiles: TFile[] = [];
-    for (const item of sessionsFolder.children) {
-      if (item instanceof TFile && item.extension === "md") {
-        sessionFiles.push(item);
+
+    if (sessionsFolder instanceof TFolder) {
+      // Sessions in subfolder
+      for (const item of sessionsFolder.children) {
+        if (item instanceof TFile && item.extension === "md") {
+          sessionFiles.push(item);
+        }
+      }
+    } else {
+      // Sessions at campaign root
+      const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
+      if (campaignFolder instanceof TFolder) {
+        for (const item of campaignFolder.children) {
+          if (item instanceof TFile && item.extension === "md") {
+            const cache = this.app.metadataCache.getFileCache(item);
+            if (cache?.frontmatter?.type === "session") {
+              sessionFiles.push(item);
+            }
+          }
+        }
       }
     }
 
     // Sort by session number (descending)
     sessionFiles.sort((a, b) => {
-      const aNum = this.extractSessionNumber(a.basename);
-      const bNum = this.extractSessionNumber(b.basename);
+      const cacheA = this.app.metadataCache.getFileCache(a);
+      const cacheB = this.app.metadataCache.getFileCache(b);
+      
+      const aNum = cacheA?.frontmatter?.sessionNum || this.extractSessionNumber(a.basename);
+      const bNum = cacheB?.frontmatter?.sessionNum || this.extractSessionNumber(b.basename);
+      
       return bNum - aNum;
     });
 
@@ -6598,8 +6613,15 @@ class SessionPrepDashboardView extends ItemView {
   }
 
   extractSessionNumber(filename: string): number {
-    const match = filename.match(/Session\s+(\d+)/i);
-    return match && match[1] ? parseInt(match[1]) : 0;
+    // Try "Session X" format
+    let match = filename.match(/Session\s+(\d+)/i);
+    if (match && match[1]) return parseInt(match[1]);
+    
+    // Try "001_20250521" format
+    match = filename.match(/^(\d{3})_\d{8}$/);
+    if (match && match[1]) return parseInt(match[1]);
+    
+    return 0;
   }
 
   async onClose() {
@@ -6675,10 +6697,16 @@ class SessionRunDashboardView extends ItemView {
       const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
       if (campaignFolder instanceof TFolder) {
         for (const item of campaignFolder.children) {
-          if (item instanceof TFile && 
-              item.extension === "md" && 
-              item.basename.match(/^Session\s+\d+/i)) {
-            sessionFiles.push(item);
+          if (item instanceof TFile && item.extension === "md") {
+            // Check frontmatter for type: session
+            const cache = this.app.metadataCache.getFileCache(item);
+            if (cache?.frontmatter?.type === "session") {
+              sessionFiles.push(item);
+            } else if (item.basename.match(/^Session\s+\d+/i) || 
+                       item.basename.match(/^\d{3}_\d{8}$/)) {
+              // Fallback to filename patterns: "Session X" or "001_20250521"
+              sessionFiles.push(item);
+            }
           }
         }
       }
@@ -6686,8 +6714,13 @@ class SessionRunDashboardView extends ItemView {
 
     // Get the most recent session
     sessionFiles.sort((a, b) => {
-      const aNum = this.extractSessionNumber(a.basename);
-      const bNum = this.extractSessionNumber(b.basename);
+      // Try to get session number from frontmatter first
+      const cacheA = this.app.metadataCache.getFileCache(a);
+      const cacheB = this.app.metadataCache.getFileCache(b);
+      
+      const aNum = cacheA?.frontmatter?.sessionNum || this.extractSessionNumber(a.basename);
+      const bNum = cacheB?.frontmatter?.sessionNum || this.extractSessionNumber(b.basename);
+      
       return bNum - aNum;
     });
 
@@ -6695,8 +6728,15 @@ class SessionRunDashboardView extends ItemView {
   }
 
   extractSessionNumber(filename: string): number {
-    const match = filename.match(/Session\s+(\d+)/i);
-    return match && match[1] ? parseInt(match[1]) : 0;
+    // Try "Session X" format
+    let match = filename.match(/Session\s+(\d+)/i);
+    if (match && match[1]) return parseInt(match[1]);
+    
+    // Try "001_20250521" format
+    match = filename.match(/^(\d{3})_\d{8}$/);
+    if (match && match[1]) return parseInt(match[1]);
+    
+    return 0;
   }
 
   enableReadOnlyMode() {
