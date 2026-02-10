@@ -234,7 +234,32 @@ if (adventureLink) {
         const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
         const duration = scene.duration || "?min";
         const type = scene.type || "?";
-        dv.paragraph(\`\${status} \${dv.fileLink(scene.file.path, false, scene.file.name)} - \\\`\${duration} | \${type}\\\`\`);
+        
+        // Create clickable status button
+        const sceneDiv = dv.el('div', '', { cls: 'scene-item' });
+        const statusBtn = dv.el('button', status, { container: sceneDiv });
+        statusBtn.style.border = 'none';
+        statusBtn.style.background = 'transparent';
+        statusBtn.style.cursor = 'pointer';
+        statusBtn.style.fontSize = '1.2em';
+        statusBtn.title = 'Click to change status';
+        statusBtn.onclick = async () => {
+          const file = app.vault.getAbstractFileByPath(scene.file.path);
+          if (file) {
+            const content = await app.vault.read(file);
+            const currentStatus = scene.status || 'not-started';
+            const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
+                               currentStatus === 'in-progress' ? 'completed' : 'not-started';
+            const newContent = content.replace(
+              /^status:\s*.+$/m,
+              \`status: \${nextStatus}\`
+            );
+            await app.vault.modify(file, newContent);
+          }
+        };
+        dv.span(' ', { container: sceneDiv });
+        dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
+        dv.span(\` - \\\`\${duration} | \${type}\\\`\`, { container: sceneDiv });
       }
     }
   }
@@ -669,7 +694,32 @@ if (allScenes.length === 0) {
           const duration = scene.duration || "?min";
           const type = scene.type || "?";
           const difficulty = scene.difficulty || "?";
-          dv.paragraph(\`\${status} **\${dv.fileLink(scene.file.path, false, scene.file.name)}**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`);
+          
+          // Create clickable status button
+          const sceneDiv = dv.el('div', '', { cls: 'scene-item' });
+          const statusBtn = dv.el('button', status, { container: sceneDiv });
+          statusBtn.style.border = 'none';
+          statusBtn.style.background = 'transparent';
+          statusBtn.style.cursor = 'pointer';
+          statusBtn.style.fontSize = '1.2em';
+          statusBtn.title = 'Click to change status';
+          statusBtn.onclick = async () => {
+            const file = app.vault.getAbstractFileByPath(scene.file.path);
+            if (file) {
+              const content = await app.vault.read(file);
+              const currentStatus = scene.status || 'not-started';
+              const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
+                                 currentStatus === 'in-progress' ? 'completed' : 'not-started';
+              const newContent = content.replace(
+                /^status:\\s*.+$/m,
+                \`status: \${nextStatus}\`
+              );
+              await app.vault.modify(file, newContent);
+            }
+          };
+          dv.span(' **', { container: sceneDiv });
+          dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
+          dv.span(\`**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`, { container: sceneDiv });
         }
       }
     }
@@ -680,7 +730,32 @@ if (allScenes.length === 0) {
       const duration = scene.duration || "?min";
       const type = scene.type || "?";
       const difficulty = scene.difficulty || "?";
-      dv.paragraph(\`\${status} **\${dv.fileLink(scene.file.path, false, scene.file.name)}**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`);
+      
+      // Create clickable status button
+      const sceneDiv = dv.el('div', '', { cls: 'scene-item' });
+      const statusBtn = dv.el('button', status, { container: sceneDiv });
+      statusBtn.style.border = 'none';
+      statusBtn.style.background = 'transparent';
+      statusBtn.style.cursor = 'pointer';
+      statusBtn.style.fontSize = '1.2em';
+      statusBtn.title = 'Click to change status';
+      statusBtn.onclick = async () => {
+        const file = app.vault.getAbstractFileByPath(scene.file.path);
+        if (file) {
+          const content = await app.vault.read(file);
+          const currentStatus = scene.status || 'not-started';
+          const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
+                             currentStatus === 'in-progress' ? 'completed' : 'not-started';
+          const newContent = content.replace(
+            /^status:\\s*.+$/m,
+            \`status: \${nextStatus}\`
+          );
+          await app.vault.modify(file, newContent);
+        }
+      };
+      dv.span(' **', { container: sceneDiv });
+      dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
+      dv.span(\`**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`, { container: sceneDiv });
     }
   }
 }
