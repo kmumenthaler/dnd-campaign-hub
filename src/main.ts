@@ -4078,8 +4078,26 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	async createSession() {
+		// Detect campaign from active file or use default
+		const campaignPath = this.detectCampaignFromActiveFile() || this.settings.currentCampaign;
 		// Open session creation modal
-		new SessionCreationModal(this.app, this).open();
+		new SessionCreationModal(this.app, this, undefined, campaignPath).open();
+	}
+
+	/**
+	 * Detect campaign path from the currently active file
+	 */
+	detectCampaignFromActiveFile(): string | null {
+		const activeFile = this.app.workspace.getActiveFile();
+		if (!activeFile) return null;
+		
+		// Check if file is in a campaign folder (ttrpgs/CampaignName/...)
+		const pathMatch = activeFile.path.match(/^ttrpgs\/([^\/]+)/);
+		if (pathMatch && pathMatch[1]) {
+			return `ttrpgs/${pathMatch[1]}`;
+		}
+		
+		return null;
 	}
 
 	async createSpell() {
@@ -5721,6 +5739,7 @@ class NPCCreationModal extends Modal {
 
 class SessionCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
+  campaignPath: string;
   sessionTitle = "";
   sessionDate: string;
   location = "";
@@ -5736,9 +5755,10 @@ class SessionCreationModal extends Modal {
   selectedCalendarData: any = null;
   endDayDropdown: any = null;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
+    this.campaignPath = campaignPath || plugin.settings.currentCampaign;
     this.sessionDate = new Date().toISOString().split('T')[0] || "";
     if (adventurePath) {
       this.adventurePath = adventurePath;
@@ -5747,7 +5767,7 @@ class SessionCreationModal extends Modal {
 
   async getAllAdventures(): Promise<Array<{ path: string; name: string }>> {
     const adventures: Array<{ path: string; name: string }> = [];
-    const campaignPath = this.plugin.settings.currentCampaign;
+    const campaignPath = this.campaignPath;
     
     const adventuresFolder = this.app.vault.getAbstractFileByPath(`${campaignPath}/Adventures`);
     
@@ -5777,7 +5797,7 @@ class SessionCreationModal extends Modal {
 
   async loadCalendarData() {
     // Get campaign World.md to fetch calendar and dates
-    const campaignPath = this.plugin.settings.currentCampaign;
+    const campaignPath = this.campaignPath;
     const worldFile = this.app.vault.getAbstractFileByPath(`${campaignPath}/World.md`);
     
     if (worldFile instanceof TFile) {
@@ -5833,7 +5853,7 @@ class SessionCreationModal extends Modal {
   }
 
   async getPreviousSession(): Promise<{endYear: string, endMonth: string, endDay: string} | null> {
-    const campaignFolder = this.app.vault.getAbstractFileByPath(this.plugin.settings.currentCampaign);
+    const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
     
     if (campaignFolder instanceof TFolder) {
       const files = campaignFolder.children.filter(
@@ -5878,7 +5898,7 @@ class SessionCreationModal extends Modal {
     await this.loadCalendarData();
 
     // Get campaign info
-    const campaignPath = this.plugin.settings.currentCampaign;
+    const campaignPath = this.campaignPath;
     const campaignName = campaignPath?.split('/').pop() || "Unknown";
     
     contentEl.createEl("p", { 
@@ -6012,7 +6032,7 @@ class SessionCreationModal extends Modal {
   }
 
   getNextSessionNumber(): number {
-    const campaignFolder = this.app.vault.getAbstractFileByPath(this.plugin.settings.currentCampaign);
+    const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
     let nextNumber = 1;
     
     if (campaignFolder instanceof TFolder) {
@@ -6053,7 +6073,7 @@ class SessionCreationModal extends Modal {
   }
 
   async createSessionFile() {
-    const campaignPath = this.plugin.settings.currentCampaign;
+    const campaignPath = this.campaignPath;
     const campaignName = campaignPath?.split('/').pop() || "Unknown";
     const nextNumber = this.getNextSessionNumber();
 
