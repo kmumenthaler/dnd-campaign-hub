@@ -6265,7 +6265,7 @@ class SessionPrepDashboard extends Modal {
       });
       btn.addEventListener("click", () => {
         this.close();
-        this.app.commands.executeCommandById(link.cmd);
+        (this.app as any).commands?.executeCommandById(link.cmd);
       });
     }
   }
