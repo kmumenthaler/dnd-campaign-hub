@@ -3112,6 +3112,7 @@ _Add notes about tactics, environment, or special conditions here._
 }
 
 const SESSION_PREP_VIEW_TYPE = "session-prep-dashboard";
+const SESSION_RUN_VIEW_TYPE = "session-run-dashboard";
 
 export default class DndCampaignHubPlugin extends Plugin {
   settings!: DndCampaignHubSettings;
@@ -3126,6 +3127,12 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.registerView(
       SESSION_PREP_VIEW_TYPE,
       (leaf) => new SessionPrepDashboardView(leaf, this)
+    );
+
+    // Register the Session Run Dashboard view
+    this.registerView(
+      SESSION_RUN_VIEW_TYPE,
+      (leaf) => new SessionRunDashboardView(leaf, this)
     );
 
     // Initialize the migration manager
@@ -3195,6 +3202,12 @@ export default class DndCampaignHubPlugin extends Plugin {
       id: "session-prep-dashboard",
       name: "Open Session Prep Dashboard",
       callback: () => this.openSessionPrepDashboard(),
+    });
+
+    this.addCommand({
+      id: "session-run-dashboard",
+      name: "Open Session Run Dashboard",
+      callback: () => this.openSessionRunDashboard(),
     });
 
     this.addCommand({
@@ -4416,6 +4429,33 @@ export default class DndCampaignHubPlugin extends Plugin {
 				active: true,
 			});
 			const view = leaf.view as SessionPrepDashboardView;
+			view.setCampaign(campaignPath);
+			this.app.workspace.revealLeaf(leaf);
+		}
+	}
+
+	async openSessionRunDashboard() {
+		// Detect campaign from active file or use default
+		const campaignPath = this.detectCampaignFromActiveFile() || this.settings.currentCampaign;
+		
+		// Check if view is already open
+		const existing = this.app.workspace.getLeavesOfType(SESSION_RUN_VIEW_TYPE);
+		if (existing.length > 0 && existing[0]) {
+			// Reveal existing view and update campaign
+			this.app.workspace.revealLeaf(existing[0]);
+			const view = existing[0].view as SessionRunDashboardView;
+			view.setCampaign(campaignPath);
+			return;
+		}
+
+		// Open in right pane
+		const leaf = this.app.workspace.getRightLeaf(false);
+		if (leaf) {
+			await leaf.setViewState({
+				type: SESSION_RUN_VIEW_TYPE,
+				active: true,
+			});
+			const view = leaf.view as SessionRunDashboardView;
 			view.setCampaign(campaignPath);
 			this.app.workspace.revealLeaf(leaf);
 		}
@@ -6564,6 +6604,617 @@ class SessionPrepDashboardView extends ItemView {
 
   async onClose() {
     // Cleanup when view is closed
+  }
+}
+
+/**
+ * Session Run Dashboard - Active session management for GMs
+ */
+class SessionRunDashboardView extends ItemView {
+  plugin: DndCampaignHubPlugin;
+  campaignPath: string;
+  currentSessionFile: TFile | null = null;
+  readOnlyMode: boolean = true;
+  timers: Array<{id: string; name: string; startTime: number; paused: boolean; pausedAt: number; elapsed: number}> = [];
+  diceHistory: Array<{roll: string; result: number; timestamp: number}> = [];
+  quickNotesContent: string = "";
+  autoSaveInterval: number | null = null;
+
+  constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
+    super(leaf);
+    this.plugin = plugin;
+    this.campaignPath = plugin.settings.currentCampaign;
+  }
+
+  getViewType(): string {
+    return SESSION_RUN_VIEW_TYPE;
+  }
+
+  getDisplayText(): string {
+    return "Session Running";
+  }
+
+  getIcon(): string {
+    return "play-circle";
+  }
+
+  setCampaign(campaignPath: string) {
+    this.campaignPath = campaignPath;
+    this.render();
+  }
+
+  async onOpen() {
+    // Find current session file
+    await this.detectCurrentSession();
+    
+    // Set read-only mode by default
+    if (this.readOnlyMode) {
+      this.enableReadOnlyMode();
+    }
+
+    // Start auto-save for quick notes
+    this.startAutoSave();
+    
+    await this.render();
+  }
+
+  async detectCurrentSession() {
+    const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
+    if (!(sessionsFolder instanceof TFolder)) return;
+
+    const sessionFiles: TFile[] = [];
+    for (const item of sessionsFolder.children) {
+      if (item instanceof TFile && item.extension === "md") {
+        sessionFiles.push(item);
+      }
+    }
+
+    // Get the most recent session
+    sessionFiles.sort((a, b) => {
+      const aNum = this.extractSessionNumber(a.basename);
+      const bNum = this.extractSessionNumber(b.basename);
+      return bNum - aNum;
+    });
+
+    this.currentSessionFile = sessionFiles[0] || null;
+  }
+
+  extractSessionNumber(filename: string): number {
+    const match = filename.match(/Session\s+(\d+)/i);
+    return match && match[1] ? parseInt(match[1]) : 0;
+  }
+
+  enableReadOnlyMode() {
+    this.readOnlyMode = true;
+    // Set all markdown views to read mode
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (leaf.view.getViewType() === "markdown") {
+        const view = leaf.view as any;
+        if (view.getMode && view.getMode() === "source") {
+          const state = view.getState();
+          view.setState({ ...state, mode: "preview" }, {});
+        }
+      }
+    });
+  }
+
+  disableReadOnlyMode() {
+    this.readOnlyMode = false;
+    // User can manually switch views back to edit mode
+  }
+
+  startAutoSave() {
+    if (this.autoSaveInterval) return;
+    
+    // Auto-save every 30 seconds
+    this.autoSaveInterval = window.setInterval(() => {
+      this.saveQuickNotes();
+    }, 30000);
+  }
+
+  async saveQuickNotes() {
+    if (!this.currentSessionFile || !this.quickNotesContent.trim()) return;
+
+    try {
+      const content = await this.app.vault.read(this.currentSessionFile);
+      
+      // Check if Quick Notes section exists
+      const quickNotesMarker = "## Quick Notes (During Session)";
+      
+      if (content.includes(quickNotesMarker)) {
+        // Update existing section
+        const regex = /## Quick Notes \(During Session\)\s*\n([\s\S]*?)(?=\n##|$)/;
+        const newContent = content.replace(
+          regex,
+          `## Quick Notes (During Session)\n\n${this.quickNotesContent}\n`
+        );
+        await this.app.vault.modify(this.currentSessionFile, newContent);
+      } else {
+        // Add new section at the end
+        const newContent = content + `\n\n${quickNotesMarker}\n\n${this.quickNotesContent}\n`;
+        await this.app.vault.modify(this.currentSessionFile, newContent);
+      }
+    } catch (error) {
+      console.error("Error saving quick notes:", error);
+    }
+  }
+
+  addTimer(name: string) {
+    const timer = {
+      id: `timer-${Date.now()}`,
+      name: name,
+      startTime: Date.now(),
+      paused: false,
+      pausedAt: 0,
+      elapsed: 0
+    };
+    this.timers.push(timer);
+    this.render();
+  }
+
+  removeTimer(id: string) {
+    this.timers = this.timers.filter(t => t.id !== id);
+    this.render();
+  }
+
+  toggleTimer(id: string) {
+    const timer = this.timers.find(t => t.id === id);
+    if (!timer) return;
+
+    if (timer.paused) {
+      // Resume
+      timer.startTime = Date.now() - timer.elapsed;
+      timer.paused = false;
+    } else {
+      // Pause
+      timer.elapsed = Date.now() - timer.startTime;
+      timer.pausedAt = Date.now();
+      timer.paused = true;
+    }
+    this.render();
+  }
+
+  getTimerDisplay(timer: {startTime: number; paused: boolean; elapsed: number}): string {
+    const totalMs = timer.paused ? timer.elapsed : Date.now() - timer.startTime;
+    const totalSeconds = Math.floor(totalMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  }
+
+  rollDice(diceType: string) {
+    const sides = parseInt(diceType.substring(1)); // Remove 'd' prefix
+    const result = Math.floor(Math.random() * sides) + 1;
+    
+    this.diceHistory.unshift({
+      roll: diceType,
+      result: result,
+      timestamp: Date.now()
+    });
+
+    // Keep only last 20 rolls
+    if (this.diceHistory.length > 20) {
+      this.diceHistory = this.diceHistory.slice(0, 20);
+    }
+
+    this.render();
+  }
+
+  async render() {
+    const container = this.containerEl.children[1];
+    if (!container) return;
+    
+    container.empty();
+    container.addClass("session-run-dashboard");
+
+    // Header with session info
+    const header = container.createEl("div", { cls: "run-dashboard-header" });
+    const sessionName = this.currentSessionFile?.basename || "No Active Session";
+    header.createEl("h2", { text: `🎮 ${sessionName}` });
+    
+    const campaignName = this.campaignPath.split('/').pop() || "Unknown Campaign";
+    header.createEl("p", { 
+      text: `Campaign: ${campaignName}`,
+      cls: "dashboard-campaign-name"
+    });
+
+    // Read-only mode toggle
+    const modeToggle = header.createEl("div", { cls: "mode-toggle" });
+    const toggleBtn = modeToggle.createEl("button", {
+      text: this.readOnlyMode ? "🔒 Read-Only ON" : "🔓 Read-Only OFF",
+      cls: this.readOnlyMode ? "mod-warning" : ""
+    });
+    toggleBtn.addEventListener("click", () => {
+      if (this.readOnlyMode) {
+        this.disableReadOnlyMode();
+      } else {
+        this.enableReadOnlyMode();
+      }
+      this.render();
+    });
+
+    // Main content grid
+    const mainGrid = container.createEl("div", { cls: "run-dashboard-grid" });
+
+    // Left column
+    const leftCol = mainGrid.createEl("div", { cls: "run-dashboard-left" });
+    
+    // Timers section
+    await this.renderTimers(leftCol);
+    
+    // Dice roller section
+    await this.renderDiceRoller(leftCol);
+
+    // Right column
+    const rightCol = mainGrid.createEl("div", { cls: "run-dashboard-right" });
+    
+    // Quick notes section
+    await this.renderQuickNotes(rightCol);
+    
+    // Current scene section
+    await this.renderCurrentScene(rightCol);
+
+    // Bottom section
+    const bottomSection = container.createEl("div", { cls: "run-dashboard-bottom" });
+    await this.renderQuickActions(bottomSection);
+
+    // Update timers display every second
+    window.setInterval(() => {
+      const timerDisplays = container.querySelectorAll('.timer-display');
+      timerDisplays.forEach((display, index) => {
+        if (this.timers[index]) {
+          display.textContent = this.getTimerDisplay(this.timers[index]);
+        }
+      });
+    }, 1000);
+  }
+
+  async renderTimers(container: HTMLElement) {
+    const section = container.createEl("div", { cls: "dashboard-section" });
+    section.createEl("h3", { text: "⏱️ Timers" });
+
+    if (this.timers.length === 0) {
+      section.createEl("p", { text: "No active timers", cls: "empty-message" });
+    }
+
+    for (const timer of this.timers) {
+      const timerCard = section.createEl("div", { cls: "timer-card" });
+      
+      const timerHeader = timerCard.createEl("div", { cls: "timer-header" });
+      timerHeader.createEl("strong", { text: timer.name });
+      
+      const timerDisplay = timerCard.createEl("div", { 
+        cls: "timer-display",
+        text: this.getTimerDisplay(timer)
+      });
+
+      const timerControls = timerCard.createEl("div", { cls: "timer-controls" });
+      
+      const pauseBtn = timerControls.createEl("button", {
+        text: timer.paused ? "▶️ Resume" : "⏸️ Pause"
+      });
+      pauseBtn.addEventListener("click", () => this.toggleTimer(timer.id));
+
+      const removeBtn = timerControls.createEl("button", {
+        text: "🗑️ Remove",
+        cls: "mod-warning"
+      });
+      removeBtn.addEventListener("click", () => this.removeTimer(timer.id));
+    }
+
+    // Add timer button
+    const addTimerBtn = section.createEl("button", {
+      text: "+ Add Timer",
+      cls: "mod-cta"
+    });
+    addTimerBtn.addEventListener("click", () => {
+      const name = prompt("Timer name:", "Session Timer");
+      if (name) {
+        this.addTimer(name);
+      }
+    });
+  }
+
+  async renderDiceRoller(container: HTMLElement) {
+    const section = container.createEl("div", { cls: "dashboard-section" });
+    section.createEl("h3", { text: "🎲 Dice Roller" });
+
+    const diceButtons = section.createEl("div", { cls: "dice-buttons" });
+    const commonDice = ["d4", "d6", "d8", "d10", "d12", "d20", "d100"];
+    
+    for (const dice of commonDice) {
+      const btn = diceButtons.createEl("button", {
+        text: dice,
+        cls: "dice-button"
+      });
+      btn.addEventListener("click", () => this.rollDice(dice));
+    }
+
+    // Dice history
+    if (this.diceHistory.length > 0) {
+      section.createEl("h4", { text: "History" });
+      const history = section.createEl("div", { cls: "dice-history" });
+      
+      for (const roll of this.diceHistory.slice(0, 10)) {
+        const rollItem = history.createEl("div", { cls: "dice-history-item" });
+        rollItem.createEl("span", { 
+          text: `${roll.roll}: `,
+          cls: "dice-type"
+        });
+        rollItem.createEl("span", { 
+          text: roll.result.toString(),
+          cls: "dice-result"
+        });
+      }
+    }
+  }
+
+  async renderQuickNotes(container: HTMLElement) {
+    const section = container.createEl("div", { cls: "dashboard-section" });
+    section.createEl("h3", { text: "📝 Quick Notes" });
+    
+    const textarea = section.createEl("textarea", {
+      cls: "quick-notes-textarea",
+      placeholder: "Jot down quick notes... (Auto-saves every 30s)"
+    });
+    textarea.value = this.quickNotesContent;
+    textarea.addEventListener("input", (e) => {
+      this.quickNotesContent = (e.target as HTMLTextAreaElement).value;
+    });
+
+    const saveBtn = section.createEl("button", {
+      text: "💾 Save Now",
+      cls: "mod-cta"
+    });
+    saveBtn.addEventListener("click", () => {
+      this.saveQuickNotes();
+      new Notice("Quick notes saved to session!");
+    });
+  }
+
+  async renderCurrentScene(container: HTMLElement) {
+    const section = container.createEl("div", { cls: "dashboard-section" });
+    section.createEl("h3", { text: "🎬 Current Scene" });
+
+    // Get active adventures
+    const adventures = await this.getActiveAdventures();
+    
+    if (adventures.length === 0) {
+      section.createEl("p", { text: "No active adventures", cls: "empty-message" });
+      return;
+    }
+
+    for (const adventure of adventures) {
+      const scenes = await this.getScenesForAdventure(adventure.path);
+      const currentScene = scenes.find(s => s.status === "in-progress") || 
+                          scenes.find(s => s.status === "not-started");
+      
+      if (currentScene) {
+        const sceneCard = section.createEl("div", { cls: "current-scene-card" });
+        sceneCard.createEl("strong", { text: `Scene ${currentScene.number}: ${currentScene.name}` });
+        sceneCard.createEl("p", { 
+          text: `${this.getSceneIcon(currentScene.type)} ${currentScene.type} | 🎲 ${currentScene.difficulty}` 
+        });
+
+        const openBtn = sceneCard.createEl("button", {
+          text: "Open Scene",
+          cls: "mod-cta"
+        });
+        openBtn.addEventListener("click", async () => {
+          await this.app.workspace.openLinkText(currentScene.path, "", false);
+        });
+
+        const completeBtn = sceneCard.createEl("button", {
+          text: "✅ Mark Complete"
+        });
+        completeBtn.addEventListener("click", async () => {
+          await this.markSceneComplete(currentScene.path);
+          this.render();
+        });
+      }
+    }
+  }
+
+  async renderQuickActions(container: HTMLElement) {
+    container.createEl("h3", { text: "⚡ Quick Actions" });
+    
+    const actions = container.createEl("div", { cls: "quick-actions-grid" });
+
+    // Initiative Tracker
+    const initiativeBtn = actions.createEl("button", {
+      text: "⚔️ Open Initiative Tracker",
+      cls: "quick-action-button"
+    });
+    initiativeBtn.addEventListener("click", () => {
+      (this.app as any).commands?.executeCommandById("initiative-tracker:open-tracker");
+    });
+
+    // Create NPC
+    const npcBtn = actions.createEl("button", {
+      text: "👤 Quick NPC",
+      cls: "quick-action-button"
+    });
+    npcBtn.addEventListener("click", () => {
+      (this.app as any).commands?.executeCommandById("dnd-campaign-hub:create-npc");
+    });
+
+    // Create Encounter
+    const encounterBtn = actions.createEl("button", {
+      text: "⚔️ Create Encounter",
+      cls: "quick-action-button"
+    });
+    encounterBtn.addEventListener("click", () => {
+      (this.app as any).commands?.executeCommandById("dnd-campaign-hub:create-encounter");
+    });
+
+    // Open Session File
+    if (this.currentSessionFile) {
+      const sessionBtn = actions.createEl("button", {
+        text: "📄 Open Session Note",
+        cls: "quick-action-button"
+      });
+      sessionBtn.addEventListener("click", async () => {
+        if (this.currentSessionFile) {
+          await this.app.workspace.openLinkText(this.currentSessionFile.path, "", false);
+        }
+      });
+    }
+  }
+
+  async getActiveAdventures() {
+    const adventures: Array<{path: string; name: string; status: string}> = [];
+    const adventuresFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Adventures`);
+
+    if (!(adventuresFolder instanceof TFolder)) return adventures;
+
+    for (const item of adventuresFolder.children) {
+      if (item instanceof TFile && item.extension === "md") {
+        const cache = this.app.metadataCache.getFileCache(item);
+        const status = cache?.frontmatter?.status || "planning";
+        
+        if (status === "active" || status === "in-progress") {
+          adventures.push({
+            path: item.path,
+            name: item.basename,
+            status: status
+          });
+        }
+      } else if (item instanceof TFolder) {
+        const adventureFile = this.app.vault.getAbstractFileByPath(`${item.path}/${item.name}.md`);
+        if (adventureFile instanceof TFile) {
+          const cache = this.app.metadataCache.getFileCache(adventureFile);
+          const status = cache?.frontmatter?.status || "planning";
+          
+          if (status === "active" || status === "in-progress") {
+            adventures.push({
+              path: adventureFile.path,
+              name: item.name,
+              status: status
+            });
+          }
+        }
+      }
+    }
+
+    return adventures;
+  }
+
+  async getScenesForAdventure(adventurePath: string) {
+    const scenes: Array<any> = [];
+    const adventureFile = this.app.vault.getAbstractFileByPath(adventurePath);
+
+    if (!(adventureFile instanceof TFile)) return scenes;
+
+    const adventureFolder = adventureFile.parent;
+    if (!adventureFolder) return scenes;
+
+    const flatScenesFolder = this.app.vault.getAbstractFileByPath(
+      `${adventureFolder.path}/${adventureFile.basename} - Scenes`
+    );
+
+    const folderScenesPath = `${adventureFolder.path}/${adventureFile.basename}`;
+    const folderStructure = this.app.vault.getAbstractFileByPath(folderScenesPath);
+
+    let sceneFolders: TFolder[] = [];
+
+    if (flatScenesFolder instanceof TFolder) {
+      sceneFolders.push(flatScenesFolder);
+    } else if (folderStructure instanceof TFolder) {
+      for (const child of folderStructure.children) {
+        if (child instanceof TFolder && child.name.startsWith("Act ")) {
+          sceneFolders.push(child);
+        }
+      }
+      if (sceneFolders.length === 0) {
+        sceneFolders.push(folderStructure);
+      }
+    } else {
+      for (const child of adventureFolder.children) {
+        if (child instanceof TFolder && child.name.startsWith("Act ")) {
+          sceneFolders.push(child);
+        }
+      }
+      if (sceneFolders.length === 0) {
+        for (const child of adventureFolder.children) {
+          if (child instanceof TFile && child.extension === "md" && 
+              child.path !== adventurePath && 
+              child.basename.match(/^Scene\s+\d+/)) {
+            sceneFolders.push(adventureFolder);
+            break;
+          }
+        }
+      }
+    }
+
+    for (const folder of sceneFolders) {
+      for (const item of folder.children) {
+        if (item instanceof TFile && item.extension === "md") {
+          const match = item.basename.match(/^Scene\s+(\d+)\s+-\s+(.+)$/);
+          if (match && match[1] && match[2]) {
+            const cache = this.app.metadataCache.getFileCache(item);
+            const frontmatter = cache?.frontmatter;
+
+            scenes.push({
+              path: item.path,
+              number: parseInt(match[1]),
+              name: match[2],
+              type: frontmatter?.scene_type || "exploration",
+              difficulty: frontmatter?.difficulty || "medium",
+              status: frontmatter?.status || "not-started"
+            });
+          }
+        }
+      }
+    }
+
+    scenes.sort((a, b) => a.number - b.number);
+    return scenes;
+  }
+
+  getSceneIcon(type: string): string {
+    const icons: Record<string, string> = {
+      social: "🗣️",
+      combat: "⚔️",
+      exploration: "🔍",
+      puzzle: "🧩",
+      montage: "🎬"
+    };
+    return icons[type] || "📝";
+  }
+
+  async markSceneComplete(scenePath: string) {
+    const file = this.app.vault.getAbstractFileByPath(scenePath);
+    if (!(file instanceof TFile)) return;
+
+    try {
+      const content = await this.app.vault.read(file);
+      const newContent = content.replace(
+        /status:\s*[^\n]+/,
+        'status: completed'
+      );
+      await this.app.vault.modify(file, newContent);
+      new Notice("Scene marked as completed!");
+    } catch (error) {
+      console.error("Error marking scene complete:", error);
+      new Notice("Error updating scene status");
+    }
+  }
+
+  async onClose() {
+    // Stop auto-save
+    if (this.autoSaveInterval) {
+      window.clearInterval(this.autoSaveInterval);
+      this.autoSaveInterval = null;
+    }
+    
+    // Save any unsaved notes
+    await this.saveQuickNotes();
+    
+    // Disable read-only mode
+    if (this.readOnlyMode) {
+      this.disableReadOnlyMode();
+    }
   }
 }
 

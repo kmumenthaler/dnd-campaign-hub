@@ -785,3 +785,252 @@
   line-height: 1.4;
   margin: 8px 0 0 0;
 }
+
+/* Session Run Dashboard */
+.session-run-dashboard {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.run-dashboard-header {
+  border-bottom: 2px solid var(--background-modifier-border);
+  padding-bottom: 15px;
+  margin-bottom: 15px;
+}
+
+.run-dashboard-header h2 {
+  margin: 0 0 8px 0;
+  color: var(--text-normal);
+}
+
+.mode-toggle {
+  margin-top: 10px;
+}
+
+.mode-toggle button {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.run-dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.run-dashboard-left,
+.run-dashboard-right {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  overflow-y: auto;
+  padding-right: 5px;
+}
+
+.run-dashboard-bottom {
+  border-top: 2px solid var(--background-modifier-border);
+  padding-top: 15px;
+  margin-top: 15px;
+}
+
+.dashboard-section {
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.dashboard-section h3 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 14px;
+  color: var(--text-normal);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 6px;
+}
+
+.dashboard-section h4 {
+  margin-top: 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.empty-message {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+  margin: 0;
+}
+
+/* Timers */
+.timer-card {
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.timer-header {
+  margin-bottom: 6px;
+}
+
+.timer-display {
+  font-size: 24px;
+  font-weight: bold;
+  font-family: monospace;
+  color: var(--text-accent);
+  margin: 8px 0;
+  text-align: center;
+}
+
+.timer-controls {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.timer-controls button {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+/* Dice Roller */
+.dice-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.dice-button {
+  padding: 8px;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dice-button:hover {
+  transform: scale(1.05);
+  filter: brightness(1.1);
+}
+
+.dice-button:active {
+  transform: scale(0.95);
+}
+
+.dice-history {
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.dice-history-item {
+  padding: 4px 8px;
+  margin: 2px 0;
+  background-color: var(--background-primary);
+  border-radius: 4px;
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.dice-type {
+  color: var(--text-muted);
+  font-weight: bold;
+}
+
+.dice-result {
+  color: var(--text-accent);
+  font-weight: bold;
+  font-size: 14px;
+}
+
+/* Quick Notes */
+.quick-notes-textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 8px;
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-normal);
+  font-family: var(--font-text);
+  font-size: 13px;
+  resize: vertical;
+  margin-bottom: 8px;
+}
+
+.quick-notes-textarea:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+}
+
+/* Current Scene */
+.current-scene-card {
+  background-color: var(--background-primary);
+  border: 2px solid var(--interactive-accent);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.current-scene-card strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-normal);
+  font-size: 14px;
+}
+
+.current-scene-card p {
+  margin: 6px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.current-scene-card button {
+  margin-top: 8px;
+  margin-right: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+/* Quick Actions */
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.quick-action-button {
+  padding: 10px 12px;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.quick-action-button:hover {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+  transform: translateY(-1px);
+}
+
+.quick-action-button:active {
+  transform: translateY(0);
+}
