@@ -570,9 +570,9 @@ if (adventureLink) {
     const adventureFolder = adventurePage.file.folder;
     
     // Find scenes in both flat and folder structures
-    let scenesFlat = dv.pages(\\\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\\\`)
+    let scenesFlat = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`)
       .where(p => p.file.name.startsWith("Scene"));
-    let scenesFolder = dv.pages(\\\`"\${adventureFolder}"\\\`)
+    let scenesFolder = dv.pages(\`"\${adventureFolder}"\`)
       .where(p => p.file.name.startsWith("Scene"));
     
     let allScenes = [...scenesFlat, ...scenesFolder];
@@ -580,8 +580,8 @@ if (adventureLink) {
     if (allScenes.length > 0) {
       // Sort by scene number
       allScenes.sort((a, b) => {
-        const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\\\s+(\\\\d+)/)?.[1] || 0);
-        const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\\\s+(\\\\d+)/)?.[1] || 0);
+        const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
+        const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
         return aNum - bNum;
       });
       
@@ -607,22 +607,22 @@ if (adventureLink) {
             const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
                                currentStatus === 'in-progress' ? 'completed' : 'not-started';
             const newContent = content.replace(
-              /^status:\\\\s*.+$/m,
-              \\\`status: \${nextStatus}\\\`
+              /^status:\\s*.+$/m,
+              \`status: \${nextStatus}\`
             );
             await app.vault.modify(file, newContent);
           }
         };
         dv.span(' ', { container: sceneDiv });
         dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
-        dv.span(\\\` - \\\\\\\`\${duration} | \${type}\\\\\\\`\\\`, { container: sceneDiv });
+        dv.span(\` - \\\`\${duration} | \${type}\\\`\`, { container: sceneDiv });
       }
     }
   }
 } else {
   dv.paragraph("*No adventure linked to this session.*");
   dv.paragraph("To link an adventure, add it to the frontmatter:");
-  dv.paragraph(\\\`\\\\\\\`\\\\\\\`\\\\\\\`yaml\\\\nadventure: "[[Your Adventure Name]]"\\\\n\\\\\\\`\\\\\\\`\\\\\\\`\\\`);
+  dv.paragraph(\`\\\`\\\`\\\`yaml\\nadventure: "[[Your Adventure Name]]"\\n\\\`\\\`\\\`\`);
   dv.paragraph("Or create a new adventure:");
   const createAdvBtn = dv.el('button', '🗺️ Create Adventure');
   createAdvBtn.className = 'mod-cta';
@@ -664,9 +664,9 @@ const adventureFolder = dv.current().file.folder;
 // Find scenes in both flat and folder structures
 // Flat: Adventures/Adventure - Scenes/
 // Folder: Adventures/Adventure/ (scenes directly or in Act subfolders)
-let scenesFlat = dv.pages(\\\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\\\`)
+let scenesFlat = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`)
   .where(p => p.file.name.startsWith("Scene"));
-let scenesFolder = dv.pages(\\\`"\${adventureFolder}"\\\`)
+let scenesFolder = dv.pages(\`"\${adventureFolder}"\`)
   .where(p => p.file.name.startsWith("Scene"));
 
 let allScenes = [...scenesFlat, ...scenesFolder];
@@ -676,8 +676,8 @@ if (allScenes.length === 0) {
 } else {
   // Sort by scene number
   allScenes.sort((a, b) => {
-    const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\\\s+(\\\\d+)/)?.[1] || 0);
-    const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\\\s+(\\\\d+)/)?.[1] || 0);
+    const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
+    const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
     return aNum - bNum;
   });
 
@@ -723,15 +723,15 @@ if (allScenes.length === 0) {
               const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
                                  currentStatus === 'in-progress' ? 'completed' : 'not-started';
               const newContent = content.replace(
-                /^status:\\\\s*.+$/m,
-                \\\`status: \${nextStatus}\\\`
+                /^status:\\s*.+$/m,
+                \`status: \${nextStatus}\`
               );
               await app.vault.modify(file, newContent);
             }
           };
           dv.span(' **', { container: sceneDiv });
           dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
-          dv.span(\\\`**  \\\\n\\\\\\\`\${duration} | \${type} | \${difficulty}\\\\\\\`\\\`, { container: sceneDiv });
+          dv.span(\`**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`, { container: sceneDiv });
         }
       }
     }
@@ -759,15 +759,15 @@ if (allScenes.length === 0) {
           const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
                              currentStatus === 'in-progress' ? 'completed' : 'not-started';
           const newContent = content.replace(
-            /^status:\\\\s*.+$/m,
-            \\\`status: \${nextStatus}\\\`
+            /^status:\\s*.+$/m,
+            \`status: \${nextStatus}\`
           );
           await app.vault.modify(file, newContent);
         }
       };
       dv.span(' **', { container: sceneDiv });
       dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
-      dv.span(\\\`**  \\\\n\\\\\\\`\${duration} | \${type} | \${difficulty}\\\\\\\`\\\`, { container: sceneDiv });
+      dv.span(\`**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`, { container: sceneDiv });
     }
   }
 }
