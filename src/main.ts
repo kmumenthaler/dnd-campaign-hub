@@ -4444,7 +4444,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			this.app.workspace.revealLeaf(existing[0]);
 			const view = existing[0].view as SessionRunDashboardView;
 			view.setCampaign(campaignPath);
-			// Don't auto-setup layout if already open - let user click the button
+			// Setup the session layout even if already open
+			await view.setupSessionLayout();
 			return;
 		}
 
@@ -6977,7 +6978,10 @@ class SessionRunDashboardView extends ItemView {
       cls: "mod-cta"
     });
     setupBtn.style.width = "100%";
-    setupBtn.addEventListener("click", () => this.setupSessionLayout());
+    setupBtn.addEventListener("click", () => {
+      console.log("🔘 Setup Session Layout button clicked");
+      this.setupSessionLayout();
+    });
 
     // Update timers display every second
     if (this.timerUpdateInterval) {
@@ -6995,36 +6999,33 @@ class SessionRunDashboardView extends ItemView {
   }
 
   async setupSessionLayout() {
-    // Close all leaves in the main workspace area (not sidebars) to start fresh
-    const rootSplit = this.app.workspace.rootSplit;
-    const leavesToClose: any[] = [];
+    console.log("🎯 setupSessionLayout called");
     
-    this.app.workspace.iterateRootLeaves((leaf) => {
-      // Don't close the dashboard control panel itself
-      if (leaf.view.getViewType() !== SESSION_RUN_VIEW_TYPE) {
-        leavesToClose.push(leaf);
-      }
-    });
+    // Get or create main workspace leaf
+    let mainLeaf = this.app.workspace.getLeaf(false);
     
-    // Close leaves
-    for (const leaf of leavesToClose) {
-      leaf.detach();
+    if (!mainLeaf) {
+      console.error("❌ No workspace leaf available");
+      new Notice("Could not set up layout - no workspace available");
+      return;
     }
 
-    // Get or create a fresh main leaf
-    const mainLeaf = this.app.workspace.getLeaf(false);
-    if (!mainLeaf) return;
+    console.log("✅ Got main leaf");
 
     // Get active adventure and scene
     const adventures = await this.getActiveAdventures();
+    console.log(`📚 Found ${adventures.length} adventures`);
     const adventure = adventures.length > 0 ? adventures[0] : null;
     
     if (adventure) {
+      console.log(`📖 Adventure found: ${adventure.name}`);
       const scenes = await this.getScenesForAdventure(adventure.path);
+      console.log(`🎬 Found ${scenes.length} scenes`);
       const currentScene = scenes.find(s => s.status === "in-progress") || 
                           scenes.find(s => s.status === "not-started");
       
       if (currentScene) {
+        console.log(`🎬 Opening scene: ${currentScene.name}`);
         // Open scene in main pane (largest view)
         const sceneFile = this.app.vault.getAbstractFileByPath(currentScene.path);
         if (sceneFile instanceof TFile) {
@@ -7212,42 +7213,64 @@ class SessionRunDashboardView extends ItemView {
       text: "⚔️ Open Initiative Tracker",
       cls: "quick-action-button"
     });
-    initiativeBtn.addEventListener("click", (e) => {
+    initiativeBtn.addEventListener("click", async (e) => {
       e.preventDefault();
-      console.log("Initiative tracker button clicked");
       
       const initiativePlugin = (this.app as any).plugins?.getPlugin("initiative-tracker");
-      console.log("Initiative plugin found:", !!initiativePlugin);
       
       if (!initiativePlugin) {
         new Notice("Initiative Tracker plugin not installed or enabled");
         return;
       }
       
-      const commands = (this.app as any).commands;
-      console.log("Commands object:", !!commands);
-      
-      if (commands) {
-        try {
-          const executed = commands.executeCommandById("initiative-tracker:open-tracker");
-          console.log("Command executed:", executed);
-          if (!executed) {
-            new Notice("Could not open Initiative Tracker. Command may have changed.");
-          }
-        } catch (error) {
-          console.error("Error executing command:", error);
-          new Notice("Error opening Initiative Tracker: " + (error as Error).message);
-        }
+      // Try method 1: Look for existing Initiative Tracker view and reveal it
+      const existingLeaves = this.app.workspace.getLeavesOfType("initiative-tracker-view");
+      if (existingLeaves.length > 0 && existingLeaves[0]) {
+        this.app.workspace.revealLeaf(existingLeaves[0]);
+        new Notice("Initiative Tracker opened");
+        return;
       }
-    });
-
-    // Create NPC
-    const npcBtn = actions.createEl("button", {
-      text: "👤 Quick NPC",
-      cls: "quick-action-button"
-    });
-    npcBtn.addEventListener("click", () => {
-      (this.app as any).commands?.executeCommandById("dnd-campaign-hub:create-npc");
+      
+      // Try method 2: Execute the command to open the tracker
+      try {
+        const commands = (this.app as any).commands;
+        if (commands) {
+          // Try different possible command IDs
+          const commandIds = [
+            "initiative-tracker:open-tracker",
+            "initiative-tracker:toggle-encounter",
+            "obsidian-initiative-tracker:open-tracker"
+          ];
+          
+          for (const cmdId of commandIds) {
+            const executed = commands.executeCommandById(cmdId);
+            if (executed) {
+              new Notice("Initiative Tracker opened");
+              return;
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error executing command:", error);
+      }
+      
+      // Try method 3: Create a new leaf in the right sidebar with the tracker view
+      try {
+        const leaf = this.app.workspace.getRightLeaf(false);
+        if (leaf) {
+          await leaf.setViewState({
+            type: "initiative-tracker-view",
+            active: true
+          });
+          this.app.workspace.revealLeaf(leaf);
+          new Notice("Initiative Tracker opened");
+          return;
+        }
+      } catch (error) {
+        console.error("Error creating tracker view:", error);
+      }
+      
+      new Notice("Could not open Initiative Tracker. Try opening it manually from the command palette.");
     });
 
     // Create Encounter
