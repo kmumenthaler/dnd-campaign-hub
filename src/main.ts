@@ -6177,6 +6177,9 @@ class SessionPrepDashboardView extends ItemView {
       cls: "dashboard-campaign-name"
     });
 
+    // Last Session Recap
+    await this.renderLastSessionRecap(container);
+
     // Main content container
     const mainContainer = container.createEl("div", { cls: "dashboard-main" });
 
@@ -6658,6 +6661,148 @@ class SessionPrepDashboardView extends ItemView {
       montage: "🎬"
     };
     return icons[type] || "📝";
+  }
+
+  async renderLastSessionRecap(container: HTMLElement) {
+    const recapSection = container.createEl("div", { cls: "last-session-recap" });
+    recapSection.createEl("h3", { text: "📖 Last Session Recap" });
+
+    // Get recent sessions
+    const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
+    const sessionFiles: TFile[] = [];
+
+    if (sessionsFolder instanceof TFolder) {
+      for (const item of sessionsFolder.children) {
+        if (item instanceof TFile && item.extension === "md") {
+          sessionFiles.push(item);
+        }
+      }
+    } else {
+      const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
+      if (campaignFolder instanceof TFolder) {
+        for (const item of campaignFolder.children) {
+          if (item instanceof TFile && item.extension === "md") {
+            const cache = this.app.metadataCache.getFileCache(item);
+            if (cache?.frontmatter?.type === "session") {
+              sessionFiles.push(item);
+            }
+          }
+        }
+      }
+    }
+
+    if (sessionFiles.length === 0) {
+      recapSection.createEl("p", { 
+        text: "No previous sessions yet. Start your first session!",
+        cls: "empty-message"
+      });
+      return;
+    }
+
+    // Sort by session number (descending)
+    sessionFiles.sort((a, b) => {
+      const cacheA = this.app.metadataCache.getFileCache(a);
+      const cacheB = this.app.metadataCache.getFileCache(b);
+      
+      const aNum = cacheA?.frontmatter?.sessionNum || this.extractSessionNumber(a.basename);
+      const bNum = cacheB?.frontmatter?.sessionNum || this.extractSessionNumber(b.basename);
+      
+      return bNum - aNum;
+    });
+
+    const lastSession = sessionFiles[0];
+    const cache = this.app.metadataCache.getFileCache(lastSession);
+
+    // Create recap card
+    const recapCard = recapSection.createEl("div", { cls: "recap-card" });
+
+    // Session title and info
+    const recapHeader = recapCard.createEl("div", { cls: "recap-header" });
+    const sessionLink = recapHeader.createEl("a", { 
+      href: lastSession.path,
+      cls: "recap-session-link"
+    });
+    sessionLink.textContent = lastSession.basename;
+    sessionLink.addEventListener("click", async (e) => {
+      e.preventDefault();
+      await this.app.workspace.openLinkText(lastSession.path, "", false);
+    });
+
+    // Session date
+    if (cache?.frontmatter?.date || cache?.frontmatter?.gameDate) {
+      const dateInfo = recapHeader.createEl("span", { cls: "recap-date" });
+      const date = cache.frontmatter.date || cache.frontmatter.gameDate;
+      dateInfo.textContent = ` • ${date}`;
+    }
+
+    // Read session content for highlights
+    try {
+      const content = await this.app.vault.read(lastSession);
+      const recapContent = recapCard.createEl("div", { cls: "recap-content" });
+
+      // Look for highlights section
+      let highlightsMatch = content.match(/##\s*(?:Highlights?|Key Events?)\s*\n([\s\S]*?)(?=\n##|$)/i);
+      if (highlightsMatch && highlightsMatch[1]) {
+        const highlightsList = recapContent.createEl("div", { cls: "recap-highlights" });
+        highlightsList.createEl("strong", { text: "Key Events:" });
+        
+        // Extract bullet points
+        const bullets = highlightsMatch[1].match(/^[-*]\s+(.+)$/gm);
+        if (bullets && bullets.length > 0) {
+          const ul = highlightsList.createEl("ul");
+          bullets.slice(0, 5).forEach(bullet => {
+            const text = bullet.replace(/^[-*]\s+/, '').trim();
+            ul.createEl("li", { text });
+          });
+        } else {
+          // Use first paragraph if no bullets
+          const firstPara = highlightsMatch[1].trim().split('\n')[0];
+          recapContent.createEl("p", { text: firstPara, cls: "recap-summary" });
+        }
+      } else {
+        // Try summary section
+        const summaryMatch = content.match(/##\s*Summary\s*\n([\s\S]*?)(?=\n##|$)/i);
+        if (summaryMatch && summaryMatch[1]) {
+          const summary = summaryMatch[1].trim();
+          const bullets = summary.match(/^[-*]\s+(.+)$/gm);
+          
+          if (bullets && bullets.length > 0) {
+            const highlightsList = recapContent.createEl("div", { cls: "recap-highlights" });
+            highlightsList.createEl("strong", { text: "Summary:" });
+            const ul = highlightsList.createEl("ul");
+            bullets.slice(0, 5).forEach(bullet => {
+              const text = bullet.replace(/^[-*]\s+/, '').trim();
+              ul.createEl("li", { text });
+            });
+          } else {
+            const firstPara = summary.split('\n')[0].substring(0, 300);
+            recapContent.createEl("p", { 
+              text: firstPara + (summary.length > 300 ? "..." : ""),
+              cls: "recap-summary"
+            });
+          }
+        }
+      }
+
+      // Look for cliffhanger
+      const cliffhangerMatch = content.match(/##\s*(?:Cliffhanger|Next Time|Where We Left Off)\s*\n([\s\S]*?)(?=\n##|$)/i);
+      if (cliffhangerMatch && cliffhangerMatch[1]) {
+        const cliffhanger = cliffhangerMatch[1].trim();
+        const firstLine = cliffhanger.split('\n')[0].replace(/^[-*]\s+/, '');
+        if (firstLine) {
+          const cliffhangerDiv = recapCard.createEl("div", { cls: "recap-cliffhanger" });
+          cliffhangerDiv.createEl("strong", { text: "🎬 Cliffhanger: " });
+          cliffhangerDiv.createEl("span", { text: firstLine });
+        }
+      }
+
+    } catch (error) {
+      console.error("Error reading session file:", error);
+      recapCard.createEl("p", { 
+        text: "Unable to load session details",
+        cls: "empty-message"
+      });
+    }
   }
 
   extractSessionNumber(filename: string): number {

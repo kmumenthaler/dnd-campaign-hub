@@ -497,6 +497,107 @@
   font-size: 14px;
 }
 
+/* Last Session Recap */
+.last-session-recap {
+  margin: 20px 0;
+  padding: 15px;
+  background-color: var(--background-secondary);
+  border: 2px solid var(--interactive-accent);
+  border-radius: 8px;
+}
+
+.last-session-recap h3 {
+  margin: 0 0 12px 0;
+  color: var(--text-normal);
+  font-size: 16px;
+  border-bottom: 2px solid var(--interactive-accent);
+  padding-bottom: 8px;
+}
+
+.recap-card {
+  background-color: var(--background-primary);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.recap-header {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.recap-session-link {
+  font-size: 15px;
+  font-weight: bold;
+  color: var(--text-accent);
+  text-decoration: none;
+}
+
+.recap-session-link:hover {
+  color: var(--text-accent-hover);
+  text-decoration: underline;
+}
+
+.recap-date {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: normal;
+}
+
+.recap-content {
+  margin-top: 10px;
+}
+
+.recap-highlights {
+  margin-bottom: 12px;
+}
+
+.recap-highlights strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-normal);
+  font-size: 13px;
+}
+
+.recap-highlights ul {
+  margin: 0;
+  padding-left: 20px;
+  list-style-type: disc;
+}
+
+.recap-highlights li {
+  color: var(--text-normal);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 4px 0;
+}
+
+.recap-summary {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 8px 0;
+  font-style: italic;
+}
+
+.recap-cliffhanger {
+  margin-top: 12px;
+  padding: 10px;
+  background-color: var(--background-secondary);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.recap-cliffhanger strong {
+  color: var(--interactive-accent);
+}
+
+.recap-cliffhanger span {
+  color: var(--text-normal);
+  font-style: italic;
+}
+
 .dashboard-main {
   display: grid;
   grid-template-columns: 2fr 1fr;
