@@ -3631,6 +3631,22 @@ export default class DndCampaignHubPlugin extends Plugin {
 			"z_Scripts",
 			"z_SessionTranscripts",
 			"z_Tables",
+			"z_Spells",
+			"z_AbilityScores",
+			"z_Classes",
+			"z_Conditions",
+			"z_DamageTypes",
+			"z_Equipment",
+			"z_Features",
+			"z_Languages",
+			"z_MagicSchools",
+			"z_Proficiencies",
+			"z_Races",
+			"z_Skills",
+			"z_Subclasses",
+			"z_Subraces",
+			"z_Traits",
+			"z_WeaponProperties",
 			"ttrpgs"
 		];
 
@@ -5584,7 +5600,8 @@ class PurgeConfirmModal extends Modal {
       "z_Databases/ - All databases",
       "z_Log/ - All session logs",
       "z_Tables/ - All tables",
-      "And all other z_* folders"
+      "z_Spells/ - All imported spells from API",
+      "And all other z_* folders (SRD data, scripts, etc.)"
     ];
 
     folders.forEach(folder => {
