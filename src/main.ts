@@ -6155,6 +6155,10 @@ class SessionPrepDashboardView extends ItemView {
   }
 
   async onOpen() {
+    // Set minimum width for the leaf pane
+    const leafContainer = this.containerEl;
+    leafContainer.style.minWidth = "800px";
+    
     await this.render();
   }
 

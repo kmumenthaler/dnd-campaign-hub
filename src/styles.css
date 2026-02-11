@@ -460,6 +460,13 @@
 .dnd-difficulty-tpk { background-color: #880000; }
 
 /* Session Prep Dashboard */
+.session-prep-dashboard {
+  min-width: 800px;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+}
+
 .session-prep-dashboard .modal {
   width: 90%;
   max-width: 1200px;
