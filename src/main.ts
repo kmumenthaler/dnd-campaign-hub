@@ -6350,6 +6350,9 @@ class SessionPrepDashboardView extends ItemView {
     npcsSection.createEl("h4", { text: "👥 Recent NPCs" });
     await this.renderRecentNPCs(npcsSection);
 
+    // Party Stats
+    await this.renderPartyStats(container);
+
     // Quick Actions - Organized by category
     const actionsSection = container.createEl("div", { cls: "quick-ref-section" });
     actionsSection.createEl("h4", { text: "⚡ Quick Actions" });
@@ -6441,6 +6444,125 @@ class SessionPrepDashboardView extends ItemView {
       npcLink.addEventListener("click", async (e) => {
         e.preventDefault();
         await this.app.workspace.openLinkText(npc.path, "", false);
+      });
+    }
+  }
+
+  async renderPartyStats(container: HTMLElement) {
+    const partySection = container.createEl("div", { cls: "quick-ref-section" });
+    partySection.createEl("h4", { text: "🎭 Party Overview" });
+
+    // Get PCs from the campaign
+    const pcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/PCs`);
+    
+    if (!(pcsFolder instanceof TFolder)) {
+      partySection.createEl("p", { text: "No PCs found", cls: "empty-message" });
+      return;
+    }
+
+    const pcFiles: TFile[] = [];
+    for (const item of pcsFolder.children) {
+      if (item instanceof TFile && item.extension === "md") {
+        pcFiles.push(item);
+      }
+    }
+
+    if (pcFiles.length === 0) {
+      partySection.createEl("p", { text: "No PCs yet", cls: "empty-message" });
+      return;
+    }
+
+    // Collect PC stats
+    const party: Array<{
+      name: string;
+      player: string;
+      class: string;
+      level: number;
+      hp: number;
+      hpMax: number;
+      ac: number;
+      passivePerception: number;
+      path: string;
+    }> = [];
+
+    for (const pcFile of pcFiles) {
+      const cache = this.app.metadataCache.getFileCache(pcFile);
+      const fm = cache?.frontmatter;
+      
+      if (fm && fm.type === "player") {
+        party.push({
+          name: fm.name || pcFile.basename,
+          player: fm.player || "Unknown",
+          class: fm.class || "?",
+          level: parseInt(fm.level) || 1,
+          hp: parseInt(fm.hp) || 0,
+          hpMax: parseInt(fm.hp_max) || 0,
+          ac: parseInt(fm.ac) || 10,
+          passivePerception: parseInt(fm.passive_perception) || 10,
+          path: pcFile.path
+        });
+      }
+    }
+
+    if (party.length === 0) {
+      partySection.createEl("p", { text: "No active PCs", cls: "empty-message" });
+      return;
+    }
+
+    // Sort by name
+    party.sort((a, b) => a.name.localeCompare(b.name));
+
+    // Party summary stats
+    const avgLevel = Math.round(party.reduce((sum, pc) => sum + pc.level, 0) / party.length);
+    const avgAC = Math.round(party.reduce((sum, pc) => sum + pc.ac, 0) / party.length);
+    const avgHP = Math.round(party.reduce((sum, pc) => sum + pc.hpMax, 0) / party.length);
+    const minPP = Math.min(...party.map(pc => pc.passivePerception));
+    const maxPP = Math.max(...party.map(pc => pc.passivePerception));
+
+    const summary = partySection.createEl("div", { cls: "party-summary" });
+    summary.createEl("div", { text: `👥 ${party.length} PCs • Avg Lvl ${avgLevel}` });
+    summary.createEl("div", { text: `🛡️ Avg AC ${avgAC} • ❤️ Avg HP ${avgHP}` });
+    summary.createEl("div", { text: `👁️ PP ${minPP}-${maxPP}` });
+
+    // Individual PC list
+    const partyList = partySection.createEl("div", { cls: "party-list" });
+    
+    for (const pc of party) {
+      const pcCard = partyList.createEl("div", { cls: "party-member" });
+      
+      // PC name and link
+      const pcHeader = pcCard.createEl("div", { cls: "party-member-header" });
+      const pcLink = pcHeader.createEl("a", { 
+        href: pc.path,
+        cls: "party-member-name"
+      });
+      pcLink.textContent = pc.name;
+      pcLink.addEventListener("click", async (e) => {
+        e.preventDefault();
+        await this.app.workspace.openLinkText(pc.path, "", false);
+      });
+
+      // HP bar with status color
+      const hpPercent = pc.hpMax > 0 ? (pc.hp / pc.hpMax) * 100 : 0;
+      let hpStatus = "healthy";
+      if (hpPercent < 25) hpStatus = "critical";
+      else if (hpPercent < 50) hpStatus = "wounded";
+
+      const hpBar = pcCard.createEl("div", { cls: "party-hp-bar" });
+      const hpFill = hpBar.createEl("div", { 
+        cls: `party-hp-fill hp-${hpStatus}`
+      });
+      hpFill.style.width = `${hpPercent}%`;
+      
+      const hpText = pcCard.createEl("div", { 
+        cls: "party-member-stats",
+        text: `❤️ ${pc.hp}/${pc.hpMax} • 🛡️ AC ${pc.ac} • 👁️ PP ${pc.passivePerception}`
+      });
+
+      // Class and level
+      pcCard.createEl("div", { 
+        cls: "party-member-class",
+        text: `Lvl ${pc.level} ${pc.class}`
       });
     }
   }
