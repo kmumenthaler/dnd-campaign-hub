@@ -4497,6 +4497,579 @@ export default class DndCampaignHubPlugin extends Plugin {
 		new FactionCreationModal(this.app, this).open();
 	}
 
+	async importAllSRDData() {
+		const categories = [
+			{ key: "ability-scores", folder: "z_AbilityScores", name: "Ability Scores" },
+			{ key: "classes", folder: "z_Classes", name: "Classes" },
+			{ key: "conditions", folder: "z_Conditions", name: "Conditions" },
+			{ key: "damage-types", folder: "z_DamageTypes", name: "Damage Types" },
+			{ key: "equipment", folder: "z_Equipment", name: "Equipment" },
+			{ key: "features", folder: "z_Features", name: "Features" },
+			{ key: "languages", folder: "z_Languages", name: "Languages" },
+			{ key: "magic-schools", folder: "z_MagicSchools", name: "Magic Schools" },
+			{ key: "proficiencies", folder: "z_Proficiencies", name: "Proficiencies" },
+			{ key: "races", folder: "z_Races", name: "Races" },
+			{ key: "skills", folder: "z_Skills", name: "Skills" },
+			{ key: "subclasses", folder: "z_Subclasses", name: "Subclasses" },
+			{ key: "subraces", folder: "z_Subraces", name: "Subraces" },
+			{ key: "traits", folder: "z_Traits", name: "Traits" },
+			{ key: "weapon-properties", folder: "z_WeaponProperties", name: "Weapon Properties" }
+		];
+
+		let totalSuccess = 0;
+		let totalErrors = 0;
+		const startTime = Date.now();
+
+		new Notice("Starting full SRD data import...");
+
+		for (const category of categories) {
+			const result = await this.importSRDCategory(category.key, category.folder, category.name, true);
+			totalSuccess += result.success;
+			totalErrors += result.errors;
+		}
+
+		const duration = Math.round((Date.now() - startTime) / 1000);
+		new Notice(`✅ SRD import complete! ${totalSuccess} items imported, ${totalErrors} errors. (${duration}s)`);
+	}
+
+	async importSRDCategory(
+		categoryKey: string, 
+		folderName: string, 
+		categoryName: string,
+		isBulkImport: boolean = false
+	): Promise<{success: number, errors: number}> {
+		try {
+			if (!isBulkImport) {
+				new Notice(`Starting ${categoryName} import...`);
+			}
+
+			// Ensure folder exists
+			await this.ensureFolderExists(folderName);
+
+			// Fetch list of items
+			const listResponse = await requestUrl({
+				url: `https://www.dnd5eapi.co/api/2014/${categoryKey}`,
+				method: "GET"
+			});
+
+			const items = listResponse.json.results || [];
+			let successCount = 0;
+			let errorCount = 0;
+
+			for (let i = 0; i < items.length; i++) {
+				try {
+					const item = items[i];
+					const filePath = `${folderName}/${item.name}.md`;
+
+					// Check if file already exists
+					const exists = await this.app.vault.adapter.exists(filePath);
+					if (exists) {
+						console.log(`Skipping ${item.name} - already exists`);
+						successCount++;
+						continue;
+					}
+
+					// Fetch detailed data
+					const detailResponse = await requestUrl({
+						url: `https://www.dnd5eapi.co${item.url}`,
+						method: "GET"
+					});
+
+					const data = detailResponse.json;
+
+					// Generate markdown content based on category
+					const content = this.generateSRDMarkdown(categoryKey, data);
+
+					await this.app.vault.create(filePath, content);
+					successCount++;
+
+					// Show progress every 20 items for bulk imports
+					if (isBulkImport && i % 20 === 0 && i > 0) {
+						console.log(`${categoryName}: ${i}/${items.length}`);
+					}
+				} catch (error) {
+					errorCount++;
+					console.error(`Failed to import ${items[i].name}:`, error);
+				}
+			}
+
+			if (!isBulkImport) {
+				new Notice(`✅ ${categoryName} import complete! ${successCount} items imported, ${errorCount} errors.`);
+			}
+
+			return { success: successCount, errors: errorCount };
+		} catch (error) {
+			new Notice(`❌ Failed to import ${categoryName}: ${error instanceof Error ? error.message : String(error)}`);
+			console.error(`${categoryName} import error:`, error);
+			return { success: 0, errors: 0 };
+		}
+	}
+
+	generateSRDMarkdown(categoryKey: string, data: any): string {
+		const name = data.name || "Unknown";
+		const index = data.index || "";
+
+		// Common frontmatter
+		let frontmatter = `---
+type: srd-${categoryKey}
+name: ${name}
+index: ${index}
+source: D&D 5e SRD
+---
+
+# ${name}
+
+`;
+
+		// Category-specific content
+		switch (categoryKey) {
+			case "ability-scores":
+				frontmatter += this.generateAbilityScoreContent(data);
+				break;
+			case "classes":
+				frontmatter += this.generateClassContent(data);
+				break;
+			case "conditions":
+				frontmatter += this.generateConditionContent(data);
+				break;
+			case "damage-types":
+				frontmatter += this.generateDamageTypeContent(data);
+				break;
+			case "equipment":
+				frontmatter += this.generateEquipmentContent(data);
+				break;
+			case "features":
+				frontmatter += this.generateFeatureContent(data);
+				break;
+			case "languages":
+				frontmatter += this.generateLanguageContent(data);
+				break;
+			case "magic-schools":
+				frontmatter += this.generateMagicSchoolContent(data);
+				break;
+			case "proficiencies":
+				frontmatter += this.generateProficiencyContent(data);
+				break;
+			case "races":
+				frontmatter += this.generateRaceContent(data);
+				break;
+			case "skills":
+				frontmatter += this.generateSkillContent(data);
+				break;
+			case "subclasses":
+				frontmatter += this.generateSubclassContent(data);
+				break;
+			case "subraces":
+				frontmatter += this.generateSubraceContent(data);
+				break;
+			case "traits":
+				frontmatter += this.generateTraitContent(data);
+				break;
+			case "weapon-properties":
+				frontmatter += this.generateWeaponPropertyContent(data);
+				break;
+			default:
+				frontmatter += this.generateGenericContent(data);
+		}
+
+		return frontmatter;
+	}
+
+	generateAbilityScoreContent(data: any): string {
+		let content = `**Full Name:** ${data.full_name}\n\n`;
+		if (data.desc && data.desc.length > 0) {
+			content += `## Description\n\n${data.desc.join("\n\n")}\n\n`;
+		}
+		if (data.skills && data.skills.length > 0) {
+			content += `## Skills\n\n`;
+			data.skills.forEach((skill: any) => {
+				content += `- ${skill.name}\n`;
+			});
+		}
+		return content;
+	}
+
+	generateClassContent(data: any): string {
+		let content = `**Hit Die:** d${data.hit_die}\n\n`;
+		
+		if (data.proficiency_choices && data.proficiency_choices.length > 0) {
+			content += `## Proficiency Choices\n\n`;
+			data.proficiency_choices.forEach((choice: any) => {
+				content += `**Choose ${choice.choose} from:**\n`;
+				choice.from.options.forEach((opt: any) => {
+					content += `- ${opt.item?.name || "Unknown"}\n`;
+				});
+				content += `\n`;
+			});
+		}
+
+		if (data.proficiencies && data.proficiencies.length > 0) {
+			content += `## Proficiencies\n\n`;
+			data.proficiencies.forEach((prof: any) => {
+				content += `- ${prof.name}\n`;
+			});
+			content += `\n`;
+		}
+
+		if (data.saving_throws && data.saving_throws.length > 0) {
+			content += `## Saving Throws\n\n`;
+			data.saving_throws.forEach((save: any) => {
+				content += `- ${save.name}\n`;
+			});
+			content += `\n`;
+		}
+
+		if (data.starting_equipment && data.starting_equipment.length > 0) {
+			content += `## Starting Equipment\n\n`;
+			data.starting_equipment.forEach((eq: any) => {
+				content += `- ${eq.quantity}x ${eq.equipment.name}\n`;
+			});
+			content += `\n`;
+		}
+
+		return content;
+	}
+
+	generateConditionContent(data: any): string {
+		let content = "";
+		if (data.desc && data.desc.length > 0) {
+			content += `## Description\n\n${data.desc.join("\n\n")}\n\n`;
+		}
+		return content;
+	}
+
+	generateDamageTypeContent(data: any): string {
+		let content = "";
+		if (data.desc && data.desc.length > 0) {
+			content += `## Description\n\n${data.desc.join("\n\n")}\n\n`;
+		}
+		return content;
+	}
+
+	generateEquipmentContent(data: any): string {
+		let content = "";
+
+		if (data.equipment_category) {
+			content += `**Category:** ${data.equipment_category.name}\n`;
+		}
+
+		if (data.cost) {
+			content += `**Cost:** ${data.cost.quantity} ${data.cost.unit}\n`;
+		}
+
+		if (data.weight) {
+			content += `**Weight:** ${data.weight} lbs\n`;
+		}
+
+		content += `\n`;
+
+		if (data.desc && data.desc.length > 0) {
+			content += `## Description\n\n${data.desc.join("\n\n")}\n\n`;
+		}
+
+		if (data.armor_category) {
+			content += `## Armor Properties\n\n`;
+			content += `- **Armor Category:** ${data.armor_category}\n`;
+			if (data.armor_class) {
+				content += `- **AC:** ${data.armor_class.base}`;
+				if (data.armor_class.dex_bonus !== undefined) {
+					content += ` + Dex ${data.armor_class.max_bonus !== null ? `(max ${data.armor_class.max_bonus})` : ""}`;
+				}
+				content += `\n`;
+			}
+			if (data.str_minimum) {
+				content += `- **Str Minimum:** ${data.str_minimum}\n`;
+			}
+			if (data.stealth_disadvantage) {
+				content += `- **Stealth Disadvantage:** Yes\n`;
+			}
+		}
+
+		if (data.weapon_category) {
+			content += `## Weapon Properties\n\n`;
+			content += `- **Category:** ${data.weapon_category}\n`;
+			if (data.weapon_range) {
+				content += `- **Range:** ${data.weapon_range}\n`;
+			}
+			if (data.damage) {
+				content += `- **Damage:** ${data.damage.damage_dice} ${data.damage.damage_type.name}\n`;
+			}
+			if (data.two_handed_damage) {
+				content += `- **Two-Handed Damage:** ${data.two_handed_damage.damage_dice} ${data.two_handed_damage.damage_type.name}\n`;
+			}
+			if (data.range) {
+				content += `- **Normal Range:** ${data.range.normal} ft\n`;
+				if (data.range.long) {
+					content += `- **Long Range:** ${data.range.long} ft\n`;
+				}
+			}
+			if (data.properties && data.properties.length > 0) {
+				content += `- **Properties:** ${data.properties.map((p: any) => p.name).join(", ")}\n`;
+			}
+		}
+
+		return content;
+	}
+
+	generateFeatureContent(data: any): string {
+		let content = "";
+
+		if (data.level) {
+			content += `**Level:** ${data.level}\n`;
+		}
+
+		if (data.class) {
+			content += `**Class:** ${data.class.name}\n`;
+		}
+
+		if (data.subclass) {
+			content += `**Subclass:** ${data.subclass.name}\n`;
+		}
+
+		content += `\n`;
+
+		if (data.desc && data.desc.length > 0) {
+			content += `## Description\n\n${data.desc.join("\n\n")}\n\n`;
+		}
+
+		return content;
+	}
+
+	generateLanguageContent(data: any): string {
+		let content = "";
+
+		if (data.type) {
+			content += `**Type:** ${data.type}\n\n`;
+		}
+
+		if (data.typical_speakers && data.typical_speakers.length > 0) {
+			content += `**Typical Speakers:** ${data.typical_speakers.join(", ")}\n\n`;
+		}
+
+		if (data.script) {
+			content += `**Script:** ${data.script}\n\n`;
+		}
+
+		if (data.desc) {
+			content += `## Description\n\n${data.desc}\n\n`;
+		}
+
+		return content;
+	}
+
+	generateMagicSchoolContent(data: any): string {
+		let content = "";
+		if (data.desc) {
+			content += `## Description\n\n${data.desc}\n\n`;
+		}
+		return content;
+	}
+
+	generateProficiencyContent(data: any): string {
+		let content = "";
+
+		if (data.type) {
+			content += `**Type:** ${data.type}\n\n`;
+		}
+
+		if (data.classes && data.classes.length > 0) {
+			content += `**Classes:** ${data.classes.map((c: any) => c.name).join(", ")}\n\n`;
+		}
+
+		if (data.races && data.races.length > 0) {
+			content += `**Races:** ${data.races.map((r: any) => r.name).join(", ")}\n\n`;
+		}
+
+		if (data.reference) {
+			content += `**Reference:** ${data.reference.name}\n\n`;
+		}
+
+		return content;
+	}
+
+	generateRaceContent(data: any): string {
+		let content = "";
+
+		if (data.speed) {
+			content += `**Speed:** ${data.speed} ft\n`;
+		}
+
+		if (data.size) {
+			content += `**Size:** ${data.size}\n`;
+		}
+
+		if (data.size_description) {
+			content += `**Size Description:** ${data.size_description}\n`;
+		}
+
+		if (data.alignment) {
+			content += `**Alignment:** ${data.alignment}\n`;
+		}
+
+		if (data.age) {
+			content += `**Age:** ${data.age}\n`;
+		}
+
+		content += `\n`;
+
+		if (data.ability_bonuses && data.ability_bonuses.length > 0) {
+			content += `## Ability Score Increases\n\n`;
+			data.ability_bonuses.forEach((bonus: any) => {
+				content += `- **${bonus.ability_score.name}:** +${bonus.bonus}\n`;
+			});
+			content += `\n`;
+		}
+
+		if (data.starting_proficiencies && data.starting_proficiencies.length > 0) {
+			content += `## Starting Proficiencies\n\n`;
+			data.starting_proficiencies.forEach((prof: any) => {
+				content += `- ${prof.name}\n`;
+			});
+			content += `\n`;
+		}
+
+		if (data.languages && data.languages.length > 0) {
+			content += `## Languages\n\n`;
+			data.languages.forEach((lang: any) => {
+				content += `- ${lang.name}\n`;
+			});
+			content += `\n`;
+		}
+
+		if (data.traits && data.traits.length > 0) {
+			content += `## Racial Traits\n\n`;
+			data.traits.forEach((trait: any) => {
+				content += `- ${trait.name}\n`;
+			});
+			content += `\n`;
+		}
+
+		if (data.subraces && data.subraces.length > 0) {
+			content += `## Subraces\n\n`;
+			data.subraces.forEach((subrace: any) => {
+				content += `- ${subrace.name}\n`;
+			});
+			content += `\n`;
+		}
+
+		return content;
+	}
+
+	generateSkillContent(data: any): string {
+		let content = "";
+
+		if (data.ability_score) {
+			content += `**Ability Score:** ${data.ability_score.name}\n\n`;
+		}
+
+		if (data.desc && data.desc.length > 0) {
+			content += `## Description\n\n${data.desc.join("\n\n")}\n\n`;
+		}
+
+		return content;
+	}
+
+	generateSubclassContent(data: any): string {
+		let content = "";
+
+		if (data.class) {
+			content += `**Class:** ${data.class.name}\n`;
+		}
+
+		if (data.subclass_flavor) {
+			content += `**Flavor:** ${data.subclass_flavor}\n`;
+		}
+
+		content += `\n`;
+
+		if (data.desc && data.desc.length > 0) {
+			content += `## Description\n\n${data.desc.join("\n\n")}\n\n`;
+		}
+
+		if (data.spells && data.spells.length > 0) {
+			content += `## Spells\n\n`;
+			data.spells.forEach((spell: any) => {
+				content += `- **Level ${spell.prerequisites[0]?.level || "N/A"}:** ${spell.spell.name}\n`;
+			});
+			content += `\n`;
+		}
+
+		return content;
+	}
+
+	generateSubraceContent(data: any): string {
+		let content = "";
+
+		if (data.race) {
+			content += `**Race:** ${data.race.name}\n`;
+		}
+
+		content += `\n`;
+
+		if (data.desc) {
+			content += `## Description\n\n${data.desc}\n\n`;
+		}
+
+		if (data.ability_bonuses && data.ability_bonuses.length > 0) {
+			content += `## Ability Score Increases\n\n`;
+			data.ability_bonuses.forEach((bonus: any) => {
+				content += `- **${bonus.ability_score.name}:** +${bonus.bonus}\n`;
+			});
+			content += `\n`;
+		}
+
+		if (data.starting_proficiencies && data.starting_proficiencies.length > 0) {
+			content += `## Starting Proficiencies\n\n`;
+			data.starting_proficiencies.forEach((prof: any) => {
+				content += `- ${prof.name}\n`;
+			});
+			content += `\n`;
+		}
+
+		if (data.racial_traits && data.racial_traits.length > 0) {
+			content += `## Racial Traits\n\n`;
+			data.racial_traits.forEach((trait: any) => {
+				content += `- ${trait.name}\n`;
+			});
+			content += `\n`;
+		}
+
+		return content;
+	}
+
+	generateTraitContent(data: any): string {
+		let content = "";
+
+		if (data.races && data.races.length > 0) {
+			content += `**Races:** ${data.races.map((r: any) => r.name).join(", ")}\n\n`;
+		}
+
+		if (data.subraces && data.subraces.length > 0) {
+			content += `**Subraces:** ${data.subraces.map((s: any) => s.name).join(", ")}\n\n`;
+		}
+
+		if (data.desc && data.desc.length > 0) {
+			content += `## Description\n\n${data.desc.join("\n\n")}\n\n`;
+		}
+
+		return content;
+	}
+
+	generateWeaponPropertyContent(data: any): string {
+		let content = "";
+		if (data.desc && data.desc.length > 0) {
+			content += `## Description\n\n${data.desc.join("\n\n")}\n\n`;
+		}
+		return content;
+	}
+
+	generateGenericContent(data: any): string {
+		let content = "## Data\n\n```json\n";
+		content += JSON.stringify(data, null, 2);
+		content += "\n```\n";
+		return content;
+	}
+
 	async promptForName(type: string): Promise<string | null> {
 		return new Promise((resolve) => {
 			const modal = new NamePromptModal(this.app, type, resolve);
@@ -4610,6 +5183,61 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    // SRD Data Import Section
+    containerEl.createEl("h3", { text: "📥 SRD Data Import" });
+    
+    const srdContainer = containerEl.createDiv({ cls: "dnd-about-container" });
+    srdContainer.createEl("p", { 
+      text: "Download and import D&D 5e SRD data from the official API. Data will be saved to system folders in your vault." 
+    });
+
+    new Setting(containerEl)
+      .setName("Import All SRD Data")
+      .setDesc("Downloads all available SRD content (conditions, equipment, races, features, etc.) and saves to system folders (e.g., z_Conditions, z_Equipment). This may take several minutes.")
+      .addButton((button) =>
+        button
+          .setButtonText("Import All SRD Data")
+          .setCta()
+          .onClick(async () => {
+            await this.plugin.importAllSRDData();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Import Individual Categories")
+      .setDesc("Import specific SRD data categories")
+      .setHeading();
+
+    const srdCategories = [
+      { key: "ability-scores", folder: "z_AbilityScores", name: "Ability Scores" },
+      { key: "classes", folder: "z_Classes", name: "Classes" },
+      { key: "conditions", folder: "z_Conditions", name: "Conditions" },
+      { key: "damage-types", folder: "z_DamageTypes", name: "Damage Types" },
+      { key: "equipment", folder: "z_Equipment", name: "Equipment" },
+      { key: "features", folder: "z_Features", name: "Features" },
+      { key: "languages", folder: "z_Languages", name: "Languages" },
+      { key: "magic-schools", folder: "z_MagicSchools", name: "Magic Schools" },
+      { key: "proficiencies", folder: "z_Proficiencies", name: "Proficiencies" },
+      { key: "races", folder: "z_Races", name: "Races" },
+      { key: "skills", folder: "z_Skills", name: "Skills" },
+      { key: "subclasses", folder: "z_Subclasses", name: "Subclasses" },
+      { key: "subraces", folder: "z_Subraces", name: "Subraces" },
+      { key: "traits", folder: "z_Traits", name: "Traits" },
+      { key: "weapon-properties", folder: "z_WeaponProperties", name: "Weapon Properties" }
+    ];
+
+    srdCategories.forEach(category => {
+      new Setting(containerEl)
+        .setName(category.name)
+        .addButton((button) =>
+          button
+            .setButtonText(`Import ${category.name}`)
+            .onClick(async () => {
+              await this.plugin.importSRDCategory(category.key, category.folder, category.name);
+            })
+        );
+    });
 
     // About Section
     containerEl.createEl("h3", { text: "ℹ️ About" });
