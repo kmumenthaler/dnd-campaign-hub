@@ -6711,6 +6711,14 @@ class SessionPrepDashboardView extends ItemView {
     });
 
     const lastSession = sessionFiles[0];
+    if (!lastSession) {
+      recapSection.createEl("p", { 
+        text: "No previous sessions yet. Start your first session!",
+        cls: "empty-message"
+      });
+      return;
+    }
+
     const cache = this.app.metadataCache.getFileCache(lastSession);
 
     // Create recap card
@@ -6746,8 +6754,9 @@ class SessionPrepDashboardView extends ItemView {
         const highlightsList = recapContent.createEl("div", { cls: "recap-highlights" });
         highlightsList.createEl("strong", { text: "Key Events:" });
         
+        const highlightsText = highlightsMatch[1];
         // Extract bullet points
-        const bullets = highlightsMatch[1].match(/^[-*]\s+(.+)$/gm);
+        const bullets = highlightsText.match(/^[-*]\s+(.+)$/gm);
         if (bullets && bullets.length > 0) {
           const ul = highlightsList.createEl("ul");
           bullets.slice(0, 5).forEach(bullet => {
@@ -6756,15 +6765,15 @@ class SessionPrepDashboardView extends ItemView {
           });
         } else {
           // Use first paragraph if no bullets
-          const firstPara = highlightsMatch[1].trim().split('\n')[0];
+          const firstPara = highlightsText.trim().split('\n')[0];
           recapContent.createEl("p", { text: firstPara, cls: "recap-summary" });
         }
       } else {
         // Try summary section
         const summaryMatch = content.match(/##\s*Summary\s*\n([\s\S]*?)(?=\n##|$)/i);
         if (summaryMatch && summaryMatch[1]) {
-          const summary = summaryMatch[1].trim();
-          const bullets = summary.match(/^[-*]\s+(.+)$/gm);
+          const summaryText = summaryMatch[1]!.trim();
+          const bullets = summaryText.match(/^[-*]\s+(.+)$/gm);
           
           if (bullets && bullets.length > 0) {
             const highlightsList = recapContent.createEl("div", { cls: "recap-highlights" });
@@ -6775,9 +6784,9 @@ class SessionPrepDashboardView extends ItemView {
               ul.createEl("li", { text });
             });
           } else {
-            const firstPara = summary.split('\n')[0].substring(0, 300);
+            const firstPara = (summaryText.split('\n')[0] || '').substring(0, 300);
             recapContent.createEl("p", { 
-              text: firstPara + (summary.length > 300 ? "..." : ""),
+              text: firstPara + (summaryText.length > 300 ? "..." : ""),
               cls: "recap-summary"
             });
           }
@@ -6787,8 +6796,8 @@ class SessionPrepDashboardView extends ItemView {
       // Look for cliffhanger
       const cliffhangerMatch = content.match(/##\s*(?:Cliffhanger|Next Time|Where We Left Off)\s*\n([\s\S]*?)(?=\n##|$)/i);
       if (cliffhangerMatch && cliffhangerMatch[1]) {
-        const cliffhanger = cliffhangerMatch[1].trim();
-        const firstLine = cliffhanger.split('\n')[0].replace(/^[-*]\s+/, '');
+        const cliffhangerText = cliffhangerMatch[1]!.trim();
+        const firstLine = (cliffhangerText.split('\n')[0] || '').replace(/^[-*]\s+/, '');
         if (firstLine) {
           const cliffhangerDiv = recapCard.createEl("div", { cls: "recap-cliffhanger" });
           cliffhangerDiv.createEl("strong", { text: "🎬 Cliffhanger: " });
