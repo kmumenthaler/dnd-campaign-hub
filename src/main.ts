@@ -7030,6 +7030,8 @@ class SessionRunDashboardView extends ItemView {
         const sceneFile = this.app.vault.getAbstractFileByPath(currentScene.path);
         if (sceneFile instanceof TFile) {
           await mainLeaf.openFile(sceneFile);
+          // Collapse properties for scene
+          await this.collapseProperties(mainLeaf);
         }
         
         // Split right for adventure
@@ -7037,29 +7039,36 @@ class SessionRunDashboardView extends ItemView {
         const adventureFile = this.app.vault.getAbstractFileByPath(adventure.path);
         if (adventureFile instanceof TFile) {
           await adventureLeaf.openFile(adventureFile);
+          // Collapse properties for adventure
+          await this.collapseProperties(adventureLeaf);
         }
         
         // Split bottom of adventure pane for session notes
         if (this.currentSessionFile) {
           const sessionLeaf = this.app.workspace.getLeaf('split', 'horizontal');
           await sessionLeaf.openFile(this.currentSessionFile);
+          // Collapse properties for session
+          await this.collapseProperties(sessionLeaf);
         }
       } else {
         // No scene available, open adventure in main
         const adventureFile = this.app.vault.getAbstractFileByPath(adventure.path);
         if (adventureFile instanceof TFile) {
           await mainLeaf.openFile(adventureFile);
+          await this.collapseProperties(mainLeaf);
         }
         
         // Open session in split if available
         if (this.currentSessionFile) {
           const sessionLeaf = this.app.workspace.getLeaf('split', 'vertical');
           await sessionLeaf.openFile(this.currentSessionFile);
+          await this.collapseProperties(sessionLeaf);
         }
       }
     } else if (this.currentSessionFile) {
       // No adventure, just open session
       await mainLeaf.openFile(this.currentSessionFile);
+      await this.collapseProperties(mainLeaf);
     }
 
     // Try to open Initiative Tracker if available
@@ -7079,6 +7088,47 @@ class SessionRunDashboardView extends ItemView {
     }, 800);
 
     new Notice("Session layout configured!");
+  }
+
+  /**
+   * Collapse the properties (frontmatter) panel in a leaf
+   */
+  async collapseProperties(leaf: WorkspaceLeaf) {
+    // Wait for the file to fully load and metadata editor to be ready
+    await new Promise(resolve => setTimeout(resolve, 150));
+    
+    const view = leaf.view;
+    if (view.getViewType() === "markdown") {
+      try {
+        // Access the metadata editor (properties panel) directly
+        const metadataEditor = (view as any).metadataEditor;
+        
+        if (metadataEditor) {
+          // Method 1: Try to collapse via the toggle method
+          if (typeof metadataEditor.toggle === 'function') {
+            // Close it if it's open
+            if (!metadataEditor.collapsed) {
+              metadataEditor.toggle();
+            }
+          }
+          
+          // Method 2: Set collapsed state directly
+          if ('collapsed' in metadataEditor) {
+            metadataEditor.collapsed = true;
+          }
+          
+          // Method 3: Hide the container element
+          if (metadataEditor.containerEl) {
+            metadataEditor.containerEl.style.display = 'none';
+          }
+        }
+        
+        // Also try setting ephemeral state as fallback
+        leaf.setEphemeralState({ showProperties: false });
+      } catch (error) {
+        console.error("Error collapsing properties:", error);
+      }
+    }
   }
 
   async renderTimers(container: HTMLElement) {
