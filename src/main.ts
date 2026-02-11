@@ -6130,6 +6130,8 @@ class NPCCreationModal extends Modal {
 class SessionPrepDashboardView extends ItemView {
   plugin: DndCampaignHubPlugin;
   campaignPath: string;
+  private refreshInterval: number | null = null;
+  private activeLeafChangeRef: any = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -6160,6 +6162,18 @@ class SessionPrepDashboardView extends ItemView {
     leafContainer.style.minWidth = "800px";
     
     await this.render();
+
+    // Set up auto-refresh every 30 seconds
+    this.refreshInterval = window.setInterval(() => {
+      this.render();
+    }, 30000);
+
+    // Refresh when this view becomes active
+    this.activeLeafChangeRef = this.app.workspace.on('active-leaf-change', (leaf) => {
+      if (leaf?.view === this) {
+        this.render();
+      }
+    });
   }
 
   async render() {
@@ -6949,7 +6963,17 @@ class SessionPrepDashboardView extends ItemView {
   }
 
   async onClose() {
-    // Cleanup when view is closed
+    // Clear auto-refresh interval
+    if (this.refreshInterval !== null) {
+      window.clearInterval(this.refreshInterval);
+      this.refreshInterval = null;
+    }
+
+    // Unregister workspace event listener
+    if (this.activeLeafChangeRef) {
+      this.app.workspace.offref(this.activeLeafChangeRef);
+      this.activeLeafChangeRef = null;
+    }
   }
 }
 
