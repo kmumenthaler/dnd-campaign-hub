@@ -16939,9 +16939,29 @@ class SpellImportModal extends Modal {
         method: "GET"
       });
 
-      this.spellList = response.json.results || [];
-      this.filteredSpells = [...this.spellList];
+      const spellRefs = response.json.results || [];
+      loadingEl.setText(`Loading spell details... (0/${spellRefs.length})`);
+
+      // Fetch details for all spells to enable filtering
+      this.spellList = [];
+      for (let i = 0; i < spellRefs.length; i++) {
+        try {
+          const detailResponse = await requestUrl({
+            url: `https://www.dnd5eapi.co${spellRefs[i].url}`,
+            method: "GET"
+          });
+          this.spellList.push(detailResponse.json);
+          
+          // Update progress every 10 spells
+          if (i % 10 === 0 || i === spellRefs.length - 1) {
+            loadingEl.setText(`Loading spell details... (${i + 1}/${spellRefs.length})`);
+          }
+        } catch (error) {
+          console.error(`Failed to load spell: ${spellRefs[i].name}`, error);
+        }
+      }
       
+      this.filteredSpells = [...this.spellList];
       loadingEl.remove();
       this.renderSpellList(listContainer);
     } catch (error) {
@@ -16952,8 +16972,18 @@ class SpellImportModal extends Modal {
 
   filterAndRenderSpells(container: HTMLElement) {
     this.filteredSpells = this.spellList.filter(spell => {
+      // Search filter
       const matchesSearch = spell.name.toLowerCase().includes(this.searchQuery);
-      return matchesSearch;
+      
+      // Level filter
+      const matchesLevel = this.filterLevel === "all" || 
+        spell.level === parseInt(this.filterLevel);
+      
+      // School filter
+      const matchesSchool = this.filterSchool === "all" || 
+        spell.school?.name?.toLowerCase() === this.filterSchool;
+      
+      return matchesSearch && matchesLevel && matchesSchool;
     });
 
     this.renderSpellList(container);
@@ -16974,7 +17004,18 @@ class SpellImportModal extends Modal {
     
     this.filteredSpells.forEach(spell => {
       const item = list.createEl("div", { cls: "spell-list-item" });
-      item.textContent = spell.name;
+      const levelText = spell.level === 0 ? "Cantrip" : `Lvl ${spell.level}`;
+      const schoolText = spell.school?.name || "Unknown";
+      
+      item.createEl("span", { 
+        text: spell.name,
+        cls: "spell-item-name"
+      });
+      item.createEl("span", { 
+        text: ` (${levelText} ${schoolText})`,
+        cls: "spell-item-meta"
+      });
+      
       item.addEventListener("click", async () => {
         await this.showSpellDetails(spell);
       });
@@ -16988,17 +17029,11 @@ class SpellImportModal extends Modal {
 
   async showSpellDetails(spell: any) {
     try {
-      // Fetch full spell details
-      const response = await requestUrl({
-        url: `https://www.dnd5eapi.co${spell.url}`,
-        method: "GET"
-      });
-
-      const spellData = response.json;
-      this.selectedSpell = spellData;
+      // Spell data is already loaded from initial fetch
+      this.selectedSpell = spell;
 
       // Show modal with spell details
-      new SpellDetailsModal(this.app, this.plugin, spellData).open();
+      new SpellDetailsModal(this.app, this.plugin, spell).open();
       this.close();
     } catch (error) {
       new Notice("❌ Failed to load spell details");
