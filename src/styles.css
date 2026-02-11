@@ -1595,6 +1595,24 @@
   line-height: 1.4;
 }
 
+.spell-refresh-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.spell-refresh-btn:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
 .spell-loading {
   text-align: center;
   padding: 20px;

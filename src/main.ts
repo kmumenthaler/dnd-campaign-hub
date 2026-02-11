@@ -16821,10 +16821,98 @@ class SpellImportModal extends Modal {
   filterLevel = "all";
   filterSchool = "all";
   isLoading = false;
+  private readonly CACHE_PATH = ".obsidian/plugins/dnd-campaign-hub/spell-cache.json";
+  private readonly CACHE_EXPIRY_DAYS = 7;
 
   constructor(app: App, plugin: DndCampaignHubPlugin) {
     super(app);
     this.plugin = plugin;
+  }
+
+  async loadSpellCache(): Promise<any[] | null> {
+    try {
+      const exists = await this.app.vault.adapter.exists(this.CACHE_PATH);
+      if (!exists) {
+        return null;
+      }
+
+      const cacheContent = await this.app.vault.adapter.read(this.CACHE_PATH);
+      const cache = JSON.parse(cacheContent);
+
+      // Check cache age
+      const ageMs = Date.now() - cache.timestamp;
+      const maxAgeMs = this.CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+      
+      if (ageMs > maxAgeMs) {
+        console.log(`Spell cache expired (${Math.floor(ageMs / (24 * 60 * 60 * 1000))} days old)`);
+        return null;
+      }
+
+      console.log(`Loaded ${cache.count} spells from cache (${Math.floor(ageMs / (60 * 60 * 1000))} hours old)`);
+      return cache.spells || [];
+    } catch (error) {
+      console.error("Failed to load spell cache:", error);
+      return null;
+    }
+  }
+
+  async saveSpellCache(spells: any[]): Promise<void> {
+    try {
+      const cache = {
+        version: "2014",
+        timestamp: Date.now(),
+        count: spells.length,
+        spells: spells
+      };
+
+      const cacheContent = JSON.stringify(cache);
+      await this.app.vault.adapter.write(this.CACHE_PATH, cacheContent);
+      console.log(`Saved ${spells.length} spells to cache`);
+    } catch (error) {
+      console.error("Failed to save spell cache:", error);
+    }
+  }
+
+  async refreshSpellsFromAPI(container: HTMLElement, listContainer: HTMLElement): Promise<void> {
+    const loadingEl = container.createEl("div", { 
+      text: "Refreshing spells from D&D 5e SRD API...",
+      cls: "spell-loading"
+    });
+
+    try {
+      const response = await requestUrl({
+        url: "https://www.dnd5eapi.co/api/2014/spells",
+        method: "GET"
+      });
+
+      const spellRefs = response.json.results || [];
+      loadingEl.setText(`Loading spell details... (0/${spellRefs.length})`);
+
+      this.spellList = [];
+      for (let i = 0; i < spellRefs.length; i++) {
+        try {
+          const detailResponse = await requestUrl({
+            url: `https://www.dnd5eapi.co${spellRefs[i].url}`,
+            method: "GET"
+          });
+          this.spellList.push(detailResponse.json);
+          
+          if (i % 10 === 0 || i === spellRefs.length - 1) {
+            loadingEl.setText(`Loading spell details... (${i + 1}/${spellRefs.length})`);
+          }
+        } catch (error) {
+          console.error(`Failed to load spell: ${spellRefs[i].name}`, error);
+        }
+      }
+
+      await this.saveSpellCache(this.spellList);
+      this.filteredSpells = [...this.spellList];
+      loadingEl.remove();
+      this.renderSpellList(listContainer);
+    } catch (error) {
+      loadingEl.setText("❌ Failed to load spells from API. Please check your internet connection.");
+      console.error("Spell API error:", error);
+    }
   }
 
   async onOpen() {
@@ -16882,7 +16970,7 @@ class SpellImportModal extends Modal {
   }
 
   async renderSRDContent(container: HTMLElement) {
-    // Filters
+    // Filters and refresh button
     const filterContainer = container.createEl("div", { cls: "spell-filters" });
     
     // Search
@@ -16923,51 +17011,45 @@ class SpellImportModal extends Modal {
       this.filterAndRenderSpells(listContainer);
     });
 
-    // Loading indicator
-    const loadingEl = container.createEl("div", { 
-      text: "Loading spells from D&D 5e SRD API...",
-      cls: "spell-loading"
+    // Refresh button
+    const refreshBtn = filterContainer.createEl("button", { 
+      text: "🔄 Refresh from API",
+      cls: "spell-refresh-btn"
     });
 
     // Spell list container
     const listContainer = container.createEl("div", { cls: "spell-list-container" });
 
-    // Fetch spells from API
-    try {
-      const response = await requestUrl({
-        url: "https://www.dnd5eapi.co/api/2014/spells",
-        method: "GET"
-      });
+    // Loading indicator
+    const loadingEl = container.createEl("div", { 
+      text: "Loading spells...",
+      cls: "spell-loading"
+    });
 
-      const spellRefs = response.json.results || [];
-      loadingEl.setText(`Loading spell details... (0/${spellRefs.length})`);
-
-      // Fetch details for all spells to enable filtering
-      this.spellList = [];
-      for (let i = 0; i < spellRefs.length; i++) {
-        try {
-          const detailResponse = await requestUrl({
-            url: `https://www.dnd5eapi.co${spellRefs[i].url}`,
-            method: "GET"
-          });
-          this.spellList.push(detailResponse.json);
-          
-          // Update progress every 10 spells
-          if (i % 10 === 0 || i === spellRefs.length - 1) {
-            loadingEl.setText(`Loading spell details... (${i + 1}/${spellRefs.length})`);
-          }
-        } catch (error) {
-          console.error(`Failed to load spell: ${spellRefs[i].name}`, error);
-        }
-      }
-      
+    // Try to load from cache first
+    const cachedSpells = await this.loadSpellCache();
+    if (cachedSpells && cachedSpells.length > 0) {
+      this.spellList = cachedSpells;
       this.filteredSpells = [...this.spellList];
-      loadingEl.remove();
+      loadingEl.setText(`✓ Loaded ${cachedSpells.length} spells from cache`);
+      setTimeout(() => loadingEl.remove(), 1000);
       this.renderSpellList(listContainer);
-    } catch (error) {
-      loadingEl.setText("❌ Failed to load spells from API. Please check your internet connection.");
-      console.error("Spell API error:", error);
+    } else {
+      // Fetch from API if no cache
+      await this.refreshSpellsFromAPI(container, listContainer);
     }
+
+    // Refresh button handler
+    refreshBtn.addEventListener("click", async () => {
+      listContainer.empty();
+      this.searchQuery = "";
+      this.filterLevel = "all";
+      this.filterSchool = "all";
+      searchInput.value = "";
+      levelSelect.value = "all";
+      schoolSelect.value = "all";
+      await this.refreshSpellsFromAPI(container, listContainer);
+    });
   }
 
   filterAndRenderSpells(container: HTMLElement) {
