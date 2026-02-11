@@ -6340,6 +6340,9 @@ class SessionPrepDashboardView extends ItemView {
         });
       }
     }
+
+    // Party Stats
+    await this.renderPartyStats(container);
   }
 
   async renderQuickReference(container: HTMLElement) {
@@ -6349,9 +6352,6 @@ class SessionPrepDashboardView extends ItemView {
     const npcsSection = container.createEl("div", { cls: "quick-ref-section" });
     npcsSection.createEl("h4", { text: "👥 Recent NPCs" });
     await this.renderRecentNPCs(npcsSection);
-
-    // Party Stats
-    await this.renderPartyStats(container);
 
     // Quick Actions - Organized by category
     const actionsSection = container.createEl("div", { cls: "quick-ref-section" });
