@@ -8309,7 +8309,7 @@ class SessionRunDashboardView extends ItemView {
             });
             nameLink.addEventListener("click", async (e) => {
               e.preventDefault();
-              await this.app.workspace.openLinkText(result.path, "", false);
+              await this.app.workspace.openLinkText(result.path, "", true);
             });
 
             // Preview content
