@@ -4427,8 +4427,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			return;
 		}
 
-		// Open in right pane
-		const leaf = this.app.workspace.getRightLeaf(false);
+		// Open in left pane
+		const leaf = this.app.workspace.getLeftLeaf(false);
 		if (leaf) {
 			await leaf.setViewState({
 				type: SESSION_PREP_VIEW_TYPE,
