@@ -16997,42 +16997,37 @@ class SpellImportModal extends Modal {
     // Level filter
     const levelFilterDiv = filterContainer.createEl("div", { cls: "spell-filter-group" });
     levelFilterDiv.createEl("div", { text: "Level:", cls: "spell-filter-label" });
-    const levelCheckboxes = levelFilterDiv.createEl("div", { cls: "spell-filter-checkboxes" });
-    for (let i = 0; i <= 9; i++) {
-      const levelText = i === 0 ? "Cantrip" : `${i}`;
-      const checkboxContainer = levelCheckboxes.createEl("label", { cls: "spell-checkbox" });
-      const checkbox = checkboxContainer.createEl("input", { type: "checkbox" });
-      checkbox.value = i.toString();
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked) {
-          this.filterLevels.push(i.toString());
-        } else {
-          this.filterLevels = this.filterLevels.filter(l => l !== i.toString());
-        }
-        this.filterAndRenderSpells(listContainer);
-      });
-      checkboxContainer.createEl("span", { text: levelText });
-    }
+    const levelDropdown = this.createMultiSelectDropdown(levelFilterDiv, [
+      { value: "0", label: "Cantrip" },
+      { value: "1", label: "Level 1" },
+      { value: "2", label: "Level 2" },
+      { value: "3", label: "Level 3" },
+      { value: "4", label: "Level 4" },
+      { value: "5", label: "Level 5" },
+      { value: "6", label: "Level 6" },
+      { value: "7", label: "Level 7" },
+      { value: "8", label: "Level 8" },
+      { value: "9", label: "Level 9" }
+    ], (selected) => {
+      this.filterLevels = selected;
+      this.filterAndRenderSpells(listContainer);
+    });
 
     // School filter
     const schoolFilterDiv = filterContainer.createEl("div", { cls: "spell-filter-group" });
     schoolFilterDiv.createEl("div", { text: "School:", cls: "spell-filter-label" });
-    const schoolCheckboxes = schoolFilterDiv.createEl("div", { cls: "spell-filter-checkboxes" });
-    const schools = ["Abjuration", "Conjuration", "Divination", "Enchantment", 
-                     "Evocation", "Illusion", "Necromancy", "Transmutation"];
-    schools.forEach((school) => {
-      const checkboxContainer = schoolCheckboxes.createEl("label", { cls: "spell-checkbox" });
-      const checkbox = checkboxContainer.createEl("input", { type: "checkbox" });
-      checkbox.value = school.toLowerCase();
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked) {
-          this.filterSchools.push(school.toLowerCase());
-        } else {
-          this.filterSchools = this.filterSchools.filter(s => s !== school.toLowerCase());
-        }
-        this.filterAndRenderSpells(listContainer);
-      });
-      checkboxContainer.createEl("span", { text: school });
+    const schoolDropdown = this.createMultiSelectDropdown(schoolFilterDiv, [
+      { value: "abjuration", label: "Abjuration" },
+      { value: "conjuration", label: "Conjuration" },
+      { value: "divination", label: "Divination" },
+      { value: "enchantment", label: "Enchantment" },
+      { value: "evocation", label: "Evocation" },
+      { value: "illusion", label: "Illusion" },
+      { value: "necromancy", label: "Necromancy" },
+      { value: "transmutation", label: "Transmutation" }
+    ], (selected) => {
+      this.filterSchools = selected;
+      this.filterAndRenderSpells(listContainer);
     });
 
     // Class filter
@@ -17085,12 +17080,80 @@ class SpellImportModal extends Modal {
       this.filterSchools = [];
       this.filterClasses = [];
       searchInput.value = "";
+      // Clear select options
+      levelDropdown.clearSelections();
+      schoolDropdown.clearSelections();
       // Uncheck all checkboxes
-      filterContainer.querySelectorAll('input[type="checkbox"]').forEach((cb: HTMLInputElement) => {
-        cb.checked = false;
+      filterContainer.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+        (cb as HTMLInputElement).checked = false;
       });
       await this.refreshSpellsFromAPI(container, listContainer);
     });
+  }
+
+  createMultiSelectDropdown(
+    parent: HTMLElement, 
+    options: Array<{value: string, label: string}>, 
+    onChange: (selected: string[]) => void
+  ) {
+    const dropdownContainer = parent.createEl("div", { cls: "custom-multiselect" });
+    const dropdownButton = dropdownContainer.createEl("button", { 
+      cls: "custom-multiselect-button",
+      text: "Select..."
+    });
+    const dropdownList = dropdownContainer.createEl("div", { cls: "custom-multiselect-list" });
+    dropdownList.style.display = "none";
+
+    const selectedValues = new Set<string>();
+    const checkboxes: Array<{checkbox: HTMLInputElement, value: string}> = [];
+
+    options.forEach(option => {
+      const item = dropdownList.createEl("label", { cls: "custom-multiselect-item" });
+      const checkbox = item.createEl("input", { type: "checkbox" });
+      checkbox.value = option.value;
+      item.createEl("span", { text: option.label });
+
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          selectedValues.add(option.value);
+        } else {
+          selectedValues.delete(option.value);
+        }
+        updateButtonText();
+        onChange(Array.from(selectedValues));
+      });
+
+      checkboxes.push({ checkbox, value: option.value });
+    });
+
+    const updateButtonText = () => {
+      if (selectedValues.size === 0) {
+        dropdownButton.textContent = "Select...";
+      } else {
+        dropdownButton.textContent = `${selectedValues.size} selected`;
+      }
+    };
+
+    dropdownButton.addEventListener("click", (e) => {
+      e.preventDefault();
+      const isVisible = dropdownList.style.display !== "none";
+      dropdownList.style.display = isVisible ? "none" : "block";
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener("click", (e) => {
+      if (!dropdownContainer.contains(e.target as Node)) {
+        dropdownList.style.display = "none";
+      }
+    });
+
+    return {
+      clearSelections: () => {
+        selectedValues.clear();
+        checkboxes.forEach(item => item.checkbox.checked = false);
+        updateButtonText();
+      }
+    };
   }
 
   filterAndRenderSpells(container: HTMLElement) {

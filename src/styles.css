@@ -1601,6 +1601,74 @@
   color: var(--text-normal);
 }
 
+.custom-multiselect {
+  position: relative;
+  width: 100%;
+}
+
+.custom-multiselect-button {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.custom-multiselect-button::after {
+  content: "▼";
+  font-size: 10px;
+  margin-left: 8px;
+}
+
+.custom-multiselect-button:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+
+.custom-multiselect-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  max-height: 250px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.custom-multiselect-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.1s;
+}
+
+.custom-multiselect-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.custom-multiselect-item input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.custom-multiselect-item span {
+  user-select: none;
+}
+
 .spell-filter-checkboxes {
   display: flex;
   flex-wrap: wrap;
