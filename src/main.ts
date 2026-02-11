@@ -8330,7 +8330,7 @@ class SessionRunDashboardView extends ItemView {
         } catch (error) {
           loading.remove();
           resultsContainer.createEl("div", {
-            text: `Search error: ${error.message}`,
+            text: `Search error: ${error instanceof Error ? error.message : String(error)}`,
             cls: "srd-search-error"
           });
         }
