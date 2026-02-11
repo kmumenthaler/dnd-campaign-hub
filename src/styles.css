@@ -1562,20 +1562,15 @@
   display: block;
 }
 
-.spell-filters {
+.spell-top-bar {
   display: flex;
   gap: 10px;
   margin-bottom: 15px;
-  flex-wrap: wrap;
+  align-items: center;
 }
 
-.spell-search {
+.spell-search-input {
   flex: 1;
-  min-width: 200px;
-}
-
-.spell-search input {
-  width: 100%;
   padding: 8px 12px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 4px;
@@ -1583,16 +1578,56 @@
   color: var(--text-normal);
 }
 
-.spell-filters select {
-  padding: 10px 12px;
+.spell-filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+}
+
+.spell-filter-group {
+  flex: 1;
+  min-width: 200px;
+  padding: 12px;
+  background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   border-radius: 4px;
-  background: var(--background-primary);
+}
+
+.spell-filter-label {
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 8px;
   color: var(--text-normal);
+}
+
+.spell-filter-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.spell-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   cursor: pointer;
   font-size: 12px;
-  min-height: 36px;
-  line-height: 1.4;
+  padding: 4px 8px;
+  border-radius: 3px;
+  transition: background 0.1s;
+}
+
+.spell-checkbox:hover {
+  background: var(--background-modifier-hover);
+}
+
+.spell-checkbox input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.spell-checkbox span {
+  user-select: none;
 }
 
 .spell-refresh-btn {
@@ -1739,5 +1774,12 @@
 .spell-item-meta {
   color: var(--text-muted);
   font-size: 11px;
+  font-style: italic;
+}
+
+.spell-item-classes {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 2px;
   font-style: italic;
 }

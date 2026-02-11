@@ -16818,8 +16818,9 @@ class SpellImportModal extends Modal {
   filteredSpells: any[] = [];
   selectedSpell: any = null;
   searchQuery = "";
-  filterLevel = "all";
-  filterSchool = "all";
+  filterLevels: string[] = [];
+  filterSchools: string[] = [];
+  filterClasses: string[] = [];
   isLoading = false;
   private readonly CACHE_PATH = ".obsidian/plugins/dnd-campaign-hub/spell-cache.json";
   private readonly CACHE_EXPIRY_DAYS = 7;
@@ -16970,51 +16971,88 @@ class SpellImportModal extends Modal {
   }
 
   async renderSRDContent(container: HTMLElement) {
-    // Filters and refresh button
-    const filterContainer = container.createEl("div", { cls: "spell-filters" });
+    // Top bar with search and refresh button
+    const topBar = container.createEl("div", { cls: "spell-top-bar" });
     
     // Search
-    const searchContainer = filterContainer.createEl("div", { cls: "spell-search" });
-    const searchInput = searchContainer.createEl("input", {
+    const searchInput = topBar.createEl("input", {
       type: "text",
-      placeholder: "Search spells..."
+      placeholder: "Search spells...",
+      cls: "spell-search-input"
     });
     searchInput.addEventListener("input", () => {
       this.searchQuery = searchInput.value.toLowerCase();
       this.filterAndRenderSpells(listContainer);
     });
 
-    // Level filter
-    const levelSelect = filterContainer.createEl("select");
-    levelSelect.createEl("option", { text: "All Levels", value: "all" });
-    for (let i = 0; i <= 9; i++) {
-      const levelText = i === 0 ? "Cantrip" : `Level ${i}`;
-      levelSelect.createEl("option", { text: levelText, value: i.toString() });
-    }
-    levelSelect.addEventListener("change", () => {
-      this.filterLevel = levelSelect.value;
-      this.filterAndRenderSpells(listContainer);
-    });
-
-    // School filter
-    const schoolSelect = filterContainer.createEl("select");
-    const schools = ["All Schools", "Abjuration", "Conjuration", "Divination", "Enchantment", 
-                     "Evocation", "Illusion", "Necromancy", "Transmutation"];
-    schools.forEach((school, i) => {
-      schoolSelect.createEl("option", { 
-        text: school, 
-        value: i === 0 ? "all" : school.toLowerCase() 
-      });
-    });
-    schoolSelect.addEventListener("change", () => {
-      this.filterSchool = schoolSelect.value;
-      this.filterAndRenderSpells(listContainer);
-    });
-
     // Refresh button
-    const refreshBtn = filterContainer.createEl("button", { 
+    const refreshBtn = topBar.createEl("button", { 
       text: "🔄 Refresh from API",
       cls: "spell-refresh-btn"
+    });
+
+    // Filters container
+    const filterContainer = container.createEl("div", { cls: "spell-filters" });
+
+    // Level filter
+    const levelFilterDiv = filterContainer.createEl("div", { cls: "spell-filter-group" });
+    levelFilterDiv.createEl("div", { text: "Level:", cls: "spell-filter-label" });
+    const levelCheckboxes = levelFilterDiv.createEl("div", { cls: "spell-filter-checkboxes" });
+    for (let i = 0; i <= 9; i++) {
+      const levelText = i === 0 ? "Cantrip" : `${i}`;
+      const checkboxContainer = levelCheckboxes.createEl("label", { cls: "spell-checkbox" });
+      const checkbox = checkboxContainer.createEl("input", { type: "checkbox" });
+      checkbox.value = i.toString();
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          this.filterLevels.push(i.toString());
+        } else {
+          this.filterLevels = this.filterLevels.filter(l => l !== i.toString());
+        }
+        this.filterAndRenderSpells(listContainer);
+      });
+      checkboxContainer.createEl("span", { text: levelText });
+    }
+
+    // School filter
+    const schoolFilterDiv = filterContainer.createEl("div", { cls: "spell-filter-group" });
+    schoolFilterDiv.createEl("div", { text: "School:", cls: "spell-filter-label" });
+    const schoolCheckboxes = schoolFilterDiv.createEl("div", { cls: "spell-filter-checkboxes" });
+    const schools = ["Abjuration", "Conjuration", "Divination", "Enchantment", 
+                     "Evocation", "Illusion", "Necromancy", "Transmutation"];
+    schools.forEach((school) => {
+      const checkboxContainer = schoolCheckboxes.createEl("label", { cls: "spell-checkbox" });
+      const checkbox = checkboxContainer.createEl("input", { type: "checkbox" });
+      checkbox.value = school.toLowerCase();
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          this.filterSchools.push(school.toLowerCase());
+        } else {
+          this.filterSchools = this.filterSchools.filter(s => s !== school.toLowerCase());
+        }
+        this.filterAndRenderSpells(listContainer);
+      });
+      checkboxContainer.createEl("span", { text: school });
+    });
+
+    // Class filter
+    const classFilterDiv = filterContainer.createEl("div", { cls: "spell-filter-group" });
+    classFilterDiv.createEl("div", { text: "Class:", cls: "spell-filter-label" });
+    const classCheckboxes = classFilterDiv.createEl("div", { cls: "spell-filter-checkboxes" });
+    const classes = ["Bard", "Cleric", "Druid", "Paladin", "Ranger", "Sorcerer", "Warlock", "Wizard"];
+    classes.forEach((className) => {
+      const checkboxContainer = classCheckboxes.createEl("label", { cls: "spell-checkbox" });
+      const checkbox = checkboxContainer.createEl("input", { type: "checkbox" });
+      checkbox.value = className.toLowerCase();
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          this.filterClasses.push(className.toLowerCase());
+        } else {
+          this.filterClasses = this.filterClasses.filter(c => c !== className.toLowerCase());
+        }
+        this.filterAndRenderSpells(listContainer);
+      });
+      checkboxContainer.createEl("span", { text: className });
     });
 
     // Spell list container
@@ -17043,11 +17081,14 @@ class SpellImportModal extends Modal {
     refreshBtn.addEventListener("click", async () => {
       listContainer.empty();
       this.searchQuery = "";
-      this.filterLevel = "all";
-      this.filterSchool = "all";
+      this.filterLevels = [];
+      this.filterSchools = [];
+      this.filterClasses = [];
       searchInput.value = "";
-      levelSelect.value = "all";
-      schoolSelect.value = "all";
+      // Uncheck all checkboxes
+      filterContainer.querySelectorAll('input[type="checkbox"]').forEach((cb: HTMLInputElement) => {
+        cb.checked = false;
+      });
       await this.refreshSpellsFromAPI(container, listContainer);
     });
   }
@@ -17057,15 +17098,19 @@ class SpellImportModal extends Modal {
       // Search filter
       const matchesSearch = spell.name.toLowerCase().includes(this.searchQuery);
       
-      // Level filter
-      const matchesLevel = this.filterLevel === "all" || 
-        spell.level === parseInt(this.filterLevel);
+      // Level filter (if any levels selected, spell must match one of them)
+      const matchesLevel = this.filterLevels.length === 0 || 
+        this.filterLevels.includes(spell.level.toString());
       
-      // School filter
-      const matchesSchool = this.filterSchool === "all" || 
-        spell.school?.name?.toLowerCase() === this.filterSchool;
+      // School filter (if any schools selected, spell must match one of them)
+      const matchesSchool = this.filterSchools.length === 0 || 
+        this.filterSchools.includes(spell.school?.name?.toLowerCase());
       
-      return matchesSearch && matchesLevel && matchesSchool;
+      // Class filter (if any classes selected, spell must be available to one of them)
+      const matchesClass = this.filterClasses.length === 0 || 
+        spell.classes?.some((c: any) => this.filterClasses.includes(c.name.toLowerCase()));
+      
+      return matchesSearch && matchesLevel && matchesSchool && matchesClass;
     });
 
     this.renderSpellList(container);
@@ -17088,6 +17133,7 @@ class SpellImportModal extends Modal {
       const item = list.createEl("div", { cls: "spell-list-item" });
       const levelText = spell.level === 0 ? "Cantrip" : `Lvl ${spell.level}`;
       const schoolText = spell.school?.name || "Unknown";
+      const classNames = spell.classes?.map((c: any) => c.name).join(", ") || "";
       
       item.createEl("span", { 
         text: spell.name,
@@ -17097,6 +17143,12 @@ class SpellImportModal extends Modal {
         text: ` (${levelText} ${schoolText})`,
         cls: "spell-item-meta"
       });
+      if (classNames) {
+        item.createEl("div", { 
+          text: classNames,
+          cls: "spell-item-classes"
+        });
+      }
       
       item.addEventListener("click", async () => {
         await this.showSpellDetails(spell);
