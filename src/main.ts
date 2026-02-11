@@ -7947,6 +7947,9 @@ class SessionRunDashboardView extends ItemView {
     // Quick notes section
     await this.renderQuickNotes(controlPanel);
     
+    // SRD Quick Search section
+    await this.renderSRDQuickSearch(controlPanel);
+    
     // Quick actions section
     await this.renderQuickActions(controlPanel);
 
@@ -8229,6 +8232,222 @@ class SessionRunDashboardView extends ItemView {
       this.saveQuickNotes();
       new Notice("Quick notes saved to session!");
     });
+  }
+
+  async renderSRDQuickSearch(container: HTMLElement) {
+    const section = container.createEl("div", { cls: "dashboard-section" });
+    section.createEl("h3", { text: "🔍 SRD Quick Search" });
+    
+    // Search input
+    const searchContainer = section.createEl("div", { cls: "srd-search-container" });
+    const searchInput = searchContainer.createEl("input", {
+      type: "text",
+      placeholder: "Search spells, equipment, classes...",
+      cls: "srd-search-input"
+    });
+
+    // Results container
+    const resultsContainer = section.createEl("div", { cls: "srd-search-results" });
+    resultsContainer.style.display = "none";
+
+    let searchTimeout: number | null = null;
+
+    searchInput.addEventListener("input", async (e) => {
+      const query = (e.target as HTMLInputElement).value.trim().toLowerCase();
+      
+      // Clear previous timeout
+      if (searchTimeout) {
+        window.clearTimeout(searchTimeout);
+      }
+
+      if (query.length < 2) {
+        resultsContainer.style.display = "none";
+        resultsContainer.empty();
+        return;
+      }
+
+      // Debounce search
+      searchTimeout = window.setTimeout(async () => {
+        resultsContainer.empty();
+        resultsContainer.style.display = "block";
+        
+        const loading = resultsContainer.createEl("div", {
+          text: "Searching...",
+          cls: "srd-search-loading"
+        });
+
+        try {
+          const results = await this.searchSRDData(query);
+          
+          loading.remove();
+
+          if (results.length === 0) {
+            resultsContainer.createEl("div", {
+              text: "No results found",
+              cls: "srd-search-empty"
+            });
+            return;
+          }
+
+          // Show max 10 results
+          const displayResults = results.slice(0, 10);
+          
+          for (const result of displayResults) {
+            const resultCard = resultsContainer.createEl("div", { cls: "srd-search-result-card" });
+            
+            // Type badge
+            const header = resultCard.createEl("div", { cls: "srd-result-header" });
+            header.createEl("span", {
+              text: result.type,
+              cls: "srd-result-type"
+            });
+            
+            // Name (as link)
+            const nameLink = header.createEl("a", {
+              text: result.name,
+              cls: "srd-result-name"
+            });
+            nameLink.addEventListener("click", async (e) => {
+              e.preventDefault();
+              await this.app.workspace.openLinkText(result.path, "", false);
+            });
+
+            // Preview content
+            if (result.preview) {
+              resultCard.createEl("div", {
+                text: result.preview,
+                cls: "srd-result-preview"
+              });
+            }
+          }
+
+          if (results.length > 10) {
+            resultsContainer.createEl("div", {
+              text: `...and ${results.length - 10} more results`,
+              cls: "srd-search-more"
+            });
+          }
+        } catch (error) {
+          loading.remove();
+          resultsContainer.createEl("div", {
+            text: `Search error: ${error.message}`,
+            cls: "srd-search-error"
+          });
+        }
+      }, 300);
+    });
+
+    // Clear search on focus out after a delay
+    searchInput.addEventListener("blur", () => {
+      setTimeout(() => {
+        // Only hide if we're not clicking on a result link
+        const activeElement = document.activeElement;
+        if (activeElement?.tagName !== "A" || !activeElement.classList.contains("srd-result-name")) {
+          resultsContainer.style.display = "none";
+        }
+      }, 200);
+    });
+
+    searchInput.addEventListener("focus", () => {
+      if (searchInput.value.trim().length >= 2) {
+        resultsContainer.style.display = "block";
+      }
+    });
+  }
+
+  async searchSRDData(query: string): Promise<Array<{type: string; name: string; path: string; preview: string}>> {
+    const results: Array<{type: string; name: string; path: string; preview: string; score: number}> = [];
+    
+    // Define SRD folders to search
+    const srdFolders = [
+      { path: "z_Spells", type: "Spell" },
+      { path: "z_Equipment", type: "Equipment" },
+      { path: "z_Classes", type: "Class" },
+      { path: "z_Races", type: "Race" },
+      { path: "z_Conditions", type: "Condition" },
+      { path: "z_Features", type: "Feature" },
+      { path: "z_Traits", type: "Trait" },
+      { path: "z_AbilityScores", type: "Ability" },
+      { path: "z_Skills", type: "Skill" },
+      { path: "z_Languages", type: "Language" },
+      { path: "z_DamageTypes", type: "Damage Type" },
+      { path: "z_MagicSchools", type: "Magic School" },
+      { path: "z_Proficiencies", type: "Proficiency" },
+      { path: "z_Subclasses", type: "Subclass" },
+      { path: "z_Subraces", type: "Subrace" },
+      { path: "z_WeaponProperties", type: "Weapon Property" }
+    ];
+
+    for (const folder of srdFolders) {
+      const srdFolder = this.app.vault.getAbstractFileByPath(folder.path);
+      
+      if (!(srdFolder instanceof TFolder)) continue;
+
+      for (const file of srdFolder.children) {
+        if (!(file instanceof TFile) || file.extension !== "md") continue;
+
+        const fileName = file.basename.toLowerCase();
+        
+        // Calculate match score
+        let score = 0;
+        if (fileName === query) {
+          score = 100; // Exact match
+        } else if (fileName.startsWith(query)) {
+          score = 50; // Starts with query
+        } else if (fileName.includes(query)) {
+          score = 25; // Contains query
+        }
+
+        if (score > 0) {
+          try {
+            const content = await this.app.vault.read(file);
+            
+            // Extract preview from content (first non-frontmatter paragraph)
+            let preview = "";
+            const lines = content.split("\n");
+            let inFrontmatter = false;
+            let foundContent = false;
+            
+            for (const line of lines) {
+              if (line.trim() === "---") {
+                if (!foundContent) {
+                  inFrontmatter = !inFrontmatter;
+                }
+                continue;
+              }
+              
+              if (!inFrontmatter && line.trim() && !line.startsWith("#")) {
+                preview = line.trim();
+                if (preview.length > 100) {
+                  preview = preview.substring(0, 100) + "...";
+                }
+                break;
+              }
+            }
+
+            results.push({
+              type: folder.type,
+              name: file.basename,
+              path: file.path,
+              preview: preview,
+              score: score
+            });
+          } catch (error) {
+            console.error(`Error reading file ${file.path}:`, error);
+          }
+        }
+      }
+    }
+
+    // Sort by score (highest first) and then alphabetically
+    results.sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    return results;
   }
 
   async renderQuickActions(container: HTMLElement) {
