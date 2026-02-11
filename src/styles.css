@@ -1518,7 +1518,7 @@
   margin-right: 8px;
   padding: 8px 12px;
   font-size: 12px;
-}}
+}
 
 /* Spell Import/Details Modals */
 .spell-import-modal,
@@ -1584,12 +1584,15 @@
 }
 
 .spell-filters select {
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 4px;
   background: var(--background-primary);
   color: var(--text-normal);
- cursor: pointer;
+  cursor: pointer;
+  font-size: 12px;
+  min-height: 36px;
+  line-height: 1.4;
 }
 
 .spell-loading {
