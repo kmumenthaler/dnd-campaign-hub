@@ -4488,18 +4488,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	async createSpell() {
-		const spellName = await this.promptForName("Spell");
-		if (!spellName) return;
-
-		const spellPath = `${this.settings.currentCampaign}/Spells/${spellName}`;
-		await this.ensureFolderExists(spellPath);
-
-		const template = this.getDefaultSpellTemplate();
-		const filePath = `${spellPath}/${spellName}.md`;
-
-		await this.app.vault.create(filePath, template);
-		await this.app.workspace.openLinkText(filePath, "", true);
-		new Notice(`Spell "${spellName}" created!`);
+		// Open Spell Import/Creation modal with SRD API integration
+		new SpellImportModal(this.app, this).open();
 	}
 
 	async createFaction() {
@@ -16810,6 +16800,430 @@ date: ${currentDate}
     } catch (error) {
       new Notice(`❌ Error creating Faction: ${error instanceof Error ? error.message : String(error)}`);
       console.error("Faction creation error:", error);
+    }
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+/**
+ * Spell Import Modal - Search and import spells from D&D 5e SRD API or create custom
+ */
+class SpellImportModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  spellList: any[] = [];
+  filteredSpells: any[] = [];
+  selectedSpell: any = null;
+  searchQuery = "";
+  filterLevel = "all";
+  filterSchool = "all";
+  isLoading = false;
+
+  constructor(app: App, plugin: DndCampaignHubPlugin) {
+    super(app);
+    this.plugin = plugin;
+  }
+
+  async onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("spell-import-modal");
+
+    contentEl.createEl("h2", { text: "📖 Spell Library" });
+    contentEl.createEl("p", { 
+      text: "Import spells from the D&D 5e SRD or create your own custom spell.",
+      cls: "setting-item-description"
+    });
+
+    // Create tabs
+    const tabContainer = contentEl.createEl("div", { cls: "spell-tabs" });
+    
+    const srdTab = tabContainer.createEl("button", { 
+      text: "📚 SRD Spells",
+      cls: "spell-tab active"
+    });
+    
+    const customTab = tabContainer.createEl("button", { 
+      text: "✨ Custom Spell",
+      cls: "spell-tab"
+    });
+
+    // Content containers
+    const srdContent = contentEl.createEl("div", { cls: "spell-content active" });
+    const customContent = contentEl.createEl("div", { cls: "spell-content hidden" });
+
+    // Tab switching
+    srdTab.addEventListener("click", () => {
+      srdTab.addClass("active");
+      customTab.removeClass("active");
+      srdContent.removeClass("hidden");
+      srdContent.addClass("active");
+      customContent.removeClass("active");
+      customContent.addClass("hidden");
+    });
+
+    customTab.addEventListener("click", () => {
+      customTab.addClass("active");
+      srdTab.removeClass("active");
+      customContent.removeClass("hidden");
+      customContent.addClass("active");
+      srdContent.removeClass("active");
+      srdContent.addClass("hidden");
+    });
+
+    // SRD Content
+    await this.renderSRDContent(srdContent);
+
+    // Custom Content  
+    this.renderCustomContent(customContent);
+  }
+
+  async renderSRDContent(container: HTMLElement) {
+    // Filters
+    const filterContainer = container.createEl("div", { cls: "spell-filters" });
+    
+    // Search
+    const searchContainer = filterContainer.createEl("div", { cls: "spell-search" });
+    const searchInput = searchContainer.createEl("input", {
+      type: "text",
+      placeholder: "Search spells..."
+    });
+    searchInput.addEventListener("input", () => {
+      this.searchQuery = searchInput.value.toLowerCase();
+      this.filterAndRenderSpells(listContainer);
+    });
+
+    // Level filter
+    const levelSelect = filterContainer.createEl("select");
+    levelSelect.createEl("option", { text: "All Levels", value: "all" });
+    for (let i = 0; i <= 9; i++) {
+      const levelText = i === 0 ? "Cantrip" : `Level ${i}`;
+      levelSelect.createEl("option", { text: levelText, value: i.toString() });
+    }
+    levelSelect.addEventListener("change", () => {
+      this.filterLevel = levelSelect.value;
+      this.filterAndRenderSpells(listContainer);
+    });
+
+    // School filter
+    const schoolSelect = filterContainer.createEl("select");
+    const schools = ["All Schools", "Abjuration", "Conjuration", "Divination", "Enchantment", 
+                     "Evocation", "Illusion", "Necromancy", "Transmutation"];
+    schools.forEach((school, i) => {
+      schoolSelect.createEl("option", { 
+        text: school, 
+        value: i === 0 ? "all" : school.toLowerCase() 
+      });
+    });
+    schoolSelect.addEventListener("change", () => {
+      this.filterSchool = schoolSelect.value;
+      this.filterAndRenderSpells(listContainer);
+    });
+
+    // Loading indicator
+    const loadingEl = container.createEl("div", { 
+      text: "Loading spells from D&D 5e SRD API...",
+      cls: "spell-loading"
+    });
+
+    // Spell list container
+    const listContainer = container.createEl("div", { cls: "spell-list-container" });
+
+    // Fetch spells from API
+    try {
+      const response = await requestUrl({
+        url: "https://www.dnd5eapi.co/api/2014/spells",
+        method: "GET"
+      });
+
+      this.spellList = response.json.results || [];
+      this.filteredSpells = [...this.spellList];
+      
+      loadingEl.remove();
+      this.renderSpellList(listContainer);
+    } catch (error) {
+      loadingEl.setText("❌ Failed to load spells from API. Please check your internet connection.");
+      console.error("Spell API error:", error);
+    }
+  }
+
+  filterAndRenderSpells(container: HTMLElement) {
+    this.filteredSpells = this.spellList.filter(spell => {
+      const matchesSearch = spell.name.toLowerCase().includes(this.searchQuery);
+      return matchesSearch;
+    });
+
+    this.renderSpellList(container);
+  }
+
+  renderSpellList(container: HTMLElement) {
+    container.empty();
+
+    if (this.filteredSpells.length === 0) {
+      container.createEl("div", { 
+        text: "No spells found matching your search.",
+        cls: "empty-message"
+      });
+      return;
+    }
+
+    const list = container.createEl("div", { cls: "spell-list" });
+    
+    this.filteredSpells.forEach(spell => {
+      const item = list.createEl("div", { cls: "spell-list-item" });
+      item.textContent = spell.name;
+      item.addEventListener("click", async () => {
+        await this.showSpellDetails(spell);
+      });
+    });
+
+    container.createEl("div", { 
+      text: `${this.filteredSpells.length} spells found`,
+      cls: "spell-count"
+    });
+  }
+
+  async showSpellDetails(spell: any) {
+    try {
+      // Fetch full spell details
+      const response = await requestUrl({
+        url: `https://www.dnd5eapi.co${spell.url}`,
+        method: "GET"
+      });
+
+      const spellData = response.json;
+      this.selectedSpell = spellData;
+
+      // Show modal with spell details
+      new SpellDetailsModal(this.app, this.plugin, spellData).open();
+      this.close();
+    } catch (error) {
+      new Notice("❌ Failed to load spell details");
+      console.error("Spell details error:", error);
+    }
+  }
+
+  renderCustomContent(container: HTMLElement) {
+    container.createEl("p", {
+      text: "Create your own custom spell with D&D 5e format.",
+      cls: "setting-item-description"
+    });
+
+    let spellName = "";
+
+    new Setting(container)
+      .setName("Spell Name")
+      .setDesc("Name of your custom spell")
+      .addText((text) => {
+        text.setPlaceholder("e.g., Arcane Blast")
+          .onChange((value) => {
+            spellName = value;
+          });
+        text.inputEl.focus();
+      });
+
+    const buttonContainer = container.createEl("div", { cls: "dnd-modal-buttons" });
+    
+    const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelBtn.addEventListener("click", () => this.close());
+
+    const createBtn = buttonContainer.createEl("button", { 
+      text: "Create Custom Spell",
+      cls: "mod-cta"
+    });
+    createBtn.addEventListener("click", async () => {
+      if (!spellName.trim()) {
+        new Notice("Please enter a spell name");
+        return;
+      }
+
+      await this.createCustomSpell(spellName);
+      this.close();
+    });
+  }
+
+  async createCustomSpell(spellName: string) {
+    try {
+      const spellPath = `${this.plugin.settings.currentCampaign}/Spells`;
+      await this.plugin.ensureFolderExists(spellPath);
+
+      const template = this.plugin.getDefaultSpellTemplate();
+      const filePath = `${spellPath}/${spellName}.md`;
+
+      // Update template with spell name
+      const content = template.replace("# Spell", `# ${spellName}`);
+
+      await this.app.vault.create(filePath, content);
+      await this.app.workspace.openLinkText(filePath, "", true);
+      new Notice(`✅ Custom spell "${spellName}" created!`);
+    } catch (error) {
+      new Notice(`❌ Error creating spell: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+/**
+ * Spell Details Modal - Shows full spell info and import button
+ */
+class SpellDetailsModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  spellData: any;
+
+  constructor(app: App, plugin: DndCampaignHubPlugin, spellData: any) {
+    super(app);
+    this.plugin = plugin;
+    this.spellData = spellData;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("spell-details-modal");
+
+    const spell = this.spellData;
+
+    // Header
+    contentEl.createEl("h2", { text: spell.name });
+    
+    const meta = contentEl.createEl("div", { cls: "spell-meta" });
+    const levelText = spell.level === 0 ? "Cantrip" : `Level ${spell.level}`;
+    meta.createEl("span", { text: `${levelText} ${spell.school.name}`, cls: "spell-level-school" });
+
+    // Details grid
+    const details = contentEl.createEl("div", { cls: "spell-details-grid" });
+
+    this.addDetail(details, "⏱️ Casting Time", spell.casting_time);
+    this.addDetail(details, "📏 Range", spell.range);
+    this.addDetail(details, "🎭 Components", spell.components.join(", ") + (spell.material ? ` (${spell.material})` : ""));
+    this.addDetail(details, "⏳ Duration", spell.duration);
+    
+    if (spell.concentration) {
+      details.createEl("div", { text: "⚠️ Requires Concentration", cls: "spell-concentration" });
+    }
+    if (spell.ritual) {
+      details.createEl("div", { text: "🕯️ Ritual", cls: "spell-ritual" });
+    }
+
+    // Description
+    const descSection = contentEl.createEl("div", { cls: "spell-description" });
+    descSection.createEl("h3", { text: "Description" });
+    spell.desc.forEach((para: string) => {
+      descSection.createEl("p", { text: para });
+    });
+
+    // Higher levels
+    if (spell.higher_level && spell.higher_level.length > 0) {
+      const higherSection = contentEl.createEl("div", { cls: "spell-higher-level" });
+      higherSection.createEl("h3", { text: "At Higher Levels" });
+      spell.higher_level.forEach((para: string) => {
+        higherSection.createEl("p", { text: para });
+      });
+    }
+
+    // Classes
+    if (spell.classes && spell.classes.length > 0) {
+      const classesSection = contentEl.createEl("div", { cls: "spell-classes" });
+      classesSection.createEl("strong", { text: "Classes: " });
+      classesSection.createEl("span", { 
+        text: spell.classes.map((c: any) => c.name).join(", ")
+      });
+    }
+
+    // Buttons
+    const buttonContainer = contentEl.createEl("div", { cls: "dnd-modal-buttons" });
+    
+    const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelBtn.addEventListener("click", () => this.close());
+
+    const importBtn = buttonContainer.createEl("button", { 
+      text: "📥 Import Spell",
+      cls: "mod-cta"
+    });
+    importBtn.addEventListener("click", async () => {
+      await this.importSpell();
+      this.close();
+    });
+  }
+
+  addDetail(container: HTMLElement, label: string, value: string) {
+    const detail = container.createEl("div", { cls: "spell-detail" });
+    detail.createEl("strong", { text: label + ": " });
+    detail.createEl("span", { text: value });
+  }
+
+  async importSpell() {
+    try {
+      const spell = this.spellData;
+      const spellPath = `${this.plugin.settings.currentCampaign}/Spells`;
+      await this.plugin.ensureFolderExists(spellPath);
+
+      // Build spell content from API data
+      const levelText = spell.level === 0 ? "Cantrip" : spell.level.toString();
+      const components = spell.components.join(", ");
+      const material = spell.material ? `\nMaterials: ${spell.material}` : "";
+      
+      const description = spell.desc.join("\n\n");
+      const higherLevel = spell.higher_level && spell.higher_level.length > 0 
+        ? spell.higher_level.join("\n\n")
+        : "N/A";
+
+      const classes = spell.classes && spell.classes.length > 0
+        ? spell.classes.map((c: any) => c.name).join(", ")
+        : "N/A";
+
+      const content = `---
+type: spell
+template_version: 1.0.0
+name: ${spell.name}
+level: ${spell.level}
+school: ${spell.school.name}
+casting_time: ${spell.casting_time}
+range: ${spell.range}
+components: ${components}
+duration: ${spell.duration}
+concentration: ${spell.concentration || false}
+ritual: ${spell.ritual || false}
+classes: ${classes}
+source: SRD
+---
+
+# ${spell.name}
+
+**${levelText} ${spell.school.name}**
+
+**Casting Time:** ${spell.casting_time}  
+**Range:** ${spell.range}  
+**Components:** ${components}${material}  
+**Duration:** ${spell.duration}${spell.concentration ? " (Concentration)" : ""}${spell.ritual ? " (Ritual)" : ""}
+
+## Description
+
+${description}
+
+## At Higher Levels
+
+${higherLevel}
+
+## Classes
+
+${classes}
+`;
+
+      const filePath = `${spellPath}/${spell.name}.md`;
+      await this.app.vault.create(filePath, content);
+      await this.app.workspace.openLinkText(filePath, "", true);
+      new Notice(`✅ Spell "${spell.name}" imported successfully!`);
+    } catch (error) {
+      new Notice(`❌ Error importing spell: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("Import error:", error);
     }
   }
 

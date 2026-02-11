@@ -1518,4 +1518,195 @@
   margin-right: 8px;
   padding: 8px 12px;
   font-size: 12px;
+}}
+
+/* Spell Import/Details Modals */
+.spell-import-modal,
+.spell-details-modal {
+  max-width: 800px;
+}
+
+.spell-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid var(--background-modifier-border);
+}
+
+.spell-tab {
+  padding: 10px 20px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.spell-tab:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.spell-tab.active {
+  color: var(--interactive-accent);
+  border-bottom-color: var(--interactive-accent);
+}
+
+.spell-content {
+  display: none;
+}
+
+.spell-content.active {
+  display: block;
+}
+
+.spell-filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+}
+
+.spell-search {
+  flex: 1;
+  min-width: 200px;
+}
+
+.spell-search input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.spell-filters select {
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+ cursor: pointer;
+}
+
+.spell-loading {
+  text-align: center;
+  padding: 20px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.spell-list-container {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 8px;
+}
+
+.spell-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.spell-list-item {
+  padding: 10px 12px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+}
+
+.spell-list-item:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+.spell-count {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.spell-meta {
+  margin-bottom: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.spell-level-school {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--interactive-accent);
+}
+
+.spell-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 12px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+}
+
+.spell-detail {
+  font-size: 12px;
+}
+
+.spell-detail strong {
+  color: var(--text-normal);
+}
+
+.spell-detail span {
+  color: var(--text-muted);
+}
+
+.spell-concentration,
+.spell-ritual {
+  grid-column: span 2;
+  padding: 6px;
+  background: var(--background-modifier-warning);
+  border-radius: 3px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.spell-description h3,
+.spell-higher-level h3 {
+  font-size: 14px;
+  margin: 16px 0 8px 0;
+  color: var(--text-accent);
+}
+
+.spell-description p,
+.spell-higher-level p {
+  margin: 8px 0;
+  line-height: 1.6;
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+.spell-classes {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: 12px;
+}
+
+.spell-classes strong {
+  color: var(--text-normal);
+}
+
+.spell-classes span {
+  color: var(--text-muted);
 }
