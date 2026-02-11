@@ -3235,6 +3235,12 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "create-spell",
+      name: "Create New Spell",
+      callback: () => this.createSpell(),
+    });
+
+    this.addCommand({
       id: "create-scene",
       name: "Create New Scene",
       callback: () => this.createScene(),
@@ -6337,24 +6343,58 @@ class SessionPrepDashboardView extends ItemView {
     npcsSection.createEl("h4", { text: "👥 Recent NPCs" });
     await this.renderRecentNPCs(npcsSection);
 
-    // Quick links
-    const linksSection = container.createEl("div", { cls: "quick-ref-section" });
-    linksSection.createEl("h4", { text: "⚡ Quick Actions" });
+    // Quick Actions - Organized by category
+    const actionsSection = container.createEl("div", { cls: "quick-ref-section" });
+    actionsSection.createEl("h4", { text: "⚡ Quick Actions" });
     
-    const quickLinks = [
-      { text: "📝 Create New Session", cmd: "dnd-campaign-hub:create-session" },
-      { text: "🎬 Create New Scene", cmd: "dnd-campaign-hub:create-scene" },
-      { text: "👤 Create New NPC", cmd: "dnd-campaign-hub:create-npc" },
+    // Session Management
+    const sessionGroup = actionsSection.createEl("div", { cls: "quick-action-group" });
+    sessionGroup.createEl("h5", { text: "Session Management", cls: "action-group-title" });
+    const sessionActions = [
+      { text: "📝 Create Session", cmd: "dnd-campaign-hub:create-session" },
+      { text: "🎬 Create Scene", cmd: "dnd-campaign-hub:create-scene" },
       { text: "⚔️ Create Encounter", cmd: "dnd-campaign-hub:create-encounter" }
     ];
+    this.renderActionButtons(sessionGroup, sessionActions);
 
-    for (const link of quickLinks) {
-      const btn = linksSection.createEl("button", {
-        text: link.text,
+    // World Building
+    const worldGroup = actionsSection.createEl("div", { cls: "quick-action-group" });
+    worldGroup.createEl("h5", { text: "World Building", cls: "action-group-title" });
+    const worldActions = [
+      { text: "🗺️ Create Adventure", cmd: "dnd-campaign-hub:create-adventure" },
+      { text: "🏛️ Create Faction", cmd: "dnd-campaign-hub:create-faction" }
+    ];
+    this.renderActionButtons(worldGroup, worldActions);
+
+    // Characters
+    const characterGroup = actionsSection.createEl("div", { cls: "quick-action-group" });
+    characterGroup.createEl("h5", { text: "Characters", cls: "action-group-title" });
+    const characterActions = [
+      { text: "👤 Create NPC", cmd: "dnd-campaign-hub:create-npc" },
+      { text: "🎭 Create PC", cmd: "dnd-campaign-hub:create-pc" },
+      { text: "🐉 Create Creature", cmd: "dnd-campaign-hub:create-creature" }
+    ];
+    this.renderActionButtons(characterGroup, characterActions);
+
+    // Resources
+    const resourceGroup = actionsSection.createEl("div", { cls: "quick-action-group" });
+    resourceGroup.createEl("h5", { text: "Resources", cls: "action-group-title" });
+    const resourceActions = [
+      { text: "⚔️ Create Item", cmd: "dnd-campaign-hub:create-item" },
+      { text: "✨ Create Spell", cmd: "dnd-campaign-hub:create-spell" },
+      { text: "🪤 Create Trap", cmd: "dnd-campaign-hub:create-trap" }
+    ];
+    this.renderActionButtons(resourceGroup, resourceActions);
+  }
+
+  renderActionButtons(container: HTMLElement, actions: Array<{text: string, cmd: string}>) {
+    for (const action of actions) {
+      const btn = container.createEl("button", {
+        text: action.text,
         cls: "quick-action-btn"
       });
       btn.addEventListener("click", () => {
-        (this.app as any).commands?.executeCommandById(link.cmd);
+        (this.app as any).commands?.executeCommandById(action.cmd);
       });
     }
   }
