@@ -1523,7 +1523,7 @@
 /* Spell Import/Details Modals */
 .spell-import-modal,
 .spell-details-modal {
-  max-width: 800px;
+  max-width: 1200px;
 }
 
 .spell-tabs {
@@ -1732,6 +1732,20 @@
   opacity: 0.8;
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.spell-bulk-import-btn:disabled,
+.spell-bulk-import-btn.importing {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.spell-bulk-import-btn:disabled:hover,
+.spell-bulk-import-btn.importing:hover {
+  opacity: 0.5;
+  transform: none;
+  box-shadow: none;
 }
 
 .spell-loading {

@@ -16993,7 +16993,7 @@ class SpellImportModal extends Modal {
 
     // Bulk import button
     const bulkImportBtn = topBar.createEl("button", { 
-      text: "📥 Import All to z_Spells",
+      text: "📥 Import All",
       cls: "spell-bulk-import-btn"
     });
 
@@ -17098,12 +17098,23 @@ class SpellImportModal extends Modal {
 
     // Bulk import button handler
     bulkImportBtn.addEventListener("click", async () => {
-      await this.bulkImportAllSpells();
+      await this.bulkImportAllSpells(bulkImportBtn);
     });
   }
 
-  async bulkImportAllSpells() {
+  async bulkImportAllSpells(button?: HTMLElement) {
     try {
+      // Prevent multiple simultaneous imports
+      if (button) {
+        if (button.hasClass("importing")) {
+          new Notice("Import already in progress...");
+          return;
+        }
+        button.addClass("importing");
+        button.textContent = "⏳ Importing...";
+        (button as HTMLButtonElement).disabled = true;
+      }
+
       // Ensure spells are loaded
       if (this.spellList.length === 0) {
         new Notice("Loading spells from API first...");
@@ -17219,6 +17230,13 @@ ${classes}
     } catch (error) {
       new Notice(`❌ Bulk import failed: ${error instanceof Error ? error.message : String(error)}`);
       console.error("Bulk import error:", error);
+    } finally {
+      // Re-enable button
+      if (button) {
+        button.removeClass("importing");
+        button.textContent = "📥 Import All";
+        (button as HTMLButtonElement).disabled = false;
+      }
     }
   }
 
