@@ -16991,6 +16991,12 @@ class SpellImportModal extends Modal {
       cls: "spell-refresh-btn"
     });
 
+    // Bulk import button
+    const bulkImportBtn = topBar.createEl("button", { 
+      text: "📥 Import All to z_Spells",
+      cls: "spell-bulk-import-btn"
+    });
+
     // Filters container
     const filterContainer = container.createEl("div", { cls: "spell-filters" });
 
@@ -17089,6 +17095,131 @@ class SpellImportModal extends Modal {
       });
       await this.refreshSpellsFromAPI(container, listContainer);
     });
+
+    // Bulk import button handler
+    bulkImportBtn.addEventListener("click", async () => {
+      await this.bulkImportAllSpells();
+    });
+  }
+
+  async bulkImportAllSpells() {
+    try {
+      // Ensure spells are loaded
+      if (this.spellList.length === 0) {
+        new Notice("Loading spells from API first...");
+        const response = await requestUrl({
+          url: "https://www.dnd5eapi.co/api/2014/spells",
+          method: "GET"
+        });
+        const spellRefs = response.json.results || [];
+        
+        for (let i = 0; i < spellRefs.length; i++) {
+          try {
+            const detailResponse = await requestUrl({
+              url: `https://www.dnd5eapi.co${spellRefs[i].url}`,
+              method: "GET"
+            });
+            this.spellList.push(detailResponse.json);
+          } catch (error) {
+            console.error(`Failed to load spell: ${spellRefs[i].name}`, error);
+          }
+        }
+        await this.saveSpellCache(this.spellList);
+      }
+
+      // Create z_Spells folder
+      const spellsPath = "z_Spells";
+      await this.plugin.ensureFolderExists(spellsPath);
+
+      let successCount = 0;
+      let errorCount = 0;
+      const totalSpells = this.spellList.length;
+
+      new Notice(`Starting bulk import of ${totalSpells} spells...`);
+
+      for (let i = 0; i < this.spellList.length; i++) {
+        try {
+          const spell = this.spellList[i];
+          const filePath = `${spellsPath}/${spell.name}.md`;
+          
+          // Check if file already exists
+          const exists = await this.app.vault.adapter.exists(filePath);
+          if (exists) {
+            console.log(`Skipping ${spell.name} - already exists`);
+            successCount++;
+            continue;
+          }
+
+          // Build spell content
+          const levelText = spell.level === 0 ? "Cantrip" : spell.level.toString();
+          const components = spell.components.join(", ");
+          const material = spell.material ? `\nMaterials: ${spell.material}` : "";
+          
+          const description = spell.desc.join("\n\n");
+          const higherLevel = spell.higher_level && spell.higher_level.length > 0 
+            ? spell.higher_level.join("\n\n")
+            : "N/A";
+
+          const classes = spell.classes && spell.classes.length > 0
+            ? spell.classes.map((c: any) => c.name).join(", ")
+            : "N/A";
+
+          const content = `---
+type: spell
+template_version: 1.0.0
+name: ${spell.name}
+level: ${spell.level}
+school: ${spell.school.name}
+casting_time: ${spell.casting_time}
+range: ${spell.range}
+components: ${components}
+duration: ${spell.duration}
+concentration: ${spell.concentration || false}
+ritual: ${spell.ritual || false}
+classes: ${classes}
+source: SRD
+---
+
+# ${spell.name}
+
+**${levelText} ${spell.school.name}**
+
+**Casting Time:** ${spell.casting_time}  
+**Range:** ${spell.range}  
+**Components:** ${components}${material}  
+**Duration:** ${spell.duration}${spell.concentration ? " (Concentration)" : ""}${spell.ritual ? " (Ritual)" : ""}
+
+## Description
+
+${description}
+
+## At Higher Levels
+
+${higherLevel}
+
+## Classes
+
+${classes}
+`;
+
+          await this.app.vault.create(filePath, content);
+          successCount++;
+
+          // Update progress notification every 50 spells
+          if (i % 50 === 0 && i > 0) {
+            new Notice(`Importing spells... ${i}/${totalSpells}`);
+          }
+        } catch (error) {
+          errorCount++;
+          console.error(`Failed to import ${this.spellList[i].name}:`, error);
+        }
+      }
+
+      new Notice(`✅ Bulk import complete! ${successCount} spells imported, ${errorCount} errors.`);
+    } catch (error) {
+      new Notice(`❌ Bulk import failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("Bulk import error:", error);
+    }
   }
 
   createMultiSelectDropdown(
