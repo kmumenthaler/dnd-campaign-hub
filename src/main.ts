@@ -4765,7 +4765,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 		};
 		
 		const panBtn = createToolBtn('⬆', 'Pan', true);
-		const selectBtn = createToolBtn('⬡', 'Select');
+		const selectIcon = config.gridType === 'square' ? '⬜' : '⬡';
+		const selectBtn = createToolBtn(selectIcon, 'Select');
 		const drawBtn = createToolBtn('✎', 'Draw');
 		const eraserBtn = createToolBtn('✖', 'Eraser');
 		const rulerBtn = createToolBtn('⟷', 'Ruler');
