@@ -4667,7 +4667,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 			config.highlights = annotations.highlights || [];
 			config.markers = annotations.markers || [];
 			config.drawings = annotations.drawings || [];
-			config.gridOffset = annotations.gridOffset || { x: 0, y: 0 };
 
 			// Create container for the map
 			const mapContainer = el.createDiv({ cls: 'dnd-map-viewer' });
@@ -4689,7 +4688,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-			let activeTool: 'pan' | 'select' | 'draw' | 'ruler' | 'adjust-grid' = 'pan';
+			let activeTool: 'pan' | 'select' | 'draw' | 'ruler' = 'pan';
 			let selectedColor = '#ff0000';
 			let rulerStart: { x: number; y: number } | null = null;
 			let rulerEnd: { x: number; y: number } | null = null;
@@ -4698,11 +4697,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let isCalibrating = false;
 			let calibrationPoint1: { x: number; y: number } | null = null;
 			let calibrationPoint2: { x: number; y: number } | null = null;
-			let isAdjustingGrid = false;
-			let gridDragStartX = 0;
-			let gridDragStartY = 0;
-			let gridOffsetX = config.gridOffset?.x || 0;
-			let gridOffsetY = config.gridOffset?.y || 0;
+
 
 		// Create scrollable viewport
 		const viewport = mapContainer.createDiv({ cls: 'dnd-map-viewport' });
@@ -4752,7 +4747,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const selectBtn = createToolBtn('⬡', 'Select');
 		const drawBtn = createToolBtn('✎', 'Draw');
 		const rulerBtn = createToolBtn('⟷', 'Ruler');
-		const adjustGridBtn = createToolBtn('◈', 'Adjust');
 		const calibrateBtn = createToolBtn('⚙', 'Calibrate');
 		
 		calibrateBtn.addEventListener('click', () => {
@@ -4817,29 +4811,25 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Function to get hex coordinates from pixel position
 			const pixelToHex = (x: number, y: number) => {
-				// Adjust for grid offset
-				const adjustedX = x - gridOffsetX;
-				const adjustedY = y - gridOffsetY;
-				
 				if (config.gridType === 'hex-horizontal') {
 					const horiz = config.gridSize;
 					const size = (2/3) * horiz;
 					const vert = Math.sqrt(3) * size;
 					
-					const col = Math.round(adjustedX / horiz);
-					const row = Math.round((adjustedY - ((col & 1) ? vert / 2 : 0)) / vert);
+					const col = Math.round(x / horiz);
+					const row = Math.round((y - ((col & 1) ? vert / 2 : 0)) / vert);
 					return { col, row };
 				} else if (config.gridType === 'hex-vertical') {
 					const vert = config.gridSize;
 					const size = (2/3) * vert;
 					const horiz = Math.sqrt(3) * size;
 					
-					const row = Math.round(adjustedY / vert);
-					const col = Math.round((adjustedX - ((row & 1) ? horiz / 2 : 0)) / horiz);
+					const row = Math.round(y / vert);
+					const col = Math.round((x - ((row & 1) ? horiz / 2 : 0)) / horiz);
 					return { col, row };
 				} else if (config.gridType === 'square') {
-					const col = Math.floor(adjustedX / config.gridSize);
-					const row = Math.floor(adjustedY / config.gridSize);
+					const col = Math.floor(x / config.gridSize);
+					const row = Math.floor(y / config.gridSize);
 					return { col, row };
 				}
 				return { col: 0, row: 0 };
@@ -4953,29 +4943,27 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const size = (2/3) * horiz;
 					const vert = Math.sqrt(3) * size;
 					const colOffsetY = (highlight.col & 1) ? vert / 2 : 0;
-					const centerX = highlight.col * horiz + gridOffsetX;
-					const centerY = highlight.row * vert + colOffsetY + gridOffsetY;
+					const centerX = highlight.col * horiz;
+					const centerY = highlight.row * vert + colOffsetY;
 					this.drawFilledHexFlat(ctx, centerX, centerY, size);
 				} else if (config.gridType === 'hex-vertical') {
 					const vert = config.gridSize;
 					const size = (2/3) * vert;
 					const horiz = Math.sqrt(3) * size;
 					const rowOffsetX = (highlight.row & 1) ? horiz / 2 : 0;
-					const centerX = highlight.col * horiz + rowOffsetX + gridOffsetX;
-					const centerY = highlight.row * vert + gridOffsetY;
+					const centerX = highlight.col * horiz + rowOffsetX;
+					const centerY = highlight.row * vert;
 					this.drawFilledHexPointy(ctx, centerX, centerY, size);
 				} else if (config.gridType === 'square') {
-					const normalizedOffsetX = ((gridOffsetX % config.gridSize) + config.gridSize) % config.gridSize;
-					const normalizedOffsetY = ((gridOffsetY % config.gridSize) + config.gridSize) % config.gridSize;
 					ctx.fillRect(
-						highlight.col * config.gridSize + normalizedOffsetX,
-						highlight.row * config.gridSize + normalizedOffsetY,
+						highlight.col * config.gridSize,
+						highlight.row * config.gridSize,
 						config.gridSize,
 						config.gridSize
 					);
 					ctx.strokeRect(
-						highlight.col * config.gridSize + normalizedOffsetX,
-						highlight.row * config.gridSize + normalizedOffsetY,
+						highlight.col * config.gridSize,
+						highlight.row * config.gridSize,
 						config.gridSize,
 						config.gridSize
 					);
@@ -5026,21 +5014,25 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-				[panBtn, selectBtn, drawBtn, rulerBtn, adjustGridBtn].forEach(btn => btn.removeClass('active'));
+				[panBtn, selectBtn, drawBtn, rulerBtn].forEach(btn => btn.removeClass('active'));
 				
-			// Show/hide color picker based on tool (with animation)
-			const showColorPicker = tool === 'select' || tool === 'draw';
-			colorPicker.toggleClass('hidden', !showColorPicker);
-			colorSeparator.toggleClass('hidden', !showColorPicker);
-			
-			if (tool === 'pan') {
-				panBtn.addClass('active');
-				viewport.style.cursor = 'grab';
-			} else if (tool === 'select') {
-				selectBtn.addClass('active');
-				viewport.style.cursor = 'crosshair';
-			} else if (tool === 'draw') {
-					viewport.style.cursor = 'move';
+				// Show/hide color picker based on tool (with animation)
+				const showColorPicker = tool === 'select' || tool === 'draw';
+				colorPicker.toggleClass('hidden', !showColorPicker);
+				colorSeparator.toggleClass('hidden', !showColorPicker);
+				
+				if (tool === 'pan') {
+					panBtn.addClass('active');
+					viewport.style.cursor = 'grab';
+				} else if (tool === 'select') {
+					selectBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+				} else if (tool === 'draw') {
+					drawBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+				} else if (tool === 'ruler') {
+					rulerBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
 				}
 				
 				// Clear ruler when switching tools
@@ -5067,10 +5059,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 			rulerBtn.addEventListener('click', () => {
 				console.log('Ruler button clicked');
 				setActiveTool('ruler');
-			});
-			adjustGridBtn.addEventListener('click', () => {
-				console.log('Adjust Grid button clicked');
-				setActiveTool('adjust-grid');
 			});
 
 			// Add grid overlay if grid is enabled
@@ -5173,7 +5161,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								gridCanvas.remove();
 							}
 							if (config.gridType && config.gridType !== 'none' && config.gridSize) {
-								gridCanvas = this.drawGridOverlay(mapWrapper, img, config, gridOffsetX, gridOffsetY);
+								gridCanvas = this.drawGridOverlay(mapWrapper, img, config);
 							}
 							
 							// Save configuration to code block
@@ -5201,6 +5189,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'grabbing';
 				} else if (activeTool === 'select') {
 					console.log('Select tool: calculating hex position');
+					console.log('Map position:', mapPos);
 					// Select hex and toggle highlight
 					const hex = pixelToHex(mapPos.x, mapPos.y);
 					console.log('Hex calculated:', hex);
@@ -5234,13 +5223,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 					isDrawing = true;
 					currentPath = [{ x: mapPos.x, y: mapPos.y }];
 					console.log('isDrawing set to:', isDrawing, 'currentPath:', currentPath);
-				} else if (activeTool === 'adjust-grid') {
-					console.log('Adjust Grid: starting drag');
-					isAdjustingGrid = true;
-					// Store current mouse position in map space
-					gridDragStartX = mapPos.x;
-					gridDragStartY = mapPos.y;
-					viewport.style.cursor = 'grabbing';
 				} else if (activeTool === 'ruler') {
 					console.log('Ruler tool: rulerStart is', rulerStart);
 					if (!rulerStart) {
@@ -5265,27 +5247,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			viewport.addEventListener('mousemove', (e: MouseEvent) => {
 				const mapPos = screenToMap(e.clientX, e.clientY);
 				
-				if (isAdjustingGrid && activeTool === 'adjust-grid') {
-					// Calculate delta in map space
-					const deltaX = mapPos.x - gridDragStartX;
-					const deltaY = mapPos.y - gridDragStartY;
-					
-					// Update grid offset
-					gridOffsetX += deltaX;
-					gridOffsetY += deltaY;
-					
-					// Update drag start for next frame
-					gridDragStartX = mapPos.x;
-					gridDragStartY = mapPos.y;
-					
-					// Redraw grid
-					if (gridCanvas) {
-						gridCanvas.remove();
-					}
-					if (config.gridType && config.gridType !== 'none' && config.gridSize) {
-						gridCanvas = this.drawGridOverlay(mapWrapper, img, config, gridOffsetX, gridOffsetY);
-					}
-				} else if (activeTool === 'pan' && isDragging) {
+				if (activeTool === 'pan' && isDragging) {
 					translateX = e.clientX - startX;
 					translateY = e.clientY - startY;
 					updateTransform();
@@ -5317,15 +5279,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			});
 
 			viewport.addEventListener('mouseup', () => {
-				if (isAdjustingGrid) {
-					isAdjustingGrid = false;
-					viewport.style.cursor = 'move';
-					
-					// Save grid offset to config
-					config.gridOffset = { x: gridOffsetX, y: gridOffsetY };
-					this.saveMapAnnotations(config, el);
-					new Notice('Grid position saved');
-				} else if (activeTool === 'pan' && isDragging) {
+				if (activeTool === 'pan' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'grab';
 				} else if (activeTool === 'draw' && isDrawing) {
@@ -5518,8 +5472,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		return {
 			highlights: [],
 			markers: [],
-			drawings: [],
-			gridOffset: { x: 0, y: 0 }
+			drawings: []
 		};
 	}
 
@@ -5538,7 +5491,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				highlights: config.highlights || [],
 				markers: config.markers || [],
 				drawings: config.drawings || [],
-				gridOffset: config.gridOffset || { x: 0, y: 0 },
 				lastModified: new Date().toISOString()
 			};
 			
