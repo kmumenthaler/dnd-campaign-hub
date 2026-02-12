@@ -4704,118 +4704,116 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let gridOffsetX = config.gridOffset?.x || 0;
 			let gridOffsetY = config.gridOffset?.y || 0;
 
-			// Add toolbar (before viewport)
-			const toolbar = mapContainer.createDiv({ cls: 'dnd-map-toolbar' });
-			
-			// Tool buttons group
-			const toolGroup = toolbar.createDiv({ cls: 'dnd-map-tool-group' });
-			
-			const panBtn = toolGroup.createEl('button', { 
-				text: '✋ Pan', 
-				cls: 'dnd-map-tool-btn active'
-			});
-			
-			const selectBtn = toolGroup.createEl('button', { 
-				text: '🎯 Select Hex', 
-				cls: 'dnd-map-tool-btn'
-			});
-			
-			const drawBtn = toolGroup.createEl('button', { 
-				text: '✏️ Draw', 
-				cls: 'dnd-map-tool-btn'
-			});
-			
-			const rulerBtn = toolGroup.createEl('button', { 
-				text: '📏 Ruler', 
-				cls: 'dnd-map-tool-btn'
-			});
-			
-			const adjustGridBtn = toolGroup.createEl('button', { 
-				text: '🔲 Adjust Grid', 
-				cls: 'dnd-map-tool-btn'
-			});
+		// Create scrollable viewport
+		const viewport = mapContainer.createDiv({ cls: 'dnd-map-viewport' });
+		
+		// Create wrapper that will be transformed (zoom + pan)
+		const mapWrapper = viewport.createDiv({ cls: 'dnd-map-wrapper' });
+		
+		// Get the resource path for the image
+		const resourcePath = this.app.vault.getResourcePath(imageFile);
+		
+		// Create and configure the image element
+		const img = mapWrapper.createEl('img', {
+			cls: 'dnd-map-image',
+			attr: {
+				src: resourcePath,
+				alt: config.name || 'Battle Map'
+			}
+		});
 
-			// Separator
-			toolbar.createDiv({ cls: 'dnd-map-tool-separator' });
-
-			// Color picker for highlights/drawings
-			const colorPicker = toolbar.createDiv({ cls: 'dnd-map-color-picker' });
-			colorPicker.createEl('label', { text: 'Color:' });
-			const colorInput = colorPicker.createEl('input', { 
-				type: 'color',
-				cls: 'dnd-map-color-input',
-				attr: { value: selectedColor }
+		// Add floating toolbar inside viewport
+		const toolbar = viewport.createDiv({ cls: 'dnd-map-toolbar' });
+		
+		// Toolbar header with just collapse toggle icon
+		const toolbarHeader = toolbar.createDiv({ cls: 'dnd-map-toolbar-header' });
+		const toggleIcon = toolbarHeader.createEl('span', { 
+			text: '▼', 
+			cls: 'dnd-map-toolbar-toggle' 
+		});
+		
+		// Toolbar content wrapper for collapse animation
+		const toolbarContent = toolbar.createDiv({ cls: 'dnd-map-toolbar-content' });
+		
+		// Tool buttons group
+		const toolGroup = toolbarContent.createDiv({ cls: 'dnd-map-tool-group' });
+		
+		// Helper to create icon-only buttons with hover labels
+		const createToolBtn = (icon: string, label: string, isActive = false): HTMLButtonElement => {
+			const btn = toolGroup.createEl('button', { 
+				cls: 'dnd-map-tool-btn' + (isActive ? ' active' : '')
 			});
-			colorInput.addEventListener('change', (e) => {
-				selectedColor = (e.target as HTMLInputElement).value;
-			});
+			btn.createEl('span', { text: icon, cls: 'dnd-map-tool-btn-icon' });
+			btn.createEl('span', { text: label, cls: 'dnd-map-tool-btn-label' });
+			return btn;
+		};
+		
+		const panBtn = createToolBtn('⬆', 'Pan', true);
+		const selectBtn = createToolBtn('⬡', 'Select');
+		const drawBtn = createToolBtn('✎', 'Draw');
+		const rulerBtn = createToolBtn('⟷', 'Ruler');
+		const adjustGridBtn = createToolBtn('◈', 'Adjust');
+		const calibrateBtn = createToolBtn('⚙', 'Calibrate');
+		
+		calibrateBtn.addEventListener('click', () => {
+			isCalibrating = true;
+			calibrationPoint1 = null;
+			calibrationPoint2 = null;
+			calibrateBtn.addClass('active');
+			setActiveTool('pan'); // Clear other tools
+			viewport.style.cursor = 'crosshair';
+			new Notice('Click two points on the map to measure one hex width');
+		});
 
-			// Separator
-			toolbar.createDiv({ cls: 'dnd-map-tool-separator' });
+		// Separator for color picker (hidden by default)
+		const colorSeparator = toolbarContent.createDiv({ cls: 'dnd-map-tool-separator hidden' });
 
-			// Calibrate ruler button
-			const calibrateBtn = toolbar.createEl('button', {
-				text: '🔧 Calibrate Grid',
-				cls: 'dnd-map-tool-btn'
-			});
-			calibrateBtn.addEventListener('click', () => {
-				isCalibrating = true;
-				calibrationPoint1 = null;
-				calibrationPoint2 = null;
-				calibrateBtn.addClass('active');
-				setActiveTool('pan'); // Clear other tools
-				viewport.style.cursor = 'crosshair';
-				new Notice('Click two points on the map to measure one hex width');
-			});
+		// Color picker for highlights/drawings (hidden by default)
+		const colorPicker = toolbarContent.createDiv({ cls: 'dnd-map-color-picker hidden' });
+		const colorInput = colorPicker.createEl('input', { 
+			type: 'color',
+			cls: 'dnd-map-color-input',
+			attr: { value: selectedColor }
+		});
+		colorInput.addEventListener('change', (e) => {
+			selectedColor = (e.target as HTMLInputElement).value;
+		});
+		
+		// Toolbar collapse/expand functionality
+		toolbarHeader.addEventListener('click', () => {
+			toolbar.toggleClass('collapsed', !toolbar.hasClass('collapsed'));
+		});
 
-			// Create scrollable viewport
-			const viewport = mapContainer.createDiv({ cls: 'dnd-map-viewport' });
+		// State for zoom and pan
+		let scale = 1;
+		let translateX = 0;
+		let translateY = 0;
+		let isDragging = false;
+		let startX = 0;
+		let startY = 0;
+		let gridCanvas: HTMLCanvasElement | null = null;
+		let annotationCanvas: HTMLCanvasElement | null = null;
+
+		// Function to update transform
+		const updateTransform = () => {
+			mapWrapper.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+		};
+
+		// Function to convert screen coordinates to map coordinates (in natural image pixel space)
+		const screenToMap = (screenX: number, screenY: number) => {
+			const rect = viewport.getBoundingClientRect();
+			// First get coordinates in displayed image space
+			const displayX = (screenX - rect.left - translateX) / scale;
+			const displayY = (screenY - rect.top - translateY) / scale;
 			
-			// Create wrapper that will be transformed (zoom + pan)
-			const mapWrapper = viewport.createDiv({ cls: 'dnd-map-wrapper' });
+			// Scale to natural image dimensions (for canvas drawing)
+			const scaleX = img.naturalWidth / img.width;
+			const scaleY = img.naturalHeight / img.height;
+			const x = displayX * scaleX;
+			const y = displayY * scaleY;
 			
-			// Get the resource path for the image
-			const resourcePath = this.app.vault.getResourcePath(imageFile);
-			
-			// Create and configure the image element
-			const img = mapWrapper.createEl('img', {
-				cls: 'dnd-map-image',
-				attr: {
-					src: resourcePath,
-					alt: config.name || 'Battle Map'
-				}
-			});
-
-			// State for zoom and pan
-			let scale = 1;
-			let translateX = 0;
-			let translateY = 0;
-			let isDragging = false;
-			let startX = 0;
-			let startY = 0;
-			let gridCanvas: HTMLCanvasElement | null = null;
-			let annotationCanvas: HTMLCanvasElement | null = null;
-
-			// Function to update transform
-			const updateTransform = () => {
-				mapWrapper.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
-			};
-
-			// Function to convert screen coordinates to map coordinates (in natural image pixel space)
-			const screenToMap = (screenX: number, screenY: number) => {
-				const rect = viewport.getBoundingClientRect();
-				// First get coordinates in displayed image space
-				const displayX = (screenX - rect.left - translateX) / scale;
-				const displayY = (screenY - rect.top - translateY) / scale;
-				
-				// Scale to natural image dimensions (for canvas drawing)
-				const scaleX = img.naturalWidth / img.width;
-				const scaleY = img.naturalHeight / img.height;
-				const x = displayX * scaleX;
-				const y = displayY * scaleY;
-				
-				return { x, y };
-			};
+			return { x, y };
+		};
 
 			// Function to get hex coordinates from pixel position
 			const pixelToHex = (x: number, y: number) => {
@@ -5030,20 +5028,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('activeTool is now:', activeTool);
 				[panBtn, selectBtn, drawBtn, rulerBtn, adjustGridBtn].forEach(btn => btn.removeClass('active'));
 				
-				if (tool === 'pan') {
-					panBtn.addClass('active');
-					viewport.style.cursor = 'grab';
-				} else if (tool === 'select') {
-					selectBtn.addClass('active');
-					viewport.style.cursor = 'crosshair';
-				} else if (tool === 'draw') {
-					drawBtn.addClass('active');
-					viewport.style.cursor = 'crosshair';
-				} else if (tool === 'ruler') {
-					rulerBtn.addClass('active');
-					viewport.style.cursor = 'crosshair';
-				} else if (tool === 'adjust-grid') {
-					adjustGridBtn.addClass('active');
+			// Show/hide color picker based on tool (with animation)
+			const showColorPicker = tool === 'select' || tool === 'draw';
+			colorPicker.toggleClass('hidden', !showColorPicker);
+			colorSeparator.toggleClass('hidden', !showColorPicker);
+			
+			if (tool === 'pan') {
+				panBtn.addClass('active');
+				viewport.style.cursor = 'grab';
+			} else if (tool === 'select') {
+				selectBtn.addClass('active');
+				viewport.style.cursor = 'crosshair';
+			} else if (tool === 'draw') {
 					viewport.style.cursor = 'move';
 				}
 				
