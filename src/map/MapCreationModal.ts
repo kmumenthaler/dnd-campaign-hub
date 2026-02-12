@@ -1,10 +1,10 @@
-import { App, Modal, Setting, TFile, Notice } from 'obsidian';
+import { App, Modal, Setting, TFile, Notice, MarkdownView } from 'obsidian';
 import { MapManager } from './MapManager';
 import { MAP_PRESETS } from './types';
 import type DndCampaignHubPlugin from '../main';
 
 /**
- * Modal for creating a new map
+ * Modal for creating or editing a map
  */
 export class MapCreationModal extends Modal {
   private plugin: DndCampaignHubPlugin;
@@ -17,11 +17,35 @@ export class MapCreationModal extends Modal {
   private scaleValue: number = 5;
   private scaleUnit: 'feet' | 'miles' | 'km' = 'feet';
   private previewContainer: HTMLElement | null = null;
+  private editMode: boolean = false;
+  private editConfig: any = null;
+  private editElement: HTMLElement | null = null;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, mapManager: MapManager) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, mapManager: MapManager, editConfig?: any, editElement?: HTMLElement) {
     super(app);
     this.plugin = plugin;
     this.mapManager = mapManager;
+    if (editConfig) {
+      this.editMode = true;
+      // Normalize editConfig to match MapData interface (mapId -> id)
+      this.editConfig = {
+        ...editConfig,
+        id: editConfig.mapId || editConfig.id
+      };
+      this.editElement = editElement || null;
+      // Load existing config
+      this.mapName = editConfig.name || '';
+      this.mapType = editConfig.type || 'battlemap';
+      this.gridType = editConfig.gridType || 'square';
+      this.gridSize = editConfig.gridSize || 70;
+      this.scaleValue = editConfig.scale?.value || 5;
+      this.scaleUnit = editConfig.scale?.unit || 'feet';
+      // Load image file
+      const file = this.app.vault.getAbstractFileByPath(editConfig.imageFile);
+      if (file instanceof TFile) {
+        this.selectedFile = file;
+      }
+    }
   }
 
   onOpen() {
@@ -29,7 +53,7 @@ export class MapCreationModal extends Modal {
     contentEl.empty();
     contentEl.addClass('dnd-map-creation-modal');
 
-    contentEl.createEl('h2', { text: '🗺️ Create Battle Map' });
+    contentEl.createEl('h2', { text: this.editMode ? '🗺️ Edit Battle Map' : '🗺️ Create Battle Map' });
 
     // Step 1: Select Image
     this.createImageSelector(contentEl);
@@ -68,9 +92,14 @@ export class MapCreationModal extends Modal {
     fileDisplay.style.padding = '10px';
     fileDisplay.style.backgroundColor = 'var(--background-secondary)';
     fileDisplay.style.borderRadius = '4px';
-    fileDisplay.style.display = 'none';
-
-    this.contentEl.querySelector('.selected-file-display')?.setText('No file selected');
+    
+    if (this.selectedFile) {
+      fileDisplay.style.display = 'block';
+      fileDisplay.setText(`📄 ${this.selectedFile.path}`);
+    } else {
+      fileDisplay.style.display = 'none';
+      fileDisplay.setText('No file selected');
+    }
   }
 
   private async selectImageFromVault() {
@@ -278,7 +307,7 @@ export class MapCreationModal extends Modal {
     const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
     cancelBtn.onclick = () => this.close();
 
-    const createBtn = buttonContainer.createEl('button', { text: 'Create Map' });
+    const createBtn = buttonContainer.createEl('button', { text: this.editMode ? 'Save Changes' : 'Create Map' });
     createBtn.style.backgroundColor = 'var(--interactive-accent)';
     createBtn.style.color = 'var(--text-on-accent)';
     createBtn.onclick = async () => {
@@ -298,7 +327,7 @@ export class MapCreationModal extends Modal {
     }
 
     try {
-      const mapData = await this.mapManager.createMap(
+      let mapData = await this.mapManager.createMap(
         this.mapName,
         this.selectedFile.path,
         this.mapType,
@@ -308,14 +337,44 @@ export class MapCreationModal extends Modal {
         this.scaleUnit
       );
 
-      // Insert map into current note
-      const activeFile = this.app.workspace.getActiveFile();
-      if (activeFile) {
-        const editor = this.app.workspace.activeEditor?.editor;
-        if (editor) {
-          const codeBlock = this.mapManager.generateMapCodeBlock(mapData);
-          editor.replaceSelection(`\n${codeBlock}\n`);
-          new Notice(`✅ Map "${this.mapName}" inserted into note`);
+      if (this.editMode && this.editConfig) {
+        // Edit mode: preserve original ID and creation date
+        mapData.id = this.editConfig.id;
+        mapData.createdDate = this.editConfig.createdDate || mapData.createdDate;
+        mapData.lastModified = new Date().toISOString();
+        
+        // Replace the existing code block in the editor
+        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (activeView) {
+          const editor = activeView.editor;
+          const content = editor.getValue();
+          
+          // Generate old and new code blocks
+          const oldCodeBlock = this.mapManager.generateMapCodeBlock(this.editConfig);
+          const newCodeBlock = this.mapManager.generateMapCodeBlock(mapData);
+          
+          // Try to replace - if not found, search for the map ID specifically
+          let newContent = content.replace(oldCodeBlock, newCodeBlock);
+          if (newContent === content) {
+            // Fallback: search for any code block with this mapId
+            const mapIdPattern = new RegExp(`\`\`\`dnd-map\\s*\\n[^\`]*"mapId"\\s*:\\s*"${mapData.id}"[^\`]*\`\`\``, 's');
+            newContent = content.replace(mapIdPattern, newCodeBlock);
+          }
+          
+          editor.setValue(newContent);
+        }
+        
+        new Notice(`✅ Map "${this.mapName}" updated`);
+      } else {
+        // Create mode: insert new code block
+        const activeFile = this.app.workspace.getActiveFile();
+        if (activeFile) {
+          const editor = this.app.workspace.activeEditor?.editor;
+          if (editor) {
+            const codeBlock = this.mapManager.generateMapCodeBlock(mapData);
+            editor.replaceSelection(`\n${codeBlock}\n`);
+            new Notice(`✅ Map "${this.mapName}" inserted into note`);
+          }
         }
       }
 

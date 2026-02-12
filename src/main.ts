@@ -4752,6 +4752,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 				});
 			}
 
+			// Edit button
+			const editButton = controls.createDiv({ cls: 'dnd-map-edit-btn-container' });
+			const editBtn = editButton.createEl('button', {
+				text: '⚙️ Edit Map',
+				cls: 'dnd-map-toggle-btn'
+			});
+			editBtn.addEventListener('click', () => {
+				new MapCreationModal(this.app, this, this.mapManager, config, el).open();
+			});
+
 		} catch (error) {
 			console.error('Error rendering dnd-map:', error);
 			el.createEl('div', { 
