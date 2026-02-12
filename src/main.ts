@@ -22,7 +22,7 @@ import {
 import { MapManager } from "./map/MapManager";
 import { MapCreationModal } from "./map/MapCreationModal";
 import { MarkerLibrary } from "./marker/MarkerLibrary";
-import { MarkerReference } from "./marker/MarkerTypes";
+import { MarkerReference, MarkerDefinition, CREATURE_SIZE_SQUARES, CreatureSize } from "./marker/MarkerTypes";
 
 interface DndCampaignHubSettings {
   currentCampaign: string;
@@ -4719,6 +4719,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let activeTool: 'pan' | 'select' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' = 'pan';
 		let selectedColor = '#ff0000';
 		let selectedMarkerId: string | null = null; // Currently selected marker from library
+		let draggingMarkerIndex = -1; // Index of marker being dragged (-1 = none)
+		let dragOffsetX = 0;
+		let dragOffsetY = 0;
 			let rulerStart: { x: number; y: number } | null = null;
 			let rulerEnd: { x: number; y: number } | null = null;
 			let isDrawing = false;
@@ -5120,52 +5123,71 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			};
 
+			// Helper: get marker pixel radius for a given marker definition
+			const getMarkerRadius = (markerDef: MarkerDefinition): number => {
+				if (['player', 'npc', 'creature'].includes(markerDef.type) && markerDef.creatureSize && config.gridSize) {
+					const squares = CREATURE_SIZE_SQUARES[markerDef.creatureSize] || 1;
+					return (squares * config.gridSize) / 2;
+				}
+				return (markerDef.pixelSize || 30) / 2;
+			};
+
 			// Function to draw a marker
 			const drawMarker = (ctx: CanvasRenderingContext2D, marker: any) => {
-				let markerDef = null;
+				let markerDef: MarkerDefinition | null | undefined = null;
 				let position = marker.position;
 				
 				// Check if this is a MarkerReference (new format) or old format
 				if (marker.markerId) {
-					// New format: lookup marker definition from library
 					markerDef = this.markerLibrary.getMarker(marker.markerId);
 					if (!markerDef) {
 						console.warn('Marker definition not found:', marker.markerId);
 						return;
 					}
 				} else {
-					// Old format: marker has color and icon directly
+					// Old format: treat as poi with pixelSize
 					markerDef = {
+						id: marker.id || 'legacy',
+						name: 'Legacy',
+						type: 'poi',
 						icon: marker.icon || '',
 						backgroundColor: marker.color || '#ff0000',
 						borderColor: '#ffffff',
-						size: 16
+						pixelSize: 30,
+						createdAt: 0,
+						updatedAt: 0
 					};
 				}
 				
-				const radius = markerDef.size / 2;
+				const radius = getMarkerRadius(markerDef);
 				
-				// Draw circle marker
-				ctx.fillStyle = markerDef.backgroundColor;
+				ctx.save();
+				
+				// Draw circle with optional image background
 				ctx.beginPath();
 				ctx.arc(position.x, position.y, radius, 0, Math.PI * 2);
+				
+				// Fill background color first
+				ctx.fillStyle = markerDef.backgroundColor;
 				ctx.fill();
 				
 				// Draw border if specified
 				if (markerDef.borderColor) {
 					ctx.strokeStyle = markerDef.borderColor;
-					ctx.lineWidth = 3;
+					ctx.lineWidth = Math.max(2, radius * 0.1);
 					ctx.stroke();
 				}
 				
 				// Draw icon/label if present
 				if (markerDef.icon) {
 					ctx.fillStyle = '#ffffff';
-					ctx.font = `${markerDef.size * 0.6}px sans-serif`;
+					ctx.font = `${Math.max(10, radius * 1.2)}px sans-serif`;
 					ctx.textAlign = 'center';
 					ctx.textBaseline = 'middle';
 					ctx.fillText(markerDef.icon, position.x, position.y);
 				}
+				
+				ctx.restore();
 			};
 
 			// Function to draw a drawing
@@ -5404,37 +5426,42 @@ export default class DndCampaignHubPlugin extends Plugin {
 					startY = e.clientY;
 					viewport.style.cursor = 'grabbing';
 				} else if (activeTool === 'select') {
-					console.log('Select tool: calculating hex position');
-					console.log('Map position:', mapPos);
-					// Select hex and toggle highlight
-					const hex = pixelToHex(mapPos.x, mapPos.y);
-					console.log('Hex calculated:', hex);
-					console.log('Current highlights:', config.highlights);
-					const existingIndex = config.highlights.findIndex(
-						(h: any) => h.col === hex.col && h.row === hex.row
-					);
-					console.log('Existing index:', existingIndex);
-					
-					if (existingIndex >= 0) {
-						// Remove highlight
-						config.highlights.splice(existingIndex, 1);
-						console.log('Removed highlight');
-					} else {
-						// Add highlight
-						config.highlights.push({
-							id: `highlight_${Date.now()}`,
-							col: hex.col,
-							row: hex.row,
-							color: selectedColor
-						});
-						console.log('Added highlight, new array:', config.highlights);
+					// Check if clicking on a marker for drag
+					let hitMarker = false;
+					for (let i = config.markers.length - 1; i >= 0; i--) {
+						const m = config.markers[i];
+						const mDef = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
+						const r = mDef ? getMarkerRadius(mDef) : 15;
+						const dist = Math.sqrt(Math.pow(m.position.x - mapPos.x, 2) + Math.pow(m.position.y - mapPos.y, 2));
+						if (dist <= r) {
+							draggingMarkerIndex = i;
+							dragOffsetX = m.position.x - mapPos.x;
+							dragOffsetY = m.position.y - mapPos.y;
+							viewport.style.cursor = 'grabbing';
+							hitMarker = true;
+							break;
+						}
 					}
-					
-					console.log('Calling redrawAnnotations');
-					redrawAnnotations();
-					console.log('Calling saveMapAnnotations');
-					this.saveMapAnnotations(config, el);
-					updateGridToolsVisibility();
+					if (!hitMarker) {
+						// No marker hit: toggle grid highlight
+						const hex = pixelToHex(mapPos.x, mapPos.y);
+						const existingIndex = config.highlights.findIndex(
+							(h: any) => h.col === hex.col && h.row === hex.row
+						);
+						if (existingIndex >= 0) {
+							config.highlights.splice(existingIndex, 1);
+						} else {
+							config.highlights.push({
+								id: `highlight_${Date.now()}`,
+								col: hex.col,
+								row: hex.row,
+								color: selectedColor
+							});
+						}
+						redrawAnnotations();
+						this.saveMapAnnotations(config, el);
+						updateGridToolsVisibility();
+					}
 				} else if (activeTool === 'draw') {
 					console.log('Draw tool: starting path');
 					isDrawing = true;
@@ -5463,11 +5490,27 @@ export default class DndCampaignHubPlugin extends Plugin {
 						return;
 					}
 					
+					// Snap position to grid center for creature-type markers
+					let placeX = mapPos.x;
+					let placeY = mapPos.y;
+					const mDef = this.markerLibrary.getMarker(selectedMarkerId);
+					if (mDef && ['player', 'npc', 'creature'].includes(mDef.type) && config.gridSize) {
+						const ox = config.gridOffsetX || 0;
+						const oy = config.gridOffsetY || 0;
+						const gs = config.gridSize;
+						const squares = CREATURE_SIZE_SQUARES[mDef.creatureSize || 'medium'] || 1;
+						const col = Math.floor((mapPos.x - ox) / gs);
+						const row = Math.floor((mapPos.y - oy) / gs);
+						// Center the token on the grid cells it covers
+						placeX = ox + col * gs + (squares * gs) / 2;
+						placeY = oy + row * gs + (squares * gs) / 2;
+					}
+					
 					// Create a marker reference
 					const markerRef: MarkerReference = {
 						id: `marker_inst_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
 						markerId: selectedMarkerId,
-						position: { x: mapPos.x, y: mapPos.y },
+						position: { x: placeX, y: placeY },
 						placedAt: Date.now()
 					};
 					
@@ -5515,14 +5558,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 					
 					// Try to erase a marker near the click point
 					if (!removed && config.markers.length > 0) {
-						const markerRadius = 15; // pixels
 						for (let i = config.markers.length - 1; i >= 0; i--) {
 							const marker = config.markers[i];
+							const mDef = marker.markerId ? this.markerLibrary.getMarker(marker.markerId) : null;
+							const mRadius = mDef ? getMarkerRadius(mDef) : 15;
 							const dist = Math.sqrt(
 								Math.pow(marker.position.x - mapPos.x, 2) + 
 								Math.pow(marker.position.y - mapPos.y, 2)
 							);
-							if (dist < markerRadius) {
+							if (dist < mRadius) {
 								config.markers.splice(i, 1);
 								console.log('Removed marker');
 								removed = true;
@@ -5565,6 +5609,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 						gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX, config.gridOffsetY);
 					}
 					redrawAnnotations();
+				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
+					// Dragging a marker
+					config.markers[draggingMarkerIndex].position = {
+						x: mapPos.x + dragOffsetX,
+						y: mapPos.y + dragOffsetY
+					};
+					redrawAnnotations();
 				} else if (activeTool === 'draw' && isDrawing) {
 					currentPath.push({ x: mapPos.x, y: mapPos.y });
 					redrawAnnotations();
@@ -5596,6 +5647,24 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (activeTool === 'pan' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'grab';
+				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
+					// Drop marker: snap creature types to grid
+					const m = config.markers[draggingMarkerIndex];
+					const mDef = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
+					if (mDef && ['player', 'npc', 'creature'].includes(mDef.type) && config.gridSize) {
+						const ox = config.gridOffsetX || 0;
+						const oy = config.gridOffsetY || 0;
+						const gs = config.gridSize;
+						const squares = CREATURE_SIZE_SQUARES[mDef.creatureSize || 'medium'] || 1;
+						const col = Math.floor((m.position.x - ox) / gs);
+						const row = Math.floor((m.position.y - oy) / gs);
+						m.position.x = ox + col * gs + (squares * gs) / 2;
+						m.position.y = oy + row * gs + (squares * gs) / 2;
+					}
+					draggingMarkerIndex = -1;
+					viewport.style.cursor = 'default';
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
 				} else if (activeTool === 'move-grid' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'move';
@@ -5623,6 +5692,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (activeTool === 'pan' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'grab';
+				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
+					draggingMarkerIndex = -1;
+					viewport.style.cursor = 'default';
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
 				} else if (activeTool === 'move-grid' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'move';
@@ -5635,6 +5709,27 @@ export default class DndCampaignHubPlugin extends Plugin {
 					if (rulerStart && !rulerEnd) {
 						rulerEnd = null;
 						redrawAnnotations();
+					}
+				}
+			});
+
+			// Right-click to delete marker when select tool is active
+			viewport.addEventListener('contextmenu', (e: MouseEvent) => {
+				if (activeTool !== 'select') return;
+				const mapPos = screenToMap(e.clientX, e.clientY);
+				for (let i = config.markers.length - 1; i >= 0; i--) {
+					const m = config.markers[i];
+					const mDef = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
+					const r = mDef ? getMarkerRadius(mDef) : 15;
+					const dist = Math.sqrt(Math.pow(m.position.x - mapPos.x, 2) + Math.pow(m.position.y - mapPos.y, 2));
+					if (dist <= r) {
+						e.preventDefault();
+						config.markers.splice(i, 1);
+						redrawAnnotations();
+						this.saveMapAnnotations(config, el);
+						updateGridToolsVisibility();
+						new Notice('Marker removed');
+						return;
 					}
 				}
 			});
