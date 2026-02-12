@@ -4688,7 +4688,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-			let activeTool: 'pan' | 'select' | 'draw' | 'ruler' = 'pan';
+			let activeTool: 'pan' | 'select' | 'draw' | 'ruler' | 'eraser' = 'pan';
 			let selectedColor = '#ff0000';
 			let rulerStart: { x: number; y: number } | null = null;
 			let rulerEnd: { x: number; y: number } | null = null;
@@ -4746,6 +4746,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const panBtn = createToolBtn('⬆', 'Pan', true);
 		const selectBtn = createToolBtn('⬡', 'Select');
 		const drawBtn = createToolBtn('✎', 'Draw');
+		const eraserBtn = createToolBtn('✖', 'Eraser');
 		const rulerBtn = createToolBtn('⟷', 'Ruler');
 		const calibrateBtn = createToolBtn('⚙', 'Calibrate');
 		
@@ -5014,7 +5015,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-				[panBtn, selectBtn, drawBtn, rulerBtn].forEach(btn => btn.removeClass('active'));
+				[panBtn, selectBtn, drawBtn, eraserBtn, rulerBtn].forEach(btn => btn.removeClass('active'));
 				
 				// Show/hide color picker based on tool (with animation)
 				const showColorPicker = tool === 'select' || tool === 'draw';
@@ -5029,6 +5030,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'crosshair';
 				} else if (tool === 'draw') {
 					drawBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+				} else if (tool === 'eraser') {
+					eraserBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
 				} else if (tool === 'ruler') {
 					rulerBtn.addClass('active');
@@ -5059,6 +5063,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 			rulerBtn.addEventListener('click', () => {
 				console.log('Ruler button clicked');
 				setActiveTool('ruler');
+			});
+			eraserBtn.addEventListener('click', () => {
+				console.log('Eraser button clicked');
+				setActiveTool('eraser');
 			});
 
 			// Add grid overlay if grid is enabled
@@ -5243,6 +5251,65 @@ export default class DndCampaignHubPlugin extends Plugin {
 							rulerEnd = null;
 							redrawAnnotations();
 						}, 3000);
+					}
+				} else if (activeTool === 'eraser') {
+					console.log('Eraser tool: looking for annotations to remove');
+					let removed = false;
+					
+					// Try to erase a highlight at the clicked hex
+					const hex = pixelToHex(mapPos.x, mapPos.y);
+					const highlightIndex = config.highlights.findIndex(
+						(h: any) => h.col === hex.col && h.row === hex.row
+					);
+					if (highlightIndex >= 0) {
+						config.highlights.splice(highlightIndex, 1);
+						console.log('Removed highlight at', hex);
+						removed = true;
+					}
+					
+					// Try to erase a drawing near the click point
+					if (!removed && config.drawings.length > 0) {
+						const eraserRadius = 20; // pixels
+						for (let i = config.drawings.length - 1; i >= 0; i--) {
+							const drawing = config.drawings[i];
+							for (const point of drawing.points) {
+								const dist = Math.sqrt(
+									Math.pow(point.x - mapPos.x, 2) + 
+									Math.pow(point.y - mapPos.y, 2)
+								);
+								if (dist < eraserRadius) {
+									config.drawings.splice(i, 1);
+									console.log('Removed drawing');
+									removed = true;
+									break;
+								}
+							}
+							if (removed) break;
+						}
+					}
+					
+					// Try to erase a marker near the click point
+					if (!removed && config.markers.length > 0) {
+						const markerRadius = 15; // pixels
+						for (let i = config.markers.length - 1; i >= 0; i--) {
+							const marker = config.markers[i];
+							const dist = Math.sqrt(
+								Math.pow(marker.position.x - mapPos.x, 2) + 
+								Math.pow(marker.position.y - mapPos.y, 2)
+							);
+							if (dist < markerRadius) {
+								config.markers.splice(i, 1);
+								console.log('Removed marker');
+								removed = true;
+								break;
+							}
+						}
+					}
+					
+					if (removed) {
+						redrawAnnotations();
+						this.saveMapAnnotations(config, el);
+						new Notice('Annotation removed');
 					}
 				}
 				
