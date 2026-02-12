@@ -4635,18 +4635,39 @@ export default class DndCampaignHubPlugin extends Plugin {
 	 */
 	async renderMapView(source: string, el: HTMLElement, ctx: any) {
 		try {
-			// Parse the map configuration
+			// Parse the map configuration (code block only needs mapId)
 			const config = JSON.parse(source);
 			
 			// Ensure mapId exists
 			if (!config.mapId) {
-				config.mapId = 'map_' + Date.now();
+				el.createEl('div', { 
+					text: '⚠️ Map configuration missing mapId',
+					cls: 'dnd-map-error'
+				});
+				return;
 			}
+
+			// Load full map data from JSON file (source of truth for all settings + annotations)
+			const savedData = await this.loadMapAnnotations(config.mapId);
 			
-			// Validate required fields
+			// Merge saved settings into config (JSON overrides code block)
+			if (savedData.imageFile) config.imageFile = savedData.imageFile;
+			if (savedData.name) config.name = savedData.name;
+			if (savedData.type) config.type = savedData.type;
+			if (savedData.gridType) config.gridType = savedData.gridType;
+			if (savedData.gridSize) config.gridSize = savedData.gridSize;
+			if (savedData.scale) config.scale = savedData.scale;
+			if (savedData.dimensions) config.dimensions = savedData.dimensions;
+			
+			// Load annotations
+			config.highlights = savedData.highlights || [];
+			config.markers = savedData.markers || [];
+			config.drawings = savedData.drawings || [];
+			
+			// Validate imageFile (must come from JSON or code block)
 			if (!config.imageFile) {
 				el.createEl('div', { 
-					text: '⚠️ Map configuration missing imageFile',
+					text: '⚠️ Map data not found. Please recreate the map.',
 					cls: 'dnd-map-error'
 				});
 				return;
@@ -4661,12 +4682,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				});
 				return;
 			}
-
-			// Load annotations from separate file
-			const annotations = await this.loadMapAnnotations(config.mapId);
-			config.highlights = annotations.highlights || [];
-			config.markers = annotations.markers || [];
-			config.drawings = annotations.drawings || [];
 
 			// Create container for the map
 			const mapContainer = el.createDiv({ cls: 'dnd-map-viewer' });
@@ -4761,12 +4776,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 				redrawAnnotations();
 				new Notice('Calibration cancelled');
 			} else {
-				// Start calibration
+				// Start calibration — set flag AFTER setActiveTool so it doesn't get cancelled
+				setActiveTool('pan'); // Clear other tools first
 				isCalibrating = true;
 				calibrationPoint1 = null;
 				calibrationPoint2 = null;
 				calibrateBtn.addClass('active');
-				setActiveTool('pan'); // Clear other tools
 				viewport.style.cursor = 'crosshair';
 				new Notice('Click two points on the map to measure one hex width');
 			}
@@ -5197,8 +5212,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 								gridCanvas = this.drawGridOverlay(mapWrapper, img, config);
 							}
 							
-							// Save configuration to code block
-							await this.updateMapConfig(config);
+							// Save configuration to JSON file
+							await this.saveMapAnnotations(config, el);
 							
 							new Notice(`Grid calibrated: ${miles} miles per hex`);
 							
@@ -5573,13 +5588,32 @@ export default class DndCampaignHubPlugin extends Plugin {
 	 */
 	async saveMapAnnotations(config: any, el: HTMLElement) {
 		try {
+			console.warn('=== saveMapAnnotations CALLED ===', {
+				mapId: config.mapId,
+				hasHighlights: (config.highlights || []).length,
+				hasMarkers: (config.markers || []).length,
+				hasDrawings: (config.drawings || []).length,
+				configDir: this.app.vault.configDir,
+				manifestId: this.manifest.id
+			});
+			
 			if (!config.mapId) {
 				console.error('Cannot save annotations: mapId missing');
 				return;
 			}
 			
-			// Prepare annotation data
-			const annotations = {
+			// Prepare annotation data (includes full config + annotations)
+			const mapData = {
+				// Map settings
+				mapId: config.mapId,
+				name: config.name || '',
+				imageFile: config.imageFile,
+				type: config.type || 'battlemap',
+				dimensions: config.dimensions || {},
+				gridType: config.gridType || 'none',
+				gridSize: config.gridSize || 70,
+				scale: config.scale || { value: 5, unit: 'feet' },
+				// Annotations
 				highlights: config.highlights || [],
 				markers: config.markers || [],
 				drawings: config.drawings || [],
@@ -5593,19 +5627,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 				await this.app.vault.adapter.mkdir(annotationDir);
 			}
 			
-			console.log('Saving annotations to:', annotationDir);
+			console.log('Saving map data to:', annotationDir);
 			console.log('MapId:', config.mapId);
-			console.log('Highlights count:', annotations.highlights.length);
-			console.log('Markers count:', annotations.markers.length);
-			console.log('Drawings count:', annotations.drawings.length);
+			console.log('Highlights count:', mapData.highlights.length);
+			console.log('Markers count:', mapData.markers.length);
+			console.log('Drawings count:', mapData.drawings.length);
 			
-			// Save to dedicated annotation file using adapter for config directory files
+			// Save to dedicated file using adapter for config directory files
 			const annotationPath = this.getMapAnnotationPath(config.mapId);
-			const annotationJson = JSON.stringify(annotations, null, 2);
+			const annotationJson = JSON.stringify(mapData, null, 2);
 			
 			await this.app.vault.adapter.write(annotationPath, annotationJson);
 			
-			console.log('Map annotations saved to:', annotationPath);
+			console.log('Map data saved to:', annotationPath);
 		} catch (error) {
 			console.error('Error saving map annotations:', error);
 		}

@@ -1,4 +1,4 @@
-import { App, Modal, Setting, TFile, Notice, MarkdownView } from 'obsidian';
+import { App, Modal, Setting, TFile, Notice } from 'obsidian';
 import { MapManager } from './MapManager';
 import { MAP_PRESETS } from './types';
 import type DndCampaignHubPlugin from '../main';
@@ -20,6 +20,8 @@ export class MapCreationModal extends Modal {
   private editMode: boolean = false;
   private editConfig: any = null;
   private editElement: HTMLElement | null = null;
+  private importMode: boolean = false;
+  private selectedExistingMapId: string | null = null;
 
   constructor(app: App, plugin: DndCampaignHubPlugin, mapManager: MapManager, editConfig?: any, editElement?: HTMLElement) {
     super(app);
@@ -53,22 +55,204 @@ export class MapCreationModal extends Modal {
     contentEl.empty();
     contentEl.addClass('dnd-map-creation-modal');
 
-    contentEl.createEl('h2', { text: this.editMode ? '🗺️ Edit Battle Map' : '🗺️ Create Battle Map' });
+    if (this.editMode) {
+      // Edit mode: go directly to form
+      contentEl.createEl('h2', { text: '🗺️ Edit Battle Map' });
+      this.buildMapForm(contentEl);
+    } else if (this.importMode) {
+      // Import mode: show form pre-filled
+      contentEl.createEl('h2', { text: '🗺️ Import Existing Map' });
+      this.buildMapForm(contentEl);
+    } else {
+      // Initial mode: show choice
+      contentEl.createEl('h2', { text: '🗺️ Add Map' });
+      this.buildModeChooser(contentEl);
+    }
+  }
 
+  /**
+   * Build the mode chooser (new vs import)
+   */
+  private async buildModeChooser(container: HTMLElement) {
+    const desc = container.createEl('p', { 
+      text: 'Create a new map or import an existing one into this note.',
+      cls: 'setting-item-description' 
+    });
+    desc.style.marginBottom = '20px';
+
+    // Load existing maps
+    const existingMaps = await this.loadExistingMaps();
+
+    const choiceContainer = container.createDiv();
+    choiceContainer.style.display = 'flex';
+    choiceContainer.style.flexDirection = 'column';
+    choiceContainer.style.gap = '12px';
+
+    // New map button
+    const newMapBtn = choiceContainer.createEl('button', { text: '➕ Create New Map' });
+    newMapBtn.style.padding = '16px';
+    newMapBtn.style.fontSize = '16px';
+    newMapBtn.style.cursor = 'pointer';
+    newMapBtn.style.borderRadius = '8px';
+    newMapBtn.style.border = '1px solid var(--background-modifier-border)';
+    newMapBtn.style.backgroundColor = 'var(--interactive-accent)';
+    newMapBtn.style.color = 'var(--text-on-accent)';
+    newMapBtn.addEventListener('click', () => {
+      this.importMode = false;
+      // Clear and rebuild with form
+      const { contentEl } = this;
+      contentEl.empty();
+      contentEl.addClass('dnd-map-creation-modal');
+      contentEl.createEl('h2', { text: '🗺️ Create Battle Map' });
+      this.buildMapForm(contentEl);
+    });
+
+    if (existingMaps.length > 0) {
+      const separator = choiceContainer.createDiv();
+      separator.style.textAlign = 'center';
+      separator.style.color = 'var(--text-muted)';
+      separator.style.margin = '4px 0';
+      separator.setText('— or —');
+
+      const importSection = choiceContainer.createDiv();
+      importSection.createEl('h3', { text: '📥 Import Existing Map' });
+      importSection.style.marginBottom = '8px';
+
+      const mapList = importSection.createDiv();
+      mapList.style.maxHeight = '300px';
+      mapList.style.overflowY = 'auto';
+      mapList.style.border = '1px solid var(--background-modifier-border)';
+      mapList.style.borderRadius = '8px';
+
+      existingMaps.forEach((mapInfo: any) => {
+        const item = mapList.createDiv();
+        item.style.padding = '10px 14px';
+        item.style.cursor = 'pointer';
+        item.style.borderBottom = '1px solid var(--background-modifier-border)';
+        item.style.display = 'flex';
+        item.style.justifyContent = 'space-between';
+        item.style.alignItems = 'center';
+
+        const left = item.createDiv();
+        const typeEmoji = mapInfo.type === 'battlemap' ? '⚔️' : mapInfo.type === 'world' ? '🌎' : '🗺️';
+        left.createEl('strong', { text: `${typeEmoji} ${mapInfo.name || 'Unnamed Map'}` });
+        const details = left.createDiv();
+        details.style.fontSize = '12px';
+        details.style.color = 'var(--text-muted)';
+        details.setText(`${mapInfo.gridType || 'no grid'} • ${mapInfo.imageFile || 'no image'}`);
+
+        const importBtn = item.createEl('button', { text: 'Import' });
+        importBtn.style.padding = '4px 12px';
+        importBtn.style.fontSize = '12px';
+
+        item.addEventListener('mouseenter', () => {
+          item.style.backgroundColor = 'var(--background-modifier-hover)';
+        });
+        item.addEventListener('mouseleave', () => {
+          item.style.backgroundColor = 'transparent';
+        });
+
+        importBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await this.importExistingMap(mapInfo);
+        });
+
+        item.addEventListener('click', async () => {
+          await this.importExistingMap(mapInfo);
+        });
+      });
+    }
+
+    // Cancel
+    const cancelContainer = container.createDiv();
+    cancelContainer.style.display = 'flex';
+    cancelContainer.style.justifyContent = 'flex-end';
+    cancelContainer.style.marginTop = '20px';
+    const cancelBtn = cancelContainer.createEl('button', { text: 'Cancel' });
+    cancelBtn.onclick = () => this.close();
+  }
+
+  /**
+   * Load existing map JSON files from plugin config directory
+   */
+  private async loadExistingMaps(): Promise<any[]> {
+    const maps: any[] = [];
+    try {
+      const annotationDir = `${this.app.vault.configDir}/plugins/${this.plugin.manifest.id}/map-annotations`;
+      if (await this.app.vault.adapter.exists(annotationDir)) {
+        const listing = await this.app.vault.adapter.list(annotationDir);
+        for (const filePath of listing.files) {
+          if (filePath.endsWith('.json')) {
+            try {
+              const content = await this.app.vault.adapter.read(filePath);
+              const data = JSON.parse(content);
+              if (data.mapId) {
+                maps.push(data);
+              }
+            } catch (e) {
+              console.log('Failed to read map file:', filePath, e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading existing maps:', error);
+    }
+    return maps;
+  }
+
+  /**
+   * Import an existing map into the current note
+   */
+  private async importExistingMap(mapInfo: any) {
+    try {
+      const activeFile = this.app.workspace.getActiveFile();
+      if (!activeFile) {
+        new Notice('No active file to insert map into');
+        return;
+      }
+
+      const editor = this.app.workspace.activeEditor?.editor;
+      if (!editor) {
+        new Notice('No active editor');
+        return;
+      }
+
+      // Build a minimal code block that references the mapId
+      // The renderMapView will load full config from the JSON
+      const config = {
+        mapId: mapInfo.mapId
+      };
+
+      const codeBlock = `\`\`\`dnd-map\n${JSON.stringify(config, null, 2)}\n\`\`\``;
+      editor.replaceSelection(`\n${codeBlock}\n`);
+      
+      new Notice(`✅ Map "${mapInfo.name || 'Unnamed'}" imported into note`);
+      this.close();
+    } catch (error) {
+      console.error('Error importing map:', error);
+      new Notice('Failed to import map');
+    }
+  }
+
+  /**
+   * Build the map creation/edit form
+   */
+  private buildMapForm(container: HTMLElement) {
     // Step 1: Select Image
-    this.createImageSelector(contentEl);
+    this.createImageSelector(container);
 
     // Step 2: Map Configuration
-    this.createConfigSection(contentEl);
+    this.createConfigSection(container);
 
     // Step 3: Grid Configuration
-    this.createGridSection(contentEl);
+    this.createGridSection(container);
 
     // Preview
-    this.createPreviewSection(contentEl);
+    this.createPreviewSection(container);
 
     // Buttons
-    this.createButtons(contentEl);
+    this.createButtons(container);
   }
 
   private createImageSelector(container: HTMLElement) {
@@ -342,31 +526,30 @@ export class MapCreationModal extends Modal {
         mapData.id = this.editConfig.id;
         mapData.createdDate = this.editConfig.createdDate || mapData.createdDate;
         mapData.lastModified = new Date().toISOString();
-        
-        // Replace the existing code block in the editor
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (activeView) {
-          const editor = activeView.editor;
-          const content = editor.getValue();
-          
-          // Generate old and new code blocks
-          const oldCodeBlock = this.mapManager.generateMapCodeBlock(this.editConfig);
-          const newCodeBlock = this.mapManager.generateMapCodeBlock(mapData);
-          
-          // Try to replace - if not found, search for the map ID specifically
-          let newContent = content.replace(oldCodeBlock, newCodeBlock);
-          if (newContent === content) {
-            // Fallback: search for any code block with this mapId
-            const mapIdPattern = new RegExp(`\`\`\`dnd-map\\s*\\n[^\`]*"mapId"\\s*:\\s*"${mapData.id}"[^\`]*\`\`\``, 's');
-            newContent = content.replace(mapIdPattern, newCodeBlock);
-          }
-          
-          editor.setValue(newContent);
-        }
-        
+      }
+
+      // Save full config to JSON file immediately
+      const fullConfig = {
+        mapId: mapData.id,
+        name: mapData.name,
+        imageFile: mapData.imageFile,
+        type: mapData.type,
+        dimensions: mapData.dimensions,
+        gridType: mapData.gridType,
+        gridSize: mapData.gridSize,
+        scale: mapData.scale,
+        highlights: [],
+        markers: [],
+        drawings: []
+      };
+      // Use a dummy element since we don't have a rendered map yet
+      await this.plugin.saveMapAnnotations(fullConfig, document.createElement('div'));
+
+      if (this.editMode && this.editConfig) {
+        // Edit mode: code block already has mapId, just update the JSON
         new Notice(`✅ Map "${this.mapName}" updated`);
       } else {
-        // Create mode: insert new code block
+        // Create mode: insert minimal code block with just mapId
         const activeFile = this.app.workspace.getActiveFile();
         if (activeFile) {
           const editor = this.app.workspace.activeEditor?.editor;
@@ -386,7 +569,13 @@ export class MapCreationModal extends Modal {
   }
 
   private refresh() {
-    this.onOpen();
+    // When refreshing (e.g. map type changed), rebuild the form directly
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('dnd-map-creation-modal');
+    const title = this.editMode ? 'Edit Battle Map' : 'Create Battle Map';
+    contentEl.createEl('h2', { text: `🗺️ ${title}` });
+    this.buildMapForm(contentEl);
   }
 
   onClose() {

@@ -166,15 +166,9 @@ export class MapManager {
    * Generate markdown code block for map
    */
   generateMapCodeBlock(mapData: MapData): string {
+    // Minimal code block - only mapId needed, everything else lives in the JSON file
     const config = {
-      mapId: mapData.id,
-      name: mapData.name,
-      imageFile: mapData.imageFile,
-      type: mapData.type,
-      gridType: mapData.gridType,
-      gridSize: mapData.gridSize,
-      scale: mapData.scale,
-      dimensions: mapData.dimensions
+      mapId: mapData.id
     };
 
     return `\`\`\`dnd-map
