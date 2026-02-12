@@ -4,6 +4,11 @@
 export type MarkerType = 'player' | 'npc' | 'creature' | 'poi' | 'other';
 
 /**
+ * Layer types for organizing map content
+ */
+export type Layer = 'Player' | 'DM' | 'Background';
+
+/**
  * D&D creature size categories with grid coverage
  * Tiny = shares a square with another, Small/Medium = 1×1, Large = 2×2, Huge = 3×3, Gargantuan = 4×4
  */
@@ -51,6 +56,7 @@ export interface MarkerReference {
 		y: number;
 	};
 	placedAt: number;
+	layer?: Layer; // Which layer this marker belongs to (defaults to 'Player')
 }
 
 /**

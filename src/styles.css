@@ -2937,6 +2937,147 @@
   transform: scale(1.05);
 }
 
+/* Layer Menu Styles */
+.dnd-map-layer-menu {
+  position: absolute;
+  top: 62px;
+  left: 10px;
+  display: flex;
+  gap: 0;
+  background: linear-gradient(135deg, rgba(30, 27, 75, 0.95), rgba(25, 20, 55, 0.95));
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4),
+              0 2px 8px rgba(0, 0, 0, 0.2),
+              inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  z-index: 1001;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dnd-map-layer-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  max-width: 40px;
+  overflow: hidden;
+}
+
+.dnd-map-layer-menu:not(.expanded) .dnd-map-layer-btn:not(.active) {
+  max-width: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  opacity: 0;
+}
+
+.dnd-map-layer-menu.expanded .dnd-map-layer-btn {
+  max-width: 200px;
+  opacity: 1;
+}
+
+.dnd-map-layer-btn.active {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.6), rgba(99, 102, 241, 0.6));
+  border-color: rgba(124, 58, 237, 0.8);
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.4);
+}
+
+.dnd-map-layer-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(124, 58, 237, 0.5);
+  transform: translateY(-1px);
+}
+
+.dnd-map-layer-icon {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.dnd-map-layer-label {
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+/* Context Menu Styles */
+.dnd-map-context-menu {
+  background: linear-gradient(135deg, rgba(30, 27, 75, 0.98), rgba(25, 20, 55, 0.98));
+  backdrop-filter: blur(12px);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5),
+              0 2px 8px rgba(0, 0, 0, 0.3),
+              inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(124, 58, 237, 0.4);
+  z-index: 10000;
+  min-width: 180px;
+}
+
+.dnd-map-context-menu-header {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 6px 10px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 2px;
+}
+
+.dnd-map-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: white;
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: 4px;
+  margin: 2px;
+  transition: all 0.15s ease;
+}
+
+.dnd-map-context-menu-item:hover {
+  background: rgba(124, 58, 237, 0.4);
+}
+
+.dnd-map-context-menu-item.active {
+  background: rgba(124, 58, 237, 0.2);
+  border-left: 3px solid rgba(124, 58, 237, 0.8);
+  padding-left: 9px;
+}
+
+.dnd-map-context-menu-item.delete {
+  color: rgba(255, 100, 100, 1);
+}
+
+.dnd-map-context-menu-item.delete:hover {
+  background: rgba(255, 50, 50, 0.2);
+}
+
+.dnd-map-context-menu-separator {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 4px 0;
+}
+
+.dnd-map-context-menu-item .layer-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
 .dnd-map-annotation-layer {
   position: absolute;
   top: 0;

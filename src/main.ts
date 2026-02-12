@@ -22,7 +22,7 @@ import {
 import { MapManager } from "./map/MapManager";
 import { MapCreationModal } from "./map/MapCreationModal";
 import { MarkerLibrary } from "./marker/MarkerLibrary";
-import { MarkerReference, MarkerDefinition, CREATURE_SIZE_SQUARES, CreatureSize } from "./marker/MarkerTypes";
+import { MarkerReference, MarkerDefinition, CREATURE_SIZE_SQUARES, CreatureSize, Layer } from "./marker/MarkerTypes";
 
 interface DndCampaignHubSettings {
   currentCampaign: string;
@@ -4677,6 +4677,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			config.markers = savedData.markers || [];
 			config.drawings = savedData.drawings || [];
 			
+			// Load active layer (defaults to Player)
+			config.activeLayer = savedData.activeLayer || 'Player';
+			
 			// Validate imageFile (must come from JSON or code block)
 			if (!config.imageFile) {
 				el.createEl('div', { 
@@ -4929,6 +4932,45 @@ export default class DndCampaignHubPlugin extends Plugin {
 			toolbar.toggleClass('collapsed', !toolbar.hasClass('collapsed'));
 		});
 
+		// Add layer menu below toolbar
+		const layerMenu = viewport.createDiv({ cls: 'dnd-map-layer-menu' });
+		
+		// Layer icons
+		const layerIcons: Record<Layer, string> = {
+			'Player': '👥',
+			'DM': '🎲',
+			'Background': '🗺️'
+		};
+		
+		// Create layer buttons
+		const layers: Layer[] = ['Player', 'DM', 'Background'];
+		const layerButtons: Record<Layer, HTMLButtonElement> = {} as any;
+		
+		layers.forEach(layer => {
+			const btn = layerMenu.createEl('button', {
+				cls: 'dnd-map-layer-btn' + (layer === config.activeLayer ? ' active' : ''),
+				attr: { 'data-layer': layer }
+			});
+			btn.createEl('span', { text: layerIcons[layer], cls: 'dnd-map-layer-icon' });
+			btn.createEl('span', { text: layer, cls: 'dnd-map-layer-label' });
+			layerButtons[layer] = btn;
+			
+			btn.addEventListener('click', () => {
+				// Toggle menu expansion
+				if (layer === config.activeLayer) {
+					layerMenu.toggleClass('expanded', !layerMenu.hasClass('expanded'));
+				} else {
+					// Switch active layer
+					config.activeLayer = layer;
+					layers.forEach(l => layerButtons[l].removeClass('active'));
+					btn.addClass('active');
+					layerMenu.removeClass('expanded');
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
+				}
+			});
+		});
+
 		// State for zoom and pan
 		let scale = 1;
 		let translateX = 0;
@@ -5132,6 +5174,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Function to draw a hex highlight
 			const drawHighlight = (ctx: CanvasRenderingContext2D, highlight: any) => {
+				// Apply transparency if not on active layer
+				const itemLayer = highlight.layer || 'Player';
+				const isActiveLayer = itemLayer === config.activeLayer;
+				ctx.globalAlpha = isActiveLayer ? 1.0 : 0.3;
+				
 				ctx.fillStyle = highlight.color + '60'; // Add alpha
 				ctx.strokeStyle = highlight.color;
 				ctx.lineWidth = 2;
@@ -5168,6 +5215,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 						config.gridSize
 					);
 				}
+				
+				// Reset globalAlpha
+				ctx.globalAlpha = 1.0;
 			};
 
 			// Helper: get marker pixel radius for a given marker definition
@@ -5199,6 +5249,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Function to draw a marker
 			const drawMarker = (ctx: CanvasRenderingContext2D, marker: any) => {
+				// Apply transparency if not on active layer
+				const itemLayer = marker.layer || 'Player';
+				const isActiveLayer = itemLayer === config.activeLayer;
+				ctx.globalAlpha = isActiveLayer ? 1.0 : 0.3;
+				
 				let markerDef: MarkerDefinition | null | undefined = null;
 				let position = marker.position;
 				
@@ -5277,11 +5332,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 				
 				ctx.restore();
+				
+				// Reset globalAlpha
+				ctx.globalAlpha = 1.0;
 			};
 
 			// Function to draw a drawing
 			const drawDrawing = (ctx: CanvasRenderingContext2D, drawing: any) => {
 				if (drawing.points.length === 0) return;
+				
+				// Apply transparency if not on active layer
+				const itemLayer = drawing.layer || 'Player';
+				const isActiveLayer = itemLayer === config.activeLayer;
+				ctx.globalAlpha = isActiveLayer ? 1.0 : 0.3;
 				
 				ctx.strokeStyle = drawing.color;
 				ctx.lineWidth = drawing.strokeWidth || 2;
@@ -5294,6 +5357,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 					}
 					ctx.stroke();
 				}
+				
+				// Reset globalAlpha
+				ctx.globalAlpha = 1.0;
 			};
 
 			// Tool switching function
@@ -5546,7 +5612,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 								id: `highlight_${Date.now()}`,
 								col: hex.col,
 								row: hex.row,
-								color: selectedColor
+								color: selectedColor,
+								layer: config.activeLayer || 'Player'
 							});
 						}
 						redrawAnnotations();
@@ -5605,7 +5672,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 						id: `marker_inst_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
 						markerId: selectedMarkerId,
 						position: { x: placeX, y: placeY },
-						placedAt: Date.now()
+						placedAt: Date.now(),
+						layer: config.activeLayer || 'Player'
 					};
 					
 					config.markers.push(markerRef);
@@ -5775,7 +5843,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 							type: 'freehand',
 							points: currentPath,
 							color: selectedColor,
-							strokeWidth: 3
+							strokeWidth: 3,
+							layer: config.activeLayer || 'Player'
 						});
 						this.saveMapAnnotations(config, el);
 						updateGridToolsVisibility();
@@ -5812,7 +5881,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 
-			// Right-click to delete marker when select tool is active
+			// Right-click for marker context menu when select tool is active
 			viewport.addEventListener('contextmenu', (e: MouseEvent) => {
 				if (activeTool !== 'select') return;
 				const mapPos = screenToMap(e.clientX, e.clientY);
@@ -5823,11 +5892,61 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const dist = Math.sqrt(Math.pow(m.position.x - mapPos.x, 2) + Math.pow(m.position.y - mapPos.y, 2));
 					if (dist <= r) {
 						e.preventDefault();
-						config.markers.splice(i, 1);
-						redrawAnnotations();
-						this.saveMapAnnotations(config, el);
-						updateGridToolsVisibility();
-						new Notice('Marker removed');
+						
+						// Create context menu
+						const contextMenu = document.createElement('div');
+						contextMenu.addClass('dnd-map-context-menu');
+						contextMenu.style.position = 'fixed';
+						contextMenu.style.left = `${e.clientX}px`;
+						contextMenu.style.top = `${e.clientY}px`;
+						
+						// Layer submenu header
+						const layerHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+						layerHeader.textContent = 'Move to Layer:';
+						
+						// Layer options
+						const layers: Layer[] = ['Player', 'DM', 'Background'];
+						const currentLayer = m.layer || 'Player';
+						layers.forEach(layer => {
+							const option = contextMenu.createDiv({ 
+								cls: 'dnd-map-context-menu-item' + (layer === currentLayer ? ' active' : '')
+							});
+							const layerIcons: Record<Layer, string> = { 'Player': '👥', 'DM': '🎲', 'Background': '🗺️' };
+							option.innerHTML = `<span class="layer-icon">${layerIcons[layer]}</span> ${layer}`;
+							option.addEventListener('click', () => {
+								m.layer = layer;
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								document.body.removeChild(contextMenu);
+								new Notice(`Marker moved to ${layer} layer`);
+							});
+						});
+						
+						// Separator
+						contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+						
+						// Delete option
+						const deleteOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item delete' });
+						deleteOption.innerHTML = `<span>🗑️</span> Delete`;
+						deleteOption.addEventListener('click', () => {
+							config.markers.splice(i, 1);
+							redrawAnnotations();
+							this.saveMapAnnotations(config, el);
+							updateGridToolsVisibility();
+							document.body.removeChild(contextMenu);
+							new Notice('Marker removed');
+						});
+						
+						// Add to body and remove on outside click
+						document.body.appendChild(contextMenu);
+						const removeMenu = (event: MouseEvent) => {
+							if (!contextMenu.contains(event.target as Node)) {
+								document.body.removeChild(contextMenu);
+								document.removeEventListener('click', removeMenu);
+							}
+						};
+						setTimeout(() => document.addEventListener('click', removeMenu), 10);
+						
 						return;
 					}
 				}
@@ -6027,6 +6146,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 				gridOffsetX: config.gridOffsetX || 0,
 				gridOffsetY: config.gridOffsetY || 0,
 				scale: config.scale || { value: 5, unit: 'feet' },
+				// Layer settings
+				activeLayer: config.activeLayer || 'Player',
 				// Annotations
 				highlights: config.highlights || [],
 				markers: config.markers || [],
