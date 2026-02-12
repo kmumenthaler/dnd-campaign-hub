@@ -4725,6 +4725,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let markerDragOrigin: { x: number; y: number } | null = null; // Original position when dragging a marker
 			let rulerStart: { x: number; y: number } | null = null;
 			let rulerEnd: { x: number; y: number } | null = null;
+			let rulerComplete = false; // Track if ruler endpoint was set by click (not just mousemove preview)
 			let isDrawing = false;
 			let currentPath: { x: number; y: number }[] = [];
 			let isCalibrating = false;
@@ -5336,6 +5337,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (tool !== 'ruler' && annotationCanvas) {
 					rulerStart = null;
 					rulerEnd = null;
+					rulerComplete = false;
 					redrawAnnotations();
 				}
 			};
@@ -5560,17 +5562,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 					console.log('Ruler tool: rulerStart is', rulerStart);
 					if (!rulerStart) {
 						rulerStart = { x: mapPos.x, y: mapPos.y };
+						rulerComplete = false;
 						console.log('Set rulerStart to:', rulerStart);
-					} else {
+					} else if (!rulerComplete) {
 						rulerEnd = { x: mapPos.x, y: mapPos.y };
+						rulerComplete = true;
 						console.log('Set rulerEnd to:', rulerEnd);
 						redrawAnnotations();
-						// Reset for next measurement
-						setTimeout(() => {
-							rulerStart = null;
-							rulerEnd = null;
-							redrawAnnotations();
-						}, 3000);
+					} else {
+						// Third click - clear ruler
+						rulerStart = null;
+						rulerEnd = null;
+						rulerComplete = false;
+						redrawAnnotations();
 					}
 				} else if (activeTool === 'marker') {
 					console.log('Marker tool: placing marker');
@@ -5726,8 +5730,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 							}
 						}
 					}
-				} else if (activeTool === 'ruler' && rulerStart && !rulerEnd) {
-					// Show temporary ruler line
+				} else if (activeTool === 'ruler' && rulerStart && !rulerComplete) {
+					// Show temporary ruler line (preview)
 					rulerEnd = { x: mapPos.x, y: mapPos.y };
 					redrawAnnotations();
 				}
@@ -5800,7 +5804,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					currentPath = [];
 					redrawAnnotations();
 				} else if (activeTool === 'ruler') {
-					if (rulerStart && !rulerEnd) {
+					// Clear preview line on mouseup if ruler not complete
+					if (rulerStart && !rulerComplete) {
 						rulerEnd = null;
 						redrawAnnotations();
 					}
