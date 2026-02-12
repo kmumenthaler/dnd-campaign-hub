@@ -4658,6 +4658,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 			if (savedData.gridSize) config.gridSize = savedData.gridSize;
 			if (savedData.scale) config.scale = savedData.scale;
 			if (savedData.dimensions) config.dimensions = savedData.dimensions;
+			if (savedData.gridOffsetX !== undefined) config.gridOffsetX = savedData.gridOffsetX;
+			if (savedData.gridOffsetY !== undefined) config.gridOffsetY = savedData.gridOffsetY;
+			
+			// Ensure grid offset defaults
+			if (config.gridOffsetX === undefined) config.gridOffsetX = 0;
+			if (config.gridOffsetY === undefined) config.gridOffsetY = 0;
 			
 			// Load annotations
 			config.highlights = savedData.highlights || [];
@@ -4703,7 +4709,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-			let activeTool: 'pan' | 'select' | 'draw' | 'ruler' | 'eraser' = 'pan';
+			let activeTool: 'pan' | 'select' | 'draw' | 'ruler' | 'eraser' | 'move-grid' = 'pan';
 			let selectedColor = '#ff0000';
 			let rulerStart: { x: number; y: number } | null = null;
 			let rulerEnd: { x: number; y: number } | null = null;
@@ -4763,6 +4769,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const drawBtn = createToolBtn('✎', 'Draw');
 		const eraserBtn = createToolBtn('✖', 'Eraser');
 		const rulerBtn = createToolBtn('⟷', 'Ruler');
+		const moveGridBtn = createToolBtn('✥', 'Move Grid');
 		const calibrateBtn = createToolBtn('⚙', 'Calibrate');
 		
 		// Helper: show/hide calibrate button based on whether annotations exist
@@ -4800,6 +4807,87 @@ export default class DndCampaignHubPlugin extends Plugin {
 				viewport.style.cursor = 'crosshair';
 				new Notice('Click two points on the map to measure one hex width');
 			}
+		});
+
+		// Grid size slider (flyout on move-grid button, visible when grid is enabled)
+		const hasGrid = config.gridType && config.gridType !== 'none';
+		
+		// Create the slider flyout attached to the move-grid button
+		const gridSliderFlyout = moveGridBtn.createDiv({ cls: 'dnd-map-grid-slider-flyout' });
+		const gridSliderLabel = gridSliderFlyout.createEl('span', { 
+			text: `${Math.round(config.gridSize * 10) / 10}px`, 
+			cls: 'dnd-map-grid-slider-label' 
+		});
+		
+		// Click label to manually enter a value
+		gridSliderLabel.addEventListener('click', (e) => {
+			e.stopPropagation();
+			const input = document.createElement('input');
+			input.type = 'number';
+			input.value = String(Math.round(config.gridSize * 10) / 10);
+			input.min = '10';
+			input.max = '300';
+			input.step = '0.1';
+			input.className = 'dnd-map-grid-size-input';
+			gridSliderLabel.replaceWith(input);
+			input.focus();
+			input.select();
+			
+			const applyValue = () => {
+				let val = parseFloat(input.value);
+				if (isNaN(val) || val < 10) val = 10;
+				if (val > 300) val = 300;
+				config.gridSize = val;
+				gridSlider.value = String(val);
+				gridSliderLabel.textContent = `${Math.round(val * 10) / 10}px`;
+				input.replaceWith(gridSliderLabel);
+				// Redraw grid
+				if (gridCanvas) gridCanvas.remove();
+				if (config.gridType && config.gridType !== 'none') {
+					gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX, config.gridOffsetY);
+				}
+				redrawAnnotations();
+				this.saveMapAnnotations(config, el);
+			};
+			
+			input.addEventListener('blur', applyValue);
+			input.addEventListener('keydown', (ke) => {
+				if (ke.key === 'Enter') { ke.preventDefault(); applyValue(); }
+				if (ke.key === 'Escape') { input.replaceWith(gridSliderLabel); }
+			});
+			input.addEventListener('mousedown', (me) => me.stopPropagation());
+		});
+		
+		const gridSlider = gridSliderFlyout.createEl('input', {
+			type: 'range',
+			cls: 'dnd-map-grid-slider-input',
+			attr: { 
+				min: '10', 
+				max: '300', 
+				value: String(config.gridSize),
+				step: '0.0001'
+			}
+		});
+		// Prevent slider interaction from triggering button click or map events
+		gridSliderFlyout.addEventListener('mousedown', (e) => e.stopPropagation());
+		gridSliderFlyout.addEventListener('click', (e) => e.stopPropagation());
+		
+		let gridSliderTimeout: ReturnType<typeof setTimeout> | null = null;
+		gridSlider.addEventListener('input', (e) => {
+			const newSize = parseFloat((e.target as HTMLInputElement).value);
+			config.gridSize = newSize;
+			gridSliderLabel.textContent = `${Math.round(newSize * 10) / 10}px`;
+			// Redraw grid live
+			if (gridCanvas) gridCanvas.remove();
+			if (config.gridType && config.gridType !== 'none') {
+				gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX, config.gridOffsetY);
+			}
+			redrawAnnotations();
+			// Debounced save
+			if (gridSliderTimeout) clearTimeout(gridSliderTimeout);
+			gridSliderTimeout = setTimeout(() => {
+				this.saveMapAnnotations(config, el);
+			}, 500);
 		});
 
 		// Separator for color picker (hidden by default)
@@ -4852,27 +4940,29 @@ export default class DndCampaignHubPlugin extends Plugin {
 			return { x, y };
 		};
 
-			// Function to get hex coordinates from pixel position
+			// Function to get cell coordinates from pixel position (accounts for grid offset)
 			const pixelToHex = (x: number, y: number) => {
+				const ox = config.gridOffsetX || 0;
+				const oy = config.gridOffsetY || 0;
 				if (config.gridType === 'hex-horizontal') {
 					const horiz = config.gridSize;
 					const size = (2/3) * horiz;
 					const vert = Math.sqrt(3) * size;
 					
-					const col = Math.round(x / horiz);
-					const row = Math.round((y - ((col & 1) ? vert / 2 : 0)) / vert);
+					const col = Math.round((x - ox) / horiz);
+					const row = Math.round(((y - oy) - ((col & 1) ? vert / 2 : 0)) / vert);
 					return { col, row };
 				} else if (config.gridType === 'hex-vertical') {
 					const vert = config.gridSize;
 					const size = (2/3) * vert;
 					const horiz = Math.sqrt(3) * size;
 					
-					const row = Math.round(y / vert);
-					const col = Math.round((x - ((row & 1) ? horiz / 2 : 0)) / horiz);
+					const row = Math.round((y - oy) / vert);
+					const col = Math.round(((x - ox) - ((row & 1) ? horiz / 2 : 0)) / horiz);
 					return { col, row };
 				} else if (config.gridType === 'square') {
-					const col = Math.floor(x / config.gridSize);
-					const row = Math.floor(y / config.gridSize);
+					const col = Math.floor((x - ox) / config.gridSize);
+					const row = Math.floor((y - oy) / config.gridSize);
 					return { col, row };
 				}
 				return { col: 0, row: 0 };
@@ -4980,33 +5070,35 @@ export default class DndCampaignHubPlugin extends Plugin {
 				ctx.fillStyle = highlight.color + '60'; // Add alpha
 				ctx.strokeStyle = highlight.color;
 				ctx.lineWidth = 2;
+				const ox = config.gridOffsetX || 0;
+				const oy = config.gridOffsetY || 0;
 				
 				if (config.gridType === 'hex-horizontal') {
 					const horiz = config.gridSize;
 					const size = (2/3) * horiz;
 					const vert = Math.sqrt(3) * size;
 					const colOffsetY = (highlight.col & 1) ? vert / 2 : 0;
-					const centerX = highlight.col * horiz;
-					const centerY = highlight.row * vert + colOffsetY;
+					const centerX = highlight.col * horiz + ox;
+					const centerY = highlight.row * vert + colOffsetY + oy;
 					this.drawFilledHexFlat(ctx, centerX, centerY, size);
 				} else if (config.gridType === 'hex-vertical') {
 					const vert = config.gridSize;
 					const size = (2/3) * vert;
 					const horiz = Math.sqrt(3) * size;
 					const rowOffsetX = (highlight.row & 1) ? horiz / 2 : 0;
-					const centerX = highlight.col * horiz + rowOffsetX;
-					const centerY = highlight.row * vert;
+					const centerX = highlight.col * horiz + rowOffsetX + ox;
+					const centerY = highlight.row * vert + oy;
 					this.drawFilledHexPointy(ctx, centerX, centerY, size);
 				} else if (config.gridType === 'square') {
 					ctx.fillRect(
-						highlight.col * config.gridSize,
-						highlight.row * config.gridSize,
+						highlight.col * config.gridSize + ox,
+						highlight.row * config.gridSize + oy,
 						config.gridSize,
 						config.gridSize
 					);
 					ctx.strokeRect(
-						highlight.col * config.gridSize,
-						highlight.row * config.gridSize,
+						highlight.col * config.gridSize + ox,
+						highlight.row * config.gridSize + oy,
 						config.gridSize,
 						config.gridSize
 					);
@@ -5057,7 +5149,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-				[panBtn, selectBtn, drawBtn, eraserBtn, rulerBtn].forEach(btn => btn.removeClass('active'));
+				[panBtn, selectBtn, drawBtn, eraserBtn, rulerBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
 				
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
@@ -5087,6 +5179,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (tool === 'ruler') {
 					rulerBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
+				} else if (tool === 'move-grid') {
+					moveGridBtn.addClass('active');
+					viewport.style.cursor = 'move';
 				}
 				
 				// Clear ruler when switching tools
@@ -5118,11 +5213,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('Eraser button clicked');
 				setActiveTool('eraser');
 			});
+			moveGridBtn.addEventListener('click', () => {
+				console.log('Move Grid button clicked');
+				setActiveTool('move-grid');
+			});
+			// Hide move-grid if no grid
+			if (!hasGrid) moveGridBtn.addClass('hidden');
 
 			// Add grid overlay if grid is enabled
 			img.onload = () => {
 				if (config.gridType && config.gridType !== 'none' && config.gridSize) {
-					gridCanvas = this.drawGridOverlay(mapWrapper, img, config);
+					gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0);
 				}
 				
 				// Create annotation canvas
@@ -5224,7 +5325,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								gridCanvas.remove();
 							}
 							if (config.gridType && config.gridType !== 'none' && config.gridSize) {
-								gridCanvas = this.drawGridOverlay(mapWrapper, img, config);
+								gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0);
 							}
 							
 							// Save configuration to JSON file
@@ -5249,6 +5350,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 					isDragging = true;
 					startX = e.clientX - translateX;
 					startY = e.clientY - translateY;
+					viewport.style.cursor = 'grabbing';
+				} else if (activeTool === 'move-grid') {
+					isDragging = true;
+					startX = e.clientX;
+					startY = e.clientY;
 					viewport.style.cursor = 'grabbing';
 				} else if (activeTool === 'select') {
 					console.log('Select tool: calculating hex position');
@@ -5375,6 +5481,22 @@ export default class DndCampaignHubPlugin extends Plugin {
 					translateX = e.clientX - startX;
 					translateY = e.clientY - startY;
 					updateTransform();
+				} else if (activeTool === 'move-grid' && isDragging) {
+					// Calculate delta in image-space pixels
+					const rect = viewport.getBoundingClientRect();
+					const scaleX = img.naturalWidth / img.width;
+					const dx = ((e.clientX - startX) / scale) * scaleX;
+					const dy = ((e.clientY - startY) / scale) * scaleX;
+					config.gridOffsetX = (config.gridOffsetX || 0) + dx;
+					config.gridOffsetY = (config.gridOffsetY || 0) + dy;
+					startX = e.clientX;
+					startY = e.clientY;
+					// Redraw grid with new offset
+					if (gridCanvas) gridCanvas.remove();
+					if (config.gridType && config.gridType !== 'none' && config.gridSize) {
+						gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX, config.gridOffsetY);
+					}
+					redrawAnnotations();
 				} else if (activeTool === 'draw' && isDrawing) {
 					currentPath.push({ x: mapPos.x, y: mapPos.y });
 					redrawAnnotations();
@@ -5406,6 +5528,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (activeTool === 'pan' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'grab';
+				} else if (activeTool === 'move-grid' && isDragging) {
+					isDragging = false;
+					viewport.style.cursor = 'move';
+					// Save offset
+					this.saveMapAnnotations(config, el);
 				} else if (activeTool === 'draw' && isDrawing) {
 					isDrawing = false;
 					if (currentPath.length > 2) {
@@ -5428,6 +5555,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (activeTool === 'pan' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'grab';
+				} else if (activeTool === 'move-grid' && isDragging) {
+					isDragging = false;
+					viewport.style.cursor = 'move';
+					this.saveMapAnnotations(config, el);
 				} else if (activeTool === 'draw' && isDrawing) {
 					isDrawing = false;
 					currentPath = [];
@@ -5631,6 +5762,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 				dimensions: config.dimensions || {},
 				gridType: config.gridType || 'none',
 				gridSize: config.gridSize || 70,
+				gridOffsetX: config.gridOffsetX || 0,
+				gridOffsetY: config.gridOffsetY || 0,
 				scale: config.scale || { value: 5, unit: 'feet' },
 				// Annotations
 				highlights: config.highlights || [],

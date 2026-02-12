@@ -2734,6 +2734,7 @@
   white-space: nowrap;
   width: 32px;
   height: 32px;
+  overflow: visible;
 }
 
 .dnd-map-tool-btn:hover {
@@ -2794,6 +2795,104 @@
   opacity: 0;
   height: 0;
   margin: 0;
+}
+
+/* Grid size slider flyout (pops out right of move-grid button) */
+.dnd-map-grid-slider-flyout {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(15, 15, 25, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  z-index: 100;
+}
+
+.dnd-map-tool-btn.active .dnd-map-grid-slider-flyout {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  margin-left: 14px;
+}
+
+.dnd-map-grid-slider-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+  min-width: 50px;
+  text-align: right;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.dnd-map-grid-slider-label:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dnd-map-grid-size-input {
+  width: 60px;
+  height: 22px;
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(124, 58, 237, 0.6);
+  border-radius: 4px;
+  padding: 2px 4px;
+  outline: none;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+
+.dnd-map-grid-size-input::-webkit-inner-spin-button,
+.dnd-map-grid-size-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.dnd-map-grid-slider-input {
+  width: 320px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.dnd-map-grid-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.9), rgba(99, 102, 241, 0.9));
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+}
+
+.dnd-map-grid-slider-input::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.9), rgba(99, 102, 241, 0.9));
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  cursor: pointer;
 }
 
 .dnd-map-color-picker {
