@@ -2236,3 +2236,406 @@
   font-size: 10px !important;
   margin-top: 4px !important;
 }
+
+/* ========================================
+   Map Creation Modal Styles
+   ======================================== */
+
+.dnd-map-creation-modal {
+  max-width: 900px;
+}
+
+.dnd-map-section {
+  margin: 20px 0;
+  padding: 15px;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+}
+
+.dnd-map-section h3 {
+  margin: 0 0 15px 0;
+  font-size: 14px;
+  color: var(--text-accent);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 8px;
+}
+
+.dnd-map-section .setting-item {
+  border-top: none;
+  padding: 10px 0;
+}
+
+.dnd-map-section .setting-item:first-of-type {
+  padding-top: 0;
+}
+
+/* Image File Selection */
+.image-file-display {
+  padding: 12px;
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.image-file-display strong {
+  color: var(--text-normal);
+  font-size: 13px;
+}
+
+.image-file-display span {
+  color: var(--text-muted);
+  font-size: 12px;
+  flex: 1;
+}
+
+/* Auto-detection Display */
+.auto-detection-result {
+  margin-top: 12px;
+  padding: 12px;
+  background-color: var(--background-primary);
+  border-radius: 4px;
+  border-left: 3px solid var(--interactive-accent);
+}
+
+.auto-detection-result h4 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+.detection-info {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 4px 0;
+}
+
+.detection-info strong {
+  color: var(--text-normal);
+}
+
+.confidence-high {
+  color: var(--text-success) !important;
+  font-weight: 600;
+}
+
+.confidence-medium {
+  color: var(--text-warning) !important;
+  font-weight: 600;
+}
+
+.confidence-low {
+  color: var(--text-error) !important;
+  font-weight: 600;
+}
+
+/* Grid Presets */
+.grid-presets {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.preset-button {
+  padding: 8px 16px;
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-normal);
+  transition: all 0.2s;
+}
+
+.preset-button:hover {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+  transform: translateY(-1px);
+}
+
+.preset-button:active {
+  transform: translateY(0);
+}
+
+.preset-button.selected {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* Preview Section */
+.map-preview {
+  margin-top: 8px;
+  padding: 15px;
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  text-align: center;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-preview img {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 4px;
+}
+
+.map-preview-placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 13px;
+}
+
+/* Image Selector Modal */
+.image-selector-modal {
+  max-width: 700px;
+}
+
+.image-file-list {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 8px;
+  margin: 15px 0;
+}
+
+.image-file-item {
+  padding: 10px 12px;
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.image-file-item:last-child {
+  margin-bottom: 0;
+}
+
+.image-file-item:hover {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+  transform: translateX(4px);
+}
+
+.image-file-icon {
+  font-size: 18px;
+  color: var(--text-muted);
+}
+
+.image-file-name {
+  font-size: 13px;
+  color: var(--text-normal);
+  flex: 1;
+}
+
+.image-file-path {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.image-file-list-empty {
+  text-align: center;
+  padding: 30px;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 13px;
+}
+
+/* Map Viewer */
+.dnd-map-viewer {
+  width: 100%;
+  margin: 20px 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: var(--background-secondary);
+}
+
+.dnd-map-title {
+  padding: 12px 16px;
+  background-color: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dnd-map-title h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.dnd-map-info {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  background-color: var(--background-secondary);
+  border-radius: 4px;
+}
+
+.dnd-map-scale {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  background-color: var(--background-secondary);
+  border-radius: 4px;
+}
+
+.dnd-map-viewport {
+  position: relative;
+  overflow: auto;
+  max-height: 600px;
+  background-color: var(--background-secondary);
+  cursor: grab;
+  user-select: none;
+}
+
+.dnd-map-viewport:active {
+  cursor: grabbing;
+}
+
+.dnd-map-wrapper {
+  position: relative;
+  display: inline-block;
+  transform-origin: 0 0;
+  transition: transform 0.1s ease-out;
+}
+
+.dnd-map-image {
+  display: block;
+  width: auto;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+}
+
+.dnd-map-grid-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+.dnd-map-controls {
+  padding: 12px 16px;
+  background-color: var(--background-primary);
+  border-top: 1px solid var(--background-modifier-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.dnd-map-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dnd-map-zoom-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.dnd-map-zoom-btn,
+.dnd-map-toggle-btn {
+  padding: 6px 12px;
+  background-color: var(--interactive-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-normal);
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.dnd-map-zoom-btn:hover,
+.dnd-map-toggle-btn:hover {
+  background-color: var(--interactive-hover);
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+.dnd-map-zoom-btn:active,
+.dnd-map-toggle-btn:active {
+  transform: scale(0.95);
+}
+
+.dnd-map-grid-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dnd-map-error {
+  padding: 16px;
+  margin: 16px;
+  background-color: var(--background-modifier-error);
+  border: 1px solid var(--background-modifier-error-hover);
+  border-radius: 6px;
+  color: var(--text-error);
+  font-size: 14px;
+}
+
+.map-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: grab;
+}
+
+.map-canvas.dragging {
+  cursor: grabbing;
+}
+
+/* Token (future implementation) */
+.map-token {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  cursor: move;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 12px;
+  color: #ffffff;
+  transition: transform 0.1s;
+}
+
+.map-token:hover {
+  transform: scale(1.1);
+  z-index: 10;
+}
+
+.map-token.dragging {
+  opacity: 0.7;
+  z-index: 100;
+}
+

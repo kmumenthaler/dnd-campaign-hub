@@ -19,6 +19,8 @@ import {
   CAMPAIGN_TEMPLATE,
   SESSION_DEFAULT_TEMPLATE
 } from "./templates";
+import { MapManager } from "./map/MapManager";
+import { MapCreationModal } from "./map/MapCreationModal";
 
 interface DndCampaignHubSettings {
   currentCampaign: string;
@@ -3120,6 +3122,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   SessionCreationModal = SessionCreationModal;
   migrationManager!: MigrationManager;
   encounterBuilder!: EncounterBuilder;
+  mapManager!: MapManager;
 
   async onload() {
     await this.loadSettings();
@@ -3147,6 +3150,14 @@ export default class DndCampaignHubPlugin extends Plugin {
     
     // Initialize the encounter builder
     this.encounterBuilder = new EncounterBuilder(this.app, this);
+
+    // Initialize the map manager
+    this.mapManager = new MapManager(this.app);
+
+    // Register markdown code block processor for rendering maps
+    this.registerMarkdownCodeBlockProcessor('dnd-map', (source, el, ctx) => {
+      this.renderMapView(source, el, ctx);
+    });
 
     console.log("D&D Campaign Hub: Plugin loaded");
 
@@ -3245,6 +3256,12 @@ export default class DndCampaignHubPlugin extends Plugin {
       id: "create-spell",
       name: "Create New Spell",
       callback: () => this.createSpell(),
+    });
+
+    this.addCommand({
+      id: "create-map",
+      name: "🗺️ Create Battle Map",
+      callback: () => this.createMap(),
     });
 
     this.addCommand({
@@ -4538,6 +4555,344 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async createSpell() {
 		// Open Spell Import/Creation modal with SRD API integration
 		new SpellImportModal(this.app, this).open();
+	}
+
+	async createMap() {
+		// Open Map creation modal
+		new MapCreationModal(this.app, this, this.mapManager).open();
+	}
+
+	/**
+	 * Render map view from dnd-map code block
+	 */
+	async renderMapView(source: string, el: HTMLElement, ctx: any) {
+		try {
+			// Parse the map configuration
+			const config = JSON.parse(source);
+			
+			// Validate required fields
+			if (!config.imageFile) {
+				el.createEl('div', { 
+					text: '⚠️ Map configuration missing imageFile',
+					cls: 'dnd-map-error'
+				});
+				return;
+			}
+
+			// Get the image file from vault
+			const imageFile = this.app.vault.getAbstractFileByPath(config.imageFile);
+			if (!imageFile || !(imageFile instanceof TFile)) {
+				el.createEl('div', { 
+					text: `⚠️ Image file not found: ${config.imageFile}`,
+					cls: 'dnd-map-error'
+				});
+				return;
+			}
+
+			// Create container for the map
+			const mapContainer = el.createDiv({ cls: 'dnd-map-viewer' });
+			
+			// Add map title if available
+			if (config.name) {
+				const titleBar = mapContainer.createDiv({ cls: 'dnd-map-title' });
+				titleBar.createEl('h4', { text: config.name });
+				
+				// Add map info
+				const info = titleBar.createEl('span', { cls: 'dnd-map-info' });
+				const typeEmoji = config.type === 'battlemap' ? '⚔️' : config.type === 'world' ? '🌎' : '🗺️';
+				info.textContent = `${typeEmoji} ${config.type} • ${config.dimensions.width}×${config.dimensions.height}px`;
+				
+				if (config.scale) {
+					const scale = titleBar.createEl('span', { cls: 'dnd-map-scale' });
+					scale.textContent = `📏 ${config.scale.value} ${config.scale.unit} per square`;
+				}
+			}
+
+			// Create scrollable viewport
+			const viewport = mapContainer.createDiv({ cls: 'dnd-map-viewport' });
+			
+			// Create wrapper that will be transformed (zoom + pan)
+			const mapWrapper = viewport.createDiv({ cls: 'dnd-map-wrapper' });
+			
+			// Get the resource path for the image
+			const resourcePath = this.app.vault.getResourcePath(imageFile);
+			
+			// Create and configure the image element
+			const img = mapWrapper.createEl('img', {
+				cls: 'dnd-map-image',
+				attr: {
+					src: resourcePath,
+					alt: config.name || 'Battle Map'
+				}
+			});
+
+			// State for zoom and pan
+			let scale = 1;
+			let translateX = 0;
+			let translateY = 0;
+			let isDragging = false;
+			let startX = 0;
+			let startY = 0;
+			let canvas: HTMLCanvasElement | null = null;
+
+			// Function to update transform
+			const updateTransform = () => {
+				mapWrapper.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+			};
+
+			// Add grid overlay if grid is enabled
+			if (config.gridType && config.gridType !== 'none' && config.gridSize) {
+				img.onload = () => {
+					canvas = this.drawGridOverlay(mapWrapper, img, config);
+				};
+			}
+
+			// Mouse wheel zoom
+			viewport.addEventListener('wheel', (e: WheelEvent) => {
+				e.preventDefault();
+				
+				const rect = viewport.getBoundingClientRect();
+				const mouseX = e.clientX - rect.left;
+				const mouseY = e.clientY - rect.top;
+				
+				// Calculate position in the map before zoom
+				const pointX = (mouseX - translateX) / scale;
+				const pointY = (mouseY - translateY) / scale;
+				
+				// Update scale
+				const delta = e.deltaY > 0 ? 0.9 : 1.1;
+				scale = Math.max(0.25, Math.min(5, scale * delta));
+				
+				// Adjust translation to keep the point under the mouse
+				translateX = mouseX - pointX * scale;
+				translateY = mouseY - pointY * scale;
+				
+				updateTransform();
+				zoomReset.textContent = `${Math.round(scale * 100)}%`;
+			});
+
+			// Mouse drag to pan
+			viewport.addEventListener('mousedown', (e: MouseEvent) => {
+				if (e.button === 0) { // Left mouse button
+					isDragging = true;
+					startX = e.clientX - translateX;
+					startY = e.clientY - translateY;
+					viewport.style.cursor = 'grabbing';
+					e.preventDefault();
+				}
+			});
+
+			viewport.addEventListener('mousemove', (e: MouseEvent) => {
+				if (isDragging) {
+					translateX = e.clientX - startX;
+					translateY = e.clientY - startY;
+					updateTransform();
+				}
+			});
+
+			viewport.addEventListener('mouseup', () => {
+				if (isDragging) {
+					isDragging = false;
+					viewport.style.cursor = 'grab';
+				}
+			});
+
+			viewport.addEventListener('mouseleave', () => {
+				if (isDragging) {
+					isDragging = false;
+					viewport.style.cursor = 'grab';
+				}
+			});
+
+			// Add controls
+			const controls = mapContainer.createDiv({ cls: 'dnd-map-controls' });
+			
+			// Zoom controls
+			const zoomContainer = controls.createDiv({ cls: 'dnd-map-zoom-controls' });
+			zoomContainer.createEl('span', { text: 'Zoom: ', cls: 'dnd-map-zoom-label' });
+			
+			const zoomOut = zoomContainer.createEl('button', { text: '−', cls: 'dnd-map-zoom-btn' });
+			const zoomReset = zoomContainer.createEl('button', { text: '100%', cls: 'dnd-map-zoom-btn' });
+			const zoomIn = zoomContainer.createEl('button', { text: '+', cls: 'dnd-map-zoom-btn' });
+			
+			zoomIn.addEventListener('click', () => {
+				scale = Math.min(scale * 1.25, 5);
+				updateTransform();
+				zoomReset.textContent = `${Math.round(scale * 100)}%`;
+			});
+			
+			zoomOut.addEventListener('click', () => {
+				scale = Math.max(scale * 0.8, 0.25);
+				updateTransform();
+				zoomReset.textContent = `${Math.round(scale * 100)}%`;
+			});
+			
+			zoomReset.addEventListener('click', () => {
+				scale = 1;
+				translateX = 0;
+				translateY = 0;
+				updateTransform();
+				zoomReset.textContent = '100%';
+			});
+
+			// Grid toggle
+			if (config.gridType && config.gridType !== 'none') {
+				const gridToggle = controls.createDiv({ cls: 'dnd-map-grid-toggle' });
+				const toggleBtn = gridToggle.createEl('button', { 
+					text: '🔲 Toggle Grid', 
+					cls: 'dnd-map-toggle-btn' 
+				});
+				
+				let gridVisible = true;
+				toggleBtn.addEventListener('click', () => {
+					gridVisible = !gridVisible;
+					if (canvas) {
+						canvas.style.display = gridVisible ? 'block' : 'none';
+					}
+				});
+			}
+
+		} catch (error) {
+			console.error('Error rendering dnd-map:', error);
+			el.createEl('div', { 
+				text: `⚠️ Error rendering map: ${error instanceof Error ? error.message : String(error)}`,
+				cls: 'dnd-map-error'
+			});
+		}
+	}
+
+	/**
+	 * Draw grid overlay on the map
+	 * Based on https://www.redblobgames.com/grids/hexagons/
+	 * 
+	 * gridSize represents the spacing between hex centers (horizontal for flat-top, vertical for pointy-top)
+	 */
+	drawGridOverlay(container: HTMLElement, img: HTMLImageElement, config: any): HTMLCanvasElement {
+		// Remove existing canvas if any
+		const existingCanvas = container.querySelector('.dnd-map-grid-overlay');
+		if (existingCanvas) {
+			existingCanvas.remove();
+		}
+
+		// Create canvas for grid - same size as the image
+		const canvas = document.createElement('canvas');
+		canvas.classList.add('dnd-map-grid-overlay');
+		canvas.width = img.naturalWidth;
+		canvas.height = img.naturalHeight;
+		canvas.style.position = 'absolute';
+		canvas.style.top = '0';
+		canvas.style.left = '0';
+		canvas.style.width = `${img.width}px`;
+		canvas.style.height = `${img.height}px`;
+		canvas.style.pointerEvents = 'none';
+
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return canvas;
+
+		// Style for grid lines
+		ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+		ctx.lineWidth = 2;
+
+		if (config.gridType === 'square') {
+			const size = config.gridSize;
+			// Draw vertical lines
+			for (let x = 0; x <= canvas.width; x += size) {
+				ctx.beginPath();
+				ctx.moveTo(x, 0);
+				ctx.lineTo(x, canvas.height);
+				ctx.stroke();
+			}
+
+			// Draw horizontal lines
+			for (let y = 0; y <= canvas.height; y += size) {
+				ctx.beginPath();
+				ctx.moveTo(0, y);
+				ctx.lineTo(canvas.width, y);
+				ctx.stroke();
+			}
+		} else if (config.gridType === 'hex-horizontal') {
+			// Flat-top hex grid (horizontal orientation)
+			// gridSize = horizontal spacing between hex centers (horiz = 3/2 * size)
+			const horiz = config.gridSize; // center-to-center X spacing
+			const size = (2/3) * horiz; // radius (center -> corner)
+			const vert = Math.sqrt(3) * size; // center-to-center Y spacing
+			
+			const rows = Math.ceil(canvas.height / vert) + 2;
+			const cols = Math.ceil(canvas.width / horiz) + 2;
+			
+			for (let row = -1; row < rows; row++) {
+				for (let col = -1; col < cols; col++) {
+					// ✅ flat-top uses odd-q: offset odd columns in Y by half vertical spacing
+					const offsetY = (col & 1) ? vert / 2 : 0;
+					const centerX = col * horiz;
+					const centerY = row * vert + offsetY;
+					
+					this.drawHexFlat(ctx, centerX, centerY, size);
+				}
+			}
+		} else if (config.gridType === 'hex-vertical') {
+			// Pointy-top hex grid (vertical orientation)
+			// gridSize = vertical spacing between hex centers (vert = 3/2 * size)
+			const vert = config.gridSize; // center-to-center Y spacing
+			const size = (2/3) * vert; // radius (center -> corner)
+			const horiz = Math.sqrt(3) * size; // center-to-center X spacing
+			
+			const rows = Math.ceil(canvas.height / vert) + 2;
+			const cols = Math.ceil(canvas.width / horiz) + 2;
+			
+			for (let row = -1; row < rows; row++) {
+				for (let col = -1; col < cols; col++) {
+					// ✅ pointy-top uses odd-r: offset odd rows in X by half horizontal spacing
+					const offsetX = (row & 1) ? horiz / 2 : 0;
+					const centerX = col * horiz + offsetX;
+					const centerY = row * vert;
+					
+					this.drawHexPointy(ctx, centerX, centerY, size);
+				}
+			}
+		}
+
+		// Append canvas to container
+		container.appendChild(canvas);
+		return canvas;
+	}
+
+	/**
+	 * Draw a flat-top hexagon (horizontal orientation)
+	 */
+	drawHexFlat(ctx: CanvasRenderingContext2D, centerX: number, centerY: number, radius: number) {
+		ctx.beginPath();
+		for (let i = 0; i < 6; i++) {
+			const angle = (Math.PI / 3) * i; // 60 degree increments
+			const x = centerX + radius * Math.cos(angle);
+			const y = centerY + radius * Math.sin(angle);
+			if (i === 0) {
+				ctx.moveTo(x, y);
+			} else {
+				ctx.lineTo(x, y);
+			}
+		}
+		ctx.closePath();
+		ctx.stroke();
+	}
+
+	/**
+	 * Draw a pointy-top hexagon (vertical orientation)
+	 */
+	drawHexPointy(ctx: CanvasRenderingContext2D, centerX: number, centerY: number, radius: number) {
+		ctx.beginPath();
+		for (let i = 0; i < 6; i++) {
+			const angle = (Math.PI / 6) + (Math.PI / 3) * i; // Start at 30 degrees, 60 degree increments
+			const x = centerX + radius * Math.cos(angle);
+			const y = centerY + radius * Math.sin(angle);
+			if (i === 0) {
+				ctx.moveTo(x, y);
+			} else {
+				ctx.lineTo(x, y);
+			}
+		}
+		ctx.closePath();
+		ctx.stroke();
 	}
 
 	async createFaction() {
