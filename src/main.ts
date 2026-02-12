@@ -5126,6 +5126,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Tool-aware mouse handlers
 			viewport.addEventListener('mousedown', (e: MouseEvent) => {
+				// Ignore clicks on the toolbar
+				if (toolbar.contains(e.target as Node)) {
+					return;
+				}
+				
 				console.log('Mousedown event fired, activeTool:', activeTool);
 				if (e.button !== 0) return; // Only left mouse button
 				
