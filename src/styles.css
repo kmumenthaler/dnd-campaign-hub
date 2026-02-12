@@ -2504,7 +2504,7 @@
 
 .dnd-map-viewport {
   position: relative;
-  overflow: auto;
+  overflow: hidden;
   max-height: 600px;
   background-color: var(--background-secondary);
   cursor: grab;
@@ -2637,5 +2637,177 @@
 .map-token.dragging {
   opacity: 0.7;
   z-index: 100;
+}
+
+/* Map Toolbar */
+.dnd-map-toolbar {
+  padding: 8px 12px;
+  background-color: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.dnd-map-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dnd-map-tool-btn {
+  padding: 8px 12px;
+  background-color: var(--interactive-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-normal);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.dnd-map-tool-btn:hover {
+  background-color: var(--interactive-hover);
+  border-color: var(--interactive-accent);
+}
+
+.dnd-map-tool-btn.active {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.dnd-map-tool-btn:active {
+  transform: scale(0.95);
+}
+
+.dnd-map-tool-separator {
+  width: 1px;
+  height: 24px;
+  background-color: var(--background-modifier-border);
+}
+
+.dnd-map-color-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dnd-map-color-picker label {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.dnd-map-color-input {
+  width: 40px;
+  height: 32px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.dnd-map-annotation-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.dnd-map-annotation-layer.interactive {
+  pointer-events: auto;
+}
+
+/* Ruler display */
+.dnd-map-ruler-display {
+  position: absolute;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+  z-index: 1000;
+  white-space: nowrap;
+}
+
+.dnd-map-calibration-modal {
+  padding: 20px;
+}
+
+.dnd-map-calibration-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.dnd-map-calibration-input input {
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 14px;
+}
+
+.dnd-map-calibration-info {
+  background-color: var(--background-secondary);
+  padding: 12px;
+  border-radius: 6px;
+  margin: 12px 0;
+  font-family: var(--font-monospace);
+  font-weight: 600;
+  color: var(--text-accent);
+}
+
+.dnd-map-calibration-label {
+  margin: 16px 0 12px 0;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.dnd-calibration-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.dnd-calibration-option-btn {
+  padding: 16px;
+  background-color: var(--background-secondary);
+  border: 2px solid var(--background-modifier-border);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dnd-calibration-option-btn:hover {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+  transform: translateX(4px);
+}
+
+.dnd-calibration-option-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.dnd-calibration-option-desc {
+  font-size: 13px;
+  color: var(--text-muted);
 }
 

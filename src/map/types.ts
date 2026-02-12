@@ -2,6 +2,8 @@
  * Map Manager Type Definitions
  */
 
+export type MapTool = 'pan' | 'select' | 'draw' | 'ruler';
+
 export interface MapData {
   id: string;
   name: string;
@@ -18,6 +20,10 @@ export interface MapData {
     height: number;
   };
   tokens: Token[];
+  highlights?: HexHighlight[];
+  drawings?: Drawing[];
+  markers?: Marker[];
+  rulerCalibration?: number; // pixels per unit (for ruler accuracy)
   linkedScene?: string; // Link to scene note
   linkedEncounter?: string; // Link to encounter file
   createdDate: string;
@@ -32,6 +38,32 @@ export interface Token {
   size: number; // grid cells (1 for medium, 2 for large, etc.)
   color?: string;
   creatureData?: any; // Link to creature statblock
+}
+
+export interface HexHighlight {
+  id: string;
+  col: number;
+  row: number;
+  color: string;
+  label?: string;
+}
+
+export interface Drawing {
+  id: string;
+  type: 'line' | 'rectangle' | 'circle' | 'polygon' | 'freehand';
+  points: Point[];
+  color: string;
+  strokeWidth: number;
+  filled?: boolean;
+  label?: string;
+}
+
+export interface Marker {
+  id: string;
+  position: Point;
+  icon: string;
+  label?: string;
+  color?: string;
 }
 
 export interface GridDetection {

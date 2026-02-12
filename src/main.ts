@@ -1,4 +1,4 @@
-import { App, ItemView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
+import { App, ItemView, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
 import {
   WORLD_TEMPLATE,
   SESSION_GM_TEMPLATE,
@@ -908,6 +908,74 @@ if (allScenes.length === 0) {
     }
 
     return { success, failed };
+  }
+}
+
+class CalibrationModal extends Modal {
+  pixelDistance: number;
+  onSelect: (miles: number) => void;
+
+  constructor(app: App, pixelDistance: number, onSelect: (miles: number) => void) {
+    super(app);
+    this.pixelDistance = pixelDistance;
+    this.onSelect = onSelect;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "Calibrate Grid" });
+
+    contentEl.createEl("p", { 
+      text: `Measured distance: ${Math.round(this.pixelDistance)} pixels`,
+      cls: "dnd-map-calibration-info"
+    });
+
+    contentEl.createEl("p", { 
+      text: "Select the travel pace this hex represents (D&D 5e daily travel distance):",
+      cls: "dnd-map-calibration-label"
+    });
+
+    // Travel pace options
+    const optionsContainer = contentEl.createDiv({ cls: "dnd-calibration-options" });
+
+    const paceOptions = [
+      { miles: 30, label: "30 Miles/Day (Fast Pace)", desc: "Forced march" },
+      { miles: 24, label: "24 Miles/Day (Normal Pace)", desc: "Standard travel" },
+      { miles: 18, label: "18 Miles/Day (Slow Pace)", desc: "Stealthy or difficult terrain" }
+    ];
+
+    paceOptions.forEach(option => {
+      const optionBtn = optionsContainer.createEl("button", {
+        cls: "dnd-calibration-option-btn"
+      });
+
+      optionBtn.createEl("div", { 
+        text: option.label,
+        cls: "dnd-calibration-option-label"
+      });
+
+      optionBtn.createEl("div", { 
+        text: option.desc,
+        cls: "dnd-calibration-option-desc"
+      });
+
+      optionBtn.addEventListener("click", () => {
+        this.onSelect(option.miles);
+        this.close();
+      });
+    });
+
+    // Cancel button
+    const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
+    const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelBtn.addEventListener("click", () => this.close());
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
   }
 }
 
@@ -4589,6 +4657,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 				return;
 			}
 
+			// Initialize highlights and markers if not present
+			if (!config.highlights) config.highlights = [];
+			if (!config.markers) config.markers = [];
+			if (!config.drawings) config.drawings = [];
+
 			// Create container for the map
 			const mapContainer = el.createDiv({ cls: 'dnd-map-viewer' });
 			
@@ -4607,6 +4680,86 @@ export default class DndCampaignHubPlugin extends Plugin {
 					scale.textContent = `📏 ${config.scale.value} ${config.scale.unit} per square`;
 				}
 			}
+
+			// Tool state
+			let activeTool: 'pan' | 'select' | 'draw' | 'ruler' | 'adjust-grid' = 'pan';
+			let selectedColor = '#ff0000';
+			let rulerStart: { x: number; y: number } | null = null;
+			let rulerEnd: { x: number; y: number } | null = null;
+			let isDrawing = false;
+			let currentPath: { x: number; y: number }[] = [];
+			let isCalibrating = false;
+			let calibrationPoint1: { x: number; y: number } | null = null;
+			let calibrationPoint2: { x: number; y: number } | null = null;
+			let isAdjustingGrid = false;
+			let gridDragStartX = 0;
+			let gridDragStartY = 0;
+			let gridOffsetX = config.gridOffset?.x || 0;
+			let gridOffsetY = config.gridOffset?.y || 0;
+
+			// Add toolbar (before viewport)
+			const toolbar = mapContainer.createDiv({ cls: 'dnd-map-toolbar' });
+			
+			// Tool buttons group
+			const toolGroup = toolbar.createDiv({ cls: 'dnd-map-tool-group' });
+			
+			const panBtn = toolGroup.createEl('button', { 
+				text: '✋ Pan', 
+				cls: 'dnd-map-tool-btn active'
+			});
+			
+			const selectBtn = toolGroup.createEl('button', { 
+				text: '🎯 Select Hex', 
+				cls: 'dnd-map-tool-btn'
+			});
+			
+			const drawBtn = toolGroup.createEl('button', { 
+				text: '✏️ Draw', 
+				cls: 'dnd-map-tool-btn'
+			});
+			
+			const rulerBtn = toolGroup.createEl('button', { 
+				text: '📏 Ruler', 
+				cls: 'dnd-map-tool-btn'
+			});
+			
+			const adjustGridBtn = toolGroup.createEl('button', { 
+				text: '🔲 Adjust Grid', 
+				cls: 'dnd-map-tool-btn'
+			});
+
+			// Separator
+			toolbar.createDiv({ cls: 'dnd-map-tool-separator' });
+
+			// Color picker for highlights/drawings
+			const colorPicker = toolbar.createDiv({ cls: 'dnd-map-color-picker' });
+			colorPicker.createEl('label', { text: 'Color:' });
+			const colorInput = colorPicker.createEl('input', { 
+				type: 'color',
+				cls: 'dnd-map-color-input',
+				attr: { value: selectedColor }
+			});
+			colorInput.addEventListener('change', (e) => {
+				selectedColor = (e.target as HTMLInputElement).value;
+			});
+
+			// Separator
+			toolbar.createDiv({ cls: 'dnd-map-tool-separator' });
+
+			// Calibrate ruler button
+			const calibrateBtn = toolbar.createEl('button', {
+				text: '🔧 Calibrate Grid',
+				cls: 'dnd-map-tool-btn'
+			});
+			calibrateBtn.addEventListener('click', () => {
+				isCalibrating = true;
+				calibrationPoint1 = null;
+				calibrationPoint2 = null;
+				calibrateBtn.addClass('active');
+				setActiveTool('pan'); // Clear other tools
+				viewport.style.cursor = 'crosshair';
+				new Notice('Click two points on the map to measure one hex width');
+			});
 
 			// Create scrollable viewport
 			const viewport = mapContainer.createDiv({ cls: 'dnd-map-viewport' });
@@ -4633,21 +4786,330 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let isDragging = false;
 			let startX = 0;
 			let startY = 0;
-			let canvas: HTMLCanvasElement | null = null;
+			let gridCanvas: HTMLCanvasElement | null = null;
+			let annotationCanvas: HTMLCanvasElement | null = null;
 
 			// Function to update transform
 			const updateTransform = () => {
 				mapWrapper.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
 			};
 
-			// Add grid overlay if grid is enabled
-			if (config.gridType && config.gridType !== 'none' && config.gridSize) {
-				img.onload = () => {
-					canvas = this.drawGridOverlay(mapWrapper, img, config);
-				};
-			}
+			// Function to convert screen coordinates to map coordinates (in natural image pixel space)
+			const screenToMap = (screenX: number, screenY: number) => {
+				const rect = viewport.getBoundingClientRect();
+				// First get coordinates in displayed image space
+				const displayX = (screenX - rect.left - translateX) / scale;
+				const displayY = (screenY - rect.top - translateY) / scale;
+				
+				// Scale to natural image dimensions (for canvas drawing)
+				const scaleX = img.naturalWidth / img.width;
+				const scaleY = img.naturalHeight / img.height;
+				const x = displayX * scaleX;
+				const y = displayY * scaleY;
+				
+				return { x, y };
+			};
 
-			// Mouse wheel zoom
+			// Function to get hex coordinates from pixel position
+			const pixelToHex = (x: number, y: number) => {
+				// Adjust for grid offset
+				const adjustedX = x - gridOffsetX;
+				const adjustedY = y - gridOffsetY;
+				
+				if (config.gridType === 'hex-horizontal') {
+					const horiz = config.gridSize;
+					const size = (2/3) * horiz;
+					const vert = Math.sqrt(3) * size;
+					
+					const col = Math.round(adjustedX / horiz);
+					const row = Math.round((adjustedY - ((col & 1) ? vert / 2 : 0)) / vert);
+					return { col, row };
+				} else if (config.gridType === 'hex-vertical') {
+					const vert = config.gridSize;
+					const size = (2/3) * vert;
+					const horiz = Math.sqrt(3) * size;
+					
+					const row = Math.round(adjustedY / vert);
+					const col = Math.round((adjustedX - ((row & 1) ? horiz / 2 : 0)) / horiz);
+					return { col, row };
+				} else if (config.gridType === 'square') {
+					const col = Math.floor(adjustedX / config.gridSize);
+					const row = Math.floor(adjustedY / config.gridSize);
+					return { col, row };
+				}
+				return { col: 0, row: 0 };
+			};
+
+			// Function to redraw annotations
+			const redrawAnnotations = () => {
+				console.log('redrawAnnotations called, annotationCanvas exists:', !!annotationCanvas);
+				if (!annotationCanvas) return;
+				const ctx = annotationCanvas.getContext('2d');
+				console.log('Got canvas context:', !!ctx);
+				if (!ctx) return;
+				
+				ctx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
+				
+				// Draw highlights
+				if (config.highlights) {
+					config.highlights.forEach((highlight: any) => {
+						drawHighlight(ctx, highlight);
+					});
+				}
+				
+				// Draw markers
+				if (config.markers) {
+					config.markers.forEach((marker: any) => {
+						drawMarker(ctx, marker);
+					});
+				}
+				
+				// Draw drawings
+				if (config.drawings) {
+					config.drawings.forEach((drawing: any) => {
+						drawDrawing(ctx, drawing);
+					});
+				}
+				
+				// Draw active ruler
+				if (rulerStart && rulerEnd) {
+					ctx.strokeStyle = '#00ff00';
+					ctx.lineWidth = 3;
+					ctx.setLineDash([5, 5]);
+					ctx.beginPath();
+					ctx.moveTo(rulerStart.x, rulerStart.y);
+					ctx.lineTo(rulerEnd.x, rulerEnd.y);
+					ctx.stroke();
+					ctx.setLineDash([]);
+					
+					// Draw measurement
+					const distance = Math.sqrt(
+						Math.pow(rulerEnd.x - rulerStart.x, 2) + 
+						Math.pow(rulerEnd.y - rulerStart.y, 2)
+					);
+					const gridDistance = distance / config.gridSize;
+					const realDistance = gridDistance * config.scale.value;
+					
+					ctx.fillStyle = '#00ff00';
+					ctx.font = 'bold 16px sans-serif';
+					ctx.fillText(
+						`${realDistance.toFixed(1)} ${config.scale.unit}`,
+						(rulerStart.x + rulerEnd.x) / 2,
+						(rulerStart.y + rulerEnd.y) / 2 - 10
+					);
+				}
+				
+				// Draw calibration measurement line
+				if (calibrationPoint1) {
+					ctx.strokeStyle = '#ff9900';
+					ctx.lineWidth = 4;
+					ctx.setLineDash([10, 5]);
+					ctx.beginPath();
+					ctx.moveTo(calibrationPoint1.x, calibrationPoint1.y);
+					
+					if (calibrationPoint2) {
+						ctx.lineTo(calibrationPoint2.x, calibrationPoint2.y);
+						ctx.stroke();
+						ctx.setLineDash([]);
+						
+						// Draw distance in pixels
+						const distance = Math.sqrt(
+							Math.pow(calibrationPoint2.x - calibrationPoint1.x, 2) + 
+							Math.pow(calibrationPoint2.y - calibrationPoint1.y, 2)
+						);
+						
+						ctx.fillStyle = '#ff9900';
+						ctx.font = 'bold 18px sans-serif';
+						ctx.fillText(
+							`${Math.round(distance)} pixels`,
+							(calibrationPoint1.x + calibrationPoint2.x) / 2,
+							(calibrationPoint1.y + calibrationPoint2.y) / 2 - 15
+						);
+					} else {
+						// Just draw the first point as a circle
+						ctx.setLineDash([]);
+						ctx.beginPath();
+						ctx.arc(calibrationPoint1.x, calibrationPoint1.y, 8, 0, 2 * Math.PI);
+						ctx.fillStyle = '#ff9900';
+						ctx.fill();
+						ctx.stroke();
+					}
+				}
+			};
+
+			// Function to draw a hex highlight
+			const drawHighlight = (ctx: CanvasRenderingContext2D, highlight: any) => {
+				ctx.fillStyle = highlight.color + '60'; // Add alpha
+				ctx.strokeStyle = highlight.color;
+				ctx.lineWidth = 2;
+				
+				if (config.gridType === 'hex-horizontal') {
+					const horiz = config.gridSize;
+					const size = (2/3) * horiz;
+					const vert = Math.sqrt(3) * size;
+					const colOffsetY = (highlight.col & 1) ? vert / 2 : 0;
+					const centerX = highlight.col * horiz + gridOffsetX;
+					const centerY = highlight.row * vert + colOffsetY + gridOffsetY;
+					this.drawFilledHexFlat(ctx, centerX, centerY, size);
+				} else if (config.gridType === 'hex-vertical') {
+					const vert = config.gridSize;
+					const size = (2/3) * vert;
+					const horiz = Math.sqrt(3) * size;
+					const rowOffsetX = (highlight.row & 1) ? horiz / 2 : 0;
+					const centerX = highlight.col * horiz + rowOffsetX + gridOffsetX;
+					const centerY = highlight.row * vert + gridOffsetY;
+					this.drawFilledHexPointy(ctx, centerX, centerY, size);
+				} else if (config.gridType === 'square') {
+					const normalizedOffsetX = ((gridOffsetX % config.gridSize) + config.gridSize) % config.gridSize;
+					const normalizedOffsetY = ((gridOffsetY % config.gridSize) + config.gridSize) % config.gridSize;
+					ctx.fillRect(
+						highlight.col * config.gridSize + normalizedOffsetX,
+						highlight.row * config.gridSize + normalizedOffsetY,
+						config.gridSize,
+						config.gridSize
+					);
+					ctx.strokeRect(
+						highlight.col * config.gridSize + normalizedOffsetX,
+						highlight.row * config.gridSize + normalizedOffsetY,
+						config.gridSize,
+						config.gridSize
+					);
+				}
+			};
+
+			// Function to draw a marker
+			const drawMarker = (ctx: CanvasRenderingContext2D, marker: any) => {
+				ctx.fillStyle = marker.color || '#ff0000';
+				ctx.strokeStyle = '#ffffff';
+				ctx.lineWidth = 2;
+				
+				// Draw circle marker
+				ctx.beginPath();
+				ctx.arc(marker.position.x, marker.position.y, 8, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.stroke();
+				
+				// Draw icon/label if present
+				if (marker.icon) {
+					ctx.fillStyle = '#ffffff';
+					ctx.font = '12px sans-serif';
+					ctx.textAlign = 'center';
+					ctx.textBaseline = 'middle';
+					ctx.fillText(marker.icon, marker.position.x, marker.position.y);
+				}
+			};
+
+			// Function to draw a drawing
+			const drawDrawing = (ctx: CanvasRenderingContext2D, drawing: any) => {
+				if (drawing.points.length === 0) return;
+				
+				ctx.strokeStyle = drawing.color;
+				ctx.lineWidth = drawing.strokeWidth || 2;
+				
+				if (drawing.type === 'freehand') {
+					ctx.beginPath();
+					ctx.moveTo(drawing.points[0].x, drawing.points[0].y);
+					for (let i = 1; i < drawing.points.length; i++) {
+						ctx.lineTo(drawing.points[i].x, drawing.points[i].y);
+					}
+					ctx.stroke();
+				}
+			};
+
+			// Tool switching function
+			const setActiveTool = (tool: typeof activeTool) => {
+				console.log('setActiveTool called with:', tool);
+				activeTool = tool;
+				console.log('activeTool is now:', activeTool);
+				[panBtn, selectBtn, drawBtn, rulerBtn, adjustGridBtn].forEach(btn => btn.removeClass('active'));
+				
+				if (tool === 'pan') {
+					panBtn.addClass('active');
+					viewport.style.cursor = 'grab';
+				} else if (tool === 'select') {
+					selectBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+				} else if (tool === 'draw') {
+					drawBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+				} else if (tool === 'ruler') {
+					rulerBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+				} else if (tool === 'adjust-grid') {
+					adjustGridBtn.addClass('active');
+					viewport.style.cursor = 'move';
+				}
+				
+				// Clear ruler when switching tools
+				if (tool !== 'ruler' && annotationCanvas) {
+					rulerStart = null;
+					rulerEnd = null;
+					redrawAnnotations();
+				}
+			};
+
+			// Wire up tool button handlers
+			panBtn.addEventListener('click', () => {
+				console.log('Pan button clicked');
+				setActiveTool('pan');
+			});
+			selectBtn.addEventListener('click', () => {
+				console.log('Select button clicked');
+				setActiveTool('select');
+			});
+			drawBtn.addEventListener('click', () => {
+				console.log('Draw button clicked');
+				setActiveTool('draw');
+			});
+			rulerBtn.addEventListener('click', () => {
+				console.log('Ruler button clicked');
+				setActiveTool('ruler');
+			});
+			adjustGridBtn.addEventListener('click', () => {
+				console.log('Adjust Grid button clicked');
+				setActiveTool('adjust-grid');
+			});
+
+			// Add grid overlay if grid is enabled
+			img.onload = () => {
+				if (config.gridType && config.gridType !== 'none' && config.gridSize) {
+					gridCanvas = this.drawGridOverlay(mapWrapper, img, config);
+				}
+				
+				// Create annotation canvas
+				annotationCanvas = document.createElement('canvas');
+				annotationCanvas.classList.add('dnd-map-annotation-layer');
+				annotationCanvas.width = img.naturalWidth;
+				annotationCanvas.height = img.naturalHeight;
+				annotationCanvas.style.position = 'absolute';
+				annotationCanvas.style.top = '0';
+				annotationCanvas.style.left = '0';
+				annotationCanvas.style.width = `${img.width}px`;
+				annotationCanvas.style.height = `${img.height}px`;
+				mapWrapper.appendChild(annotationCanvas);
+				
+				redrawAnnotations();
+				
+				// Add ResizeObserver to update canvas dimensions when img resizes
+				// This prevents grid distortion when window resizes
+				const resizeObserver = new ResizeObserver(() => {
+					// Update annotation canvas display size
+					if (annotationCanvas) {
+						annotationCanvas.style.width = `${img.width}px`;
+						annotationCanvas.style.height = `${img.height}px`;
+						redrawAnnotations();
+					}
+					
+					// Update grid overlay display size
+					if (gridCanvas) {
+						gridCanvas.style.width = `${img.width}px`;
+						gridCanvas.style.height = `${img.height}px`;
+					}
+				});
+				resizeObserver.observe(img);
+			};
+
+			// Mouse wheel zoom (always active)
 			viewport.addEventListener('wheel', (e: WheelEvent) => {
 				e.preventDefault();
 				
@@ -4671,36 +5133,228 @@ export default class DndCampaignHubPlugin extends Plugin {
 				zoomReset.textContent = `${Math.round(scale * 100)}%`;
 			});
 
-			// Mouse drag to pan
+			// Tool-aware mouse handlers
 			viewport.addEventListener('mousedown', (e: MouseEvent) => {
-				if (e.button === 0) { // Left mouse button
+				console.log('Mousedown event fired, activeTool:', activeTool);
+				if (e.button !== 0) return; // Only left mouse button
+				
+				const mapPos = screenToMap(e.clientX, e.clientY);
+				console.log('Map position:', mapPos);
+				
+				// Handle calibration mode
+				if (isCalibrating) {
+					if (!calibrationPoint1) {
+						calibrationPoint1 = { x: mapPos.x, y: mapPos.y };
+						new Notice('Click second point to complete measurement');
+						redrawAnnotations();
+					} else {
+						calibrationPoint2 = { x: mapPos.x, y: mapPos.y };
+						
+						// Calculate pixel distance
+						const pixelDistance = Math.sqrt(
+							Math.pow(calibrationPoint2.x - calibrationPoint1.x, 2) +
+							Math.pow(calibrationPoint2.y - calibrationPoint1.y, 2)
+						);
+						
+						// Show modal to select travel pace
+						new CalibrationModal(this.app, pixelDistance, (miles: number) => {
+							// Update grid size and scale
+							config.gridSize = Math.round(pixelDistance);
+							config.scale = {
+								value: miles,
+								unit: 'miles'
+							};
+							
+							// Redraw grid with new size
+							if (gridCanvas) {
+								gridCanvas.remove();
+							}
+							if (config.gridType && config.gridType !== 'none' && config.gridSize) {
+								gridCanvas = this.drawGridOverlay(mapWrapper, img, config, gridOffsetX, gridOffsetY);
+							}
+							
+							// Save configuration
+							this.saveMapAnnotations(config, el);
+							
+							new Notice(`Grid calibrated: ${miles} miles per hex`);
+							
+							// Reset calibration state
+							isCalibrating = false;
+							calibrationPoint1 = null;
+							calibrationPoint2 = null;
+							calibrateBtn.removeClass('active');
+							setActiveTool('pan');
+							redrawAnnotations();
+						}).open();
+					}
+					e.preventDefault();
+					return;
+				}
+				
+				if (activeTool === 'pan') {
 					isDragging = true;
 					startX = e.clientX - translateX;
 					startY = e.clientY - translateY;
 					viewport.style.cursor = 'grabbing';
-					e.preventDefault();
+				} else if (activeTool === 'select') {
+					console.log('Select tool: calculating hex position');
+					// Select hex and toggle highlight
+					const hex = pixelToHex(mapPos.x, mapPos.y);
+					console.log('Hex calculated:', hex);
+					console.log('Current highlights:', config.highlights);
+					const existingIndex = config.highlights.findIndex(
+						(h: any) => h.col === hex.col && h.row === hex.row
+					);
+					console.log('Existing index:', existingIndex);
+					
+					if (existingIndex >= 0) {
+						// Remove highlight
+						config.highlights.splice(existingIndex, 1);
+						console.log('Removed highlight');
+					} else {
+						// Add highlight
+						config.highlights.push({
+							id: `highlight_${Date.now()}`,
+							col: hex.col,
+							row: hex.row,
+							color: selectedColor
+						});
+						console.log('Added highlight, new array:', config.highlights);
+					}
+					
+					console.log('Calling redrawAnnotations');
+					redrawAnnotations();
+					console.log('Calling saveMapAnnotations');
+					this.saveMapAnnotations(config, el);
+				} else if (activeTool === 'draw') {
+					console.log('Draw tool: starting path');
+					isDrawing = true;
+					currentPath = [{ x: mapPos.x, y: mapPos.y }];
+					console.log('isDrawing set to:', isDrawing, 'currentPath:', currentPath);
+				} else if (activeTool === 'adjust-grid') {
+					console.log('Adjust Grid: starting drag');
+					isAdjustingGrid = true;
+					// Store current mouse position in map space
+					gridDragStartX = mapPos.x;
+					gridDragStartY = mapPos.y;
+					viewport.style.cursor = 'grabbing';
+				} else if (activeTool === 'ruler') {
+					console.log('Ruler tool: rulerStart is', rulerStart);
+					if (!rulerStart) {
+						rulerStart = { x: mapPos.x, y: mapPos.y };
+						console.log('Set rulerStart to:', rulerStart);
+					} else {
+						rulerEnd = { x: mapPos.x, y: mapPos.y };
+						console.log('Set rulerEnd to:', rulerEnd);
+						redrawAnnotations();
+						// Reset for next measurement
+						setTimeout(() => {
+							rulerStart = null;
+							rulerEnd = null;
+							redrawAnnotations();
+						}, 3000);
+					}
 				}
+				
+				e.preventDefault();
 			});
 
 			viewport.addEventListener('mousemove', (e: MouseEvent) => {
-				if (isDragging) {
+				const mapPos = screenToMap(e.clientX, e.clientY);
+				
+				if (isAdjustingGrid && activeTool === 'adjust-grid') {
+					// Calculate delta in map space
+					const deltaX = mapPos.x - gridDragStartX;
+					const deltaY = mapPos.y - gridDragStartY;
+					
+					// Update grid offset
+					gridOffsetX += deltaX;
+					gridOffsetY += deltaY;
+					
+					// Update drag start for next frame
+					gridDragStartX = mapPos.x;
+					gridDragStartY = mapPos.y;
+					
+					// Redraw grid
+					if (gridCanvas) {
+						gridCanvas.remove();
+					}
+					if (config.gridType && config.gridType !== 'none' && config.gridSize) {
+						gridCanvas = this.drawGridOverlay(mapWrapper, img, config, gridOffsetX, gridOffsetY);
+					}
+				} else if (activeTool === 'pan' && isDragging) {
 					translateX = e.clientX - startX;
 					translateY = e.clientY - startY;
 					updateTransform();
+				} else if (activeTool === 'draw' && isDrawing) {
+					currentPath.push({ x: mapPos.x, y: mapPos.y });
+					redrawAnnotations();
+					
+					// Draw temporary path
+					if (annotationCanvas && currentPath.length > 1) {
+						const ctx = annotationCanvas.getContext('2d');
+						if (ctx) {
+							const last = currentPath[currentPath.length - 1];
+							const prev = currentPath[currentPath.length - 2];
+							if (last && prev) {
+								ctx.strokeStyle = selectedColor;
+								ctx.lineWidth = 3;
+								ctx.beginPath();
+								ctx.moveTo(prev.x, prev.y);
+								ctx.lineTo(last.x, last.y);
+								ctx.stroke();
+							}
+						}
+					}
+				} else if (activeTool === 'ruler' && rulerStart && !rulerEnd) {
+					// Show temporary ruler line
+					rulerEnd = { x: mapPos.x, y: mapPos.y };
+					redrawAnnotations();
 				}
 			});
 
 			viewport.addEventListener('mouseup', () => {
-				if (isDragging) {
+				if (isAdjustingGrid) {
+					isAdjustingGrid = false;
+					viewport.style.cursor = 'move';
+					
+					// Save grid offset to config
+					config.gridOffset = { x: gridOffsetX, y: gridOffsetY };
+					this.saveMapAnnotations(config, el);
+					new Notice('Grid position saved');
+				} else if (activeTool === 'pan' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'grab';
+				} else if (activeTool === 'draw' && isDrawing) {
+					isDrawing = false;
+					if (currentPath.length > 2) {
+						config.drawings.push({
+							id: `drawing_${Date.now()}`,
+							type: 'freehand',
+							points: currentPath,
+							color: selectedColor,
+							strokeWidth: 3
+						});
+						this.saveMapAnnotations(config, el);
+					}
+					currentPath = [];
+					redrawAnnotations();
 				}
 			});
 
 			viewport.addEventListener('mouseleave', () => {
-				if (isDragging) {
+				if (activeTool === 'pan' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'grab';
+				} else if (activeTool === 'draw' && isDrawing) {
+					isDrawing = false;
+					currentPath = [];
+					redrawAnnotations();
+				} else if (activeTool === 'ruler') {
+					if (rulerStart && !rulerEnd) {
+						rulerEnd = null;
+						redrawAnnotations();
+					}
 				}
 			});
 
@@ -4746,11 +5400,25 @@ export default class DndCampaignHubPlugin extends Plugin {
 				let gridVisible = true;
 				toggleBtn.addEventListener('click', () => {
 					gridVisible = !gridVisible;
-					if (canvas) {
-						canvas.style.display = gridVisible ? 'block' : 'none';
+					if (gridCanvas) {
+						gridCanvas.style.display = gridVisible ? 'block' : 'none';
 					}
 				});
 			}
+
+			// Clear annotations button
+			const clearBtn = controls.createEl('button', {
+				text: '🗑️ Clear Annotations',
+				cls: 'dnd-map-toggle-btn'
+			});
+			clearBtn.addEventListener('click', () => {
+				config.highlights = [];
+				config.markers = [];
+				config.drawings = [];
+				redrawAnnotations();
+				this.saveMapAnnotations(config, el);
+				new Notice('Annotations cleared');
+			});
 
 			// Edit button
 			const editButton = controls.createDiv({ cls: 'dnd-map-edit-btn-container' });
@@ -4772,12 +5440,47 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	/**
+	 * Save map annotations back to the code block
+	 */
+	async saveMapAnnotations(config: any, el: HTMLElement) {
+		try {
+			const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (!activeView) return;
+			
+			const editor = activeView.editor;
+			if (!editor) return;
+			
+			const content = editor.getValue();
+			
+			// Find and replace the code block
+			const oldCodeBlock = this.mapManager.generateMapCodeBlock(config);
+			const configCopy = { ...config };
+			configCopy.lastModified = new Date().toISOString();
+			const newCodeBlock = this.mapManager.generateMapCodeBlock(configCopy);
+			
+			// Try to replace
+			let newContent = content.replace(oldCodeBlock, newCodeBlock);
+			if (newContent === content) {
+				// Fallback: search for any code block with this mapId
+				const mapIdPattern = new RegExp('```dnd-map\\s*\\n[^`]*"mapId"\\s*:\\s*"' + (config.mapId || config.id) + '"[^`]*```', 's');
+				newContent = content.replace(mapIdPattern, newCodeBlock);
+			}
+			
+			if (newContent !== content) {
+				editor.setValue(newContent);
+			}
+		} catch (error) {
+			console.error('Error saving map annotations:', error);
+		}
+	}
+
+	/**
 	 * Draw grid overlay on the map
 	 * Based on https://www.redblobgames.com/grids/hexagons/
 	 * 
 	 * gridSize represents the spacing between hex centers (horizontal for flat-top, vertical for pointy-top)
 	 */
-	drawGridOverlay(container: HTMLElement, img: HTMLImageElement, config: any): HTMLCanvasElement {
+	drawGridOverlay(container: HTMLElement, img: HTMLImageElement, config: any, offsetX: number = 0, offsetY: number = 0): HTMLCanvasElement {
 		// Remove existing canvas if any
 		const existingCanvas = container.querySelector('.dnd-map-grid-overlay');
 		if (existingCanvas) {
@@ -4805,8 +5508,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 		if (config.gridType === 'square') {
 			const size = config.gridSize;
+			// Normalize offset to stay within one grid cell
+			const normalizedOffsetX = ((offsetX % size) + size) % size;
+			const normalizedOffsetY = ((offsetY % size) + size) % size;
+			
 			// Draw vertical lines
-			for (let x = 0; x <= canvas.width; x += size) {
+			for (let x = normalizedOffsetX; x <= canvas.width; x += size) {
 				ctx.beginPath();
 				ctx.moveTo(x, 0);
 				ctx.lineTo(x, canvas.height);
@@ -4814,7 +5521,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Draw horizontal lines
-			for (let y = 0; y <= canvas.height; y += size) {
+			for (let y = normalizedOffsetY; y <= canvas.height; y += size) {
 				ctx.beginPath();
 				ctx.moveTo(0, y);
 				ctx.lineTo(canvas.width, y);
@@ -4827,15 +5534,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const size = (2/3) * horiz; // radius (center -> corner)
 			const vert = Math.sqrt(3) * size; // center-to-center Y spacing
 			
-			const rows = Math.ceil(canvas.height / vert) + 2;
-			const cols = Math.ceil(canvas.width / horiz) + 2;
+			// Calculate range accounting for offset - need to cover entire canvas
+			const startCol = Math.floor(-offsetX / horiz) - 2;
+			const endCol = Math.ceil((canvas.width - offsetX) / horiz) + 2;
+			const startRow = Math.floor(-offsetY / vert) - 2;
+			const endRow = Math.ceil((canvas.height - offsetY) / vert) + 2;
 			
-			for (let row = -1; row < rows; row++) {
-				for (let col = -1; col < cols; col++) {
+			for (let row = startRow; row < endRow; row++) {
+				for (let col = startCol; col < endCol; col++) {
 					// ✅ flat-top uses odd-q: offset odd columns in Y by half vertical spacing
-					const offsetY = (col & 1) ? vert / 2 : 0;
-					const centerX = col * horiz;
-					const centerY = row * vert + offsetY;
+					const colOffsetY = (col & 1) ? vert / 2 : 0;
+					const centerX = col * horiz + offsetX;
+					const centerY = row * vert + colOffsetY + offsetY;
 					
 					this.drawHexFlat(ctx, centerX, centerY, size);
 				}
@@ -4847,15 +5557,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const size = (2/3) * vert; // radius (center -> corner)
 			const horiz = Math.sqrt(3) * size; // center-to-center X spacing
 			
-			const rows = Math.ceil(canvas.height / vert) + 2;
-			const cols = Math.ceil(canvas.width / horiz) + 2;
+			// Calculate range accounting for offset - need to cover entire canvas
+			const startCol = Math.floor(-offsetX / horiz) - 2;
+			const endCol = Math.ceil((canvas.width - offsetX) / horiz) + 2;
+			const startRow = Math.floor(-offsetY / vert) - 2;
+			const endRow = Math.ceil((canvas.height - offsetY) / vert) + 2;
 			
-			for (let row = -1; row < rows; row++) {
-				for (let col = -1; col < cols; col++) {
+			for (let row = startRow; row < endRow; row++) {
+				for (let col = startCol; col < endCol; col++) {
 					// ✅ pointy-top uses odd-r: offset odd rows in X by half horizontal spacing
-					const offsetX = (row & 1) ? horiz / 2 : 0;
-					const centerX = col * horiz + offsetX;
-					const centerY = row * vert;
+					const rowOffsetX = (row & 1) ? horiz / 2 : 0;
+					const centerX = col * horiz + rowOffsetX + offsetX;
+					const centerY = row * vert + offsetY;
 					
 					this.drawHexPointy(ctx, centerX, centerY, size);
 				}
@@ -4902,6 +5615,46 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 		}
 		ctx.closePath();
+		ctx.stroke();
+	}
+
+	/**
+	 * Draw a filled flat-top hexagon (horizontal orientation)
+	 */
+	drawFilledHexFlat(ctx: CanvasRenderingContext2D, centerX: number, centerY: number, radius: number) {
+		ctx.beginPath();
+		for (let i = 0; i < 6; i++) {
+			const angle = (Math.PI / 3) * i;
+			const x = centerX + radius * Math.cos(angle);
+			const y = centerY + radius * Math.sin(angle);
+			if (i === 0) {
+				ctx.moveTo(x, y);
+			} else {
+				ctx.lineTo(x, y);
+			}
+		}
+		ctx.closePath();
+		ctx.fill();
+		ctx.stroke();
+	}
+
+	/**
+	 * Draw a filled pointy-top hexagon (vertical orientation)
+	 */
+	drawFilledHexPointy(ctx: CanvasRenderingContext2D, centerX: number, centerY: number, radius: number) {
+		ctx.beginPath();
+		for (let i = 0; i < 6; i++) {
+			const angle = (Math.PI / 6) + (Math.PI / 3) * i;
+			const x = centerX + radius * Math.cos(angle);
+			const y = centerY + radius * Math.sin(angle);
+			if (i === 0) {
+				ctx.moveTo(x, y);
+			} else {
+				ctx.lineTo(x, y);
+			}
+		}
+		ctx.closePath();
+		ctx.fill();
 		ctx.stroke();
 	}
 
