@@ -4772,10 +4772,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const moveGridBtn = createToolBtn('✥', 'Move Grid');
 		const calibrateBtn = createToolBtn('⚙', 'Calibrate');
 		
-		// Helper: show/hide calibrate button based on whether annotations exist
-		const updateCalibrateVisibility = () => {
+		// Helper: show/hide grid tools (calibrate, move-grid) based on whether annotations exist
+		const updateGridToolsVisibility = () => {
 			const hasAnnotations = (config.highlights?.length > 0) || (config.markers?.length > 0) || (config.drawings?.length > 0);
 			calibrateBtn.toggleClass('hidden', hasAnnotations);
+			moveGridBtn.toggleClass('hidden', hasAnnotations);
 			// If calibration was active and annotations appeared, cancel it
 			if (hasAnnotations && isCalibrating) {
 				isCalibrating = false;
@@ -4783,9 +4784,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 				calibrationPoint2 = null;
 				calibrateBtn.removeClass('active');
 			}
+			// If move-grid tool was active and annotations appeared, switch to pan
+			if (hasAnnotations && activeTool === 'move-grid') {
+				setActiveTool('pan');
+			}
 		};
 		// Set initial visibility
-		updateCalibrateVisibility();
+		updateGridToolsVisibility();
 
 		calibrateBtn.addEventListener('click', () => {
 			if (isCalibrating) {
@@ -5387,7 +5392,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					redrawAnnotations();
 					console.log('Calling saveMapAnnotations');
 					this.saveMapAnnotations(config, el);
-					updateCalibrateVisibility();
+					updateGridToolsVisibility();
 				} else if (activeTool === 'draw') {
 					console.log('Draw tool: starting path');
 					isDrawing = true;
@@ -5466,7 +5471,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					if (removed) {
 						redrawAnnotations();
 						this.saveMapAnnotations(config, el);
-						updateCalibrateVisibility();
+						updateGridToolsVisibility();
 						new Notice('Annotation removed');
 					}
 				}
@@ -5544,7 +5549,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							strokeWidth: 3
 						});
 						this.saveMapAnnotations(config, el);
-						updateCalibrateVisibility();
+						updateGridToolsVisibility();
 					}
 					currentPath = [];
 					redrawAnnotations();
@@ -5630,7 +5635,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				config.drawings = [];
 				redrawAnnotations();
 				this.saveMapAnnotations(config, el);
-				updateCalibrateVisibility();
+				updateGridToolsVisibility();
 				new Notice('Annotations cleared');
 			});
 
