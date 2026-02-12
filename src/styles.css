@@ -2749,6 +2749,10 @@
   box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
 }
 
+.dnd-map-tool-btn.hidden {
+  display: none;
+}
+
 .dnd-map-tool-btn:active {
   transform: scale(0.98);
 }
