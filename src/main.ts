@@ -5055,27 +5055,26 @@ export default class DndCampaignHubPlugin extends Plugin {
 					ctx.fillText(text, textX, textY);
 				}
 				
-				// Draw marker drag ruler
-				if (markerDragOrigin && draggingMarkerIndex >= 0) {
-					const currentPos = config.markers[draggingMarkerIndex].position;
+				// Draw active ruler
+				if (rulerStart && rulerEnd) {
 					ctx.strokeStyle = '#ffff00';
 					ctx.lineWidth = 4;
 					ctx.setLineDash([8, 4]);
 					ctx.beginPath();
-					ctx.moveTo(markerDragOrigin.x, markerDragOrigin.y);
-					ctx.lineTo(currentPos.x, currentPos.y);
+					ctx.moveTo(rulerStart.x, rulerStart.y);
+					ctx.lineTo(rulerEnd.x, rulerEnd.y);
 					ctx.stroke();
 					ctx.setLineDash([]);
 					
 					// Draw measurement with outline for visibility
 					const distance = Math.sqrt(
-						Math.pow(currentPos.x - markerDragOrigin.x, 2) + 
-						Math.pow(currentPos.y - markerDragOrigin.y, 2)
+						Math.pow(rulerEnd.x - rulerStart.x, 2) + 
+						Math.pow(rulerEnd.y - rulerStart.y, 2)
 					);
 					const gridDistance = distance / config.gridSize;
 					const realDistance = gridDistance * config.scale.value;
-					const textX = (markerDragOrigin.x + currentPos.x) / 2;
-					const textY = (markerDragOrigin.y + currentPos.y) / 2 - 10;
+					const textX = (rulerStart.x + rulerEnd.x) / 2;
+					const textY = (rulerStart.y + rulerEnd.y) / 2 - 10;
 					const text = `${realDistance.toFixed(1)} ${config.scale.unit}`;
 					
 					ctx.font = 'bold 18px sans-serif';
@@ -5090,34 +5089,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 					// Draw text fill (yellow)
 					ctx.fillStyle = '#ffff00';
 					ctx.fillText(text, textX, textY);
-				}
-				
-				// Draw active ruler
-				if (rulerStart && rulerEnd) {
-					ctx.strokeStyle = '#00ff00';
-					ctx.lineWidth = 3;
-					ctx.setLineDash([5, 5]);
-					ctx.beginPath();
-					ctx.moveTo(rulerStart.x, rulerStart.y);
-					ctx.lineTo(rulerEnd.x, rulerEnd.y);
-					ctx.stroke();
-					ctx.setLineDash([]);
-					
-					// Draw measurement
-					const distance = Math.sqrt(
-						Math.pow(rulerEnd.x - rulerStart.x, 2) + 
-						Math.pow(rulerEnd.y - rulerStart.y, 2)
-					);
-					const gridDistance = distance / config.gridSize;
-					const realDistance = gridDistance * config.scale.value;
-					
-					ctx.fillStyle = '#00ff00';
-					ctx.font = 'bold 16px sans-serif';
-					ctx.fillText(
-						`${realDistance.toFixed(1)} ${config.scale.unit}`,
-						(rulerStart.x + rulerEnd.x) / 2,
-						(rulerStart.y + rulerEnd.y) / 2 - 10
-					);
 				}
 				
 				// Draw calibration measurement line
