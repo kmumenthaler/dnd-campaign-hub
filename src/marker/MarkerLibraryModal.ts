@@ -102,13 +102,15 @@ export class MarkerLibraryModal extends Modal {
 		this.updatePreview();
 
 		// Name
-		new Setting(contentEl)
+		const nameSetting = new Setting(contentEl)
 			.setName('Name')
 			.setDesc('A descriptive name for this marker')
-			.addText(text => text
-				.setValue(this.name)
-				.onChange(value => { this.name = value; })
-			);
+			.addText(text => {
+				text
+					.setValue(this.name)
+					.onChange(value => { this.name = value; })
+					.setPlaceholder('Enter marker name');
+			});
 
 		// Marker Type
 		new Setting(contentEl)
@@ -466,7 +468,8 @@ class ImageBrowserModal extends Modal {
 
 		renderFiles('');
 		searchInput.addEventListener('input', () => renderFiles(searchInput.value));
-		searchInput.focus();
+		// Focus the search input after a small delay to ensure modal is ready
+		setTimeout(() => searchInput.focus(), 100);
 	}
 
 	onClose() {

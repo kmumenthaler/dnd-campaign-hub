@@ -1,4 +1,4 @@
-import { App, Modal } from 'obsidian';
+import { App, Modal, Notice } from 'obsidian';
 import { MarkerLibrary } from './MarkerLibrary';
 import { MarkerLibraryModal } from './MarkerLibraryModal';
 import { MarkerDefinition, CreatureSize } from './MarkerTypes';
@@ -40,6 +40,7 @@ export class MarkerPickerModal extends Modal {
 
 			for (const marker of markers) {
 				const card = markerGrid.createDiv({ cls: 'marker-picker-item' });
+				card.style.position = 'relative';
 
 				// Calculate display size for preview
 				let displaySize = 50;
@@ -98,6 +99,42 @@ export class MarkerPickerModal extends Modal {
 					});
 				}
 
+				// Action buttons
+				const actions = card.createDiv({ cls: 'marker-picker-actions' });
+				actions.style.display = 'flex';
+				actions.style.gap = '4px';
+				actions.style.marginTop = '6px';
+
+				const editBtn = actions.createEl('button', { text: '✏️ Edit' });
+				editBtn.style.fontSize = '11px';
+				editBtn.style.padding = '2px 6px';
+				editBtn.style.flex = '1';
+				editBtn.addEventListener('click', (e) => {
+					e.stopPropagation();
+					this.close();
+					new MarkerLibraryModal(this.app, this.markerLibrary, marker, () => {
+						// Reopen picker after edit
+						this.open();
+					}).open();
+				});
+
+				const deleteBtn = actions.createEl('button', { text: '🗑️' });
+				deleteBtn.style.fontSize = '11px';
+				deleteBtn.style.padding = '2px 6px';
+				deleteBtn.style.color = 'var(--text-error)';
+				deleteBtn.addEventListener('click', async (e) => {
+					e.stopPropagation();
+					// Confirm deletion
+					const confirmed = confirm(`Delete marker "${marker.name}"?`);
+					if (confirmed) {
+						await this.markerLibrary.deleteMarker(marker.id);
+						new Notice(`Deleted marker: ${marker.name}`);
+						// Refresh the modal
+						this.onOpen();
+					}
+				});
+
+				// Click on card to select
 				card.addEventListener('click', () => {
 					this.onSelect(marker.id);
 					this.close();

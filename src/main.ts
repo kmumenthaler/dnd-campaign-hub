@@ -4722,6 +4722,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let draggingMarkerIndex = -1; // Index of marker being dragged (-1 = none)
 		let dragOffsetX = 0;
 		let dragOffsetY = 0;
+		let markerDragOrigin: { x: number; y: number } | null = null; // Original position when dragging a marker
 			let rulerStart: { x: number; y: number } | null = null;
 			let rulerEnd: { x: number; y: number } | null = null;
 			let isDrawing = false;
@@ -5015,6 +5016,80 @@ export default class DndCampaignHubPlugin extends Plugin {
 					config.drawings.forEach((drawing: any) => {
 						drawDrawing(ctx, drawing);
 					});
+				}
+				
+				// Draw marker drag ruler
+				if (markerDragOrigin && draggingMarkerIndex >= 0) {
+					const currentPos = config.markers[draggingMarkerIndex].position;
+					ctx.strokeStyle = '#ffff00';
+					ctx.lineWidth = 4;
+					ctx.setLineDash([8, 4]);
+					ctx.beginPath();
+					ctx.moveTo(markerDragOrigin.x, markerDragOrigin.y);
+					ctx.lineTo(currentPos.x, currentPos.y);
+					ctx.stroke();
+					ctx.setLineDash([]);
+					
+					// Draw measurement with outline for visibility
+					const distance = Math.sqrt(
+						Math.pow(currentPos.x - markerDragOrigin.x, 2) + 
+						Math.pow(currentPos.y - markerDragOrigin.y, 2)
+					);
+					const gridDistance = distance / config.gridSize;
+					const realDistance = gridDistance * config.scale.value;
+					const textX = (markerDragOrigin.x + currentPos.x) / 2;
+					const textY = (markerDragOrigin.y + currentPos.y) / 2 - 10;
+					const text = `${realDistance.toFixed(1)} ${config.scale.unit}`;
+					
+					ctx.font = 'bold 18px sans-serif';
+					ctx.textAlign = 'center';
+					ctx.textBaseline = 'middle';
+					
+					// Draw text outline (black) for contrast
+					ctx.strokeStyle = '#000000';
+					ctx.lineWidth = 4;
+					ctx.strokeText(text, textX, textY);
+					
+					// Draw text fill (yellow)
+					ctx.fillStyle = '#ffff00';
+					ctx.fillText(text, textX, textY);
+				}
+				
+				// Draw marker drag ruler
+				if (markerDragOrigin && draggingMarkerIndex >= 0) {
+					const currentPos = config.markers[draggingMarkerIndex].position;
+					ctx.strokeStyle = '#ffff00';
+					ctx.lineWidth = 4;
+					ctx.setLineDash([8, 4]);
+					ctx.beginPath();
+					ctx.moveTo(markerDragOrigin.x, markerDragOrigin.y);
+					ctx.lineTo(currentPos.x, currentPos.y);
+					ctx.stroke();
+					ctx.setLineDash([]);
+					
+					// Draw measurement with outline for visibility
+					const distance = Math.sqrt(
+						Math.pow(currentPos.x - markerDragOrigin.x, 2) + 
+						Math.pow(currentPos.y - markerDragOrigin.y, 2)
+					);
+					const gridDistance = distance / config.gridSize;
+					const realDistance = gridDistance * config.scale.value;
+					const textX = (markerDragOrigin.x + currentPos.x) / 2;
+					const textY = (markerDragOrigin.y + currentPos.y) / 2 - 10;
+					const text = `${realDistance.toFixed(1)} ${config.scale.unit}`;
+					
+					ctx.font = 'bold 18px sans-serif';
+					ctx.textAlign = 'center';
+					ctx.textBaseline = 'middle';
+					
+					// Draw text outline (black) for contrast
+					ctx.strokeStyle = '#000000';
+					ctx.lineWidth = 4;
+					ctx.strokeText(text, textX, textY);
+					
+					// Draw text fill (yellow)
+					ctx.fillStyle = '#ffff00';
+					ctx.fillText(text, textX, textY);
 				}
 				
 				// Draw active ruler
@@ -5479,6 +5554,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							draggingMarkerIndex = i;
 							dragOffsetX = m.position.x - mapPos.x;
 							dragOffsetY = m.position.y - mapPos.y;
+							markerDragOrigin = { x: m.position.x, y: m.position.y };
 							viewport.style.cursor = 'grabbing';
 							hitMarker = true;
 							break;
@@ -5707,6 +5783,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						m.position.y = oy + row * gs + halfToken;
 					}
 					draggingMarkerIndex = -1;
+					markerDragOrigin = null;
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
@@ -5739,6 +5816,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'grab';
 				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
 					draggingMarkerIndex = -1;
+					markerDragOrigin = null;
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
