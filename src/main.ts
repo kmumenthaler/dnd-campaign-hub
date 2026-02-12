@@ -4751,13 +4751,25 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const calibrateBtn = createToolBtn('⚙', 'Calibrate');
 		
 		calibrateBtn.addEventListener('click', () => {
-			isCalibrating = true;
-			calibrationPoint1 = null;
-			calibrationPoint2 = null;
-			calibrateBtn.addClass('active');
-			setActiveTool('pan'); // Clear other tools
-			viewport.style.cursor = 'crosshair';
-			new Notice('Click two points on the map to measure one hex width');
+			if (isCalibrating) {
+				// Cancel calibration
+				isCalibrating = false;
+				calibrationPoint1 = null;
+				calibrationPoint2 = null;
+				calibrateBtn.removeClass('active');
+				setActiveTool('pan');
+				redrawAnnotations();
+				new Notice('Calibration cancelled');
+			} else {
+				// Start calibration
+				isCalibrating = true;
+				calibrationPoint1 = null;
+				calibrationPoint2 = null;
+				calibrateBtn.addClass('active');
+				setActiveTool('pan'); // Clear other tools
+				viewport.style.cursor = 'crosshair';
+				new Notice('Click two points on the map to measure one hex width');
+			}
 		});
 
 		// Separator for color picker (hidden by default)
@@ -5016,6 +5028,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
 				[panBtn, selectBtn, drawBtn, eraserBtn, rulerBtn].forEach(btn => btn.removeClass('active'));
+				
+				// Cancel calibration when switching tools
+				if (isCalibrating) {
+					isCalibrating = false;
+					calibrationPoint1 = null;
+					calibrationPoint2 = null;
+					calibrateBtn.removeClass('active');
+				}
 				
 				// Show/hide color picker based on tool (with animation)
 				const showColorPicker = tool === 'select' || tool === 'draw';
