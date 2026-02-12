@@ -4638,6 +4638,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Parse the map configuration
 			const config = JSON.parse(source);
 			
+			// Ensure mapId exists
+			if (!config.mapId) {
+				config.mapId = 'map_' + Date.now();
+			}
+			
 			// Validate required fields
 			if (!config.imageFile) {
 				el.createEl('div', { 
@@ -4657,10 +4662,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 				return;
 			}
 
-			// Initialize highlights and markers if not present
-			if (!config.highlights) config.highlights = [];
-			if (!config.markers) config.markers = [];
-			if (!config.drawings) config.drawings = [];
+			// Load annotations from separate file
+			const annotations = await this.loadMapAnnotations(config.mapId);
+			config.highlights = annotations.highlights || [];
+			config.markers = annotations.markers || [];
+			config.drawings = annotations.drawings || [];
+			config.gridOffset = annotations.gridOffset || { x: 0, y: 0 };
 
 			// Create container for the map
 			const mapContainer = el.createDiv({ cls: 'dnd-map-viewer' });
@@ -5157,7 +5164,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						);
 						
 						// Show modal to select travel pace
-						new CalibrationModal(this.app, pixelDistance, (miles: number) => {
+						new CalibrationModal(this.app, pixelDistance, async (miles: number) => {
 							// Update grid size and scale
 							config.gridSize = Math.round(pixelDistance);
 							config.scale = {
@@ -5173,8 +5180,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 								gridCanvas = this.drawGridOverlay(mapWrapper, img, config, gridOffsetX, gridOffsetY);
 							}
 							
-							// Save configuration
-							this.saveMapAnnotations(config, el);
+							// Save configuration to code block
+							await this.updateMapConfig(config);
 							
 							new Notice(`Grid calibrated: ${miles} miles per hex`);
 							
@@ -5440,9 +5447,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	/**
-	 * Save map annotations back to the code block
+	 * Get the path for the map annotations file
 	 */
-	async saveMapAnnotations(config: any, el: HTMLElement) {
+	getMapAnnotationPath(mapId: string): string {
+		return `${this.app.vault.configDir}/plugins/${this.manifest.id}/map-annotations/${mapId}.json`;
+	}
+
+	/**
+	 * Update map configuration in the code block (for grid settings, scale, etc.)
+	 */
+	async updateMapConfig(config: any): Promise<void> {
 		try {
 			const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
 			if (!activeView) return;
@@ -5452,23 +5466,106 @@ export default class DndCampaignHubPlugin extends Plugin {
 			
 			const content = editor.getValue();
 			
-			// Find and replace the code block
-			const oldCodeBlock = this.mapManager.generateMapCodeBlock(config);
-			const configCopy = { ...config };
-			configCopy.lastModified = new Date().toISOString();
-			const newCodeBlock = this.mapManager.generateMapCodeBlock(configCopy);
+			// Create clean config without annotations
+			const cleanConfig = {
+				mapId: config.mapId,
+				imageFile: config.imageFile,
+				name: config.name,
+				type: config.type,
+				dimensions: config.dimensions,
+				gridType: config.gridType,
+				gridSize: config.gridSize,
+				scale: config.scale
+			};
 			
-			// Try to replace
-			let newContent = content.replace(oldCodeBlock, newCodeBlock);
-			if (newContent === content) {
-				// Fallback: search for any code block with this mapId
-				const mapIdPattern = new RegExp('```dnd-map\\s*\\n[^`]*"mapId"\\s*:\\s*"' + (config.mapId || config.id) + '"[^`]*```', 's');
-				newContent = content.replace(mapIdPattern, newCodeBlock);
-			}
+			// Find and replace the code block
+			const mapIdPattern = new RegExp('```dnd-map\\s*\\n[^`]*"mapId"\\s*:\\s*"' + config.mapId + '"[^`]*```', 's');
+			const newCodeBlock = '```dnd-map\n' + JSON.stringify(cleanConfig, null, 2) + '\n```';
+			
+			const newContent = content.replace(mapIdPattern, newCodeBlock);
 			
 			if (newContent !== content) {
 				editor.setValue(newContent);
+				console.log('Map config updated in code block');
 			}
+		} catch (error) {
+			console.error('Error updating map config:', error);
+		}
+	}
+
+	/**
+	 * Load map annotations from dedicated file
+	 */
+	async loadMapAnnotations(mapId: string): Promise<any> {
+		try {
+			const annotationPath = this.getMapAnnotationPath(mapId);
+			console.log('Loading annotations from:', annotationPath);
+			
+			// Use adapter.read() for config directory files (not getAbstractFileByPath which only works for vault files)
+			if (await this.app.vault.adapter.exists(annotationPath)) {
+				const content = await this.app.vault.adapter.read(annotationPath);
+				const annotations = JSON.parse(content);
+				console.log('Loaded annotations:', {
+					highlights: annotations.highlights?.length || 0,
+					markers: annotations.markers?.length || 0,
+					drawings: annotations.drawings?.length || 0
+				});
+				return annotations;
+			} else {
+				console.log('No annotation file found for mapId:', mapId);
+			}
+		} catch (error) {
+			console.log('Error loading annotations for map:', mapId, error);
+		}
+		
+		// Return empty annotations structure
+		return {
+			highlights: [],
+			markers: [],
+			drawings: [],
+			gridOffset: { x: 0, y: 0 }
+		};
+	}
+
+	/**
+	 * Save map annotations to dedicated file
+	 */
+	async saveMapAnnotations(config: any, el: HTMLElement) {
+		try {
+			if (!config.mapId) {
+				console.error('Cannot save annotations: mapId missing');
+				return;
+			}
+			
+			// Prepare annotation data
+			const annotations = {
+				highlights: config.highlights || [],
+				markers: config.markers || [],
+				drawings: config.drawings || [],
+				gridOffset: config.gridOffset || { x: 0, y: 0 },
+				lastModified: new Date().toISOString()
+			};
+			
+			// Ensure annotation directory exists
+			const annotationDir = `${this.app.vault.configDir}/plugins/${this.manifest.id}/map-annotations`;
+			const dirExists = await this.app.vault.adapter.exists(annotationDir);
+			if (!dirExists) {
+				await this.app.vault.adapter.mkdir(annotationDir);
+			}
+			
+			console.log('Saving annotations to:', annotationDir);
+			console.log('MapId:', config.mapId);
+			console.log('Highlights count:', annotations.highlights.length);
+			console.log('Markers count:', annotations.markers.length);
+			console.log('Drawings count:', annotations.drawings.length);
+			
+			// Save to dedicated annotation file using adapter for config directory files
+			const annotationPath = this.getMapAnnotationPath(config.mapId);
+			const annotationJson = JSON.stringify(annotations, null, 2);
+			
+			await this.app.vault.adapter.write(annotationPath, annotationJson);
+			
+			console.log('Map annotations saved to:', annotationPath);
 		} catch (error) {
 			console.error('Error saving map annotations:', error);
 		}
