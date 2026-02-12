@@ -4930,10 +4930,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Toolbar collapse/expand functionality
 		toolbarHeader.addEventListener('click', () => {
 			toolbar.toggleClass('collapsed', !toolbar.hasClass('collapsed'));
+			updateLayerMenuPosition();
 		});
 
 		// Add layer menu below toolbar
 		const layerMenu = viewport.createDiv({ cls: 'dnd-map-layer-menu' });
+		
+		// Function to update layer menu position based on toolbar height
+		const updateLayerMenuPosition = () => {
+			const toolbarHeight = toolbar.offsetHeight;
+			layerMenu.style.top = `${toolbarHeight + 5}px`;
+		};
 		
 		// Layer icons
 		const layerIcons: Record<Layer, string> = {
@@ -4949,10 +4956,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 		layers.forEach(layer => {
 			const btn = layerMenu.createEl('button', {
 				cls: 'dnd-map-layer-btn' + (layer === config.activeLayer ? ' active' : ''),
-				attr: { 'data-layer': layer }
+				attr: { 'data-layer': layer, 'title': layer }
 			});
 			btn.createEl('span', { text: layerIcons[layer], cls: 'dnd-map-layer-icon' });
-			btn.createEl('span', { text: layer, cls: 'dnd-map-layer-label' });
 			layerButtons[layer] = btn;
 			
 			btn.addEventListener('click', () => {
@@ -4970,6 +4976,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 		});
+		
+		// Set initial layer menu position
+		setTimeout(updateLayerMenuPosition, 0);
 
 		// State for zoom and pan
 		let scale = 1;
