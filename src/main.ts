@@ -21,6 +21,8 @@ import {
 } from "./templates";
 import { MapManager } from "./map/MapManager";
 import { MapCreationModal } from "./map/MapCreationModal";
+import { MarkerLibrary } from "./marker/MarkerLibrary";
+import { MarkerReference } from "./marker/MarkerTypes";
 
 interface DndCampaignHubSettings {
   currentCampaign: string;
@@ -3191,6 +3193,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   migrationManager!: MigrationManager;
   encounterBuilder!: EncounterBuilder;
   mapManager!: MapManager;
+  markerLibrary!: MarkerLibrary;
 
   async onload() {
     await this.loadSettings();
@@ -3221,6 +3224,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     // Initialize the map manager
     this.mapManager = new MapManager(this.app);
+
+    // Initialize the marker library
+    this.markerLibrary = new MarkerLibrary(this.app, this.manifest.id);
+    await this.markerLibrary.load();
 
     // Register markdown code block processor for rendering maps
     this.registerMarkdownCodeBlockProcessor('dnd-map', (source, el, ctx) => {
@@ -4709,8 +4716,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-			let activeTool: 'pan' | 'select' | 'draw' | 'ruler' | 'eraser' | 'move-grid' = 'pan';
-			let selectedColor = '#ff0000';
+		let activeTool: 'pan' | 'select' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' = 'pan';
+		let selectedColor = '#ff0000';
+		let selectedMarkerId: string | null = null; // Currently selected marker from library
 			let rulerStart: { x: number; y: number } | null = null;
 			let rulerEnd: { x: number; y: number } | null = null;
 			let isDrawing = false;
@@ -4767,9 +4775,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const panBtn = createToolBtn('⬆', 'Pan', true);
 		const selectIcon = config.gridType === 'square' ? '⬜' : '⬡';
 		const selectBtn = createToolBtn(selectIcon, 'Select');
-		const drawBtn = createToolBtn('✎', 'Draw');
-		const eraserBtn = createToolBtn('✖', 'Eraser');
-		const rulerBtn = createToolBtn('⟷', 'Ruler');
+	const markerBtn = createToolBtn('📍', 'Marker');
+		const drawBtn = createToolBtn('✏', 'Draw');
+		const rulerBtn = createToolBtn('📏', 'Ruler');
+		const eraserBtn = createToolBtn('🧹', 'Eraser');
 		const moveGridBtn = createToolBtn('✥', 'Move Grid');
 		const calibrateBtn = createToolBtn('⚙', 'Calibrate');
 		
@@ -5113,23 +5122,49 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Function to draw a marker
 			const drawMarker = (ctx: CanvasRenderingContext2D, marker: any) => {
-				ctx.fillStyle = marker.color || '#ff0000';
-				ctx.strokeStyle = '#ffffff';
-				ctx.lineWidth = 2;
+				let markerDef = null;
+				let position = marker.position;
+				
+				// Check if this is a MarkerReference (new format) or old format
+				if (marker.markerId) {
+					// New format: lookup marker definition from library
+					markerDef = this.markerLibrary.getMarker(marker.markerId);
+					if (!markerDef) {
+						console.warn('Marker definition not found:', marker.markerId);
+						return;
+					}
+				} else {
+					// Old format: marker has color and icon directly
+					markerDef = {
+						icon: marker.icon || '',
+						backgroundColor: marker.color || '#ff0000',
+						borderColor: '#ffffff',
+						size: 16
+					};
+				}
+				
+				const radius = markerDef.size / 2;
 				
 				// Draw circle marker
+				ctx.fillStyle = markerDef.backgroundColor;
 				ctx.beginPath();
-				ctx.arc(marker.position.x, marker.position.y, 8, 0, Math.PI * 2);
+				ctx.arc(position.x, position.y, radius, 0, Math.PI * 2);
 				ctx.fill();
-				ctx.stroke();
+				
+				// Draw border if specified
+				if (markerDef.borderColor) {
+					ctx.strokeStyle = markerDef.borderColor;
+					ctx.lineWidth = 3;
+					ctx.stroke();
+				}
 				
 				// Draw icon/label if present
-				if (marker.icon) {
+				if (markerDef.icon) {
 					ctx.fillStyle = '#ffffff';
-					ctx.font = '12px sans-serif';
+					ctx.font = `${markerDef.size * 0.6}px sans-serif`;
 					ctx.textAlign = 'center';
 					ctx.textBaseline = 'middle';
-					ctx.fillText(marker.icon, marker.position.x, marker.position.y);
+					ctx.fillText(markerDef.icon, position.x, position.y);
 				}
 			};
 
@@ -5155,7 +5190,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-				[panBtn, selectBtn, drawBtn, eraserBtn, rulerBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
+				[panBtn, selectBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
 				
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
@@ -5176,12 +5211,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (tool === 'select') {
 					selectBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
-				} else if (tool === 'draw') {
-					drawBtn.addClass('active');
-					viewport.style.cursor = 'crosshair';
-				} else if (tool === 'eraser') {
-					eraserBtn.addClass('active');
-					viewport.style.cursor = 'crosshair';
+			} else if (tool === 'marker') {
+				markerBtn.addClass('active');
+				viewport.style.cursor = 'crosshair';
 				} else if (tool === 'ruler') {
 					rulerBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
@@ -5206,6 +5238,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 			selectBtn.addEventListener('click', () => {
 				console.log('Select button clicked');
 				setActiveTool('select');
+			});
+			markerBtn.addEventListener('click', async () => {
+				console.log('Marker button clicked');
+				// Show marker picker to select or create marker
+				const { MarkerPickerModal } = await import('./marker/MarkerPickerModal');
+				new MarkerPickerModal(this.app, this.markerLibrary, (markerId: string) => {
+					selectedMarkerId = markerId;
+					setActiveTool('marker');
+				}).open();
 			});
 			drawBtn.addEventListener('click', () => {
 				console.log('Draw button clicked');
@@ -5415,6 +5456,27 @@ export default class DndCampaignHubPlugin extends Plugin {
 							redrawAnnotations();
 						}, 3000);
 					}
+				} else if (activeTool === 'marker') {
+					console.log('Marker tool: placing marker');
+					if (!selectedMarkerId) {
+						new Notice('Please select a marker first');
+						return;
+					}
+					
+					// Create a marker reference
+					const markerRef: MarkerReference = {
+						id: `marker_inst_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+						markerId: selectedMarkerId,
+						position: { x: mapPos.x, y: mapPos.y },
+						placedAt: Date.now()
+					};
+					
+					config.markers.push(markerRef);
+					console.log('Placed marker:', markerRef);
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
+					updateGridToolsVisibility();
+					new Notice('Marker placed');
 				} else if (activeTool === 'eraser') {
 					console.log('Eraser tool: looking for annotations to remove');
 					let removed = false;
