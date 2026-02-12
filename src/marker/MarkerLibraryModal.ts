@@ -1,6 +1,51 @@
-import { App, Modal, Setting, Notice } from 'obsidian';
+import { App, Modal, Setting, Notice, TFile, TFolder } from 'obsidian';
 import { MarkerDefinition, MarkerType, CreatureSize } from './MarkerTypes';
 import { MarkerLibrary } from './MarkerLibrary';
+
+/** Predefined icon options for markers */
+const MARKER_ICONS: { value: string; label: string }[] = [
+	{ value: '', label: 'None' },
+	{ value: '⚔️', label: '⚔️ Swords' },
+	{ value: '🛡️', label: '🛡️ Shield' },
+	{ value: '🗡️', label: '🗡️ Dagger' },
+	{ value: '🏹', label: '🏹 Bow' },
+	{ value: '🔮', label: '🔮 Crystal' },
+	{ value: '💀', label: '💀 Skull' },
+	{ value: '🐉', label: '🐉 Dragon' },
+	{ value: '🧙', label: '🧙 Wizard' },
+	{ value: '🧝', label: '🧝 Elf' },
+	{ value: '🧟', label: '🧟 Zombie' },
+	{ value: '👹', label: '👹 Ogre' },
+	{ value: '👻', label: '👻 Ghost' },
+	{ value: '🐺', label: '🐺 Wolf' },
+	{ value: '🕷️', label: '🕷️ Spider' },
+	{ value: '🦇', label: '🦇 Bat' },
+	{ value: '🐻', label: '🐻 Bear' },
+	{ value: '🐍', label: '🐍 Snake' },
+	{ value: '🦎', label: '🦎 Lizard' },
+	{ value: '👑', label: '👑 Crown' },
+	{ value: '🔥', label: '🔥 Fire' },
+	{ value: '❄️', label: '❄️ Ice' },
+	{ value: '⚡', label: '⚡ Lightning' },
+	{ value: '💎', label: '💎 Gem' },
+	{ value: '🏰', label: '🏰 Castle' },
+	{ value: '⛺', label: '⛺ Camp' },
+	{ value: '🏠', label: '🏠 House' },
+	{ value: '📍', label: '📍 Pin' },
+	{ value: '⭐', label: '⭐ Star' },
+	{ value: '❌', label: '❌ X Mark' },
+	{ value: '❗', label: '❗ Alert' },
+	{ value: '❓', label: '❓ Question' },
+	{ value: '🚪', label: '🚪 Door' },
+	{ value: '🔑', label: '🔑 Key' },
+	{ value: '💰', label: '💰 Treasure' },
+	{ value: '🧪', label: '🧪 Potion' },
+	{ value: '📜', label: '📜 Scroll' },
+	{ value: '🪦', label: '🪦 Grave' },
+	{ value: '🌲', label: '🌲 Tree' },
+	{ value: '⛰️', label: '⛰️ Mountain' },
+	{ value: '🌊', label: '🌊 Water' },
+];
 
 export class MarkerLibraryModal extends Modal {
 	private markerLibrary: MarkerLibrary;
@@ -13,7 +58,7 @@ export class MarkerLibraryModal extends Modal {
 	// Form values
 	private name: string = '';
 	private type: MarkerType = 'creature';
-	private icon: string = '📍';
+	private icon: string = '';
 	private backgroundColor: string = '#ff0000';
 	private borderColor: string = '';
 	private imageFile: string = '';
@@ -118,29 +163,96 @@ export class MarkerLibraryModal extends Modal {
 		this.pixelSizeSettingEl = pixelSizeSetting.settingEl;
 
 		// Custom Image
-		new Setting(contentEl)
-			.setName('Custom Image')
-			.setDesc('Vault path to an image file (used as marker background)')
-			.addText(text => text
-				.setPlaceholder('path/to/image.png')
-				.setValue(this.imageFile)
-				.onChange(value => {
-					this.imageFile = value;
+		const imageSetting = new Setting(contentEl)
+			.setName('Token Image')
+			.setDesc(this.imageFile ? `Selected: ${this.imageFile}` : 'Choose an image for the marker background');
+
+		imageSetting.addButton(btn => btn
+			.setButtonText('Browse Vault')
+			.onClick(() => {
+				// Get all image files from the vault
+				const imageFiles = this.app.vault.getFiles().filter(f =>
+					/\.(png|jpg|jpeg|gif|svg|webp|bmp)$/i.test(f.extension)
+				);
+				// Sort z_Assets files first, then by path
+				imageFiles.sort((a, b) => {
+					const aAsset = a.path.startsWith('z_Assets') ? 0 : 1;
+					const bAsset = b.path.startsWith('z_Assets') ? 0 : 1;
+					if (aAsset !== bAsset) return aAsset - bAsset;
+					return a.path.localeCompare(b.path);
+				});
+				new ImageBrowserModal(this.app, imageFiles, (file: TFile) => {
+					this.imageFile = file.path;
+					imageSetting.setDesc(`Selected: ${this.imageFile}`);
+					this.updatePreview();
+				}).open();
+			})
+		);
+
+		imageSetting.addButton(btn => btn
+			.setButtonText('Import File')
+			.onClick(() => {
+				// Use hidden file input to pick from OS file system
+				const input = document.createElement('input');
+				input.type = 'file';
+				input.accept = 'image/*';
+				input.addEventListener('change', async () => {
+					const file = input.files?.[0];
+					if (!file) return;
+					try {
+						const buffer = await file.arrayBuffer();
+						// Ensure z_Assets folder exists
+						const assetsFolder = this.app.vault.getAbstractFileByPath('z_Assets');
+						if (!assetsFolder) {
+							await this.app.vault.createFolder('z_Assets');
+						}
+						// Save to z_Assets with original filename
+						const destPath = `z_Assets/${file.name}`;
+						const existing = this.app.vault.getAbstractFileByPath(destPath);
+						if (existing) {
+							// File already exists, just use it
+							this.imageFile = destPath;
+						} else {
+							await this.app.vault.createBinary(destPath, buffer);
+							this.imageFile = destPath;
+						}
+						imageSetting.setDesc(`Selected: ${this.imageFile}`);
+						this.updatePreview();
+						new Notice(`Image saved to ${destPath}`);
+					} catch (err) {
+						new Notice('Failed to import image');
+						console.error('Image import error:', err);
+					}
+				});
+				input.click();
+			})
+		);
+
+		if (this.imageFile) {
+			imageSetting.addButton(btn => btn
+				.setButtonText('Clear')
+				.onClick(() => {
+					this.imageFile = '';
+					imageSetting.setDesc('Choose an image for the marker background');
 					this.updatePreview();
 				})
 			);
+		}
 
 		// Icon/Emoji
 		new Setting(contentEl)
-			.setName('Icon / Emoji')
+			.setName('Icon')
 			.setDesc('Displayed on top of the marker background')
-			.addText(text => text
-				.setValue(this.icon)
-				.onChange(value => {
+			.addDropdown(dropdown => {
+				for (const opt of MARKER_ICONS) {
+					dropdown.addOption(opt.value, opt.label);
+				}
+				dropdown.setValue(this.icon);
+				dropdown.onChange(value => {
 					this.icon = value;
 					this.updatePreview();
-				})
-			);
+				});
+			});
 
 		// Background Color
 		new Setting(contentEl)
@@ -241,7 +353,7 @@ export class MarkerLibraryModal extends Modal {
 			id: this.marker?.id || this.markerLibrary.generateId(),
 			name: this.name.trim(),
 			type: this.type,
-			icon: this.icon || '📍',
+			icon: this.icon,
 			backgroundColor: this.backgroundColor,
 			borderColor: this.borderColor || undefined,
 			imageFile: this.imageFile || undefined,
@@ -258,6 +370,103 @@ export class MarkerLibraryModal extends Modal {
 		await this.markerLibrary.setMarker(def);
 		this.onSave(def);
 		this.close();
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+}
+
+/**
+ * Modal for browsing vault image files with preview
+ */
+class ImageBrowserModal extends Modal {
+	private files: TFile[];
+	private onSelect: (file: TFile) => void;
+	private filterText: string = '';
+
+	constructor(app: App, files: TFile[], onSelect: (file: TFile) => void) {
+		super(app);
+		this.files = files;
+		this.onSelect = onSelect;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.createEl('h2', { text: 'Select Token Image' });
+
+		// Search filter
+		const searchContainer = contentEl.createDiv();
+		searchContainer.style.marginBottom = '10px';
+		const searchInput = searchContainer.createEl('input', { type: 'text', placeholder: 'Filter images...' });
+		searchInput.style.width = '100%';
+		searchInput.style.padding = '8px';
+		searchInput.style.borderRadius = '4px';
+		searchInput.style.border = '1px solid var(--background-modifier-border)';
+
+		const listContainer = contentEl.createDiv({ cls: 'image-browser-list' });
+		listContainer.style.maxHeight = '400px';
+		listContainer.style.overflowY = 'auto';
+		listContainer.style.display = 'grid';
+		listContainer.style.gridTemplateColumns = 'repeat(auto-fill, minmax(120px, 1fr))';
+		listContainer.style.gap = '10px';
+		listContainer.style.padding = '10px';
+
+		const renderFiles = (filter: string) => {
+			listContainer.empty();
+			const filtered = filter
+				? this.files.filter(f => f.path.toLowerCase().includes(filter.toLowerCase()))
+				: this.files;
+
+			for (const file of filtered) {
+				const card = listContainer.createDiv();
+				card.style.display = 'flex';
+				card.style.flexDirection = 'column';
+				card.style.alignItems = 'center';
+				card.style.padding = '8px';
+				card.style.border = '1px solid var(--background-modifier-border)';
+				card.style.borderRadius = '8px';
+				card.style.cursor = 'pointer';
+				card.style.transition = 'all 0.15s ease';
+
+				// Image preview
+				const img = card.createEl('img');
+				img.src = this.app.vault.adapter.getResourcePath(file.path);
+				img.style.width = '80px';
+				img.style.height = '80px';
+				img.style.objectFit = 'cover';
+				img.style.borderRadius = '50%';
+				img.style.marginBottom = '6px';
+
+				// Filename
+				card.createEl('span', {
+					text: file.name,
+					cls: 'image-browser-name'
+				}).style.fontSize = '11px';
+
+				card.addEventListener('mouseenter', () => {
+					card.style.borderColor = 'var(--interactive-accent)';
+					card.style.backgroundColor = 'var(--background-modifier-hover)';
+				});
+				card.addEventListener('mouseleave', () => {
+					card.style.borderColor = 'var(--background-modifier-border)';
+					card.style.backgroundColor = '';
+				});
+				card.addEventListener('click', () => {
+					this.onSelect(file);
+					this.close();
+				});
+			}
+
+			if (filtered.length === 0) {
+				listContainer.createEl('p', { text: 'No images found.', cls: 'marker-picker-empty' });
+			}
+		};
+
+		renderFiles('');
+		searchInput.addEventListener('input', () => renderFiles(searchInput.value));
+		searchInput.focus();
 	}
 
 	onClose() {

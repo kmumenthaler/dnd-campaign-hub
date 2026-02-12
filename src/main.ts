@@ -5132,6 +5132,24 @@ export default class DndCampaignHubPlugin extends Plugin {
 				return (markerDef.pixelSize || 30) / 2;
 			};
 
+			// Image cache for marker token images
+			const markerImageCache: Map<string, HTMLImageElement> = new Map();
+			const loadMarkerImage = (path: string): HTMLImageElement | null => {
+				if (markerImageCache.has(path)) {
+					const img2 = markerImageCache.get(path)!;
+					return img2.complete && img2.naturalWidth > 0 ? img2 : null;
+				}
+				const img2 = new Image();
+				markerImageCache.set(path, img2);
+				try {
+					img2.src = this.app.vault.adapter.getResourcePath(path);
+					img2.onload = () => redrawAnnotations();
+				} catch {
+					// invalid path
+				}
+				return null;
+			};
+
 			// Function to draw a marker
 			const drawMarker = (ctx: CanvasRenderingContext2D, marker: any) => {
 				let markerDef: MarkerDefinition | null | undefined = null;
@@ -5163,16 +5181,40 @@ export default class DndCampaignHubPlugin extends Plugin {
 				
 				ctx.save();
 				
-				// Draw circle with optional image background
+				// Clip to circle
 				ctx.beginPath();
 				ctx.arc(position.x, position.y, radius, 0, Math.PI * 2);
+				ctx.closePath();
 				
-				// Fill background color first
-				ctx.fillStyle = markerDef.backgroundColor;
-				ctx.fill();
+				// Try to draw image first
+				let imageDrawn = false;
+				if (markerDef.imageFile) {
+					const cachedImg = loadMarkerImage(markerDef.imageFile);
+					if (cachedImg) {
+						ctx.clip();
+						ctx.drawImage(
+							cachedImg,
+							position.x - radius,
+							position.y - radius,
+							radius * 2,
+							radius * 2
+						);
+						imageDrawn = true;
+					}
+				}
 				
-				// Draw border if specified
+				// Fill background color only if no image was drawn
+				if (!imageDrawn) {
+					ctx.fillStyle = markerDef.backgroundColor;
+					ctx.fill();
+				}
+				
+				// Draw border if specified (re-draw the arc path since clip consumed it)
 				if (markerDef.borderColor) {
+					ctx.restore();
+					ctx.save();
+					ctx.beginPath();
+					ctx.arc(position.x, position.y, radius, 0, Math.PI * 2);
 					ctx.strokeStyle = markerDef.borderColor;
 					ctx.lineWidth = Math.max(2, radius * 0.1);
 					ctx.stroke();
@@ -5499,11 +5541,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const oy = config.gridOffsetY || 0;
 						const gs = config.gridSize;
 						const squares = CREATURE_SIZE_SQUARES[mDef.creatureSize || 'medium'] || 1;
-						const col = Math.floor((mapPos.x - ox) / gs);
-						const row = Math.floor((mapPos.y - oy) / gs);
-						// Center the token on the grid cells it covers
-						placeX = ox + col * gs + (squares * gs) / 2;
-						placeY = oy + row * gs + (squares * gs) / 2;
+						// Round to nearest grid cell so the token snaps where it has most coverage
+						const halfToken = (squares * gs) / 2;
+						const col = Math.round((mapPos.x - ox - halfToken) / gs);
+						const row = Math.round((mapPos.y - oy - halfToken) / gs);
+						placeX = ox + col * gs + halfToken;
+						placeY = oy + row * gs + halfToken;
 					}
 					
 					// Create a marker reference
@@ -5656,10 +5699,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const oy = config.gridOffsetY || 0;
 						const gs = config.gridSize;
 						const squares = CREATURE_SIZE_SQUARES[mDef.creatureSize || 'medium'] || 1;
-						const col = Math.floor((m.position.x - ox) / gs);
-						const row = Math.floor((m.position.y - oy) / gs);
-						m.position.x = ox + col * gs + (squares * gs) / 2;
-						m.position.y = oy + row * gs + (squares * gs) / 2;
+						// Round to nearest grid cell so the token snaps where it has most coverage
+						const halfToken = (squares * gs) / 2;
+						const col = Math.round((m.position.x - ox - halfToken) / gs);
+						const row = Math.round((m.position.y - oy - halfToken) / gs);
+						m.position.x = ox + col * gs + halfToken;
+						m.position.y = oy + row * gs + halfToken;
 					}
 					draggingMarkerIndex = -1;
 					viewport.style.cursor = 'default';
