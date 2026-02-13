@@ -4743,8 +4743,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-		let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' = 'pan';
+    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'player-view' = 'pan';
 		let selectedColor = '#ff0000';
+      // GM player-view rect drag state
+      let gmDragStart: { x: number; y: number } | null = null;
+      let gmDragCurrent: { x: number; y: number } | null = null;
+      let isDraggingGmRect = false;
+      let isMovingGmRect = false; // True when dragging existing rect to move it
 		let selectedMarkerId: string | null = null; // Currently selected marker from library
 		let draggingMarkerIndex = -1; // Index of marker being dragged (-1 = none)
 		let dragOffsetX = 0;
@@ -4776,6 +4781,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 		// Create scrollable viewport
 		const viewport = mapContainer.createDiv({ cls: 'dnd-map-viewport' });
+		viewport.setAttribute('tabindex', '0'); // Make viewport focusable for keyboard events
 		
 		// Create wrapper that will be transformed (zoom + pan)
 		const mapWrapper = viewport.createDiv({ cls: 'dnd-map-wrapper' });
@@ -4830,6 +4836,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const rulerBtn = createToolBtn('📏', 'Ruler');
 		const aoeBtn = createToolBtn('💥', 'AoE');
 		const eraserBtn = createToolBtn('🧹', 'Eraser');
+      const viewBtn = createToolBtn('📺', 'Player View');
 		const fogBtn = createToolBtn('🌫️', 'Fog');
 		const moveGridBtn = createToolBtn('✥', 'Move Grid');
 		const calibrateBtn = createToolBtn('⚙', 'Calibrate');
@@ -5114,6 +5121,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 			attr: { title: 'Open Player View' }
 		});
 		playerViewBtn.innerHTML = '👁️ Player View';
+        
+    // Player view region tool button (GM only): show/move player viewport rectangle
+    const viewRegionBtn = viewport.createEl('button', {
+      cls: 'dnd-map-player-view-btn',
+      attr: { title: 'Player View Region' }
+    });
+    viewRegionBtn.innerHTML = '📺 View';
+    viewRegionBtn.addEventListener('click', () => setActiveTool('player-view'));
 		
 		playerViewBtn.addEventListener('click', async () => {
             // Allow multiple player views; do not close existing player view windows
@@ -5143,6 +5158,26 @@ export default class DndCampaignHubPlugin extends Plugin {
 					imageResourcePath: resourcePath
 				}
 			});
+
+      // After opening a player view, if we have a GM-side viewRect, push its position to the new view
+      if ((viewport as any)._gmViewRect) {
+        const rect = (viewport as any)._gmViewRect as any;
+        // Delay a frame to allow player view to initialize
+        setTimeout(() => {
+          const pv = popoutLeaf.view as any;
+          if (pv && typeof pv.setTabletopPanFromImageCoords === 'function') {
+            let topLeft = getRotatedRectTopLeft(rect);
+            try {
+              const maxX = Math.max(0, img.naturalWidth - rect.w);
+              const maxY = Math.max(0, img.naturalHeight - rect.h);
+              topLeft.x = Math.max(0, Math.min(maxX, topLeft.x));
+              topLeft.y = Math.max(0, Math.min(maxY, topLeft.y));
+            } catch (e) { }
+            console.log('[GM] sending pan', { x: topLeft.x, y: topLeft.y, source: 'GM', rect, zoom: config.scale });
+            pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y);
+          }
+        }, 50);
+      }
 			
       // Store sync function that pushes updates to all open player views
       (viewport as any)._syncPlayerView = () => {
@@ -5298,6 +5333,54 @@ export default class DndCampaignHubPlugin extends Plugin {
 						drawFogPolygonPreview(ctx);
 					}
 				}
+
+        // Draw GM-side player view rectangle if present (rotated to match player orientation)
+        try {
+          const gmRect = (this as any)._gmViewRect || (viewport as any)._gmViewRect;
+          if (gmRect && gmRect.w && gmRect.h) {
+            ctx.save();
+            
+            const rotation = gmRect.rotation || 0;
+            const centerX = gmRect.x + gmRect.w / 2;
+            const centerY = gmRect.y + gmRect.h / 2;
+            
+            // Translate to center and rotate. Use inverted rotation here because
+            // the player view rotates the map by +deg; to draw the image-space
+            // footprint we must rotate by -deg so the GM rectangle matches
+            // the area the player actually sees.
+            ctx.translate(centerX, centerY);
+            ctx.rotate((-(rotation || 0) * Math.PI) / 180);
+            
+            // Draw rotated rectangle (centered at origin)
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 4;
+            ctx.setLineDash([10, 5]);
+            ctx.strokeRect(-gmRect.w / 2, -gmRect.h / 2, gmRect.w, gmRect.h);
+            
+            // Draw rotation indicator arrow (pointing to top of player view)
+            const arrowLen = Math.min(gmRect.w, gmRect.h) * 0.3;
+            ctx.strokeStyle = '#00ffff';
+            ctx.fillStyle = '#00ffff';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([]);
+            
+            // Arrow shaft pointing up
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(0, -arrowLen);
+            ctx.stroke();
+            
+            // Arrow head
+            ctx.beginPath();
+            ctx.moveTo(0, -arrowLen);
+            ctx.lineTo(-arrowLen * 0.3, -arrowLen * 0.7);
+            ctx.lineTo(arrowLen * 0.3, -arrowLen * 0.7);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.restore();
+          }
+        } catch (e) { }
 				
 				// Draw marker drag ruler
 				if (markerDragOrigin && draggingMarkerIndex >= 0) {
@@ -5874,7 +5957,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-				[panBtn, selectBtn, highlightBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, aoeBtn, fogBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
+        [panBtn, selectBtn, highlightBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, aoeBtn, viewBtn, fogBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
 				
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
@@ -5925,10 +6008,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (tool === 'move-grid') {
 					moveGridBtn.addClass('active');
 					viewport.style.cursor = 'move';
-				} else if (tool === 'aoe') {
+        } else if (tool === 'aoe') {
 					aoeBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
-				} else if (tool === 'fog') {
+        } else if (tool === 'player-view') {
+          viewBtn.addClass('active');
+          viewport.style.cursor = 'crosshair';
+          viewport.focus(); // Focus viewport so keyboard events work
+          new Notice('Player View Mode: Drag to position, Q/E or [/] to rotate 90°', 4000);
+        } else if (tool === 'fog') {
 					fogBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
 				}
@@ -6053,6 +6141,32 @@ export default class DndCampaignHubPlugin extends Plugin {
 				updateTransform();
 				zoomReset.textContent = `${Math.round(scale * 100)}%`;
 			});
+
+			// Helper: Calculate the visual top-left corner of a rotated rectangle
+			// Returns the image coordinates that should appear at the player's screen top-left
+      const getRotatedRectTopLeft = (rect: any): { x: number; y: number } => {
+        // In image-space we must invert the rotation because the player view
+        // rotates the map by +deg; the visible image footprint rotates by -deg.
+        const deg = -(rect.rotation || 0);
+        const t = (deg * Math.PI) / 180;
+
+        const cx = rect.x + rect.w / 2;
+        const cy = rect.y + rect.h / 2;
+
+        // Basis vectors for screen right and screen down in image space
+        const rightX = Math.cos(t);
+        const rightY = Math.sin(t);
+        const downX = -Math.sin(t);
+        const downY = Math.cos(t);
+
+        const halfW = rect.w / 2;
+        const halfH = rect.h / 2;
+
+        const x = cx - rightX * halfW - downX * halfH;
+        const y = cy - rightY * halfW - downY * halfH;
+
+        return { x: Math.round(x), y: Math.round(y) };
+      };
 
 			// Tool-aware mouse handlers
 			viewport.addEventListener('mousedown', (e: MouseEvent) => {
@@ -6346,7 +6460,111 @@ export default class DndCampaignHubPlugin extends Plugin {
 						fogDragEnd = { x: mapPos.x, y: mapPos.y };
 					}
 				}
-				
+        else if (activeTool === 'player-view') {
+          // Check if clicking inside existing rect to move it (accounting for rotation)
+          const existingRect = (this as any)._gmViewRect || (viewport as any)._gmViewRect;
+          isMovingGmRect = false;
+          if (existingRect && existingRect.w && existingRect.h) {
+            // Transform click point to rect's local coordinate system
+            const rotation = existingRect.rotation || 0;
+            const centerX = existingRect.x + existingRect.w / 2;
+            const centerY = existingRect.y + existingRect.h / 2;
+
+            // Translate click to be relative to center
+            const relX = mapPos.x - centerX;
+            const relY = mapPos.y - centerY;
+
+            // Rotate click point by negative rotation to get local coords
+            const rad = (-rotation * Math.PI) / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            const localX = relX * cos - relY * sin;
+            const localY = relX * sin + relY * cos;
+
+            // Check if local coords are inside rect bounds
+            if (Math.abs(localX) <= existingRect.w / 2 && Math.abs(localY) <= existingRect.h / 2) {
+              // Move existing rect - store offset in local space
+              isMovingGmRect = true;
+              gmDragStart = { x: localX, y: localY }; // Offset within rect in local space
+              gmDragCurrent = { x: mapPos.x, y: mapPos.y };
+              isDraggingGmRect = true;
+              viewport.style.cursor = 'grabbing';
+              // Also store as persistent local offset for mousemove logic
+              (this as any)._gmRectDragOffset = { x: localX, y: localY };
+            }
+          }
+
+          if (!isMovingGmRect) {
+            // Start GM view-rect drag (create new rect)
+            gmDragStart = { x: mapPos.x, y: mapPos.y };
+            gmDragCurrent = { x: mapPos.x, y: mapPos.y };
+            isDraggingGmRect = true;
+            viewport.style.cursor = 'grabbing';
+            // Reset drag offset for new rect
+            (this as any)._gmRectDragOffset = null;
+
+            // Calculate rect size and position as an unrotated footprint + rotation
+            let rectW = Math.round(img.naturalWidth * 0.3);
+            let rectH = Math.round(img.naturalHeight * 0.3);
+            let currentRotation = 0;
+            // Center the rect where the user clicked
+            const centerX = mapPos.x;
+            const centerY = mapPos.y;
+            try {
+              if ((this as any)._playerMapViews && (this as any)._playerMapViews.size > 0) {
+                const firstView = Array.from((this as any)._playerMapViews)[0] as any;
+                if (firstView && firstView.mapContainer) {
+                  const viewRect = firstView.mapContainer.getBoundingClientRect();
+                  const viewScale = firstView.tabletopScale || 1;
+                  const viewRotation = firstView.tabletopRotation || 0;
+                  // Footprint is the unrotated size in image pixels
+                  rectW = Math.max(100, Math.round(viewRect.width / viewScale));
+                  rectH = Math.max(100, Math.round(viewRect.height / viewScale));
+                  currentRotation = viewRotation;
+                  // If the player view is rotated by 90 or 270 degrees, swap footprint dims
+                  const rnorm = ((viewRotation % 360) + 360) % 360;
+                  if (rnorm === 90 || rnorm === 270) {
+                    const tmp = rectW;
+                    rectW = rectH;
+                    rectH = tmp;
+                  }
+                }
+              }
+            } catch (e) { }
+
+            const rect = {
+              x: Math.round(centerX - rectW / 2),
+              y: Math.round(centerY - rectH / 2),
+              w: rectW,
+              h: rectH,
+              rotation: currentRotation
+            };
+            try { (viewport as any)._gmViewRect = rect; } catch (e) { }
+            try { (this as any)._gmViewRect = rect; } catch (e) { }
+            redrawAnnotations();
+
+            // Broadcast initial top-left to player views using rotated-basis top-left
+            try {
+              if ((this as any)._playerMapViews) {
+                let topLeft = getRotatedRectTopLeft(rect);
+                // Clamp to image bounds so rotation math can't send player views off-map
+                try {
+                  const maxX = Math.max(0, img.naturalWidth - rect.w);
+                  const maxY = Math.max(0, img.naturalHeight - rect.h);
+                  topLeft.x = Math.max(0, Math.min(maxX, topLeft.x));
+                  topLeft.y = Math.max(0, Math.min(maxY, topLeft.y));
+                } catch (e) { }
+                (this as any)._playerMapViews.forEach((pv: any) => {
+                  try {
+                    if (typeof pv.setTabletopRotation === 'function') pv.setTabletopRotation(rect.rotation);
+                    if (typeof pv.setTabletopPanFromImageCoords === 'function') pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y);
+                  } catch (e) { }
+                });
+              }
+            } catch (e) { }
+          }
+        }
+
 				e.preventDefault();
 			});
 
@@ -6428,6 +6646,62 @@ export default class DndCampaignHubPlugin extends Plugin {
 					// Update fog drag preview
 					fogDragEnd = { x: mapPos.x, y: mapPos.y };
 					redrawAnnotations();
+        } else if (activeTool === 'player-view' && isDraggingGmRect && gmDragStart) {
+          // Update GM view rect as mouse moves
+          gmDragCurrent = { x: mapPos.x, y: mapPos.y };
+          const existingRect = (this as any)._gmViewRect || (viewport as any)._gmViewRect;
+          let rect: any;
+          
+          // Check if we're moving an existing rect or creating a new one
+          if (isMovingGmRect && existingRect) {
+            // Moving existing rect: keep the same offset from mouse to rect center in rotated space
+            const rotation = existingRect.rotation || 0;
+            const rad = (rotation * Math.PI) / 180;
+            let offset = (this as any)._gmRectDragOffset;
+            if (!offset) offset = { x: 0, y: 0 };
+            // Mouse position is mapPos (current), so rect center = mouse - offset (rotated to world)
+            const centerX = mapPos.x - (offset.x * Math.cos(rad) - offset.y * Math.sin(rad));
+            const centerY = mapPos.y - (offset.x * Math.sin(rad) + offset.y * Math.cos(rad));
+            rect = {
+              x: Math.max(0, Math.round(centerX - existingRect.w / 2)),
+              y: Math.max(0, Math.round(centerY - existingRect.h / 2)),
+              w: existingRect.w,
+              h: existingRect.h,
+              rotation: rotation
+            };
+          } else {
+            // Creating new rect by dragging corners
+            const x1 = Math.min(gmDragStart.x, gmDragCurrent.x);
+            const y1 = Math.min(gmDragStart.y, gmDragCurrent.y);
+            const x2 = Math.max(gmDragStart.x, gmDragCurrent.x);
+            const y2 = Math.max(gmDragStart.y, gmDragCurrent.y);
+            rect = {
+              x: Math.max(0, Math.round(x1)),
+              y: Math.max(0, Math.round(y1)),
+              w: Math.max(1, Math.round(x2 - x1)),
+              h: Math.max(1, Math.round(y2 - y1)),
+              rotation: existingRect?.rotation || 0
+            };
+          }
+          
+          try { (viewport as any)._gmViewRect = rect; } catch (e) { }
+          try { (this as any)._gmViewRect = rect; } catch (e) { }
+          redrawAnnotations();
+          // Broadcast top-left image coordinates to player views
+          try {
+            if ((this as any)._playerMapViews) {
+              let topLeft = getRotatedRectTopLeft(rect);
+              try {
+                const maxX = Math.max(0, img.naturalWidth - rect.w);
+                const maxY = Math.max(0, img.naturalHeight - rect.h);
+                topLeft.x = Math.max(0, Math.min(maxX, topLeft.x));
+                topLeft.y = Math.max(0, Math.min(maxY, topLeft.y));
+              } catch (e) { }
+              (this as any)._playerMapViews.forEach((pv: any) => {
+                try { if (typeof pv.setTabletopPanFromImageCoords === 'function') pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y); } catch (e) { }
+              });
+            }
+          } catch (e) { }
 				}
 			});
 
@@ -6531,6 +6805,32 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'move';
 					// Save offset
 					this.saveMapAnnotations(config, el);
+        } else if (activeTool === 'player-view' && isDraggingGmRect) {
+          // Finish GM rect drag
+          isDraggingGmRect = false;
+          isMovingGmRect = false;
+          viewport.style.cursor = 'crosshair';
+          // Ensure rect exists on plugin + viewport
+          const rect = (viewport as any)._gmViewRect || (this as any)._gmViewRect || null;
+          if (rect) {
+            try { (this as any)._gmViewRect = rect; } catch (e) { }
+            try { (viewport as any)._gmViewRect = rect; } catch (e) { }
+            // Broadcast final top-left coords to player views
+            try {
+              if ((this as any)._playerMapViews) {
+                let topLeft = getRotatedRectTopLeft(rect);
+                try {
+                  const maxX = Math.max(0, img.naturalWidth - rect.w);
+                  const maxY = Math.max(0, img.naturalHeight - rect.h);
+                  topLeft.x = Math.max(0, Math.min(maxX, topLeft.x));
+                  topLeft.y = Math.max(0, Math.min(maxY, topLeft.y));
+                } catch (e) { }
+                (this as any)._playerMapViews.forEach((pv: any) => {
+                  try { if (typeof pv.setTabletopPanFromImageCoords === 'function') pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y); } catch (e) { }
+                });
+              }
+            } catch (e) { }
+          }
 				} else if (activeTool === 'draw' && isDrawing) {
 					isDrawing = false;
 					if (currentPath.length > 2) {
@@ -6573,6 +6873,87 @@ export default class DndCampaignHubPlugin extends Plugin {
 					if (rulerStart && !rulerComplete) {
 						rulerEnd = null;
 						redrawAnnotations();
+					}
+				}
+			});
+
+			// Listen for player view rect updates from player window panning
+			viewport.addEventListener('gm-rect-updated', () => {
+				redrawAnnotations();
+			});
+
+			// Keyboard shortcuts for player-view rotation
+			viewport.addEventListener('keydown', (e: KeyboardEvent) => {
+				if (activeTool === 'player-view') {
+					const gmRect = (this as any)._gmViewRect || (viewport as any)._gmViewRect;
+					if (!gmRect) return;
+					
+					if (e.key === 'q' || e.key === 'Q' || e.key === '[') {
+						// Rotate counterclockwise 90 degrees - keep center fixed
+						e.preventDefault();
+						
+						// Calculate current center
+						const oldCenterX = gmRect.x + gmRect.w / 2;
+						const oldCenterY = gmRect.y + gmRect.h / 2;
+						
+						// Update rotation
+						gmRect.rotation = ((gmRect.rotation || 0) - 90 + 360) % 360;
+						
+						// Keep center fixed, recalculate top-left
+						gmRect.x = Math.round(oldCenterX - gmRect.w / 2);
+						gmRect.y = Math.round(oldCenterY - gmRect.h / 2);
+						
+						redrawAnnotations();
+						
+						// Broadcast rotation and position to player views
+						try {
+							if ((this as any)._playerMapViews) {
+								const topLeft = getRotatedRectTopLeft(gmRect);
+								(this as any)._playerMapViews.forEach((pv: any) => {
+									try { 
+										if (typeof pv.setTabletopRotation === 'function') {
+											pv.setTabletopRotation(gmRect.rotation);
+										}
+										if (typeof pv.setTabletopPanFromImageCoords === 'function') {
+											pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y);
+										}
+									} catch (e) { }
+								});
+							}
+						} catch (e) { }
+					} else if (e.key === 'e' || e.key === 'E' || e.key === ']') {
+						// Rotate clockwise 90 degrees - keep center fixed
+						e.preventDefault();
+						
+						// Calculate current center
+						const oldCenterX = gmRect.x + gmRect.w / 2;
+						const oldCenterY = gmRect.y + gmRect.h / 2;
+						
+						// Update rotation
+						gmRect.rotation = ((gmRect.rotation || 0) + 90) % 360;
+						
+						// Keep center fixed, recalculate top-left
+						gmRect.x = Math.round(oldCenterX - gmRect.w / 2);
+						gmRect.y = Math.round(oldCenterY - gmRect.h / 2);
+						
+						redrawAnnotations();
+						
+						// Broadcast rotation and position to player views
+						try {
+							if ((this as any)._playerMapViews) {
+								const topLeft = getRotatedRectTopLeft(gmRect);
+								(this as any)._playerMapViews.forEach((pv: any) => {
+									try { 
+										if (typeof pv.setTabletopRotation === 'function') {
+											pv.setTabletopRotation(gmRect.rotation);
+										}
+										if (typeof pv.setTabletopPanFromImageCoords === 'function') {
+											pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y);
+										}
+									} catch (e) { }
+								});
+							}
+						} catch (e) { }
 					}
 				}
 			});
@@ -21838,6 +22219,8 @@ class PlayerMapView extends ItemView {
   private tabletopPanY: number = 0;
   private tabletopScale: number = 1;
   private tabletopRotation: number = 0; // degrees, clockwise
+  private tabletopTargetX: number | null = null; // desired image top-left X (natural px)
+  private tabletopTargetY: number | null = null; // desired image top-left Y (natural px)
   private mapContainer: HTMLDivElement | null = null;
   private syncCanvasToImage: (() => void) | null = null;
 
@@ -21884,6 +22267,128 @@ class PlayerMapView extends ItemView {
   updateMapData(config: any) {
     this.mapConfig = config;
     this.redrawAnnotations();
+  }
+
+  /**
+   * Set tabletop pan to show given image coordinates at top-left of viewport.
+   * Called by GM when dragging the player-view region rectangle.
+   * @param x - Image x coordinate (natural pixels)
+   * @param y - Image y coordinate (natural pixels)
+   */
+  setTabletopPanFromImageCoords(x: number, y: number) {
+    if (!this.tabletopMode) {
+      // Auto-enable tabletop mode if GM is controlling view
+      const cal = this.plugin.settings.tabletopCalibration;
+      if (cal) {
+        this.tabletopMode = true;
+        this.syncGmViewRectVisibility();
+        if (this.syncCanvasToImage) this.syncCanvasToImage();
+
+        console.log('[PV] GM pan request', {
+          x, y,
+          scale: this.tabletopScale,
+          rot: this.tabletopRotation,
+          imgNatural: this.mapImage ? { w: this.mapImage.naturalWidth, h: this.mapImage.naturalHeight } : null
+        });
+
+      } else {
+        return; // Can't position without calibration
+      }
+    }
+    
+    // Store desired image-space top-left so we can recompute after scale/rotation changes
+    this.tabletopTargetX = x;
+    this.tabletopTargetY = y;
+
+    // Apply using centralized transform routine
+    this.applyTabletopTransform();
+  }
+
+  /**
+   * Set tabletop rotation.
+   * Called by GM when using Q/E keys to rotate the player view.
+   * @param rotation - Rotation in degrees (0, 90, 180, 270)
+   */
+  setTabletopRotation(rotation: number) {
+    this.tabletopRotation = ((rotation % 360) + 360) % 360;
+
+    // Use centralized transform application so rotation does not wipe out pan
+    this.applyTabletopTransform();
+  }
+
+  private applyTabletopTransform() {
+    if (!this.mapContainer) return;
+    const sled = this.mapContainer.querySelector('.dnd-player-map-sled') as HTMLElement;
+    if (!sled) return;
+
+    const s = this.tabletopScale || 1;
+    const deg = this.tabletopRotation || 0;
+    const t = (deg * Math.PI) / 180;
+    const c = Math.cos(t);
+    const sn = Math.sin(t);
+
+    // If GM requested a specific image top-left, recompute pan from that target
+    if (this.tabletopTargetX !== null && this.tabletopTargetY !== null) {
+      const x = this.tabletopTargetX;
+      const y = this.tabletopTargetY;
+      this.tabletopPanX = -s * (c * x - sn * y);
+      this.tabletopPanY = -s * (sn * x + c * y);
+    }
+
+    sled.style.transformOrigin = '0 0';
+    sled.style.left = '0px';
+    sled.style.top = '0px';
+    sled.style.transform = `translate(${this.tabletopPanX}px, ${this.tabletopPanY}px) rotate(${deg}deg)`;
+  }
+
+  /**
+   * Sync GM view rect visibility based on tabletop mode state.
+   * Shows rect when this player view is in tabletop mode, hides when exiting.
+   */
+  syncGmViewRectVisibility() {
+    try {
+      // Find GM map viewport(s) and trigger redraw
+      const leaves = this.plugin.app.workspace.getLeavesOfType('markdown');
+      leaves.forEach((leaf: any) => {
+        try {
+          const viewportEl = leaf.view?.containerEl?.querySelector('.dnd-map-viewport');
+          if (viewportEl) {
+            const gmRect = (this.plugin as any)._gmViewRect;
+            if (this.tabletopMode) {
+              // Entering tabletop mode - ensure rect exists and is visible
+              if (!gmRect || !gmRect.w || !gmRect.h) {
+                // Create initial rect if none exists
+                const rect = {
+                  x: 0,
+                  y: 0,
+                  w: 800,
+                  h: 600
+                };
+                try { (viewportEl as any)._gmViewRect = rect; } catch (e) { }
+                try { (this.plugin as any)._gmViewRect = rect; } catch (e) { }
+              }
+            } else {
+              // Exiting tabletop mode - check if any other player views are still in tabletop mode
+              let anyTabletopActive = false;
+              if ((this.plugin as any)._playerMapViews) {
+                (this.plugin as any)._playerMapViews.forEach((pv: any) => {
+                  if (pv !== this && pv.tabletopMode) {
+                    anyTabletopActive = true;
+                  }
+                });
+              }
+              // If no other views in tabletop mode, hide the rect
+              if (!anyTabletopActive && gmRect) {
+                try { delete (viewportEl as any)._gmViewRect; } catch (e) { }
+                try { delete (this.plugin as any)._gmViewRect; } catch (e) { }
+              }
+            }
+            // Trigger redraw
+            viewportEl.dispatchEvent(new CustomEvent('gm-rect-updated'));
+          }
+        } catch (e) { }
+      });
+    } catch (e) { }
   }
 
   async onOpen() {
@@ -22066,12 +22571,12 @@ class PlayerMapView extends ItemView {
             sled.style.width = scaledW + 'px';
             sled.style.height = scaledH + 'px';
             sled.style.position = 'absolute';
-            sled.style.left = this.tabletopPanX + 'px';
-            sled.style.top = this.tabletopPanY + 'px';
-
-            // Apply rotation (center origin) so image+canvas rotate together
-            sled.style.transformOrigin = 'center center';
-            sled.style.transform = `rotate(${this.tabletopRotation}deg)`;
+            // Use single transform (translate + rotate) with top-left origin
+            sled.style.transformOrigin = '0 0';
+            sled.style.left = '0px';
+            sled.style.top = '0px';
+            // Apply transform via centralized helper so pan/scale/rotation are consistent
+            this.applyTabletopTransform();
 
             mapContainer.style.overflow = 'hidden';
 
@@ -22081,6 +22586,15 @@ class PlayerMapView extends ItemView {
             canvas.style.width = scaledW + 'px';
             canvas.style.height = scaledH + 'px';
           }
+
+            // If a GM-side view rect exists on the plugin, update its scaled pixel bounds so redrawAnnotations can draw it
+            try {
+              const gmRect = (this.plugin as any)._gmViewRect;
+              if (gmRect) {
+                (gmRect as any).__scaledW = img.naturalWidth * this.tabletopScale;
+                (gmRect as any).__scaledH = img.naturalHeight * this.tabletopScale;
+              }
+            } catch {}
         } else {
           // Normal mode: fit to screen
           img.style.maxWidth = '100%';
@@ -22088,7 +22602,7 @@ class PlayerMapView extends ItemView {
           img.style.objectFit = 'contain';
           img.style.width = '';
           img.style.height = '';
-          sled.style.width = '';
+            sled.style.width = '';
           sled.style.height = '';
           sled.style.position = '';
           sled.style.left = '';
@@ -22117,6 +22631,10 @@ class PlayerMapView extends ItemView {
     mapContainer.addEventListener('mousedown', (e: MouseEvent) => {
       if (!this.tabletopMode) return;
       isPanning = true;
+      // If GM previously requested a specific image top-left, clear it - manual pan takes precedence
+      this.tabletopTargetX = null;
+      this.tabletopTargetY = null;
+
       panStartX = e.clientX - this.tabletopPanX;
       panStartY = e.clientY - this.tabletopPanY;
       mapContainer.style.cursor = 'grabbing';
@@ -22142,37 +22660,71 @@ class PlayerMapView extends ItemView {
         this.tabletopPanY = Math.max(minY, Math.min(maxY, this.tabletopPanY));
       }
 
-      // Move the sled (image + canvas move together)
-      sled.style.left = this.tabletopPanX + 'px';
-      sled.style.top = this.tabletopPanY + 'px';
+      // Move the sled (image + canvas move together) via centralized transform
+      this.applyTabletopTransform();
     });
+
+    
 
     const stopPan = () => {
       if (isPanning) {
         isPanning = false;
         mapContainer.style.cursor = this.tabletopMode ? 'grab' : '';
+        
+        // Bidirectional sync: report current top-left image coords back to GM
+        if (this.tabletopMode && this.tabletopScale > 0) {
+          // Convert current pan back to image coords accounting for rotation
+          const s = this.tabletopScale || 1;
+          const deg = this.tabletopRotation || 0;
+          const t = (deg * Math.PI) / 180;
+          const c = Math.cos(t);
+          const sn = Math.sin(t);
+
+          const imageX = Math.round((-(c * this.tabletopPanX + sn * this.tabletopPanY)) / s);
+          const imageY = Math.round(-(-sn * this.tabletopPanX + c * this.tabletopPanY) / s);
+          
+          // Update GM rect position and trigger redraw
+          try {
+            const gmRect = (this.plugin as any)._gmViewRect;
+            if (gmRect) {
+              gmRect.x = Math.max(0, imageX);
+              gmRect.y = Math.max(0, imageY);
+              
+              // Find GM map view and trigger its redraw
+              const leaves = this.plugin.app.workspace.getLeavesOfType('markdown');
+              leaves.forEach((leaf: any) => {
+                try {
+                  const viewportEl = leaf.view?.containerEl?.querySelector('.dnd-map-viewport');
+                  if (viewportEl && (viewportEl as any)._syncPlayerView) {
+                    // Find the annotation canvas and redraw
+                    const canvas = viewportEl.querySelector('.dnd-map-annotation-canvas') as HTMLCanvasElement;
+                    if (canvas) {
+                      // Trigger redraw by dispatching a custom event
+                      viewportEl.dispatchEvent(new CustomEvent('gm-rect-updated'));
+                    }
+                  }
+                } catch (e) { }
+              });
+            }
+          } catch (e) { }
+        }
       }
     };
     mapContainer.addEventListener('mouseup', stopPan);
     mapContainer.addEventListener('mouseleave', stopPan);
 
     // Rotation handlers (rotate 15° steps)
-    const applyTabletopRotation = () => {
-      sled.style.transformOrigin = 'center center';
-      sled.style.transform = `rotate(${this.tabletopRotation}deg)`;
-    };
-
     rotateLeftBtn.addEventListener('click', () => {
       this.tabletopRotation = (this.tabletopRotation - 15 + 360) % 360;
-      applyTabletopRotation();
+      this.applyTabletopTransform();
     });
     rotateRightBtn.addEventListener('click', () => {
       this.tabletopRotation = (this.tabletopRotation + 15) % 360;
-      applyTabletopRotation();
+      this.applyTabletopTransform();
     });
     rotateResetBtn.addEventListener('click', () => {
       this.tabletopRotation = 0;
-      applyTabletopRotation();
+      this.applyTabletopTransform();
     });
 
     // --- Tabletop button handlers ---
@@ -22184,6 +22736,8 @@ class PlayerMapView extends ItemView {
         this.tabletopPanX = 0;
         this.tabletopPanY = 0;
       }
+      // Sync GM view rect visibility based on tabletop mode state
+      this.syncGmViewRectVisibility();
       // Call sync immediately for tabletop mode (dimensions are explicit),
       // then defer for normal mode where layout needs to settle
       syncCanvasToImage();

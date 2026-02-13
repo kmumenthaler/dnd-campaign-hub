@@ -3130,6 +3130,11 @@
   transform: translateY(0);
 }
 
+/* Stack second button (View Region) below first button to avoid overlap */
+.dnd-map-player-view-btn:nth-of-type(2) {
+  top: 60px;
+}
+
 /* Player Map View (Popout Window) */
 .dnd-player-map-container {
   background: #000;
