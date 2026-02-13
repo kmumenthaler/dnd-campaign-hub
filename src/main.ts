@@ -3203,7 +3203,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   encounterBuilder!: EncounterBuilder;
   mapManager!: MapManager;
   markerLibrary!: MarkerLibrary;
-  _playerMapView: PlayerMapView | null = null;
+  _playerMapViews: Set<PlayerMapView> = new Set();
 
   async onload() {
     await this.loadSettings();
@@ -3231,7 +3231,7 @@ export default class DndCampaignHubPlugin extends Plugin {
       PLAYER_MAP_VIEW_TYPE,
       (leaf) => {
         const view = new PlayerMapView(leaf, this);
-        this._playerMapView = view;
+        this._playerMapViews.add(view);
         return view;
       }
     );
@@ -5116,9 +5116,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		playerViewBtn.innerHTML = '👁️ Player View';
 		
 		playerViewBtn.addEventListener('click', async () => {
-			// Close existing player view if open
-			const existingLeaves = this.app.workspace.getLeavesOfType(PLAYER_MAP_VIEW_TYPE);
-			existingLeaves.forEach(leaf => leaf.detach());
+            // Allow multiple player views; do not close existing player view windows
 			
 			// Open a popout window with the player map view
 			const popoutLeaf = this.app.workspace.openPopoutLeaf({
@@ -5146,33 +5144,36 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 			
-			// Store sync function that pushes updates to the player view
-			(viewport as any)._syncPlayerView = () => {
-				if (this._playerMapView) {
-					// Build drag ruler data if a marker is being dragged
-					let dragRuler: { origin: { x: number; y: number }; current: { x: number; y: number } } | null = null;
-					if (markerDragOrigin && draggingMarkerIndex >= 0 && config.markers[draggingMarkerIndex]) {
-						dragRuler = {
-							origin: { x: markerDragOrigin.x, y: markerDragOrigin.y },
-							current: { x: config.markers[draggingMarkerIndex].position.x, y: config.markers[draggingMarkerIndex].position.y }
-						};
-					}
-					this._playerMapView.updateMapData({
-						markers: config.markers,
-						drawings: config.drawings,
-						highlights: config.highlights,
-						aoeEffects: config.aoeEffects,
-						fogOfWar: config.fogOfWar,
-						gridType: config.gridType,
-						gridSize: config.gridSize,
-						gridOffsetX: config.gridOffsetX || 0,
-						gridOffsetY: config.gridOffsetY || 0,
-						scale: config.scale,
-						name: config.name,
-						dragRuler: dragRuler
-					});
-				}
-			};
+      // Store sync function that pushes updates to all open player views
+      (viewport as any)._syncPlayerView = () => {
+        if (this._playerMapViews && this._playerMapViews.size > 0) {
+          // Build drag ruler data if a marker is being dragged
+          let dragRuler: { origin: { x: number; y: number }; current: { x: number; y: number } } | null = null;
+          if (markerDragOrigin && draggingMarkerIndex >= 0 && config.markers[draggingMarkerIndex]) {
+            dragRuler = {
+              origin: { x: markerDragOrigin.x, y: markerDragOrigin.y },
+              current: { x: config.markers[draggingMarkerIndex].position.x, y: config.markers[draggingMarkerIndex].position.y }
+            };
+          }
+          const payload = {
+            markers: config.markers,
+            drawings: config.drawings,
+            highlights: config.highlights,
+            aoeEffects: config.aoeEffects,
+            fogOfWar: config.fogOfWar,
+            gridType: config.gridType,
+            gridSize: config.gridSize,
+            gridOffsetX: config.gridOffsetX || 0,
+            gridOffsetY: config.gridOffsetY || 0,
+            scale: config.scale,
+            name: config.name,
+            dragRuler: dragRuler
+          };
+          this._playerMapViews.forEach(view => {
+            try { view.updateMapData(payload); } catch (e) { console.warn('Failed to update player view', e); }
+          });
+        }
+      };
 			
 			new Notice('Player view opened');
 		});
@@ -22701,8 +22702,8 @@ class PlayerMapView extends ItemView {
 
   async onClose() {
     // Clean up the plugin reference to this view
-    if (this.plugin._playerMapView === this) {
-      this.plugin._playerMapView = null;
+    if (this.plugin._playerMapViews) {
+      this.plugin._playerMapViews.delete(this as any);
     }
     this.canvas = null;
     this.mapImage = null;
