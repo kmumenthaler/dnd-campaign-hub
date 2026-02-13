@@ -21742,71 +21742,43 @@ class PlayerMapView extends ItemView {
     const style = doc.createElement('style');
     style.id = 'dnd-player-view-chrome-hide';
     style.textContent = `
-      /* Hide the tab header bar */
+      /* Hide the tab header bar completely */
       .workspace-tab-header-container {
-        height: 0 !important;
-        min-height: 0 !important;
-        overflow: hidden !important;
-        opacity: 0 !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        border: none !important;
+        display: none !important;
       }
 
-      /* Hide the view header (title bar) by default */
+      /* Hide the view header (title bar) completely */
       .view-header {
-        position: absolute !important;
+        display: none !important;
+      }
+
+      /* Hide titlebar / window decorations */
+      .titlebar {
+        display: none !important;
+      }
+
+      /* Hide sidebar toggles if any */
+      .sidebar-toggle-button {
+        display: none !important;
+      }
+
+      /* Hide status bar */
+      .status-bar {
+        display: none !important;
+      }
+
+      /* Ensure content fills the full window from the very top */
+      .mod-root {
         top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        z-index: 100 !important;
-        opacity: 0 !important;
-        transform: translateY(-100%) !important;
-        transition: opacity 0.3s ease, transform 0.3s ease !important;
-        background: rgba(30, 27, 75, 0.95) !important;
-        backdrop-filter: blur(12px) !important;
       }
 
-      /* Show the view header on hover */
-      .view-header:hover {
-        opacity: 1 !important;
-        transform: translateY(0) !important;
-      }
-
-      /* Ensure content fills the full window */
       .workspace-leaf-content {
         position: relative !important;
       }
 
-      /* Hover trigger zone at the top */
+      /* Remove any hover trigger zones */
       .workspace-leaf-content::before {
-        content: '' !important;
-        position: absolute !important;
-        top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        height: 30px !important;
-        z-index: 99 !important;
-      }
-
-      .workspace-leaf-content:hover > .view-header {
-        opacity: 1 !important;
-        transform: translateY(0) !important;
-      }
-
-      /* But re-hide when not hovering near top area */
-      .workspace-leaf-content > .view-content:hover ~ .view-header,
-      .dnd-player-map-container:hover ~ .view-header {
-        opacity: 0 !important;
-        transform: translateY(-100%) !important;
-      }
-
-      /* Also hide titlebar padding/decorations if any */
-      .titlebar {
         display: none !important;
-      }
-      .mod-root {
-        top: 0 !important;
       }
     `;
     doc.head.appendChild(style);
@@ -21852,33 +21824,67 @@ class PlayerMapView extends ItemView {
     });
     this.canvas = canvas;
 
+    // Helper to sync canvas CSS size and position to match displayed image exactly
+    const syncCanvasToImage = () => {
+      if (img.complete && img.naturalWidth > 0) {
+        // Ensure buffer matches natural image size
+        if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+        }
+        // Use getBoundingClientRect for accurate post-layout dimensions
+        const imgRect = img.getBoundingClientRect();
+        const wrapperRect = mapContainer.getBoundingClientRect();
+        // Position canvas exactly over the image
+        canvas.style.left = (imgRect.left - wrapperRect.left) + 'px';
+        canvas.style.top = (imgRect.top - wrapperRect.top) + 'px';
+        canvas.style.width = imgRect.width + 'px';
+        canvas.style.height = imgRect.height + 'px';
+        this.redrawAnnotations();
+      }
+    };
+
     // Size canvas when image loads
     img.addEventListener('load', () => {
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
-      canvas.style.width = img.width + 'px';
-      canvas.style.height = img.height + 'px';
-      this.redrawAnnotations();
+      // Defer one frame so image has been laid out, then sync position
+      requestAnimationFrame(syncCanvasToImage);
     });
 
-    // Handle window resize
+    // Handle window resize — defer one frame to ensure layout is settled
     const resizeObserver = new ResizeObserver(() => {
-      if (img.complete && img.naturalWidth > 0) {
-        canvas.style.width = img.width + 'px';
-        canvas.style.height = img.height + 'px';
-        this.redrawAnnotations();
-      }
+      requestAnimationFrame(syncCanvasToImage);
     });
     resizeObserver.observe(mapContainer);
     this.register(() => resizeObserver.disconnect());
+
+    // Handle fullscreen transitions (F11 / button)
+    // Use multiple deferred frames since browsers need time to settle after fullscreen reflow
+    const win = (this.containerEl as any).win || this.containerEl.ownerDocument?.defaultView || window;
+    const onFullscreenChange = () => {
+      // Fire at multiple intervals to catch the layout settling
+      requestAnimationFrame(syncCanvasToImage);
+      requestAnimationFrame(() => requestAnimationFrame(syncCanvasToImage));
+      setTimeout(syncCanvasToImage, 100);
+      setTimeout(syncCanvasToImage, 300);
+    };
+    win.document.addEventListener('fullscreenchange', onFullscreenChange);
+    this.register(() => win.document.removeEventListener('fullscreenchange', onFullscreenChange));
+
+    // Also listen for window resize events directly (catches F11 without fullscreen API)
+    const onWinResize = () => {
+      requestAnimationFrame(syncCanvasToImage);
+      setTimeout(syncCanvasToImage, 100);
+    };
+    win.addEventListener('resize', onWinResize);
+    this.register(() => win.removeEventListener('resize', onWinResize));
 
     // If image already loaded
     if (img.complete && img.naturalWidth > 0) {
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
-      canvas.style.width = img.width + 'px';
-      canvas.style.height = img.height + 'px';
-      this.redrawAnnotations();
+      requestAnimationFrame(syncCanvasToImage);
     }
   }
 
