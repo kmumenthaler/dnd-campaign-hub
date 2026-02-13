@@ -4939,7 +4939,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Function to update layer menu position based on toolbar height
 		const updateLayerMenuPosition = () => {
 			const toolbarHeight = toolbar.offsetHeight;
-			layerMenu.style.top = `${toolbarHeight + 5}px`;
+			layerMenu.style.top = `${toolbarHeight + 20}px`;
 		};
 		
 		// Layer icons
