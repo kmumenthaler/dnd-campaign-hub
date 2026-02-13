@@ -6752,7 +6752,8 @@ export default class DndCampaignHubPlugin extends Plugin {
               y: Math.max(0, centerY - existingRect.h / 2),
               w: existingRect.w,
               h: existingRect.h,
-              rotation: existingRect.rotation || 0
+              rotation: existingRect.rotation || 0,
+              targetScale: existingRect.targetScale // Preserve calibrated scale during drag
             };
           } else {
             // Creating new rect by dragging corners
