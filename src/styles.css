@@ -2945,6 +2945,56 @@
   transform: scale(1.05);
 }
 
+/* AoE Shape Picker */
+.dnd-map-aoe-picker {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+  z-index: 1002;
+  transition: opacity 0.2s ease;
+}
+
+.dnd-map-aoe-picker.hidden {
+  display: none;
+}
+
+.dnd-map-aoe-shape-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+  transition: all 0.2s ease;
+}
+
+.dnd-map-aoe-shape-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 165, 0, 0.5);
+}
+
+.dnd-map-aoe-shape-btn.active {
+  background: rgba(255, 165, 0, 0.3);
+  border-color: rgba(255, 165, 0, 0.8);
+  box-shadow: 0 0 8px rgba(255, 165, 0, 0.4);
+}
+
 /* Layer Menu Styles */
 .dnd-map-layer-menu {
   display: flex;

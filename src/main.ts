@@ -4688,6 +4688,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			config.highlights = savedData.highlights || [];
 			config.markers = savedData.markers || [];
 			config.drawings = savedData.drawings || [];
+			config.aoeEffects = savedData.aoeEffects || [];
 			
 			// Load active layer (defaults to Player)
 			config.activeLayer = savedData.activeLayer || 'Player';
@@ -4731,7 +4732,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-		let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' = 'pan';
+		let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' = 'pan';
 		let selectedColor = '#ff0000';
 		let selectedMarkerId: string | null = null; // Currently selected marker from library
 		let draggingMarkerIndex = -1; // Index of marker being dragged (-1 = none)
@@ -4743,6 +4744,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let rulerComplete = false; // Track if ruler endpoint was set by click (not just mousemove preview)
 			let isDrawing = false;
 			let currentPath: { x: number; y: number }[] = [];
+			// AoE tool state
+			let selectedAoeShape: 'circle' | 'cone' | 'square' | 'line' = 'circle';
+			let aoeOrigin: { x: number; y: number } | null = null;
+			let aoePreviewEnd: { x: number; y: number } | null = null;
+			// Ensure aoeEffects array exists on config
+			if (!config.aoeEffects) config.aoeEffects = [];
 			let isCalibrating = false;
 			let calibrationPoint1: { x: number; y: number } | null = null;
 			let calibrationPoint2: { x: number; y: number } | null = null;
@@ -4802,13 +4809,37 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const markerBtn = createToolBtn('📍', 'Marker');
 		const drawBtn = createToolBtn('✏', 'Draw');
 		const rulerBtn = createToolBtn('📏', 'Ruler');
+		const aoeBtn = createToolBtn('💥', 'AoE');
 		const eraserBtn = createToolBtn('🧹', 'Eraser');
 		const moveGridBtn = createToolBtn('✥', 'Move Grid');
 		const calibrateBtn = createToolBtn('⚙', 'Calibrate');
+
+		// AoE shape picker sub-menu (shown when AoE tool is active, positioned right of button)
+		const aoePicker = aoeBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
+		const aoeShapes: { shape: 'circle' | 'cone' | 'square' | 'line'; icon: string; label: string }[] = [
+			{ shape: 'circle', icon: '⭕', label: 'Circle' },
+			{ shape: 'cone', icon: '🔺', label: 'Cone' },
+			{ shape: 'square', icon: '⬜', label: 'Square' },
+			{ shape: 'line', icon: '➖', label: 'Line' },
+		];
+		const aoeShapeButtons: Map<string, HTMLButtonElement> = new Map();
+		aoeShapes.forEach(({ shape, icon, label }) => {
+			const btn = aoePicker.createEl('button', {
+				cls: 'dnd-map-aoe-shape-btn' + (shape === selectedAoeShape ? ' active' : ''),
+				attr: { title: label }
+			});
+			btn.createEl('span', { text: icon });
+			aoeShapeButtons.set(shape, btn);
+			btn.addEventListener('click', () => {
+				selectedAoeShape = shape;
+				aoeShapeButtons.forEach((b) => b.removeClass('active'));
+				btn.addClass('active');
+			});
+		});
 		
 		// Helper: show/hide grid tools (calibrate, move-grid) based on whether annotations exist
 		const updateGridToolsVisibility = () => {
-			const hasAnnotations = (config.highlights?.length > 0) || (config.markers?.length > 0) || (config.drawings?.length > 0);
+			const hasAnnotations = (config.highlights?.length > 0) || (config.markers?.length > 0) || (config.drawings?.length > 0) || (config.aoeEffects?.length > 0);
 			calibrateBtn.toggleClass('hidden', hasAnnotations);
 			moveGridBtn.toggleClass('hidden', hasAnnotations);
 			// If calibration was active and annotations appeared, cancel it
@@ -5037,6 +5068,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						markers: config.markers,
 						drawings: config.drawings,
 						highlights: config.highlights,
+						aoeEffects: config.aoeEffects,
 						gridType: config.gridType,
 						gridSize: config.gridSize,
 						gridOffsetX: config.gridOffsetX || 0,
@@ -5126,6 +5158,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 						drawHighlight(ctx, highlight);
 					});
 				}
+
+				// Draw AoE effects
+				if (config.aoeEffects) {
+					config.aoeEffects.forEach((aoe: any) => {
+						drawAoeEffect(ctx, aoe);
+					});
+				}
 				
 				// Draw markers
 				if (config.markers) {
@@ -5139,6 +5178,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 					config.drawings.forEach((drawing: any) => {
 						drawDrawing(ctx, drawing);
 					});
+				}
+
+				// Draw AoE preview (before sync so it doesn't show in player view until placed)
+				if (activeTool === 'aoe' && aoeOrigin && aoePreviewEnd) {
+					drawAoeShape(ctx, aoeOrigin, aoePreviewEnd, selectedAoeShape, selectedColor, true);
 				}
 				
 				// Sync to player view if open
@@ -5447,12 +5491,160 @@ export default class DndCampaignHubPlugin extends Plugin {
 				ctx.globalAlpha = 1.0;
 			};
 
+			// Helper: snap a point to the nearest grid intersection
+			const snapToGridIntersection = (x: number, y: number): { x: number; y: number } => {
+				const ox = config.gridOffsetX || 0;
+				const oy = config.gridOffsetY || 0;
+				const gs = config.gridSize || 70;
+				if (config.gridType === 'square') {
+					const snappedX = Math.round((x - ox) / gs) * gs + ox;
+					const snappedY = Math.round((y - oy) / gs) * gs + oy;
+					return { x: snappedX, y: snappedY };
+				}
+				// For hex grids, snap to nearest cell center
+				const hex = pixelToHex(x, y);
+				if (config.gridType === 'hex-horizontal') {
+					const horiz = gs;
+					const size = (2 / 3) * horiz;
+					const vert = Math.sqrt(3) * size;
+					const colOffsetY = (hex.col & 1) ? vert / 2 : 0;
+					return { x: hex.col * horiz + ox, y: hex.row * vert + colOffsetY + oy };
+				} else if (config.gridType === 'hex-vertical') {
+					const vert = gs;
+					const size = (2 / 3) * vert;
+					const horiz = Math.sqrt(3) * size;
+					const rowOffsetX = (hex.row & 1) ? horiz / 2 : 0;
+					return { x: hex.col * horiz + rowOffsetX + ox, y: hex.row * vert + oy };
+				}
+				return { x, y };
+			};
+
+			// Helper: snap distance to grid multiples
+			const snapDistanceToGrid = (pixelDist: number): number => {
+				const gs = config.gridSize || 70;
+				return Math.max(gs, Math.round(pixelDist / gs) * gs);
+			};
+
+			// Draw an AoE shape (used for both preview and saved effects)
+			const drawAoeShape = (ctx: CanvasRenderingContext2D, origin: { x: number; y: number }, end: { x: number; y: number }, shape: string, color: string, isPreview: boolean) => {
+				const gs = config.gridSize || 70;
+				const dx = end.x - origin.x;
+				const dy = end.y - origin.y;
+				const rawDist = Math.sqrt(dx * dx + dy * dy);
+				const snappedDist = snapDistanceToGrid(rawDist);
+				const angle = Math.atan2(dy, dx);
+				
+				ctx.save();
+				
+				// Apply transparency for non-active layers
+				const isActiveLayer = true; // AoE shapes drawn fresh are always on active layer context
+				if (!isPreview) {
+					ctx.globalAlpha = 0.5;
+				} else {
+					ctx.globalAlpha = 0.35;
+				}
+				
+				ctx.fillStyle = color;
+				ctx.strokeStyle = color;
+				ctx.lineWidth = 3;
+				
+				if (shape === 'circle') {
+					ctx.beginPath();
+					ctx.arc(origin.x, origin.y, snappedDist, 0, Math.PI * 2);
+					ctx.fill();
+					ctx.globalAlpha = isPreview ? 0.7 : 0.8;
+					ctx.stroke();
+				} else if (shape === 'cone') {
+					// 53-degree cone (standard D&D cone angle)
+					const halfAngle = (53 / 2) * (Math.PI / 180);
+					ctx.beginPath();
+					ctx.moveTo(origin.x, origin.y);
+					ctx.arc(origin.x, origin.y, snappedDist, angle - halfAngle, angle + halfAngle);
+					ctx.closePath();
+					ctx.fill();
+					ctx.globalAlpha = isPreview ? 0.7 : 0.8;
+					ctx.stroke();
+				} else if (shape === 'square') {
+					// Square centered on the endpoint, side length = snappedDist
+					const half = snappedDist;
+					ctx.save();
+					ctx.translate(origin.x, origin.y);
+					ctx.rotate(angle);
+					ctx.fillRect(0, -half, half * 2, half * 2);
+					ctx.globalAlpha = isPreview ? 0.7 : 0.8;
+					ctx.strokeRect(0, -half, half * 2, half * 2);
+					ctx.restore();
+				} else if (shape === 'line') {
+					// Line: 5ft (1 grid cell) wide, snappedDist long
+					const halfWidth = gs / 2;
+					ctx.save();
+					ctx.translate(origin.x, origin.y);
+					ctx.rotate(angle);
+					ctx.fillRect(0, -halfWidth, snappedDist, halfWidth * 2);
+					ctx.globalAlpha = isPreview ? 0.7 : 0.8;
+					ctx.strokeRect(0, -halfWidth, snappedDist, halfWidth * 2);
+					ctx.restore();
+				}
+				
+				// Draw size label
+				ctx.globalAlpha = 1.0;
+				const gridUnits = snappedDist / gs;
+				const realSize = gridUnits * (config.scale?.value || 5);
+				const unit = config.scale?.unit || 'feet';
+				let labelText = '';
+				if (shape === 'circle') {
+					labelText = `${realSize.toFixed(0)} ${unit} radius`;
+				} else if (shape === 'cone') {
+					labelText = `${realSize.toFixed(0)} ${unit} cone`;
+				} else if (shape === 'square') {
+					labelText = `${(realSize * 2).toFixed(0)} ${unit} cube`;
+				} else if (shape === 'line') {
+					labelText = `${realSize.toFixed(0)} ${unit} line`;
+				}
+				
+				// Position label
+				let labelX: number, labelY: number;
+				if (shape === 'circle') {
+					labelX = origin.x;
+					labelY = origin.y;
+				} else {
+					labelX = origin.x + Math.cos(angle) * snappedDist / 2;
+					labelY = origin.y + Math.sin(angle) * snappedDist / 2;
+				}
+				
+				ctx.font = 'bold 16px sans-serif';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.strokeStyle = '#000000';
+				ctx.lineWidth = 3;
+				ctx.strokeText(labelText, labelX, labelY - 12);
+				ctx.fillStyle = '#ffffff';
+				ctx.fillText(labelText, labelX, labelY - 12);
+				
+				ctx.restore();
+			};
+
+			// Draw a saved AoE effect
+			const drawAoeEffect = (ctx: CanvasRenderingContext2D, aoe: any) => {
+				// Apply transparency if not on active layer
+				const itemLayer = aoe.layer || 'Player';
+				const isActiveLayer = itemLayer === config.activeLayer;
+				if (!isActiveLayer) {
+					ctx.save();
+					ctx.globalAlpha = 0.3;
+				}
+				drawAoeShape(ctx, aoe.origin, aoe.end, aoe.shape, aoe.color, false);
+				if (!isActiveLayer) {
+					ctx.restore();
+				}
+			};
+
 			// Tool switching function
 			const setActiveTool = (tool: typeof activeTool) => {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-				[panBtn, selectBtn, highlightBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
+				[panBtn, selectBtn, highlightBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, aoeBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
 				
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
@@ -5461,11 +5653,20 @@ export default class DndCampaignHubPlugin extends Plugin {
 					calibrationPoint2 = null;
 					calibrateBtn.removeClass('active');
 				}
+
+				// Cancel AoE placement when switching away
+				if (tool !== 'aoe') {
+					aoeOrigin = null;
+					aoePreviewEnd = null;
+				}
 				
 				// Show/hide color picker based on tool (with animation)
-				const showColorPicker = tool === 'highlight' || tool === 'draw';
+				const showColorPicker = tool === 'highlight' || tool === 'draw' || tool === 'aoe';
 				colorPicker.toggleClass('hidden', !showColorPicker);
 				colorSeparator.toggleClass('hidden', !showColorPicker);
+
+				// Show/hide AoE shape picker
+				aoePicker.toggleClass('hidden', tool !== 'aoe');
 				
 				if (tool === 'pan') {
 					panBtn.addClass('active');
@@ -5485,6 +5686,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (tool === 'move-grid') {
 					moveGridBtn.addClass('active');
 					viewport.style.cursor = 'move';
+				} else if (tool === 'aoe') {
+					aoeBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
 				}
 				
 				// Clear ruler when switching tools
@@ -5525,6 +5729,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 			rulerBtn.addEventListener('click', () => {
 				console.log('Ruler button clicked');
 				setActiveTool('ruler');
+			});
+			aoeBtn.addEventListener('click', () => {
+				console.log('AoE button clicked');
+				setActiveTool('aoe');
 			});
 			eraserBtn.addEventListener('click', () => {
 				console.log('Eraser button clicked');
@@ -5771,11 +5979,54 @@ export default class DndCampaignHubPlugin extends Plugin {
 					this.saveMapAnnotations(config, el);
 					updateGridToolsVisibility();
 					new Notice('Marker placed');
+				} else if (activeTool === 'aoe') {
+					if (!aoeOrigin) {
+						// First click: set origin snapped to grid intersection
+						aoeOrigin = snapToGridIntersection(mapPos.x, mapPos.y);
+						aoePreviewEnd = aoeOrigin;
+					} else {
+						// Second click: place the AoE effect
+						const end = { x: mapPos.x, y: mapPos.y };
+						const aoeEffect = {
+							id: `aoe_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+							shape: selectedAoeShape,
+							origin: { x: aoeOrigin.x, y: aoeOrigin.y },
+							end: { x: end.x, y: end.y },
+							color: selectedColor,
+							layer: config.activeLayer || 'Player'
+						};
+						config.aoeEffects.push(aoeEffect);
+						aoeOrigin = null;
+						aoePreviewEnd = null;
+						redrawAnnotations();
+						this.saveMapAnnotations(config, el);
+						updateGridToolsVisibility();
+						new Notice('AoE effect placed');
+					}
 				} else if (activeTool === 'eraser') {
 					console.log('Eraser tool: looking for annotations to remove');
 					let removed = false;
+
+					// Try to erase an AoE effect near the click point
+					if (!removed && config.aoeEffects && config.aoeEffects.length > 0) {
+						for (let i = config.aoeEffects.length - 1; i >= 0; i--) {
+							const aoe = config.aoeEffects[i];
+							// Check if click is near the origin
+							const dist = Math.sqrt(
+								Math.pow(aoe.origin.x - mapPos.x, 2) +
+								Math.pow(aoe.origin.y - mapPos.y, 2)
+							);
+							if (dist < (config.gridSize || 70)) {
+								config.aoeEffects.splice(i, 1);
+								console.log('Removed AoE effect');
+								removed = true;
+								break;
+							}
+						}
+					}
 					
 					// Try to erase a highlight at the clicked hex
+					if (!removed) {
 					const hex = pixelToHex(mapPos.x, mapPos.y);
 					const highlightIndex = config.highlights.findIndex(
 						(h: any) => h.col === hex.col && h.row === hex.row
@@ -5784,6 +6035,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						config.highlights.splice(highlightIndex, 1);
 						console.log('Removed highlight at', hex);
 						removed = true;
+					}
 					}
 					
 					// Try to erase a drawing near the click point
@@ -5890,6 +6142,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (activeTool === 'ruler' && rulerStart && !rulerComplete) {
 					// Show temporary ruler line (preview)
 					rulerEnd = { x: mapPos.x, y: mapPos.y };
+					redrawAnnotations();
+				} else if (activeTool === 'aoe' && aoeOrigin) {
+					// Update AoE preview
+					aoePreviewEnd = { x: mapPos.x, y: mapPos.y };
 					redrawAnnotations();
 				}
 			});
@@ -6241,6 +6497,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				highlights: config.highlights || [],
 				markers: config.markers || [],
 				drawings: config.drawings || [],
+				aoeEffects: config.aoeEffects || [],
 				lastModified: new Date().toISOString()
 			};
 			
@@ -21268,6 +21525,10 @@ class PlayerMapView extends ItemView {
     // Draw highlights
     playerHighlights.forEach((h: any) => this.drawHighlight(ctx, h));
 
+    // Draw AoE effects (Player layer only)
+    const playerAoeEffects = (config.aoeEffects || []).filter((a: any) => (a.layer || 'Player') === 'Player');
+    playerAoeEffects.forEach((aoe: any) => this.drawAoeEffect(ctx, aoe, config));
+
     // Draw drawings
     playerDrawings.forEach((d: any) => this.drawDrawing(ctx, d));
 
@@ -21412,6 +21673,89 @@ class PlayerMapView extends ItemView {
     // Yellow fill
     ctx.fillStyle = '#ffff00';
     ctx.fillText(text, textX, textY);
+    ctx.restore();
+  }
+
+  private drawAoeEffect(ctx: CanvasRenderingContext2D, aoe: any, config: any) {
+    const gs = config.gridSize || 70;
+    const origin = aoe.origin;
+    const end = aoe.end;
+    const dx = end.x - origin.x;
+    const dy = end.y - origin.y;
+    const rawDist = Math.sqrt(dx * dx + dy * dy);
+    const snappedDist = Math.max(gs, Math.round(rawDist / gs) * gs);
+    const angle = Math.atan2(dy, dx);
+
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = aoe.color;
+    ctx.strokeStyle = aoe.color;
+    ctx.lineWidth = 3;
+
+    if (aoe.shape === 'circle') {
+      ctx.beginPath();
+      ctx.arc(origin.x, origin.y, snappedDist, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 0.8;
+      ctx.stroke();
+    } else if (aoe.shape === 'cone') {
+      const halfAngle = (53 / 2) * (Math.PI / 180);
+      ctx.beginPath();
+      ctx.moveTo(origin.x, origin.y);
+      ctx.arc(origin.x, origin.y, snappedDist, angle - halfAngle, angle + halfAngle);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 0.8;
+      ctx.stroke();
+    } else if (aoe.shape === 'square') {
+      const half = snappedDist;
+      ctx.save();
+      ctx.translate(origin.x, origin.y);
+      ctx.rotate(angle);
+      ctx.fillRect(0, -half, half * 2, half * 2);
+      ctx.globalAlpha = 0.8;
+      ctx.strokeRect(0, -half, half * 2, half * 2);
+      ctx.restore();
+    } else if (aoe.shape === 'line') {
+      const halfWidth = gs / 2;
+      ctx.save();
+      ctx.translate(origin.x, origin.y);
+      ctx.rotate(angle);
+      ctx.fillRect(0, -halfWidth, snappedDist, halfWidth * 2);
+      ctx.globalAlpha = 0.8;
+      ctx.strokeRect(0, -halfWidth, snappedDist, halfWidth * 2);
+      ctx.restore();
+    }
+
+    // Size label
+    ctx.globalAlpha = 1.0;
+    const gridUnits = snappedDist / gs;
+    const realSize = gridUnits * (config.scale?.value || 5);
+    const unit = config.scale?.unit || 'feet';
+    let labelText = '';
+    if (aoe.shape === 'circle') labelText = `${realSize.toFixed(0)} ${unit} radius`;
+    else if (aoe.shape === 'cone') labelText = `${realSize.toFixed(0)} ${unit} cone`;
+    else if (aoe.shape === 'square') labelText = `${(realSize * 2).toFixed(0)} ${unit} cube`;
+    else if (aoe.shape === 'line') labelText = `${realSize.toFixed(0)} ${unit} line`;
+
+    let labelX: number, labelY: number;
+    if (aoe.shape === 'circle') {
+      labelX = origin.x;
+      labelY = origin.y;
+    } else {
+      labelX = origin.x + Math.cos(angle) * snappedDist / 2;
+      labelY = origin.y + Math.sin(angle) * snappedDist / 2;
+    }
+
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    ctx.strokeText(labelText, labelX, labelY - 12);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(labelText, labelX, labelY - 12);
+
     ctx.restore();
   }
 
