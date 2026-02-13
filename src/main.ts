@@ -3186,6 +3186,7 @@ _Add notes about tactics, environment, or special conditions here._
 const SESSION_PREP_VIEW_TYPE = "session-prep-dashboard";
 const SESSION_RUN_VIEW_TYPE = "session-run-dashboard";
 const DM_SCREEN_VIEW_TYPE = "dm-screen";
+const PLAYER_MAP_VIEW_TYPE = "dnd-player-map-view";
 
 export default class DndCampaignHubPlugin extends Plugin {
   settings!: DndCampaignHubSettings;
@@ -3194,6 +3195,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   encounterBuilder!: EncounterBuilder;
   mapManager!: MapManager;
   markerLibrary!: MarkerLibrary;
+  _playerMapView: PlayerMapView | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -3214,6 +3216,16 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.registerView(
       DM_SCREEN_VIEW_TYPE,
       (leaf) => new DMScreenView(leaf, this)
+    );
+
+    // Register the Player Map View (for popout player view)
+    this.registerView(
+      PLAYER_MAP_VIEW_TYPE,
+      (leaf) => {
+        const view = new PlayerMapView(leaf, this);
+        this._playerMapView = view;
+        return view;
+      }
     );
 
     // Initialize the migration manager
@@ -4980,6 +4992,62 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Set initial layer menu position
 		setTimeout(updateLayerMenuPosition, 0);
 
+		// Add Player View button (top right)
+		const playerViewBtn = viewport.createEl('button', {
+			cls: 'dnd-map-player-view-btn',
+			attr: { title: 'Open Player View' }
+		});
+		playerViewBtn.innerHTML = '👁️ Player View';
+		
+		playerViewBtn.addEventListener('click', async () => {
+			// Close existing player view if open
+			const existingLeaves = this.app.workspace.getLeavesOfType(PLAYER_MAP_VIEW_TYPE);
+			existingLeaves.forEach(leaf => leaf.detach());
+			
+			// Open a popout window with the player map view
+			const popoutLeaf = this.app.workspace.openPopoutLeaf({
+				size: { width: 1920, height: 1080 }
+			});
+			
+			await popoutLeaf.setViewState({
+				type: PLAYER_MAP_VIEW_TYPE,
+				active: true,
+				state: {
+					mapConfig: {
+						markers: config.markers,
+						drawings: config.drawings,
+						highlights: config.highlights,
+						gridType: config.gridType,
+						gridSize: config.gridSize,
+						gridOffsetX: config.gridOffsetX || 0,
+						gridOffsetY: config.gridOffsetY || 0,
+						scale: config.scale,
+						name: config.name
+					},
+					imageResourcePath: resourcePath
+				}
+			});
+			
+			// Store sync function that pushes updates to the player view
+			(viewport as any)._syncPlayerView = () => {
+				if (this._playerMapView) {
+					this._playerMapView.updateMapData({
+						markers: config.markers,
+						drawings: config.drawings,
+						highlights: config.highlights,
+						gridType: config.gridType,
+						gridSize: config.gridSize,
+						gridOffsetX: config.gridOffsetX || 0,
+						gridOffsetY: config.gridOffsetY || 0,
+						scale: config.scale,
+						name: config.name
+					});
+				}
+			};
+			
+			new Notice('Player view opened');
+		});
+
 		// State for zoom and pan
 		let scale = 1;
 		let translateX = 0;
@@ -5068,6 +5136,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 					config.drawings.forEach((drawing: any) => {
 						drawDrawing(ctx, drawing);
 					});
+				}
+				
+				// Sync to player view if open
+				if ((viewport as any)._syncPlayerView) {
+					(viewport as any)._syncPlayerView();
 				}
 				
 				// Draw marker drag ruler
@@ -6184,6 +6257,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 			await this.app.vault.adapter.write(annotationPath, annotationJson);
 			
 			console.log('Map data saved to:', annotationPath);
+			
+			// Sync to player view if open
+			const viewport = el.querySelector('.dnd-map-viewport') as any;
+			if (viewport && viewport._syncPlayerView) {
+				viewport._syncPlayerView();
+			}
 		} catch (error) {
 			console.error('Error saving map annotations:', error);
 		}
@@ -20914,6 +20993,355 @@ class DMScreenView extends ItemView {
     const container = this.containerEl.children[1];
     if (container) {
       container.empty();
+    }
+  }
+}
+
+/**
+ * PlayerMapView - Renders a read-only player view of the battle map
+ * in a popout window using Obsidian's native openPopoutLeaf() API.
+ * Shows only Player layer annotations with real-time sync from the GM view.
+ */
+class PlayerMapView extends ItemView {
+  plugin: DndCampaignHubPlugin;
+  private mapConfig: any = null;
+  private imageResourcePath: string = '';
+  private canvas: HTMLCanvasElement | null = null;
+  private mapImage: HTMLImageElement | null = null;
+  private markerImageCache: Map<string, HTMLImageElement> = new Map();
+
+  constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
+    super(leaf);
+    this.plugin = plugin;
+  }
+
+  getViewType(): string {
+    return PLAYER_MAP_VIEW_TYPE;
+  }
+
+  getDisplayText(): string {
+    return "Player View";
+  }
+
+  getIcon(): string {
+    return "eye";
+  }
+
+  async setState(state: any, result: any) {
+    if (state.mapConfig) {
+      this.mapConfig = state.mapConfig;
+    }
+    if (state.imageResourcePath) {
+      this.imageResourcePath = state.imageResourcePath;
+    }
+    await super.setState(state, result);
+    if (this.mapConfig) {
+      this.renderPlayerView();
+    }
+  }
+
+  getState() {
+    return {
+      mapConfig: this.mapConfig,
+      imageResourcePath: this.imageResourcePath
+    };
+  }
+
+  /**
+   * Called by the GM view to push real-time updates
+   */
+  updateMapData(config: any) {
+    this.mapConfig = config;
+    this.redrawAnnotations();
+  }
+
+  async onOpen() {
+    const container = this.containerEl.children[1] as HTMLElement;
+    container.empty();
+    container.addClass('dnd-player-map-container');
+
+    if (this.mapConfig) {
+      this.renderPlayerView();
+    }
+  }
+
+  private renderPlayerView() {
+    const container = this.containerEl.children[1] as HTMLElement;
+    container.empty();
+    container.addClass('dnd-player-map-container');
+
+    // Fullscreen button
+    const fullscreenBtn = container.createEl('button', {
+      cls: 'dnd-player-fullscreen-btn',
+      text: '🖵 Fullscreen'
+    });
+    fullscreenBtn.addEventListener('click', () => {
+      // Get the popout window's document element
+      const win = this.containerEl.win || window;
+      const doc = win.document;
+      if (!doc.fullscreenElement) {
+        doc.documentElement.requestFullscreen();
+      } else {
+        doc.exitFullscreen();
+      }
+    });
+
+    // Map container
+    const mapContainer = container.createDiv({ cls: 'dnd-player-map-wrapper' });
+
+    // Image
+    const img = mapContainer.createEl('img', {
+      cls: 'dnd-player-map-image',
+      attr: {
+        src: this.imageResourcePath,
+        alt: this.mapConfig?.name || 'Battle Map'
+      }
+    });
+    this.mapImage = img;
+
+    // Annotation canvas
+    const canvas = mapContainer.createEl('canvas', {
+      cls: 'dnd-player-map-canvas'
+    });
+    this.canvas = canvas;
+
+    // Size canvas when image loads
+    img.addEventListener('load', () => {
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.style.width = img.width + 'px';
+      canvas.style.height = img.height + 'px';
+      this.redrawAnnotations();
+    });
+
+    // Handle window resize
+    const resizeObserver = new ResizeObserver(() => {
+      if (img.complete && img.naturalWidth > 0) {
+        canvas.style.width = img.width + 'px';
+        canvas.style.height = img.height + 'px';
+        this.redrawAnnotations();
+      }
+    });
+    resizeObserver.observe(mapContainer);
+    this.register(() => resizeObserver.disconnect());
+
+    // If image already loaded
+    if (img.complete && img.naturalWidth > 0) {
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.style.width = img.width + 'px';
+      canvas.style.height = img.height + 'px';
+      this.redrawAnnotations();
+    }
+  }
+
+  private loadMarkerImage(path: string): HTMLImageElement | null {
+    if (this.markerImageCache.has(path)) {
+      const cached = this.markerImageCache.get(path)!;
+      return cached.complete && cached.naturalWidth > 0 ? cached : null;
+    }
+    const img = new Image();
+    this.markerImageCache.set(path, img);
+    try {
+      img.src = this.plugin.app.vault.adapter.getResourcePath(path);
+      img.onload = () => this.redrawAnnotations();
+    } catch {
+      // invalid path
+    }
+    return null;
+  }
+
+  private redrawAnnotations() {
+    if (!this.canvas || !this.mapConfig) return;
+    const ctx = this.canvas.getContext('2d');
+    if (!ctx) return;
+
+    const config = this.mapConfig;
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+    // Filter to Player layer only
+    const playerMarkers = (config.markers || []).filter((m: any) => (m.layer || 'Player') === 'Player');
+    const playerDrawings = (config.drawings || []).filter((d: any) => (d.layer || 'Player') === 'Player');
+    const playerHighlights = (config.highlights || []).filter((h: any) => (h.layer || 'Player') === 'Player');
+
+    // Draw highlights
+    playerHighlights.forEach((h: any) => this.drawHighlight(ctx, h));
+
+    // Draw drawings
+    playerDrawings.forEach((d: any) => this.drawDrawing(ctx, d));
+
+    // Draw markers
+    playerMarkers.forEach((m: any) => this.drawMarker(ctx, m));
+  }
+
+  private drawHighlight(ctx: CanvasRenderingContext2D, highlight: any) {
+    const config = this.mapConfig;
+    ctx.fillStyle = highlight.color + '60';
+    ctx.strokeStyle = highlight.color;
+    ctx.lineWidth = 2;
+    const ox = config.gridOffsetX || 0;
+    const oy = config.gridOffsetY || 0;
+
+    if (config.gridType === 'hex-horizontal') {
+      const horiz = config.gridSize;
+      const size = (2 / 3) * horiz;
+      const vert = Math.sqrt(3) * size;
+      const colOffsetY = (highlight.col & 1) ? vert / 2 : 0;
+      const centerX = highlight.col * horiz + ox;
+      const centerY = highlight.row * vert + colOffsetY + oy;
+      this.drawFilledHexFlat(ctx, centerX, centerY, size);
+    } else if (config.gridType === 'hex-vertical') {
+      const vert = config.gridSize;
+      const size = (2 / 3) * vert;
+      const horiz = Math.sqrt(3) * size;
+      const rowOffsetX = (highlight.row & 1) ? horiz / 2 : 0;
+      const centerX = highlight.col * horiz + rowOffsetX + ox;
+      const centerY = highlight.row * vert + oy;
+      this.drawFilledHexPointy(ctx, centerX, centerY, size);
+    } else if (config.gridType === 'square') {
+      ctx.fillRect(
+        highlight.col * config.gridSize + ox,
+        highlight.row * config.gridSize + oy,
+        config.gridSize,
+        config.gridSize
+      );
+      ctx.strokeRect(
+        highlight.col * config.gridSize + ox,
+        highlight.row * config.gridSize + oy,
+        config.gridSize,
+        config.gridSize
+      );
+    }
+  }
+
+  private drawFilledHexFlat(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 3) * i;
+      const x = cx + size * Math.cos(angle);
+      const y = cy + size * Math.sin(angle);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  private drawFilledHexPointy(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 3) * i - Math.PI / 6;
+      const x = cx + size * Math.cos(angle);
+      const y = cy + size * Math.sin(angle);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  private drawDrawing(ctx: CanvasRenderingContext2D, drawing: any) {
+    if (!drawing.points || drawing.points.length === 0) return;
+    ctx.strokeStyle = drawing.color;
+    ctx.lineWidth = drawing.strokeWidth || 2;
+    ctx.beginPath();
+    ctx.moveTo(drawing.points[0].x, drawing.points[0].y);
+    for (let i = 1; i < drawing.points.length; i++) {
+      ctx.lineTo(drawing.points[i].x, drawing.points[i].y);
+    }
+    ctx.stroke();
+  }
+
+  private drawMarker(ctx: CanvasRenderingContext2D, marker: any) {
+    const pos = marker.position;
+    let markerDef = marker.markerId ? this.plugin.markerLibrary.getMarker(marker.markerId) : null;
+    const config = this.mapConfig;
+
+    if (!markerDef) {
+      // Fallback rendering for legacy or missing markers
+      const radius = 15;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#ff0000';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      return;
+    }
+
+    const radius = this.getMarkerRadius(markerDef);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+    ctx.closePath();
+
+    // Try to draw image first
+    let imageDrawn = false;
+    if (markerDef.imageFile) {
+      const cachedImg = this.loadMarkerImage(markerDef.imageFile);
+      if (cachedImg) {
+        ctx.clip();
+        ctx.drawImage(cachedImg, pos.x - radius, pos.y - radius, radius * 2, radius * 2);
+        imageDrawn = true;
+      }
+    }
+
+    // Fill background color only if no image was drawn
+    if (!imageDrawn) {
+      ctx.fillStyle = markerDef.backgroundColor;
+      ctx.fill();
+    }
+
+    // Draw border
+    if (markerDef.borderColor) {
+      ctx.restore();
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = markerDef.borderColor;
+      ctx.lineWidth = Math.max(2, radius * 0.1);
+      ctx.stroke();
+    }
+
+    // Draw icon
+    if (markerDef.icon) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '' + Math.max(10, radius * 1.2) + 'px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(markerDef.icon, pos.x, pos.y);
+    }
+
+    ctx.restore();
+  }
+
+  private getMarkerRadius(markerDef: any): number {
+    const config = this.mapConfig;
+    if (['player', 'npc', 'creature'].includes(markerDef.type) && markerDef.creatureSize && config.gridSize) {
+      const CREATURE_SIZE_SQUARES: Record<string, number> = {
+        'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+      };
+      const squares = CREATURE_SIZE_SQUARES[markerDef.creatureSize] || 1;
+      return (squares * config.gridSize) / 2;
+    }
+    return (markerDef.pixelSize || 30) / 2;
+  }
+
+  async onClose() {
+    // Clean up the plugin reference to this view
+    if (this.plugin._playerMapView === this) {
+      this.plugin._playerMapView = null;
+    }
+    this.canvas = null;
+    this.mapImage = null;
+    this.markerImageCache.clear();
+    const container = this.containerEl.children[1];
+    if (container) {
+      (container as HTMLElement).empty();
     }
   }
 }
