@@ -21836,6 +21836,7 @@ class PlayerMapView extends ItemView {
   private tabletopPanX: number = 0;
   private tabletopPanY: number = 0;
   private tabletopScale: number = 1;
+  private tabletopRotation: number = 0; // degrees, clockwise
   private mapContainer: HTMLDivElement | null = null;
   private syncCanvasToImage: (() => void) | null = null;
 
@@ -22005,6 +22006,12 @@ class PlayerMapView extends ItemView {
     };
     updateMiniLabel();
 
+    // Rotate controls for tabletop mode
+    const rotateLeftBtn = toolbar.createEl('button', { cls: 'dnd-player-toolbar-btn', text: '⤺' });
+    const rotateResetBtn = toolbar.createEl('button', { cls: 'dnd-player-toolbar-btn', text: '0°' });
+    const rotateRightBtn = toolbar.createEl('button', { cls: 'dnd-player-toolbar-btn', text: '⤻' });
+
+
     // Map container
     const mapContainer = container.createDiv({ cls: 'dnd-player-map-wrapper' });
     this.mapContainer = mapContainer;
@@ -22060,6 +22067,10 @@ class PlayerMapView extends ItemView {
             sled.style.position = 'absolute';
             sled.style.left = this.tabletopPanX + 'px';
             sled.style.top = this.tabletopPanY + 'px';
+
+            // Apply rotation (center origin) so image+canvas rotate together
+            sled.style.transformOrigin = 'center center';
+            sled.style.transform = `rotate(${this.tabletopRotation}deg)`;
 
             mapContainer.style.overflow = 'hidden';
 
@@ -22143,6 +22154,25 @@ class PlayerMapView extends ItemView {
     };
     mapContainer.addEventListener('mouseup', stopPan);
     mapContainer.addEventListener('mouseleave', stopPan);
+
+    // Rotation handlers (rotate 15° steps)
+    const applyTabletopRotation = () => {
+      sled.style.transformOrigin = 'center center';
+      sled.style.transform = `rotate(${this.tabletopRotation}deg)`;
+    };
+
+    rotateLeftBtn.addEventListener('click', () => {
+      this.tabletopRotation = (this.tabletopRotation - 15 + 360) % 360;
+      applyTabletopRotation();
+    });
+    rotateRightBtn.addEventListener('click', () => {
+      this.tabletopRotation = (this.tabletopRotation + 15) % 360;
+      applyTabletopRotation();
+    });
+    rotateResetBtn.addEventListener('click', () => {
+      this.tabletopRotation = 0;
+      applyTabletopRotation();
+    });
 
     // --- Tabletop button handlers ---
     const applyTabletopMode = () => {
