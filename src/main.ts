@@ -5031,6 +5031,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Store sync function that pushes updates to the player view
 			(viewport as any)._syncPlayerView = () => {
 				if (this._playerMapView) {
+					// Build drag ruler data if a marker is being dragged
+					let dragRuler: { origin: { x: number; y: number }; current: { x: number; y: number } } | null = null;
+					if (markerDragOrigin && draggingMarkerIndex >= 0 && config.markers[draggingMarkerIndex]) {
+						dragRuler = {
+							origin: { x: markerDragOrigin.x, y: markerDragOrigin.y },
+							current: { x: config.markers[draggingMarkerIndex].position.x, y: config.markers[draggingMarkerIndex].position.y }
+						};
+					}
 					this._playerMapView.updateMapData({
 						markers: config.markers,
 						drawings: config.drawings,
@@ -5040,7 +5048,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 						gridOffsetX: config.gridOffsetX || 0,
 						gridOffsetY: config.gridOffsetY || 0,
 						scale: config.scale,
-						name: config.name
+						name: config.name,
+						dragRuler: dragRuler
 					});
 				}
 			};
@@ -21248,6 +21257,11 @@ class PlayerMapView extends ItemView {
     const config = this.mapConfig;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
+    // Draw grid overlay if active
+    if (config.gridType && config.gridType !== 'none' && config.gridSize > 0) {
+      this.drawGrid(ctx, config);
+    }
+
     // Filter to Player layer only
     const playerMarkers = (config.markers || []).filter((m: any) => (m.layer || 'Player') === 'Player');
     const playerDrawings = (config.drawings || []).filter((d: any) => (d.layer || 'Player') === 'Player');
@@ -21261,6 +21275,146 @@ class PlayerMapView extends ItemView {
 
     // Draw markers
     playerMarkers.forEach((m: any) => this.drawMarker(ctx, m));
+
+    // Draw drag ruler (distance indicator) if a marker is being moved
+    if (config.dragRuler) {
+      this.drawDragRuler(ctx, config);
+    }
+  }
+
+  private drawGrid(ctx: CanvasRenderingContext2D, config: any) {
+    const w = this.canvas!.width;
+    const h = this.canvas!.height;
+    const offsetX = config.gridOffsetX || 0;
+    const offsetY = config.gridOffsetY || 0;
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.lineWidth = 2;
+
+    if (config.gridType === 'square') {
+      const size = config.gridSize;
+      const normalizedOffsetX = ((offsetX % size) + size) % size;
+      const normalizedOffsetY = ((offsetY % size) + size) % size;
+
+      for (let x = normalizedOffsetX; x <= w; x += size) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      for (let y = normalizedOffsetY; y <= h; y += size) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+    } else if (config.gridType === 'hex-horizontal') {
+      const horiz = config.gridSize;
+      const size = (2 / 3) * horiz;
+      const vert = Math.sqrt(3) * size;
+
+      const startCol = Math.floor(-offsetX / horiz) - 2;
+      const endCol = Math.ceil((w - offsetX) / horiz) + 2;
+      const startRow = Math.floor(-offsetY / vert) - 2;
+      const endRow = Math.ceil((h - offsetY) / vert) + 2;
+
+      for (let row = startRow; row < endRow; row++) {
+        for (let col = startCol; col < endCol; col++) {
+          const colOffsetY = (col & 1) ? vert / 2 : 0;
+          const centerX = col * horiz + offsetX;
+          const centerY = row * vert + colOffsetY + offsetY;
+          this.drawHexFlatOutline(ctx, centerX, centerY, size);
+        }
+      }
+    } else if (config.gridType === 'hex-vertical') {
+      const vert = config.gridSize;
+      const size = (2 / 3) * vert;
+      const horiz = Math.sqrt(3) * size;
+
+      const startCol = Math.floor(-offsetX / horiz) - 2;
+      const endCol = Math.ceil((w - offsetX) / horiz) + 2;
+      const startRow = Math.floor(-offsetY / vert) - 2;
+      const endRow = Math.ceil((h - offsetY) / vert) + 2;
+
+      for (let row = startRow; row < endRow; row++) {
+        for (let col = startCol; col < endCol; col++) {
+          const rowOffsetX = (row & 1) ? horiz / 2 : 0;
+          const centerX = col * horiz + rowOffsetX + offsetX;
+          const centerY = row * vert + offsetY;
+          this.drawHexPointyOutline(ctx, centerX, centerY, size);
+        }
+      }
+    }
+
+    ctx.restore();
+  }
+
+  private drawHexFlatOutline(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 3) * i;
+      const x = cx + size * Math.cos(angle);
+      const y = cy + size * Math.sin(angle);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  private drawHexPointyOutline(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 6) + (Math.PI / 3) * i;
+      const x = cx + size * Math.cos(angle);
+      const y = cy + size * Math.sin(angle);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  private drawDragRuler(ctx: CanvasRenderingContext2D, config: any) {
+    const origin = config.dragRuler.origin;
+    const current = config.dragRuler.current;
+
+    // Yellow dashed line
+    ctx.save();
+    ctx.strokeStyle = '#ffff00';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([8, 4]);
+    ctx.beginPath();
+    ctx.moveTo(origin.x, origin.y);
+    ctx.lineTo(current.x, current.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Distance text
+    const distance = Math.sqrt(
+      Math.pow(current.x - origin.x, 2) +
+      Math.pow(current.y - origin.y, 2)
+    );
+    const gridDistance = distance / config.gridSize;
+    const realDistance = gridDistance * config.scale.value;
+    const textX = (origin.x + current.x) / 2;
+    const textY = (origin.y + current.y) / 2 - 10;
+    const text = `${realDistance.toFixed(1)} ${config.scale.unit}`;
+
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Black outline for contrast
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 4;
+    ctx.strokeText(text, textX, textY);
+
+    // Yellow fill
+    ctx.fillStyle = '#ffff00';
+    ctx.fillText(text, textX, textY);
+    ctx.restore();
   }
 
   private drawHighlight(ctx: CanvasRenderingContext2D, highlight: any) {
