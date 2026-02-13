@@ -7255,19 +7255,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 				});
 			}
 
-			// Clear annotations button
+			// Clear drawings button
 			const clearBtn = controls.createEl('button', {
-				text: '🗑️ Clear Annotations',
+				text: '🗑️ Clear Drawings',
 				cls: 'dnd-map-toggle-btn'
 			});
 			clearBtn.addEventListener('click', () => {
-				config.highlights = [];
-				config.markers = [];
-				config.drawings = [];
-				redrawAnnotations();
-				this.saveMapAnnotations(config, el);
-				updateGridToolsVisibility();
-				new Notice('Annotations cleared');
+				new ClearDrawingsConfirmModal(this.app, () => {
+					config.drawings = [];
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
+					updateGridToolsVisibility();
+					new Notice('Drawings cleared');
+				}).open();
 			});
 
 			// Edit button
@@ -8483,6 +8483,52 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
             new Notice("Dependency status refreshed!");
           })
       );
+  }
+}
+
+/**
+ * Confirmation modal for clearing drawings from the map
+ */
+class ClearDrawingsConfirmModal extends Modal {
+  private onConfirm: () => void;
+
+  constructor(app: App, onConfirm: () => void) {
+    super(app);
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "Clear Drawings?" });
+
+    contentEl.createEl("p", {
+      text: "This will remove all drawings created with the Draw tool. Markers and other annotations will not be affected."
+    });
+
+    const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
+
+    const cancelButton = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelButton.addEventListener("click", () => {
+      this.close();
+    });
+
+    const confirmButton = buttonContainer.createEl("button", {
+      text: "Clear Drawings",
+      cls: "mod-warning"
+    });
+    confirmButton.addEventListener("click", () => {
+      this.onConfirm();
+      this.close();
+    });
+
+    confirmButton.focus();
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
   }
 }
 
