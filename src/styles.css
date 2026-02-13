@@ -3219,6 +3219,27 @@
   margin: 4px 0;
 }
 
+/* Context menu AoE compact row */
+.dnd-map-context-aoe-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+.dnd-map-context-aoe-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-right: 2px;
+  white-space: nowrap;
+}
+
+.dnd-map-context-aoe-row .dnd-map-aoe-shape-btn {
+  width: 28px;
+  height: 28px;
+}
+
 .dnd-map-context-menu-item .layer-icon {
   font-size: 16px;
   line-height: 1;

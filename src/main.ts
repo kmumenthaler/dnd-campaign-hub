@@ -4748,6 +4748,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let selectedAoeShape: 'circle' | 'cone' | 'square' | 'line' = 'circle';
 			let aoeOrigin: { x: number; y: number } | null = null;
 			let aoePreviewEnd: { x: number; y: number } | null = null;
+			let pendingAoeAnchorMarkerId: string | null = null; // Set when AoE is cast from token context menu
 			// Ensure aoeEffects array exists on config
 			if (!config.aoeEffects) config.aoeEffects = [];
 			let isCalibrating = false;
@@ -5182,7 +5183,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 				// Draw AoE preview (before sync so it doesn't show in player view until placed)
 				if (activeTool === 'aoe' && aoeOrigin && aoePreviewEnd) {
-					drawAoeShape(ctx, aoeOrigin, aoePreviewEnd, selectedAoeShape, selectedColor, true);
+					drawAoeShape(ctx, aoeOrigin, aoePreviewEnd, selectedAoeShape, selectedColor, true, !!pendingAoeAnchorMarkerId);
 				}
 				
 				// Sync to player view if open
@@ -5526,7 +5527,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			};
 
 			// Draw an AoE shape (used for both preview and saved effects)
-			const drawAoeShape = (ctx: CanvasRenderingContext2D, origin: { x: number; y: number }, end: { x: number; y: number }, shape: string, color: string, isPreview: boolean) => {
+			const drawAoeShape = (ctx: CanvasRenderingContext2D, origin: { x: number; y: number }, end: { x: number; y: number }, shape: string, color: string, isPreview: boolean, centered: boolean = false) => {
 				const gs = config.gridSize || 70;
 				const dx = end.x - origin.x;
 				const dy = end.y - origin.y;
@@ -5565,14 +5566,21 @@ export default class DndCampaignHubPlugin extends Plugin {
 					ctx.globalAlpha = isPreview ? 0.7 : 0.8;
 					ctx.stroke();
 				} else if (shape === 'square') {
-					// Square centered on the endpoint, side length = snappedDist
 					const half = snappedDist;
 					ctx.save();
 					ctx.translate(origin.x, origin.y);
 					ctx.rotate(angle);
-					ctx.fillRect(0, -half, half * 2, half * 2);
-					ctx.globalAlpha = isPreview ? 0.7 : 0.8;
-					ctx.strokeRect(0, -half, half * 2, half * 2);
+					if (centered) {
+						// Token-centered: square centered on origin
+						ctx.fillRect(-half, -half, half * 2, half * 2);
+						ctx.globalAlpha = isPreview ? 0.7 : 0.8;
+						ctx.strokeRect(-half, -half, half * 2, half * 2);
+					} else {
+						// Intersection-origin: square extends from origin outward
+						ctx.fillRect(0, -half, half * 2, half * 2);
+						ctx.globalAlpha = isPreview ? 0.7 : 0.8;
+						ctx.strokeRect(0, -half, half * 2, half * 2);
+					}
 					ctx.restore();
 				} else if (shape === 'line') {
 					// Line: 5ft (1 grid cell) wide, snappedDist long
@@ -5633,7 +5641,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					ctx.save();
 					ctx.globalAlpha = 0.3;
 				}
-				drawAoeShape(ctx, aoe.origin, aoe.end, aoe.shape, aoe.color, false);
+				drawAoeShape(ctx, aoe.origin, aoe.end, aoe.shape, aoe.color, false, !!aoe.anchorMarkerId);
 				if (!isActiveLayer) {
 					ctx.restore();
 				}
@@ -5987,7 +5995,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					} else {
 						// Second click: place the AoE effect
 						const end = { x: mapPos.x, y: mapPos.y };
-						const aoeEffect = {
+						const aoeEffect: any = {
 							id: `aoe_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
 							shape: selectedAoeShape,
 							origin: { x: aoeOrigin.x, y: aoeOrigin.y },
@@ -5995,6 +6003,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 							color: selectedColor,
 							layer: config.activeLayer || 'Player'
 						};
+						// If this AoE was cast from a token, anchor it so it moves with the token
+						if (pendingAoeAnchorMarkerId) {
+							aoeEffect.anchorMarkerId = pendingAoeAnchorMarkerId;
+							pendingAoeAnchorMarkerId = null;
+						}
 						config.aoeEffects.push(aoeEffect);
 						aoeOrigin = null;
 						aoePreviewEnd = null;
@@ -6114,10 +6127,26 @@ export default class DndCampaignHubPlugin extends Plugin {
 					redrawAnnotations();
 				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
 					// Dragging a marker
-					config.markers[draggingMarkerIndex].position = {
+					const draggedMarker = config.markers[draggingMarkerIndex];
+					const prevX = draggedMarker.position.x;
+					const prevY = draggedMarker.position.y;
+					draggedMarker.position = {
 						x: mapPos.x + dragOffsetX,
 						y: mapPos.y + dragOffsetY
 					};
+					// Move anchored AoE effects with the marker
+					const dxAoe = draggedMarker.position.x - prevX;
+					const dyAoe = draggedMarker.position.y - prevY;
+					if (dxAoe !== 0 || dyAoe !== 0) {
+						config.aoeEffects.forEach((aoe: any) => {
+							if (aoe.anchorMarkerId === draggedMarker.id) {
+								aoe.origin.x += dxAoe;
+								aoe.origin.y += dyAoe;
+								aoe.end.x += dxAoe;
+								aoe.end.y += dyAoe;
+							}
+						});
+					}
 					redrawAnnotations();
 				} else if (activeTool === 'draw' && isDrawing) {
 					currentPath.push({ x: mapPos.x, y: mapPos.y });
@@ -6167,8 +6196,21 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const halfToken = (squares * gs) / 2;
 						const col = Math.round((m.position.x - ox - halfToken) / gs);
 						const row = Math.round((m.position.y - oy - halfToken) / gs);
+							// Snap delta for anchored AoE effects
+						const snapDx = (ox + col * gs + halfToken) - m.position.x;
+						const snapDy = (oy + row * gs + halfToken) - m.position.y;
 						m.position.x = ox + col * gs + halfToken;
 						m.position.y = oy + row * gs + halfToken;
+						if (snapDx !== 0 || snapDy !== 0) {
+							config.aoeEffects.forEach((aoe: any) => {
+								if (aoe.anchorMarkerId === m.id) {
+									aoe.origin.x += snapDx;
+									aoe.origin.y += snapDy;
+									aoe.end.x += snapDx;
+									aoe.end.y += snapDy;
+								}
+							});
+						}
 					}
 					draggingMarkerIndex = -1;
 					markerDragOrigin = null;
@@ -6226,9 +6268,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 
-			// Right-click for marker context menu when select tool is active
+			// Right-click for marker context menu
 			viewport.addEventListener('contextmenu', (e: MouseEvent) => {
-				if (activeTool !== 'select') return;
 				const mapPos = screenToMap(e.clientX, e.clientY);
 				for (let i = config.markers.length - 1; i >= 0; i--) {
 					const m = config.markers[i];
@@ -6269,6 +6310,58 @@ export default class DndCampaignHubPlugin extends Plugin {
 						
 						// Separator
 						contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+						
+						// AoE compact picker for player/creature/npc tokens
+						if (mDef && ['player', 'npc', 'creature'].includes(mDef.type)) {
+							const aoeRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+							const aoeLabel = aoeRow.createEl('span', { cls: 'dnd-map-context-aoe-label', text: 'AoE:' });
+							// Find existing anchored AoE for this token
+							const existingAoeIdx = config.aoeEffects.findIndex((a: any) => a.anchorMarkerId === m.id);
+							const existingAoeShape = existingAoeIdx >= 0 ? config.aoeEffects[existingAoeIdx].shape : null;
+							const aoeOptions: { shape: 'circle' | 'cone' | 'square' | 'line'; icon: string; label: string }[] = [
+								{ shape: 'circle', icon: '⭕', label: 'Circle' },
+								{ shape: 'cone', icon: '🔺', label: 'Cone' },
+								{ shape: 'square', icon: '⬜', label: 'Square' },
+								{ shape: 'line', icon: '➖', label: 'Line' },
+							];
+							aoeOptions.forEach(({ shape, icon, label }) => {
+								const btn = aoeRow.createEl('button', {
+									cls: 'dnd-map-aoe-shape-btn' + (shape === existingAoeShape ? ' active' : ''),
+									attr: { title: label }
+								});
+								btn.createEl('span', { text: icon });
+								btn.addEventListener('click', () => {
+									// Remove any existing anchored AoE for this token
+									const oldIdx = config.aoeEffects.findIndex((a: any) => a.anchorMarkerId === m.id);
+									if (oldIdx >= 0) {
+										const oldShape = config.aoeEffects[oldIdx].shape;
+										config.aoeEffects.splice(oldIdx, 1);
+										// If same shape clicked, just remove (toggle off)
+										if (oldShape === shape) {
+											redrawAnnotations();
+											this.saveMapAnnotations(config, el);
+											updateGridToolsVisibility();
+											document.body.removeChild(contextMenu);
+											new Notice('AoE effect removed');
+											return;
+										}
+									}
+									// Start new AoE placement
+									selectedAoeShape = shape;
+									aoeShapeButtons.forEach((b) => b.removeClass('active'));
+									const shapeBtn = aoeShapeButtons.get(shape);
+									if (shapeBtn) shapeBtn.addClass('active');
+									aoeOrigin = { x: m.position.x, y: m.position.y };
+									aoePreviewEnd = aoeOrigin;
+									pendingAoeAnchorMarkerId = m.id;
+									setActiveTool('aoe');
+									document.body.removeChild(contextMenu);
+									new Notice(`Place ${label}: move mouse to set size, click to confirm`);
+								});
+							});
+							
+							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+						}
 						
 						// Delete option
 						const deleteOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item delete' });
@@ -21709,12 +21802,19 @@ class PlayerMapView extends ItemView {
       ctx.stroke();
     } else if (aoe.shape === 'square') {
       const half = snappedDist;
+      const centered = !!aoe.anchorMarkerId;
       ctx.save();
       ctx.translate(origin.x, origin.y);
       ctx.rotate(angle);
-      ctx.fillRect(0, -half, half * 2, half * 2);
-      ctx.globalAlpha = 0.8;
-      ctx.strokeRect(0, -half, half * 2, half * 2);
+      if (centered) {
+        ctx.fillRect(-half, -half, half * 2, half * 2);
+        ctx.globalAlpha = 0.8;
+        ctx.strokeRect(-half, -half, half * 2, half * 2);
+      } else {
+        ctx.fillRect(0, -half, half * 2, half * 2);
+        ctx.globalAlpha = 0.8;
+        ctx.strokeRect(0, -half, half * 2, half * 2);
+      }
       ctx.restore();
     } else if (aoe.shape === 'line') {
       const halfWidth = gs / 2;
