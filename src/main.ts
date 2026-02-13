@@ -5500,6 +5500,35 @@ export default class DndCampaignHubPlugin extends Plugin {
 					});
 				}
 				
+				// Draw light glow around markers that have lights attached
+				if (config.markers) {
+					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+					config.markers.forEach((marker: any) => {
+						if (marker.light && marker.light.bright !== undefined) {
+							const brightRadiusPx = marker.light.bright * pixelsPerFoot;
+							const dimRadiusPx = marker.light.dim * pixelsPerFoot;
+							
+							// Draw light glow behind marker
+							if (brightRadiusPx > 0) {
+								ctx.globalAlpha = 0.2;
+								ctx.fillStyle = '#ffff88';
+								ctx.beginPath();
+								ctx.arc(marker.position.x, marker.position.y, brightRadiusPx, 0, Math.PI * 2);
+								ctx.fill();
+								ctx.globalAlpha = 1.0;
+							}
+							if (dimRadiusPx > 0) {
+								ctx.globalAlpha = 0.1;
+								ctx.fillStyle = '#aaaa44';
+								ctx.beginPath();
+								ctx.arc(marker.position.x, marker.position.y, brightRadiusPx + dimRadiusPx, 0, Math.PI * 2);
+								ctx.fill();
+								ctx.globalAlpha = 1.0;
+							}
+						}
+					});
+				}
+				
 				// Draw markers
 				if (config.markers) {
 					config.markers.forEach((marker: any) => {
@@ -7604,6 +7633,64 @@ export default class DndCampaignHubPlugin extends Plugin {
 									setActiveTool('aoe');
 									document.body.removeChild(contextMenu);
 									new Notice(`Place ${label}: move mouse to set size, click to confirm`);
+								});
+							});
+							
+							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+						}
+						
+						// Light source picker for player/creature/npc tokens
+						if (mDef && ['player', 'npc', 'creature'].includes(mDef.type)) {
+							const lightRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+							lightRow.createEl('span', { cls: 'dnd-map-context-aoe-label', text: 'Light:' });
+							
+							// Check if marker has an attached light
+							const currentLight = m.light?.type || null;
+							
+							// Common light options for quick access
+							const lightOptions: { type: LightSourceType; icon: string; label: string }[] = [
+								{ type: 'candle', icon: '🕯️', label: 'Candle (5ft)' },
+								{ type: 'torch', icon: '🔥', label: 'Torch (20ft)' },
+								{ type: 'lantern', icon: '🏮', label: 'Lantern (30ft)' },
+								{ type: 'light', icon: '✨', label: 'Light Spell (20ft)' },
+								{ type: 'daylight', icon: '☀️', label: 'Daylight (60ft)' },
+							];
+							
+							// Add "Off" button
+							const offBtn = lightRow.createEl('button', {
+								cls: 'dnd-map-aoe-shape-btn' + (currentLight === null ? ' active' : ''),
+								attr: { title: 'No Light' }
+							});
+							offBtn.createEl('span', { text: '❌' });
+							offBtn.addEventListener('click', () => {
+								delete m.light;
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								document.body.removeChild(contextMenu);
+								new Notice('Light removed from token');
+							});
+							
+							lightOptions.forEach(({ type, icon, label }) => {
+								const btn = lightRow.createEl('button', {
+									cls: 'dnd-map-aoe-shape-btn' + (type === currentLight ? ' active' : ''),
+									attr: { title: label }
+								});
+								btn.createEl('span', { text: icon });
+								btn.addEventListener('click', () => {
+									// Attach light to marker
+									const lightDef = LIGHT_SOURCES[type];
+									m.light = {
+										type: type,
+										bright: lightDef.bright,
+										dim: lightDef.dim,
+										name: lightDef.name
+									};
+									redrawAnnotations();
+									this.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									document.body.removeChild(contextMenu);
+									new Notice(`${lightDef.name} attached to token`);
 								});
 							});
 							
@@ -24081,13 +24168,37 @@ class PlayerMapView extends ItemView {
     });
 
     // Light sources reveal fog in player view
+    // Combine standalone lights and marker-attached lights
+    const allLights: any[] = [];
+    
+    // Add standalone light sources
     if (config.lightSources && config.lightSources.length > 0) {
+      allLights.push(...config.lightSources);
+    }
+    
+    // Add lights attached to markers (follows marker position)
+    if (config.markers && config.markers.length > 0) {
+      config.markers.forEach((marker: any) => {
+        if (marker.light && marker.light.bright !== undefined) {
+          allLights.push({
+            x: marker.position.x,
+            y: marker.position.y,
+            bright: marker.light.bright,
+            dim: marker.light.dim,
+            name: marker.light.name || 'Token Light',
+            attachedToMarker: marker.id
+          });
+        }
+      });
+    }
+    
+    if (allLights.length > 0) {
       // Calculate pixels per foot based on grid settings
       const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
       const walls = config.walls || [];
-      console.log('[PV] Drawing lights:', { count: config.lightSources.length, pixelsPerFoot, gridSize: config.gridSize, scaleValue: config.scale?.value, wallCount: walls.length });
+      console.log('[PV] Drawing lights:', { count: allLights.length, pixelsPerFoot, gridSize: config.gridSize, scaleValue: config.scale?.value, wallCount: walls.length });
       
-      config.lightSources.forEach((light: any, i: number) => {
+      allLights.forEach((light: any, i: number) => {
         // Convert feet to pixels
         const brightRadiusPx = light.bright * pixelsPerFoot;
         const dimRadiusPx = light.dim * pixelsPerFoot;
