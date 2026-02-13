@@ -4731,7 +4731,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-		let activeTool: 'pan' | 'select' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' = 'pan';
+		let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' = 'pan';
 		let selectedColor = '#ff0000';
 		let selectedMarkerId: string | null = null; // Currently selected marker from library
 		let draggingMarkerIndex = -1; // Index of marker being dragged (-1 = none)
@@ -4766,8 +4766,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 		});
 
-		// Add floating toolbar inside viewport
-		const toolbar = viewport.createDiv({ cls: 'dnd-map-toolbar' });
+		// Add floating toolbar wrapper (holds toolbar + layer menu)
+		const toolbarWrapper = viewport.createDiv({ cls: 'dnd-map-toolbar-wrapper' });
+
+		// Add floating toolbar inside wrapper
+		const toolbar = toolbarWrapper.createDiv({ cls: 'dnd-map-toolbar' });
 		
 		// Toolbar header with just collapse toggle icon
 		const toolbarHeader = toolbar.createDiv({ cls: 'dnd-map-toolbar-header' });
@@ -4793,9 +4796,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 		};
 		
 		const panBtn = createToolBtn('⬆', 'Pan', true);
-		const selectIcon = config.gridType === 'square' ? '⬜' : '⬡';
-		const selectBtn = createToolBtn(selectIcon, 'Select');
-	const markerBtn = createToolBtn('📍', 'Marker');
+		const selectBtn = createToolBtn('👆', 'Select');
+		const highlightIcon = config.gridType === 'square' ? '⬜' : '⬡';
+		const highlightBtn = createToolBtn(highlightIcon, 'Highlight');
+		const markerBtn = createToolBtn('📍', 'Marker');
 		const drawBtn = createToolBtn('✏', 'Draw');
 		const rulerBtn = createToolBtn('📏', 'Ruler');
 		const eraserBtn = createToolBtn('🧹', 'Eraser');
@@ -4942,18 +4946,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Toolbar collapse/expand functionality
 		toolbarHeader.addEventListener('click', () => {
 			toolbar.toggleClass('collapsed', !toolbar.hasClass('collapsed'));
-			updateLayerMenuPosition();
 		});
 
-		// Add layer menu below toolbar
-		const layerMenu = viewport.createDiv({ cls: 'dnd-map-layer-menu' });
-		
-		// Function to update layer menu position based on toolbar height
-		const updateLayerMenuPosition = () => {
-			const toolbarHeight = toolbar.offsetHeight;
-			layerMenu.style.top = `${toolbarHeight + 20}px`;
-		};
-		
+		// Add layer menu below toolbar - append to wrapper as sibling
+		const layerMenu = toolbarWrapper.createDiv({ cls: 'dnd-map-layer-menu' });
+
 		// Layer icons
 		const layerIcons: Record<Layer, string> = {
 			'Player': '👥',
@@ -4988,9 +4985,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 		});
-		
-		// Set initial layer menu position
-		setTimeout(updateLayerMenuPosition, 0);
 
 		// Add Player View button (top right)
 		const playerViewBtn = viewport.createEl('button', {
@@ -5458,7 +5452,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-				[panBtn, selectBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
+				[panBtn, selectBtn, highlightBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
 				
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
@@ -5469,7 +5463,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 				
 				// Show/hide color picker based on tool (with animation)
-				const showColorPicker = tool === 'select' || tool === 'draw';
+				const showColorPicker = tool === 'highlight' || tool === 'draw';
 				colorPicker.toggleClass('hidden', !showColorPicker);
 				colorSeparator.toggleClass('hidden', !showColorPicker);
 				
@@ -5478,6 +5472,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'grab';
 				} else if (tool === 'select') {
 					selectBtn.addClass('active');
+					viewport.style.cursor = 'default';
+				} else if (tool === 'highlight') {
+					highlightBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
 			} else if (tool === 'marker') {
 				markerBtn.addClass('active');
@@ -5507,6 +5504,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 			selectBtn.addEventListener('click', () => {
 				console.log('Select button clicked');
 				setActiveTool('select');
+			});
+			highlightBtn.addEventListener('click', () => {
+				console.log('Highlight button clicked');
+				setActiveTool('highlight');
 			});
 			markerBtn.addEventListener('click', async () => {
 				console.log('Marker button clicked');
@@ -5674,7 +5675,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'grabbing';
 				} else if (activeTool === 'select') {
 					// Check if clicking on a marker for drag
-					let hitMarker = false;
 					for (let i = config.markers.length - 1; i >= 0; i--) {
 						const m = config.markers[i];
 						const mDef = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
@@ -5686,31 +5686,29 @@ export default class DndCampaignHubPlugin extends Plugin {
 							dragOffsetY = m.position.y - mapPos.y;
 							markerDragOrigin = { x: m.position.x, y: m.position.y };
 							viewport.style.cursor = 'grabbing';
-							hitMarker = true;
 							break;
 						}
 					}
-					if (!hitMarker) {
-						// No marker hit: toggle grid highlight
-						const hex = pixelToHex(mapPos.x, mapPos.y);
-						const existingIndex = config.highlights.findIndex(
-							(h: any) => h.col === hex.col && h.row === hex.row
-						);
-						if (existingIndex >= 0) {
-							config.highlights.splice(existingIndex, 1);
-						} else {
-							config.highlights.push({
-								id: `highlight_${Date.now()}`,
-								col: hex.col,
-								row: hex.row,
-								color: selectedColor,
-								layer: config.activeLayer || 'Player'
-							});
-						}
-						redrawAnnotations();
-						this.saveMapAnnotations(config, el);
-						updateGridToolsVisibility();
+				} else if (activeTool === 'highlight') {
+					// Toggle grid highlight on clicked tile
+					const hex = pixelToHex(mapPos.x, mapPos.y);
+					const existingIndex = config.highlights.findIndex(
+						(h: any) => h.col === hex.col && h.row === hex.row
+					);
+					if (existingIndex >= 0) {
+						config.highlights.splice(existingIndex, 1);
+					} else {
+						config.highlights.push({
+							id: `highlight_${Date.now()}`,
+							col: hex.col,
+							row: hex.row,
+							color: selectedColor,
+							layer: config.activeLayer || 'Player'
+						});
 					}
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
+					updateGridToolsVisibility();
 				} else if (activeTool === 'draw') {
 					console.log('Draw tool: starting path');
 					isDrawing = true;
