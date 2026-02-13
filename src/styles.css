@@ -3150,10 +3150,16 @@
   justify-content: center;
 }
 
+.dnd-player-map-sled {
+  position: relative;
+  display: inline-block;
+}
+
 .dnd-player-map-image {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+  display: block;
 }
 
 .dnd-player-map-canvas {
@@ -3177,11 +3183,125 @@
   z-index: 1000;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   transition: all 0.2s ease;
+  display: none; /* replaced by .dnd-player-toolbar */
 }
 
 .dnd-player-fullscreen-btn:hover {
   background: linear-gradient(135deg, rgba(124, 58, 237, 0.6), rgba(99, 102, 241, 0.6));
   border-color: rgba(124, 58, 237, 0.8);
+}
+
+/* Player View Toolbar */
+.dnd-player-toolbar {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.dnd-player-toolbar:hover {
+  opacity: 1;
+}
+
+.dnd-player-map-container:hover .dnd-player-toolbar {
+  opacity: 0.7;
+}
+
+.dnd-player-toolbar:hover {
+  opacity: 1 !important;
+}
+
+.dnd-player-toolbar-btn {
+  background: linear-gradient(135deg, rgba(30, 27, 75, 0.95), rgba(25, 20, 55, 0.95));
+  backdrop-filter: blur(12px);
+  color: white;
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.dnd-player-toolbar-btn:hover {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.6), rgba(99, 102, 241, 0.6));
+  border-color: rgba(124, 58, 237, 0.8);
+}
+
+.dnd-player-toolbar-btn.active {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.4), rgba(22, 163, 74, 0.4));
+  border-color: rgba(34, 197, 94, 0.8);
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.3);
+}
+
+.dnd-player-toolbar-label {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+/* Calibration Modal - Ruler */
+.dnd-calibration-ruler-container {
+  background: var(--background-secondary);
+  padding: 16px;
+  border-radius: 8px;
+  margin: 12px 0;
+  overflow: hidden;
+}
+
+.dnd-calibration-ruler-bar {
+  height: 24px;
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+  border-radius: 4px;
+  transition: width 0.15s ease;
+  position: relative;
+  min-width: 20px;
+}
+
+.dnd-calibration-ruler-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 9px,
+    rgba(0, 0, 0, 0.3) 9px,
+    rgba(0, 0, 0, 0.3) 10px
+  );
+  border-radius: 4px;
+}
+
+.dnd-calibration-ruler-label {
+  text-align: center;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.dnd-tabletop-calibration-modal {
+  max-width: 500px;
+}
+
+.dnd-tabletop-calibration-modal h3 {
+  margin-top: 20px;
+  margin-bottom: 8px;
 }
 
 

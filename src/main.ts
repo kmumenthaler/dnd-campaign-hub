@@ -24,14 +24,22 @@ import { MapCreationModal } from "./map/MapCreationModal";
 import { MarkerLibrary } from "./marker/MarkerLibrary";
 import { MarkerReference, MarkerDefinition, CREATURE_SIZE_SQUARES, CreatureSize, Layer } from "./marker/MarkerTypes";
 
+interface TabletopCalibration {
+  monitorDiagonalInch: number;  // e.g. 27
+  pixelsPerMm: number;          // computed from monitor size + screen resolution
+  miniBaseMm: number;           // target grid cell physical size, default 25mm
+}
+
 interface DndCampaignHubSettings {
   currentCampaign: string;
   pluginVersion: string;
+  tabletopCalibration: TabletopCalibration | null;
 }
 
 const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   currentCampaign: "ttrpgs/Frozen Sick (SOLINA)",
   pluginVersion: "0.0.0",
+  tabletopCalibration: null,
 };
 
 // Current template versions - increment when templates change
@@ -21656,6 +21664,162 @@ class DMScreenView extends ItemView {
 }
 
 /**
+ * TabletopCalibrationModal - Allows the user to calibrate their monitor's
+ * physical dimensions for tabletop miniature mode.
+ */
+class TabletopCalibrationModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  private onDone: (calibration: TabletopCalibration) => void;
+  private win: Window;
+
+  constructor(app: App, plugin: DndCampaignHubPlugin, popoutWin: Window, onDone: (cal: TabletopCalibration) => void) {
+    super(app);
+    this.plugin = plugin;
+    this.onDone = onDone;
+    this.win = popoutWin;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('dnd-tabletop-calibration-modal');
+
+    contentEl.createEl('h2', { text: '🎯 Tabletop Calibration' });
+    contentEl.createEl('p', {
+      text: 'Configure your monitor so the grid matches physical miniature bases.',
+      cls: 'setting-item-description'
+    });
+
+    // Get screen info for the popout window
+    const screen = this.win.screen;
+    const screenW = screen.width * (this.win.devicePixelRatio || 1);
+    const screenH = screen.height * (this.win.devicePixelRatio || 1);
+
+    const existing = this.plugin.settings.tabletopCalibration;
+
+    // --- Step 1: Monitor Size ---
+    contentEl.createEl('h3', { text: '📐 Monitor Size' });
+    const monitorInfo = contentEl.createDiv({ cls: 'dnd-calibration-info' });
+    monitorInfo.setText(`Screen resolution: ${screenW} × ${screenH} px`);
+
+    const diagonalSetting = contentEl.createDiv({ cls: 'dnd-map-calibration-input' });
+    diagonalSetting.createEl('label', { text: 'Monitor diagonal (inches):' });
+    const diagonalInput = diagonalSetting.createEl('input', {
+      type: 'number',
+      attr: { min: '10', max: '100', step: '0.1', placeholder: '27' }
+    }) as HTMLInputElement;
+    diagonalInput.value = existing?.monitorDiagonalInch?.toString() || '';
+
+    // Computed PPI display
+    const ppiDisplay = contentEl.createDiv({ cls: 'dnd-calibration-info' });
+    ppiDisplay.style.marginTop = '8px';
+
+    const computePPMM = () => {
+      const diag = parseFloat(diagonalInput.value);
+      if (!diag || diag <= 0) {
+        ppiDisplay.setText('Enter monitor diagonal to compute pixel density.');
+        return 0;
+      }
+      const diagPx = Math.sqrt(screenW * screenW + screenH * screenH);
+      const ppi = diagPx / diag;
+      const ppmm = ppi / 25.4;
+      ppiDisplay.setText(`Computed: ${ppi.toFixed(1)} PPI → ${ppmm.toFixed(2)} px/mm`);
+      return ppmm;
+    };
+    diagonalInput.addEventListener('input', computePPMM);
+    computePPMM();
+
+    // --- Step 2: Mini Base Size ---
+    contentEl.createEl('h3', { text: '🧍 Miniature Base Size' });
+    contentEl.createEl('p', {
+      text: 'The physical size each grid cell should be. Standard D&D bases: 25mm (1"), large: 50mm (2").',
+      cls: 'setting-item-description'
+    });
+
+    const baseSetting = contentEl.createDiv({ cls: 'dnd-map-calibration-input' });
+    baseSetting.createEl('label', { text: 'Grid cell size (mm):' });
+    const baseInput = baseSetting.createEl('input', {
+      type: 'number',
+      attr: { min: '10', max: '100', step: '1', placeholder: '25' }
+    }) as HTMLInputElement;
+    baseInput.value = (existing?.miniBaseMm || 25).toString();
+
+    // --- Step 3: Fine-tune with on-screen ruler ---
+    contentEl.createEl('h3', { text: '📏 Fine-Tune (Optional)' });
+    contentEl.createEl('p', {
+      text: 'Adjust the slider until the bar below matches a known physical measurement (e.g., a credit card is 85.6mm wide).',
+      cls: 'setting-item-description'
+    });
+
+    const rulerContainer = contentEl.createDiv({ cls: 'dnd-calibration-ruler-container' });
+
+    // The ruler bar
+    const rulerBar = rulerContainer.createDiv({ cls: 'dnd-calibration-ruler-bar' });
+    const rulerLabel = rulerContainer.createDiv({ cls: 'dnd-calibration-ruler-label' });
+    rulerLabel.setText('85.6 mm');
+    const targetMm = 85.6; // credit card width
+
+    // Fine-tune slider (adjustment factor: 0.8 to 1.2)
+    const sliderRow = contentEl.createDiv({ cls: 'dnd-map-calibration-input' });
+    sliderRow.createEl('label', { text: 'Fine-tune adjustment:' });
+    const slider = sliderRow.createEl('input', {
+      type: 'range',
+      attr: { min: '0.80', max: '1.20', step: '0.005', value: '1.00' }
+    }) as HTMLInputElement;
+    const sliderValue = sliderRow.createEl('span');
+    sliderValue.setText('1.00×');
+
+    const updateRuler = () => {
+      const ppmm = computePPMM();
+      const adj = parseFloat(slider.value);
+      sliderValue.setText(`${adj.toFixed(3)}×`);
+      if (ppmm > 0) {
+        const rulerPx = targetMm * ppmm * adj;
+        rulerBar.style.width = rulerPx + 'px';
+      }
+    };
+    slider.addEventListener('input', updateRuler);
+    diagonalInput.addEventListener('input', updateRuler);
+    updateRuler();
+
+    // --- Buttons ---
+    const btnRow = contentEl.createDiv({ cls: 'modal-button-container' });
+
+    const cancelBtn = btnRow.createEl('button', { text: 'Cancel' });
+    cancelBtn.addEventListener('click', () => this.close());
+
+    const saveBtn = btnRow.createEl('button', { text: 'Save & Apply', cls: 'mod-cta' });
+    saveBtn.addEventListener('click', async () => {
+      const diag = parseFloat(diagonalInput.value);
+      if (!diag || diag <= 0) {
+        new Notice('Please enter your monitor diagonal size.');
+        return;
+      }
+      const baseMm = parseFloat(baseInput.value) || 25;
+      const adj = parseFloat(slider.value) || 1.0;
+      const diagPx = Math.sqrt(screenW * screenW + screenH * screenH);
+      const ppi = diagPx / diag;
+      const ppmm = (ppi / 25.4) * adj;
+
+      const calibration: TabletopCalibration = {
+        monitorDiagonalInch: diag,
+        pixelsPerMm: ppmm,
+        miniBaseMm: baseMm
+      };
+      this.plugin.settings.tabletopCalibration = calibration;
+      await this.plugin.saveSettings();
+      this.onDone(calibration);
+      this.close();
+      new Notice(`Tabletop calibrated: ${ppmm.toFixed(2)} px/mm, grid = ${baseMm}mm`);
+    });
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/**
  * PlayerMapView - Renders a read-only player view of the battle map
  * in a popout window using Obsidian's native openPopoutLeaf() API.
  * Shows only Player layer annotations with real-time sync from the GM view.
@@ -21667,6 +21831,13 @@ class PlayerMapView extends ItemView {
   private canvas: HTMLCanvasElement | null = null;
   private mapImage: HTMLImageElement | null = null;
   private markerImageCache: Map<string, HTMLImageElement> = new Map();
+  // Tabletop mode state
+  private tabletopMode: boolean = false;
+  private tabletopPanX: number = 0;
+  private tabletopPanY: number = 0;
+  private tabletopScale: number = 1;
+  private mapContainer: HTMLDivElement | null = null;
+  private syncCanvasToImage: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -21789,14 +21960,16 @@ class PlayerMapView extends ItemView {
     container.empty();
     container.addClass('dnd-player-map-container');
 
+    // Button toolbar (top-right corner)
+    const toolbar = container.createDiv({ cls: 'dnd-player-toolbar' });
+
     // Fullscreen button
-    const fullscreenBtn = container.createEl('button', {
-      cls: 'dnd-player-fullscreen-btn',
+    const fullscreenBtn = toolbar.createEl('button', {
+      cls: 'dnd-player-toolbar-btn',
       text: '🖵 Fullscreen'
     });
     fullscreenBtn.addEventListener('click', () => {
-      // Get the popout window's document element
-      const win = this.containerEl.win || window;
+      const win = (this.containerEl as any).win || window;
       const doc = win.document;
       if (!doc.fullscreenElement) {
         doc.documentElement.requestFullscreen();
@@ -21805,11 +21978,42 @@ class PlayerMapView extends ItemView {
       }
     });
 
+    // Tabletop mode button
+    const tabletopBtn = toolbar.createEl('button', {
+      cls: 'dnd-player-toolbar-btn',
+      text: this.tabletopMode ? '🎲 Tabletop: ON' : '🎲 Tabletop: OFF'
+    });
+
+    // Calibrate button
+    const calibrateBtn = toolbar.createEl('button', {
+      cls: 'dnd-player-toolbar-btn',
+      text: '🎯 Calibrate'
+    });
+
+    // Mini size display
+    const miniSizeLabel = toolbar.createEl('span', {
+      cls: 'dnd-player-toolbar-label'
+    });
+    const updateMiniLabel = () => {
+      const cal = this.plugin.settings.tabletopCalibration;
+      if (cal) {
+        miniSizeLabel.setText(`Grid: ${cal.miniBaseMm}mm`);
+        miniSizeLabel.style.display = '';
+      } else {
+        miniSizeLabel.style.display = 'none';
+      }
+    };
+    updateMiniLabel();
+
     // Map container
     const mapContainer = container.createDiv({ cls: 'dnd-player-map-wrapper' });
+    this.mapContainer = mapContainer;
+
+    // Inner sled wraps image + canvas, pans together in tabletop mode
+    const sled = mapContainer.createDiv({ cls: 'dnd-player-map-sled' });
 
     // Image
-    const img = mapContainer.createEl('img', {
+    const img = sled.createEl('img', {
       cls: 'dnd-player-map-image',
       attr: {
         src: this.imageResourcePath,
@@ -21819,7 +22023,7 @@ class PlayerMapView extends ItemView {
     this.mapImage = img;
 
     // Annotation canvas
-    const canvas = mapContainer.createEl('canvas', {
+    const canvas = sled.createEl('canvas', {
       cls: 'dnd-player-map-canvas'
     });
     this.canvas = canvas;
@@ -21832,17 +22036,154 @@ class PlayerMapView extends ItemView {
           canvas.width = img.naturalWidth;
           canvas.height = img.naturalHeight;
         }
-        // Use getBoundingClientRect for accurate post-layout dimensions
-        const imgRect = img.getBoundingClientRect();
-        const wrapperRect = mapContainer.getBoundingClientRect();
-        // Position canvas exactly over the image
-        canvas.style.left = (imgRect.left - wrapperRect.left) + 'px';
-        canvas.style.top = (imgRect.top - wrapperRect.top) + 'px';
-        canvas.style.width = imgRect.width + 'px';
-        canvas.style.height = imgRect.height + 'px';
+
+        if (this.tabletopMode) {
+          // In tabletop mode: scale so grid cells = physical mm
+          const cal = this.plugin.settings.tabletopCalibration;
+          if (cal && this.mapConfig?.gridSize > 0) {
+            const gridPx = this.mapConfig.gridSize;
+            const targetScreenPx = cal.miniBaseMm * cal.pixelsPerMm;
+            this.tabletopScale = targetScreenPx / gridPx;
+            const scaledW = img.naturalWidth * this.tabletopScale;
+            const scaledH = img.naturalHeight * this.tabletopScale;
+
+            // Set image to physical size
+            img.style.maxWidth = 'none';
+            img.style.maxHeight = 'none';
+            img.style.objectFit = 'fill';
+            img.style.width = scaledW + 'px';
+            img.style.height = scaledH + 'px';
+
+            // Sled wraps tightly around the image
+            sled.style.width = scaledW + 'px';
+            sled.style.height = scaledH + 'px';
+            sled.style.position = 'absolute';
+            sled.style.left = this.tabletopPanX + 'px';
+            sled.style.top = this.tabletopPanY + 'px';
+
+            mapContainer.style.overflow = 'hidden';
+
+            // Canvas exactly overlays image at (0,0) within the sled
+            canvas.style.left = '0px';
+            canvas.style.top = '0px';
+            canvas.style.width = scaledW + 'px';
+            canvas.style.height = scaledH + 'px';
+          }
+        } else {
+          // Normal mode: fit to screen
+          img.style.maxWidth = '100%';
+          img.style.maxHeight = '100%';
+          img.style.objectFit = 'contain';
+          img.style.width = '';
+          img.style.height = '';
+          sled.style.width = '';
+          sled.style.height = '';
+          sled.style.position = '';
+          sled.style.left = '';
+          sled.style.top = '';
+          mapContainer.style.overflow = 'hidden';
+
+          // Use getBoundingClientRect for accurate post-layout dimensions
+          const imgRect = img.getBoundingClientRect();
+          const sledRect = sled.getBoundingClientRect();
+          canvas.style.left = (imgRect.left - sledRect.left) + 'px';
+          canvas.style.top = (imgRect.top - sledRect.top) + 'px';
+          canvas.style.width = imgRect.width + 'px';
+          canvas.style.height = imgRect.height + 'px';
+        }
+
         this.redrawAnnotations();
       }
     };
+    this.syncCanvasToImage = syncCanvasToImage;
+
+    // --- Tabletop mode: pan/drag (moves the sled) ---
+    let isPanning = false;
+    let panStartX = 0;
+    let panStartY = 0;
+
+    mapContainer.addEventListener('mousedown', (e: MouseEvent) => {
+      if (!this.tabletopMode) return;
+      isPanning = true;
+      panStartX = e.clientX - this.tabletopPanX;
+      panStartY = e.clientY - this.tabletopPanY;
+      mapContainer.style.cursor = 'grabbing';
+      e.preventDefault();
+    });
+
+    mapContainer.addEventListener('mousemove', (e: MouseEvent) => {
+      if (!isPanning || !this.tabletopMode) return;
+      this.tabletopPanX = e.clientX - panStartX;
+      this.tabletopPanY = e.clientY - panStartY;
+
+      // Clamp so map doesn't fly off screen entirely
+      const cal = this.plugin.settings.tabletopCalibration;
+      if (cal && this.mapConfig?.gridSize > 0) {
+        const scaledW = img.naturalWidth * this.tabletopScale;
+        const scaledH = img.naturalHeight * this.tabletopScale;
+        const wrapperRect = mapContainer.getBoundingClientRect();
+        const minX = -(scaledW - wrapperRect.width * 0.1);
+        const minY = -(scaledH - wrapperRect.height * 0.1);
+        const maxX = wrapperRect.width * 0.9;
+        const maxY = wrapperRect.height * 0.9;
+        this.tabletopPanX = Math.max(minX, Math.min(maxX, this.tabletopPanX));
+        this.tabletopPanY = Math.max(minY, Math.min(maxY, this.tabletopPanY));
+      }
+
+      // Move the sled (image + canvas move together)
+      sled.style.left = this.tabletopPanX + 'px';
+      sled.style.top = this.tabletopPanY + 'px';
+    });
+
+    const stopPan = () => {
+      if (isPanning) {
+        isPanning = false;
+        mapContainer.style.cursor = this.tabletopMode ? 'grab' : '';
+      }
+    };
+    mapContainer.addEventListener('mouseup', stopPan);
+    mapContainer.addEventListener('mouseleave', stopPan);
+
+    // --- Tabletop button handlers ---
+    const applyTabletopMode = () => {
+      tabletopBtn.setText(this.tabletopMode ? '🎲 Tabletop: ON' : '🎲 Tabletop: OFF');
+      tabletopBtn.toggleClass('active', this.tabletopMode);
+      mapContainer.style.cursor = this.tabletopMode ? 'grab' : '';
+      if (!this.tabletopMode) {
+        this.tabletopPanX = 0;
+        this.tabletopPanY = 0;
+      }
+      // Call sync immediately for tabletop mode (dimensions are explicit),
+      // then defer for normal mode where layout needs to settle
+      syncCanvasToImage();
+      requestAnimationFrame(syncCanvasToImage);
+    };
+
+    tabletopBtn.addEventListener('click', () => {
+      const cal = this.plugin.settings.tabletopCalibration;
+      if (!cal) {
+        // Open calibration first
+        const popoutWin = (this.containerEl as any).win || window;
+        new TabletopCalibrationModal(this.plugin.app, this.plugin, popoutWin, () => {
+          updateMiniLabel();
+          this.tabletopMode = true;
+          applyTabletopMode();
+        }).open();
+        return;
+      }
+      this.tabletopMode = !this.tabletopMode;
+      applyTabletopMode();
+    });
+
+    calibrateBtn.addEventListener('click', () => {
+      const popoutWin = (this.containerEl as any).win || window;
+      new TabletopCalibrationModal(this.plugin.app, this.plugin, popoutWin, () => {
+        updateMiniLabel();
+        if (this.tabletopMode) {
+          syncCanvasToImage();
+        }
+      }).open();
+    });
 
     // Size canvas when image loads
     img.addEventListener('load', () => {
