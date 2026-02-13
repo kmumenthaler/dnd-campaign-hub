@@ -5194,6 +5194,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				type: PLAYER_MAP_VIEW_TYPE,
 				active: true,
 				state: {
+					mapId: config.mapId || resourcePath,
 					mapConfig: {
 						markers: config.markers,
 						drawings: config.drawings,
@@ -5267,8 +5268,21 @@ export default class DndCampaignHubPlugin extends Plugin {
             name: config.name,
             dragRuler: dragRuler
           };
+          const mapId = config.mapId || resourcePath;
+          console.log('[GM] Syncing player views for mapId:', mapId);
+          console.log('[GM] Payload:', payload);
           this._playerMapViews.forEach(view => {
-            try { view.updateMapData(payload); } catch (e) { console.warn('Failed to update player view', e); }
+            const viewMapId = (view as any).mapId;
+            console.log('[Player View] has mapId:', viewMapId, 'comparing with:', mapId, 'match:', viewMapId === mapId);
+            if (viewMapId === mapId) {
+              console.log('[GM] Calling updateMapData on player view');
+              try { 
+                view.updateMapData(payload); 
+                console.log('[GM] updateMapData completed successfully');
+              } catch (e) { 
+                console.error('Failed to update player view', e); 
+              }
+            }
           });
         }
       };
@@ -6609,7 +6623,9 @@ export default class DndCampaignHubPlugin extends Plugin {
             // Broadcast to player views (center-based approach)
             try {
               if ((this as any)._playerMapViews) {
+                const mapId = config.mapId || resourcePath;
                 (this as any)._playerMapViews.forEach((pv: any) => {
+                  if ((pv as any).mapId !== mapId) return; // Only update views for this map
                   try {
                     // Use stored targetScale from rectangle (calibrated scale that should remain constant)
                     try {
@@ -6759,7 +6775,9 @@ export default class DndCampaignHubPlugin extends Plugin {
           // Broadcast to player views (center-based approach)
           try {
             if ((this as any)._playerMapViews) {
+              const mapId = config.mapId || resourcePath;
               (this as any)._playerMapViews.forEach((pv: any) => {
+                if ((pv as any).mapId !== mapId) return; // Only update views for this map
                 try {
                   // Use stored targetScale from rectangle (remains constant during drag)
                   try {
@@ -6894,7 +6912,9 @@ export default class DndCampaignHubPlugin extends Plugin {
             // Broadcast to player views (center-based approach)
             try {
               if ((this as any)._playerMapViews) {
+                const mapId = config.mapId || resourcePath;
                 (this as any)._playerMapViews.forEach((pv: any) => {
+                  if ((pv as any).mapId !== mapId) return; // Only update views for this map
                   try {
                     // Send rectangle center to player view (center-based approach)
                     const centerX = rect.x + rect.w / 2;
@@ -6984,9 +7004,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 						// Broadcast rotation and position to player views
 						try {
 							if ((this as any)._playerMapViews) {
+                                const mapId = config.mapId || resourcePath;
                                 const centerX = gmRect.x + gmRect.w / 2;
                                 const centerY = gmRect.y + gmRect.h / 2;
                 (this as any)._playerMapViews.forEach((pv: any) => {
+                  if ((pv as any).mapId !== mapId) return; // Only update views for this map
                   try {
                     // set PV scale to project GM rect into PV viewport
                     try {
@@ -7032,9 +7054,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 						// Broadcast rotation and position to player views
 						try {
 							if ((this as any)._playerMapViews) {
+                                const mapId = config.mapId || resourcePath;
                                 const centerX = gmRect.x + gmRect.w / 2;
                                 const centerY = gmRect.y + gmRect.h / 2;
                 (this as any)._playerMapViews.forEach((pv: any) => {
+                  if ((pv as any).mapId !== mapId) return; // Only update views for this map
                   try {
                     // Use stored targetScale instead of recalculating from rotated bounds
                     // The scale represents image-pixels-per-screen-pixel and should remain constant across rotations
@@ -22312,6 +22336,7 @@ class PlayerMapView extends ItemView {
   plugin: DndCampaignHubPlugin;
   private mapConfig: any = null;
   private imageResourcePath: string = '';
+  private mapId: string = ''; // Unique identifier for the associated GM map
   private canvas: HTMLCanvasElement | null = null;
   private mapImage: HTMLImageElement | null = null;
   private markerImageCache: Map<string, HTMLImageElement> = new Map();
@@ -22350,6 +22375,12 @@ class PlayerMapView extends ItemView {
     if (state.imageResourcePath) {
       this.imageResourcePath = state.imageResourcePath;
     }
+    if (state.mapId) {
+      this.mapId = state.mapId;
+      console.log('[Player View] setState - mapId set to:', this.mapId);
+    } else {
+      console.log('[Player View] setState - no mapId in state, current mapId:', this.mapId);
+    }
     await super.setState(state, result);
     if (this.mapConfig) {
       this.renderPlayerView();
@@ -22359,7 +22390,8 @@ class PlayerMapView extends ItemView {
   getState() {
     return {
       mapConfig: this.mapConfig,
-      imageResourcePath: this.imageResourcePath
+      imageResourcePath: this.imageResourcePath,
+      mapId: this.mapId
     };
   }
 
@@ -22367,8 +22399,11 @@ class PlayerMapView extends ItemView {
    * Called by the GM view to push real-time updates
    */
   updateMapData(config: any) {
+    console.log('[PV] updateMapData called with config:', config);
     this.mapConfig = config;
+    console.log('[PV] mapConfig updated, calling redrawAnnotations');
     this.redrawAnnotations();
+    console.log('[PV] redrawAnnotations completed');
   }
 
   /**
@@ -22621,7 +22656,11 @@ class PlayerMapView extends ItemView {
    */
   private hideObsidianChrome() {
     // Get the window that owns this view (popout window, not main window)
-    const win = (this.containerEl as any).win || this.containerEl.ownerDocument?.defaultView || window;
+    const win = (this.containerEl as any).win || this.containerEl.ownerDocument?.defaultView;
+    if (!win || win === window) {
+      // Don't apply to main window, only to popout windows
+      return;
+    }
     const doc = win.document;
 
     // Only inject if we haven't already
@@ -23024,11 +23063,22 @@ class PlayerMapView extends ItemView {
   }
 
   private redrawAnnotations() {
+    console.log('[PV] redrawAnnotations - canvas:', !!this.canvas, 'mapConfig:', !!this.mapConfig);
     if (!this.canvas || !this.mapConfig) return;
     const ctx = this.canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {
+      console.log('[PV] redrawAnnotations - no context!');
+      return;
+    }
 
     const config = this.mapConfig;
+    console.log('[PV] redrawAnnotations - config:', {
+      gridType: config.gridType,
+      gridSize: config.gridSize,
+      markersCount: config.markers?.length || 0,
+      drawingsCount: config.drawings?.length || 0,
+      highlightsCount: config.highlights?.length || 0
+    });
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     // Draw grid overlay if active
