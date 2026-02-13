@@ -22351,6 +22351,7 @@ class PlayerMapView extends ItemView {
   private tabletopTargetY: number | null = null; // desired image top-left Y (natural px)
   private mapContainer: HTMLDivElement | null = null;
   private syncCanvasToImage: (() => void) | null = null;
+  private isFullscreen: boolean = false; // Track fullscreen state
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -22471,10 +22472,23 @@ class PlayerMapView extends ItemView {
     try {
       const win = (this.containerEl as any).win || this.containerEl.ownerDocument?.defaultView || window;
       const doc = win.document;
-      if (!doc.fullscreenElement) {
-        doc.documentElement.requestFullscreen();
+      
+      if (!this.isFullscreen) {
+        // Enter fullscreen
+        this.isFullscreen = true;
+        this.hideObsidianChrome();
+        doc.documentElement.requestFullscreen().catch((e: any) => {
+          console.warn('Fullscreen request failed', e);
+        });
       } else {
-        doc.exitFullscreen();
+        // Exit fullscreen
+        this.isFullscreen = false;
+        this.showObsidianChrome();
+        if (doc.fullscreenElement) {
+          doc.exitFullscreen().catch((e: any) => {
+            console.warn('Exit fullscreen failed', e);
+          });
+        }
       }
     } catch (e) { console.warn('toggleFullscreen failed', e); }
   }
@@ -22642,8 +22656,7 @@ class PlayerMapView extends ItemView {
     container.empty();
     container.addClass('dnd-player-map-container');
 
-    // Hide the view header and tab bar for a clean player view
-    this.hideObsidianChrome();
+    // Don't hide chrome by default - let fullscreen toggle handle it
 
     if (this.mapConfig) {
       this.renderPlayerView();
@@ -22653,7 +22666,6 @@ class PlayerMapView extends ItemView {
   /**
    * Hide the Obsidian view header and tab bar.
    * Injects CSS into the popout window's document to hide all chrome.
-   * Reveals on hover near the top of the window.
    */
   private hideObsidianChrome() {
     // Get the window that owns this view (popout window, not main window)
@@ -22664,8 +22676,11 @@ class PlayerMapView extends ItemView {
     }
     const doc = win.document;
 
-    // Only inject if we haven't already
-    if (doc.getElementById('dnd-player-view-chrome-hide')) return;
+    // Remove any existing style first
+    const existingStyle = doc.getElementById('dnd-player-view-chrome-hide');
+    if (existingStyle) {
+      existingStyle.remove();
+    }
 
     const style = doc.createElement('style');
     style.id = 'dnd-player-view-chrome-hide';
@@ -22712,6 +22727,21 @@ class PlayerMapView extends ItemView {
     doc.head.appendChild(style);
   }
 
+  /**
+   * Show the Obsidian chrome by removing the hide styles.
+   */
+  private showObsidianChrome() {
+    const win = (this.containerEl as any).win || this.containerEl.ownerDocument?.defaultView;
+    if (!win || win === window) {
+      return;
+    }
+    const doc = win.document;
+    const style = doc.getElementById('dnd-player-view-chrome-hide');
+    if (style) {
+      style.remove();
+    }
+  }
+
   private renderPlayerView() {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
@@ -22726,14 +22756,22 @@ class PlayerMapView extends ItemView {
       text: '🖵 Fullscreen'
     });
     fullscreenBtn.addEventListener('click', () => {
-      const win = (this.containerEl as any).win || window;
-      const doc = win.document;
-      if (!doc.fullscreenElement) {
-        doc.documentElement.requestFullscreen();
-      } else {
-        doc.exitFullscreen();
-      }
+      this.toggleFullscreen();
     });
+
+    // Listen for fullscreen state changes (e.g., user presses ESC)
+    const win = (this.containerEl as any).win || window;
+    const doc = win.document;
+    const handleFullscreenChange = () => {
+      if (!doc.fullscreenElement && this.isFullscreen) {
+        // Exited fullscreen via ESC or other means
+        this.isFullscreen = false;
+        this.showObsidianChrome();
+      }
+    };
+    doc.addEventListener('fullscreenchange', handleFullscreenChange);
+    // Store reference for cleanup if needed
+    (this as any)._fullscreenChangeHandler = handleFullscreenChange;
 
     // Tabletop mode button
     const tabletopBtn = toolbar.createEl('button', {
@@ -23020,7 +23058,6 @@ class PlayerMapView extends ItemView {
 
     // Handle fullscreen transitions (F11 / button)
     // Use multiple deferred frames since browsers need time to settle after fullscreen reflow
-    const win = (this.containerEl as any).win || this.containerEl.ownerDocument?.defaultView || window;
     const onFullscreenChange = () => {
       // Fire at multiple intervals to catch the layout settling
       requestAnimationFrame(syncCanvasToImage);
@@ -23503,6 +23540,16 @@ class PlayerMapView extends ItemView {
     if (this.plugin._playerMapViews) {
       this.plugin._playerMapViews.delete(this as any);
     }
+    
+    // Clean up fullscreen event listener
+    if ((this as any)._fullscreenChangeHandler) {
+      const win = (this.containerEl as any).win || this.containerEl.ownerDocument?.defaultView;
+      if (win) {
+        const doc = win.document;
+        doc.removeEventListener('fullscreenchange', (this as any)._fullscreenChangeHandler);
+      }
+    }
+    
     this.canvas = null;
     this.mapImage = null;
     this.markerImageCache.clear();
