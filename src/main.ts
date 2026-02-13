@@ -4701,6 +4701,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Load fog of war data
 			config.fogOfWar = savedData.fogOfWar || { enabled: true, regions: [] };
 			
+			// Load dynamic lighting walls (Background layer only)
+			config.walls = savedData.walls || [];
+			
+			// Load light sources (Background layer only)
+			config.lightSources = savedData.lightSources || [];
+			
 			// Load active layer (defaults to Player)
 			config.activeLayer = savedData.activeLayer || 'Player';
 			
@@ -4743,7 +4749,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'player-view' = 'pan';
+    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' = 'pan';
 		let selectedColor = '#ff0000';
       // GM player-view rect drag state
       let gmDragStart: { x: number; y: number } | null = null;
@@ -4767,6 +4773,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let pendingAoeAnchorMarkerId: string | null = null; // Set when AoE is cast from token context menu
 			// Ensure aoeEffects array exists on config
 			if (!config.aoeEffects) config.aoeEffects = [];
+			
+			// D&D 5e Light Source Definitions
+			const LIGHT_SOURCES = {
+				candle: { name: 'Candle', bright: 5, dim: 5, icon: '🕯️' },
+				torch: { name: 'Torch', bright: 20, dim: 20, icon: '🔥' },
+				lantern: { name: 'Lantern', bright: 30, dim: 30, icon: '🏮' },
+				bullseye: { name: 'Bullseye Lantern', bright: 60, dim: 60, cone: true, icon: '🔦' },
+				light: { name: 'Light Spell', bright: 20, dim: 20, icon: '✨' },
+				dancing: { name: 'Dancing Lights', bright: 0, dim: 10, icon: '💫' },
+				continual: { name: 'Continual Flame', bright: 20, dim: 20, icon: '🔥' },
+				daylight: { name: 'Daylight Spell', bright: 60, dim: 60, icon: '☀️' }
+			} as const;
+			type LightSourceType = keyof typeof LIGHT_SOURCES;
 			// Fog of War tool state
 			let selectedFogShape: 'circle' | 'rect' | 'polygon' | 'brush' = 'brush';
 			let fogMode: 'reveal' | 'hide' = 'reveal'; // Whether fog tool reveals or hides
@@ -4774,6 +4793,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let fogDragEnd: { x: number; y: number } | null = null;
 			let fogPolygonPoints: { x: number; y: number }[] = [];
 			if (!config.fogOfWar) config.fogOfWar = { enabled: true, regions: [] };
+			// Dynamic Lighting walls state (pivot/chain drawing)
+			let wallPoints: { x: number; y: number }[] = [];
+			let wallPreviewPos: { x: number; y: number } | null = null;
+			if (!config.walls) config.walls = [];
+			// Dynamic Lighting sources state
+			let selectedLightSource: LightSourceType = 'torch';
+			if (!config.lightSources) config.lightSources = [];
 			let isCalibrating = false;
 			let calibrationPoint1: { x: number; y: number } | null = null;
 			let calibrationPoint2: { x: number; y: number } | null = null;
@@ -4838,6 +4864,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const eraserBtn = createToolBtn('🧹', 'Eraser');
       const viewBtn = createToolBtn('📺', 'Player View');
 		const fogBtn = createToolBtn('🌫️', 'Fog');
+		const wallsBtn = createToolBtn('🧱', 'Walls');
+		const lightsBtn = createToolBtn('💡', 'Lights');
 		const moveGridBtn = createToolBtn('✥', 'Move Grid');
 		const calibrateBtn = createToolBtn('⚙', 'Calibrate');
 
@@ -4890,6 +4918,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			config.fogOfWar.enabled = false;
 			redrawAnnotations();
 			this.saveMapAnnotations(config, el);
+			// Sync to player view
+			const viewport = el.querySelector('.dnd-map-viewport') as any;
+			if (viewport && viewport._syncPlayerView) viewport._syncPlayerView();
 			new Notice('Fog cleared — entire map revealed');
 		});
 		const fogHideAllBtn = fogPicker.createEl('button', {
@@ -4902,10 +4933,54 @@ export default class DndCampaignHubPlugin extends Plugin {
 			config.fogOfWar.enabled = true;
 			redrawAnnotations();
 			this.saveMapAnnotations(config, el);
+			// Sync to player view
+			const viewport = el.querySelector('.dnd-map-viewport') as any;
+			if (viewport && viewport._syncPlayerView) viewport._syncPlayerView();
 			new Notice('Entire map hidden by fog');
 		});
-		// Only show fog button when on Background layer
+		// Only show fog, walls, and lights buttons when on Background layer
 		fogBtn.toggleClass('hidden', config.activeLayer !== 'Background');
+		wallsBtn.toggleClass('hidden', config.activeLayer !== 'Background');
+		lightsBtn.toggleClass('hidden', config.activeLayer !== 'Background');
+
+		// Light Sources picker sub-menu (shown when lights tool is active)
+		const lightsPicker = lightsBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
+		const lightTypes: { type: string; source: any }[] = [
+			{ type: 'candle', source: LIGHT_SOURCES.candle },
+			{ type: 'torch', source: LIGHT_SOURCES.torch },
+			{ type: 'lantern', source: LIGHT_SOURCES.lantern },
+			{ type: 'bullseye', source: LIGHT_SOURCES.bullseye },
+			{ type: 'light', source: LIGHT_SOURCES.light },
+			{ type: 'dancing', source: LIGHT_SOURCES.dancing },
+			{ type: 'continual', source: LIGHT_SOURCES.continual },
+			{ type: 'daylight', source: LIGHT_SOURCES.daylight }
+		];
+		const lightTypeButtons: Map<string, HTMLButtonElement> = new Map();
+		lightTypes.forEach(({ type, source }) => {
+			const btn = lightsPicker.createEl('button', {
+				cls: 'dnd-map-aoe-shape-btn' + (type === selectedLightSource ? ' active' : ''),
+				attr: { title: `${source.name} (${source.bright}/${source.dim} ft)` }
+			});
+			btn.createEl('span', { text: source.icon });
+			lightTypeButtons.set(type, btn);
+			btn.addEventListener('click', () => {
+				selectedLightSource = type as LightSourceType;
+				lightTypeButtons.forEach((b) => b.removeClass('active'));
+				btn.addClass('active');
+			});
+		});
+		// Clear All Lights button
+		const clearLightsBtn = lightsPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn dnd-fog-action-btn',
+			attr: { title: 'Clear All Lights' }
+		});
+		clearLightsBtn.createEl('span', { text: '🌑' });
+		clearLightsBtn.addEventListener('click', () => {
+			config.lightSources = [];
+			redrawAnnotations();
+			this.saveMapAnnotations(config, el);
+			new Notice('All light sources removed');
+		});
 
 		// Player View controls picker sub-menu (shown when player-view tool is active)
 		const pvPicker = viewBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
@@ -5164,13 +5239,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 					layers.forEach(l => layerButtons[l].removeClass('active'));
 					btn.addClass('active');
 					layerMenu.removeClass('expanded');
-					// Show/hide fog tool based on layer
+					// Show/hide fog, walls, and lights tools based on layer
 					fogBtn.toggleClass('hidden', layer !== 'Background');
-					if (layer !== 'Background' && activeTool === 'fog') {
+					wallsBtn.toggleClass('hidden', layer !== 'Background');
+					lightsBtn.toggleClass('hidden', layer !== 'Background');
+					if (layer !== 'Background' && (activeTool === 'fog' || activeTool === 'walls' || activeTool === 'lights')) {
 						setActiveTool('pan');
 					}
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
+					// Sync to player view on layer change (needed for fog/light visibility)
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 				}
 			});
 		});
@@ -5201,6 +5280,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 						highlights: config.highlights,
 						aoeEffects: config.aoeEffects,
 						fogOfWar: config.fogOfWar,
+						walls: config.walls,
+						lightSources: config.lightSources,
 						gridType: config.gridType,
 						gridSize: config.gridSize,
 						gridOffsetX: config.gridOffsetX || 0,
@@ -5260,6 +5341,8 @@ export default class DndCampaignHubPlugin extends Plugin {
             highlights: config.highlights,
             aoeEffects: config.aoeEffects,
             fogOfWar: config.fogOfWar,
+            walls: config.walls,
+            lightSources: config.lightSources,
             gridType: config.gridType,
             gridSize: config.gridSize,
             gridOffsetX: config.gridOffsetX || 0,
@@ -5287,6 +5370,14 @@ export default class DndCampaignHubPlugin extends Plugin {
         }
       };
 			
+			// Initial sync after a short delay to ensure player view is ready
+			setTimeout(() => {
+				if ((viewport as any)._syncPlayerView) {
+					console.log('[GM] Initial sync to player view');
+					(viewport as any)._syncPlayerView();
+				}
+			}, 200);
+			
 			new Notice('Player view opened');
 		});
 
@@ -5297,6 +5388,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let isDragging = false;
 		let startX = 0;
 		let startY = 0;
+		// Middle mouse button temporary pan state
+		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | null = null;
+		let isTemporaryPan = false;
 		let gridCanvas: HTMLCanvasElement | null = null;
 		let annotationCanvas: HTMLCanvasElement | null = null;
 
@@ -5319,6 +5413,39 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const y = displayY * scaleY;
 			
 			return { x, y };
+		};
+
+		// Helper function to calculate distance from point to line segment
+		const distanceToLineSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
+			const A = px - x1;
+			const B = py - y1;
+			const C = x2 - x1;
+			const D = y2 - y1;
+			
+			const dot = A * C + B * D;
+			const lenSq = C * C + D * D;
+			let param = -1;
+			
+			if (lenSq !== 0) {
+				param = dot / lenSq;
+			}
+			
+			let xx, yy;
+			
+			if (param < 0) {
+				xx = x1;
+				yy = y1;
+			} else if (param > 1) {
+				xx = x2;
+				yy = y2;
+			} else {
+				xx = x1 + param * C;
+				yy = y1 + param * D;
+			}
+			
+			const dx = px - xx;
+			const dy = py - yy;
+			return Math.sqrt(dx * dx + dy * dy);
 		};
 
 			// Function to get cell coordinates from pixel position (accounts for grid offset)
@@ -5408,6 +5535,104 @@ export default class DndCampaignHubPlugin extends Plugin {
 					if (fogPolygonPoints.length > 0) {
 						drawFogPolygonPreview(ctx);
 					}
+				}
+
+				// Draw Dynamic Lighting Walls (only on Background layer)
+				if (config.activeLayer === 'Background' && config.walls && config.walls.length > 0) {
+					ctx.strokeStyle = '#ff4500'; // Orange-red for visibility
+					ctx.lineWidth = 4;
+					ctx.lineCap = 'round';
+					ctx.setLineDash([]);
+					config.walls.forEach((wall: any) => {
+						ctx.beginPath();
+						ctx.moveTo(wall.start.x, wall.start.y);
+						ctx.lineTo(wall.end.x, wall.end.y);
+						ctx.stroke();
+					});
+				}
+				// Draw wall preview (chain drawing)
+				if (activeTool === 'walls' && wallPoints.length > 0) {
+					ctx.strokeStyle = '#ff4500';
+					ctx.lineWidth = 4;
+					ctx.lineCap = 'round';
+					ctx.setLineDash([5, 5]);
+					// Draw segments between points
+					for (let i = 0; i < wallPoints.length - 1; i++) {
+						ctx.beginPath();
+						ctx.moveTo(wallPoints[i]!.x, wallPoints[i]!.y);
+						ctx.lineTo(wallPoints[i + 1]!.x, wallPoints[i + 1]!.y);
+						ctx.stroke();
+					}
+					// Draw preview line to cursor
+					if (wallPreviewPos) {
+						ctx.beginPath();
+						ctx.moveTo(wallPoints[wallPoints.length - 1]!.x, wallPoints[wallPoints.length - 1]!.y);
+						ctx.lineTo(wallPreviewPos.x, wallPreviewPos.y);
+						ctx.stroke();
+					}
+					ctx.setLineDash([]);
+					// Draw points
+					ctx.fillStyle = '#ff4500';
+					wallPoints.forEach((p: any) => {
+						ctx.beginPath();
+						ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+						ctx.fill();
+					});
+				}
+
+				// Draw Dynamic Lighting (only on Background layer)
+				if (config.activeLayer === 'Background' && config.lightSources && config.lightSources.length > 0) {
+					// Calculate pixels per foot based on grid settings
+					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+					
+					config.lightSources.forEach((light: any) => {
+						// Convert feet to pixels
+						const brightRadiusPx = light.bright * pixelsPerFoot;
+						const dimRadiusPx = light.dim * pixelsPerFoot;
+						
+						// Draw light source icon/marker
+						ctx.fillStyle = '#ffff00';
+						ctx.strokeStyle = '#ff8800';
+						ctx.lineWidth = 2;
+						ctx.beginPath();
+						ctx.arc(light.x, light.y, 8, 0, Math.PI * 2);
+						ctx.fill();
+						ctx.stroke();
+						
+						// Draw light radius (bright light)
+						if (brightRadiusPx > 0) {
+							ctx.globalAlpha = 0.3;
+							ctx.fillStyle = '#ffff88';
+							ctx.beginPath();
+							ctx.arc(light.x, light.y, brightRadiusPx, 0, Math.PI * 2);
+							ctx.fill();
+							ctx.globalAlpha = 1.0;
+						}
+						
+						// Draw dim light radius
+						if (dimRadiusPx > 0) {
+							ctx.globalAlpha = 0.15;
+							ctx.fillStyle = '#aaaa44';
+							ctx.beginPath();
+							ctx.arc(light.x, light.y, brightRadiusPx + dimRadiusPx, 0, Math.PI * 2);
+							ctx.fill();
+							ctx.globalAlpha = 1.0;
+						}
+						
+						// Draw cone for bullseye lantern (showing direction)
+						if (light.cone) {
+							ctx.globalAlpha = 0.2;
+							ctx.fillStyle = '#ffffff';
+							// For now, draw cone facing right (0 degrees)
+							// TODO: Make cone direction adjustable
+							ctx.beginPath();
+							ctx.moveTo(light.x, light.y);
+							ctx.arc(light.x, light.y, brightRadiusPx, -Math.PI/6, Math.PI/6);
+							ctx.closePath();
+							ctx.fill();
+							ctx.globalAlpha = 1.0;
+						}
+					});
 				}
 
         // Draw GM-side player view rectangle if present (rotated to match player orientation)
@@ -5960,6 +6185,39 @@ export default class DndCampaignHubPlugin extends Plugin {
 					fogCtx.fill();
 				});
 				
+				// Light sources reveal fog (only in player view)
+				if (isPlayerView && config.lightSources && config.lightSources.length > 0) {
+					// Calculate pixels per foot based on grid settings
+					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+					
+					fogCtx.globalCompositeOperation = 'destination-out';
+					fogCtx.fillStyle = '#ffffff';
+					
+					config.lightSources.forEach((light: any) => {
+						// Convert feet to pixels
+						const brightRadiusPx = light.bright * pixelsPerFoot;
+						const totalRadiusPx = (light.bright + light.dim) * pixelsPerFoot;
+						
+						// Reveal area with gradient (bright + dim light)
+						if (totalRadiusPx > 0) {
+							const gradient = fogCtx.createRadialGradient(
+								light.x, light.y, 0,
+								light.x, light.y, totalRadiusPx
+							);
+							gradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+							if (brightRadiusPx > 0) {
+								gradient.addColorStop(brightRadiusPx / totalRadiusPx, 'rgba(255, 255, 255, 1.0)');
+							}
+							gradient.addColorStop(1, 'rgba(255, 255, 255, 0.5)');
+							
+							fogCtx.fillStyle = gradient;
+							fogCtx.beginPath();
+							fogCtx.arc(light.x, light.y, totalRadiusPx, 0, Math.PI * 2);
+							fogCtx.fill();
+						}
+					});
+				}
+				
 				// Draw the fog canvas onto the main canvas
 				ctx.save();
 				ctx.globalAlpha = fogAlpha;
@@ -6033,7 +6291,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-        [panBtn, selectBtn, highlightBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, aoeBtn, viewBtn, fogBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
+        [panBtn, selectBtn, highlightBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, aoeBtn, viewBtn, fogBtn, wallsBtn, lightsBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
 				
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
@@ -6056,6 +6314,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 					fogPolygonPoints = [];
 				}
 				
+				// Cancel wall drawing when switching away
+				if (tool !== 'walls') {
+					wallPoints = [];
+					wallPreviewPos = null;
+				}
+				
 				// Show/hide color picker based on tool (with animation)
 				const showColorPicker = tool === 'highlight' || tool === 'draw' || tool === 'aoe';
 				colorPicker.toggleClass('hidden', !showColorPicker);
@@ -6065,6 +6329,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 				aoePicker.toggleClass('hidden', tool !== 'aoe');
 				// Show/hide Fog shape picker
 				fogPicker.toggleClass('hidden', tool !== 'fog');
+				// Show/hide Lights picker
+				lightsPicker.toggleClass('hidden', tool !== 'lights');
 				// Show/hide Player View controls picker
 				pvPicker.toggleClass('hidden', tool !== 'player-view');
 				
@@ -6097,6 +6363,16 @@ export default class DndCampaignHubPlugin extends Plugin {
         } else if (tool === 'fog') {
 					fogBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
+				} else if (tool === 'walls') {
+					wallsBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+					viewport.focus();
+					new Notice('Walls Mode: Click to add points, Double-click to finish, Escape to cancel', 4000);
+				} else if (tool === 'lights') {
+					lightsBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+					viewport.focus();
+					new Notice('Lights Mode: Click to place light source, use picker to select type', 4000);
 				}
 				
 				// Clear ruler when switching tools
@@ -6149,6 +6425,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 			fogBtn.addEventListener('click', () => {
 				console.log('Fog button clicked');
 				setActiveTool('fog');
+			});
+			wallsBtn.addEventListener('click', () => {
+				console.log('Walls button clicked');
+				setActiveTool('walls');
+			});
+			lightsBtn.addEventListener('click', () => {
+				console.log('Lights button clicked');
+				setActiveTool('lights');
 			});
 		viewBtn.addEventListener('click', () => {
 			console.log('Player View button clicked');
@@ -6236,6 +6520,20 @@ export default class DndCampaignHubPlugin extends Plugin {
 			viewport.addEventListener('mousedown', (e: MouseEvent) => {
 				// Ignore clicks on the toolbar
 				if (toolbar.contains(e.target as Node)) {
+					return;
+				}
+				
+				// Middle mouse button - temporary pan mode
+				if (e.button === 1) {
+					e.preventDefault();
+					if (activeTool !== 'pan') {
+						previousToolBeforePan = activeTool;
+						isTemporaryPan = true;
+					}
+					isDragging = true;
+					startX = e.clientX - translateX;
+					startY = e.clientY - translateY;
+					viewport.style.cursor = 'grabbing';
 					return;
 				}
 				
@@ -6489,6 +6787,44 @@ export default class DndCampaignHubPlugin extends Plugin {
 						}
 					}
 					
+					// Try to erase a wall near the click point
+					if (!removed && config.walls && config.walls.length > 0) {
+						const eraserRadius = 20; // pixels
+						for (let i = config.walls.length - 1; i >= 0; i--) {
+							const wall = config.walls[i];
+							// Check distance from click to wall line segment
+							const dist = distanceToLineSegment(
+								mapPos.x, mapPos.y,
+								wall.start.x, wall.start.y,
+								wall.end.x, wall.end.y
+							);
+							if (dist < eraserRadius) {
+								config.walls.splice(i, 1);
+								console.log('Removed wall');
+								removed = true;
+								break;
+							}
+						}
+					}
+					
+					// Try to erase a light source near the click point
+					if (!removed && config.lightSources && config.lightSources.length > 0) {
+						const eraserRadius = 20; // pixels
+						for (let i = config.lightSources.length - 1; i >= 0; i--) {
+							const light = config.lightSources[i];
+							const dist = Math.sqrt(
+								Math.pow(light.x - mapPos.x, 2) +
+								Math.pow(light.y - mapPos.y, 2)
+							);
+							if (dist < eraserRadius) {
+								config.lightSources.splice(i, 1);
+								console.log('Removed light source');
+								removed = true;
+								break;
+							}
+						}
+					}
+					
 					// Try to erase a marker near the click point
 					if (!removed && config.markers.length > 0) {
 						for (let i = config.markers.length - 1; i >= 0; i--) {
@@ -6523,6 +6859,32 @@ export default class DndCampaignHubPlugin extends Plugin {
 						// Start drag
 						fogDragStart = { x: mapPos.x, y: mapPos.y };
 						fogDragEnd = { x: mapPos.x, y: mapPos.y };
+					}
+				} else if (activeTool === 'walls') {
+					// Add point to wall chain
+					wallPoints.push({ x: mapPos.x, y: mapPos.y });
+					wallPreviewPos = { x: mapPos.x, y: mapPos.y };
+					redrawAnnotations();
+				} else if (activeTool === 'lights') {
+					// Place light source at clicked position
+					if (selectedLightSource) {
+						const light = {
+							x: mapPos.x,
+							y: mapPos.y,
+							type: selectedLightSource,
+							...LIGHT_SOURCES[selectedLightSource as LightSourceType]
+						};
+						config.lightSources.push(light);
+						redrawAnnotations();
+						
+						// Sync to player views
+						if ((viewport as any)._syncPlayerView) {
+							(viewport as any)._syncPlayerView();
+						}
+						
+						new Notice(`${light.name} placed`);
+					} else {
+						new Notice('Please select a light source type first');
 					}
 				}
         else if (activeTool === 'player-view') {
@@ -6659,6 +7021,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 			viewport.addEventListener('mousemove', (e: MouseEvent) => {
 				const mapPos = screenToMap(e.clientX, e.clientY);
 				
+				// Handle temporary pan from middle mouse button
+				if (isTemporaryPan && isDragging) {
+					translateX = e.clientX - startX;
+					translateY = e.clientY - startY;
+					updateTransform();
+					return;
+				}
+				
 				if (activeTool === 'pan' && isDragging) {
 					translateX = e.clientX - startX;
 					translateY = e.clientY - startY;
@@ -6734,6 +7104,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 					// Update fog drag preview
 					fogDragEnd = { x: mapPos.x, y: mapPos.y };
 					redrawAnnotations();
+				} else if (activeTool === 'walls' && wallPoints.length > 0) {
+					// Update wall preview position
+					wallPreviewPos = { x: mapPos.x, y: mapPos.y };
+					redrawAnnotations();
         } else if (activeTool === 'player-view' && isDraggingGmRect && gmDragStart) {
           // Update GM view rect as mouse moves
           gmDragCurrent = { x: mapPos.x, y: mapPos.y };
@@ -6800,27 +7174,55 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 
-			// Double-click to finish polygon fog region
-			viewport.addEventListener('dblclick', (e: MouseEvent) => {
-				if (activeTool === 'fog' && selectedFogShape === 'polygon' && fogPolygonPoints.length >= 3) {
-					const region = {
-						id: `fog_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-						shape: 'polygon' as const,
-						type: fogMode,
-						points: [...fogPolygonPoints]
+// Double-click to finish polygon fog region or wall chain
+		viewport.addEventListener('dblclick', (e: MouseEvent) => {
+			if (activeTool === 'fog' && selectedFogShape === 'polygon' && fogPolygonPoints.length >= 3) {
+				const region = {
+					id: `fog_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+					shape: 'polygon' as const,
+					type: fogMode,
+					points: [...fogPolygonPoints]
+				};
+				config.fogOfWar.enabled = true;
+				config.fogOfWar.regions.push(region);
+				fogPolygonPoints = [];
+				redrawAnnotations();
+				this.saveMapAnnotations(config, el);
+				new Notice(`Fog polygon ${fogMode === 'reveal' ? 'revealed' : 'hidden'}`);
+				e.preventDefault();
+				e.stopPropagation();
+			} else if (activeTool === 'walls' && wallPoints.length >= 2) {
+				// Finish wall chain - create wall segments
+				for (let i = 0; i < wallPoints.length - 1; i++) {
+					const wall = {
+						id: `wall_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+						start: { x: wallPoints[i]!.x, y: wallPoints[i]!.y },
+						end: { x: wallPoints[i + 1]!.x, y: wallPoints[i + 1]!.y }
 					};
-					config.fogOfWar.enabled = true;
-					config.fogOfWar.regions.push(region);
-					fogPolygonPoints = [];
-					redrawAnnotations();
-					this.saveMapAnnotations(config, el);
-					new Notice(`Fog polygon ${fogMode === 'reveal' ? 'revealed' : 'hidden'}`);
+					config.walls.push(wall);
+				}
+				wallPoints = [];
+				wallPreviewPos = null;
+				redrawAnnotations();
+				this.saveMapAnnotations(config, el);
+				new Notice(`Wall chain saved (${config.walls.length} total segments)`);
 					e.preventDefault();
 					e.stopPropagation();
 				}
 			});
 
-			viewport.addEventListener('mouseup', () => {
+			viewport.addEventListener('mouseup', (e: MouseEvent) => {
+				// Handle middle mouse button release - restore previous tool
+				if (e.button === 1 && isTemporaryPan) {
+					isDragging = false;
+					isTemporaryPan = false;
+					if (previousToolBeforePan) {
+						setActiveTool(previousToolBeforePan);
+						previousToolBeforePan = null;
+					}
+					return;
+				}
+				
 				if (activeTool === 'pan' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'grab';
@@ -6981,6 +7383,34 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Keyboard shortcuts for player-view rotation
 			viewport.addEventListener('keydown', (e: KeyboardEvent) => {
+				// Walls tool: Enter to finish, Escape to cancel
+				if (activeTool === 'walls') {
+					if (e.key === 'Enter' && wallPoints.length >= 2) {
+						// Finish wall chain - create wall segments
+						e.preventDefault();
+						for (let i = 0; i < wallPoints.length - 1; i++) {
+							const wall = {
+								id: `wall_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+								start: { x: wallPoints[i]!.x, y: wallPoints[i]!.y },
+								end: { x: wallPoints[i + 1]!.x, y: wallPoints[i + 1]!.y }
+							};
+							config.walls.push(wall);
+						}
+						wallPoints = [];
+						wallPreviewPos = null;
+						redrawAnnotations();
+						this.saveMapAnnotations(config, el);
+						new Notice(`Wall chain added (${config.walls.length} segments total)`);
+					} else if (e.key === 'Escape') {
+						// Cancel wall drawing
+						e.preventDefault();
+						wallPoints = [];
+						wallPreviewPos = null;
+						redrawAnnotations();
+						new Notice('Wall drawing cancelled');
+					}
+				}
+				
 				if (activeTool === 'player-view') {
 					const gmRect = (this as any)._gmViewRect || (viewport as any)._gmViewRect;
 					if (!gmRect) return;
@@ -7351,7 +7781,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('Loaded annotations:', {
 					highlights: annotations.highlights?.length || 0,
 					markers: annotations.markers?.length || 0,
-					drawings: annotations.drawings?.length || 0
+					drawings: annotations.drawings?.length || 0,
+					walls: annotations.walls?.length || 0,
+					lightSources: annotations.lightSources?.length || 0
 				});
 				return annotations;
 			} else {
@@ -7409,6 +7841,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 				drawings: config.drawings || [],
 				aoeEffects: config.aoeEffects || [],
 				fogOfWar: config.fogOfWar || { enabled: false, regions: [] },
+				walls: config.walls || [],
+				lightSources: config.lightSources || [],
 				lastModified: new Date().toISOString()
 			};
 			
@@ -23161,7 +23595,9 @@ class PlayerMapView extends ItemView {
       gridSize: config.gridSize,
       markersCount: config.markers?.length || 0,
       drawingsCount: config.drawings?.length || 0,
-      highlightsCount: config.highlights?.length || 0
+      highlightsCount: config.highlights?.length || 0,
+      fogEnabled: config.fogOfWar?.enabled,
+      lightSourcesCount: config.lightSources?.length || 0
     });
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -23193,8 +23629,11 @@ class PlayerMapView extends ItemView {
       this.drawDragRuler(ctx, config);
     }
 
-    // Draw Fog of War (Player view: fully opaque black)
+    // Draw Fog of War (Player view: fully opaque black with light source revelation)
+    // Fog must be enabled for darkness to appear - lights reveal areas within the fog
+    console.log('[PV] Fog draw check:', { fogOfWar: !!config.fogOfWar, enabled: config.fogOfWar?.enabled, lightSources: config.lightSources?.length || 0 });
     if (config.fogOfWar && config.fogOfWar.enabled) {
+      console.log('[PV] Drawing fog of war with lights');
       this.drawFogOfWar(ctx, this.canvas!.width, this.canvas!.height, config);
     }
   }
@@ -23612,12 +24051,13 @@ class PlayerMapView extends ItemView {
     const fogCtx = fogCanvas.getContext('2d');
     if (!fogCtx) return;
 
-    // Start fully black
+    // Start fully black (darkness covers everything)
     fogCtx.fillStyle = '#000000';
     fogCtx.fillRect(0, 0, w, h);
 
     // Process regions: reveal cuts holes, hide adds black back
-    config.fogOfWar.regions.forEach((region: any) => {
+    const regions = config.fogOfWar?.regions || [];
+    regions.forEach((region: any) => {
       if (region.type === 'reveal') {
         fogCtx.globalCompositeOperation = 'destination-out';
         fogCtx.fillStyle = '#ffffff';
@@ -23640,10 +24080,144 @@ class PlayerMapView extends ItemView {
       fogCtx.fill();
     });
 
+    // Light sources reveal fog in player view
+    if (config.lightSources && config.lightSources.length > 0) {
+      // Calculate pixels per foot based on grid settings
+      const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+      const walls = config.walls || [];
+      console.log('[PV] Drawing lights:', { count: config.lightSources.length, pixelsPerFoot, gridSize: config.gridSize, scaleValue: config.scale?.value, wallCount: walls.length });
+      
+      config.lightSources.forEach((light: any, i: number) => {
+        // Convert feet to pixels
+        const brightRadiusPx = light.bright * pixelsPerFoot;
+        const dimRadiusPx = light.dim * pixelsPerFoot;
+        const totalRadiusPx = brightRadiusPx + dimRadiusPx;
+        console.log(`[PV] Light ${i}:`, { x: light.x, y: light.y, bright: light.bright, dim: light.dim, brightRadiusPx, dimRadiusPx, totalRadiusPx });
+        
+        if (totalRadiusPx > 0) {
+          // Draw light with wall occlusion using shadow casting
+          this.drawLightWithShadows(fogCtx, light.x, light.y, brightRadiusPx, dimRadiusPx, walls);
+        }
+      });
+    }
+
     // Draw fully opaque for player view
     ctx.save();
     ctx.globalAlpha = 1.0;
     ctx.drawImage(fogCanvas, 0, 0);
     ctx.restore();
+  }
+
+  /**
+   * Draw light with wall occlusion (shadow casting)
+   * Bright zone is fully revealed, dim zone is partially revealed (50% fog remains)
+   */
+  private drawLightWithShadows(
+    fogCtx: CanvasRenderingContext2D,
+    lightX: number,
+    lightY: number,
+    brightRadius: number,
+    dimRadius: number,
+    walls: any[]
+  ) {
+    const totalRadius = brightRadius + dimRadius;
+    if (totalRadius <= 0) return;
+    
+    console.log('[PV] drawLightWithShadows:', { lightX, lightY, brightRadius, dimRadius, totalRadius, wallsCount: walls.length });
+
+    // Build shadow polygon by casting rays around the light
+    // For each wall segment, calculate the shadow it casts
+    const shadowPolygons: { x: number; y: number }[][] = [];
+    
+    walls.forEach((wall: any, wallIdx: number) => {
+      // Walls are stored as { start: {x, y}, end: {x, y} }
+      if (!wall.start || !wall.end) {
+        console.log(`[PV] Wall ${wallIdx} skipped - no start/end`);
+        return;
+      }
+      
+      const p1 = wall.start;
+      const p2 = wall.end;
+      
+      // Calculate distance from light to wall endpoints
+      const dx1 = p1.x - lightX;
+      const dy1 = p1.y - lightY;
+      const dx2 = p2.x - lightX;
+      const dy2 = p2.y - lightY;
+      const dist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+      const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+      
+      // Skip walls that are completely outside light radius
+      if (dist1 > totalRadius * 2 && dist2 > totalRadius * 2) return;
+      
+      // Avoid division by zero
+      if (dist1 < 0.01 || dist2 < 0.01) return;
+      
+      // Cast shadow from each endpoint
+      const shadowExtend = totalRadius * 3; // Extend shadows well past light radius
+      
+      // Calculate shadow points (extend wall endpoints away from light)
+      const shadow1X = p1.x + (dx1 / dist1) * shadowExtend;
+      const shadow1Y = p1.y + (dy1 / dist1) * shadowExtend;
+      const shadow2X = p2.x + (dx2 / dist2) * shadowExtend;
+      const shadow2Y = p2.y + (dy2 / dist2) * shadowExtend;
+      
+      // Create shadow polygon (wall segment + extended shadow)
+      const shadowPoly = [
+        { x: p1.x, y: p1.y },
+        { x: p2.x, y: p2.y },
+        { x: shadow2X, y: shadow2Y },
+        { x: shadow1X, y: shadow1Y }
+      ];
+      shadowPolygons.push(shadowPoly);
+    });
+    
+    console.log('[PV] Total shadow polygons created:', shadowPolygons.length);
+
+    // First, draw the full light circle (will be masked by shadows)
+    fogCtx.save();
+    
+    // Create a clipping path that excludes shadow areas
+    fogCtx.beginPath();
+    fogCtx.arc(lightX, lightY, totalRadius, 0, Math.PI * 2);
+    
+    // Subtract shadow polygons from the light circle
+    shadowPolygons.forEach(poly => {
+      if (poly.length < 3) return;
+      const first = poly[0];
+      if (!first) return;
+      fogCtx.moveTo(first.x, first.y);
+      for (let i = 1; i < poly.length; i++) {
+        const pt = poly[i];
+        if (pt) fogCtx.lineTo(pt.x, pt.y);
+      }
+      fogCtx.closePath();
+    });
+    
+    // Use evenodd fill rule to cut out shadows
+    fogCtx.clip('evenodd');
+    
+    // Now draw the light gradient within the clipped area
+    fogCtx.globalCompositeOperation = 'destination-out';
+    
+    // Step 1: Draw bright zone (full reveal)
+    if (brightRadius > 0) {
+      fogCtx.fillStyle = 'rgba(255, 255, 255, 1.0)';
+      fogCtx.beginPath();
+      fogCtx.arc(lightX, lightY, brightRadius, 0, Math.PI * 2);
+      fogCtx.fill();
+    }
+    
+    // Step 2: Draw dim zone (partial reveal - 70% cut, leaving 30% fog)
+    if (dimRadius > 0) {
+      fogCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      fogCtx.beginPath();
+      fogCtx.arc(lightX, lightY, totalRadius, 0, Math.PI * 2);
+      // Cut out the bright zone so we only affect the dim ring
+      fogCtx.arc(lightX, lightY, brightRadius, 0, Math.PI * 2, true);
+      fogCtx.fill();
+    }
+    
+    fogCtx.restore();
   }
 }
