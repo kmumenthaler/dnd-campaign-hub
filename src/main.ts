@@ -7694,6 +7694,42 @@ export default class DndCampaignHubPlugin extends Plugin {
 								});
 							});
 							
+							// Darkvision input
+							const darkRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+							darkRow.createEl('span', { cls: 'dnd-map-context-aoe-label', text: 'Darkvision:' });
+							const darkInput = darkRow.createEl('input', {
+								cls: 'dnd-map-darkvision-input',
+								attr: { 
+									type: 'number', 
+									min: '0', 
+									max: '300',
+									step: '5',
+									placeholder: '0',
+									value: m.darkvision || ''
+								}
+							});
+							darkRow.createEl('span', { text: 'ft' });
+							
+							darkInput.addEventListener('change', () => {
+								const value = parseInt(darkInput.value) || 0;
+								if (value > 0) {
+									m.darkvision = value;
+								} else {
+									delete m.darkvision;
+								}
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								new Notice(value > 0 ? `Darkvision set to ${value} ft` : 'Darkvision removed');
+							});
+							
+							darkInput.addEventListener('click', (e) => e.stopPropagation());
+							darkInput.addEventListener('keydown', (e) => {
+								if (e.key === 'Enter') {
+									darkInput.blur();
+								}
+							});
+							
 							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
 						}
 						
@@ -24192,35 +24228,240 @@ class PlayerMapView extends ItemView {
       });
     }
     
-    if (allLights.length > 0) {
-      // Calculate pixels per foot based on grid settings
-      const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
-      const walls = config.walls || [];
-      console.log('[PV] Drawing lights:', { count: allLights.length, pixelsPerFoot, gridSize: config.gridSize, scaleValue: config.scale?.value, wallCount: walls.length });
+    // Collect player tokens (markers with darkvision) - they define what's visible to players
+    const playerTokens: { x: number; y: number; range: number }[] = [];
+    if (config.markers && config.markers.length > 0) {
+      config.markers.forEach((marker: any) => {
+        if (marker.darkvision && marker.darkvision > 0) {
+          playerTokens.push({
+            x: marker.position.x,
+            y: marker.position.y,
+            range: marker.darkvision
+          });
+        }
+      });
+    }
+    
+    const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+    const walls = config.walls || [];
+    
+    // Compute combined player visibility polygon (what all players can see)
+    // This will be used to filter/intersect with light visibility
+    let playerVisibilityPolys: { x: number; y: number }[][] = [];
+    if (playerTokens.length > 0) {
+      playerTokens.forEach((pt: any) => {
+        const radiusPx = pt.range * pixelsPerFoot;
+        if (radiusPx > 0) {
+          const visPoly = this.computeVisibilityPolygon(pt.x, pt.y, radiusPx, walls);
+          if (visPoly.length >= 3) {
+            playerVisibilityPolys.push(visPoly);
+          }
+        }
+      });
+    }
+    
+    // Create a mask canvas for player visibility (used to intersect with lights)
+    const playerVisCanvas = document.createElement('canvas');
+    playerVisCanvas.width = w;
+    playerVisCanvas.height = h;
+    const playerVisCtx = playerVisCanvas.getContext('2d');
+    
+    if (playerVisCtx && playerVisibilityPolys.length > 0) {
+      // Draw all player visibility polygons
+      playerVisCtx.fillStyle = 'white';
+      playerVisibilityPolys.forEach(poly => {
+        if (poly.length < 3) return;
+        playerVisCtx.beginPath();
+        const first = poly[0];
+        if (!first) return;
+        playerVisCtx.moveTo(first.x, first.y);
+        for (let i = 1; i < poly.length; i++) {
+          const pt = poly[i];
+          if (pt) playerVisCtx.lineTo(pt.x, pt.y);
+        }
+        playerVisCtx.closePath();
+        playerVisCtx.fill();
+      });
+    }
+    
+    // Draw lights - only what players can see
+    if (allLights.length > 0 && playerVisCtx) {
+      console.log('[PV] Drawing lights with player visibility check:', { lights: allLights.length, playerTokens: playerTokens.length });
       
       allLights.forEach((light: any, i: number) => {
-        // Convert feet to pixels
         const brightRadiusPx = light.bright * pixelsPerFoot;
         const dimRadiusPx = light.dim * pixelsPerFoot;
         const totalRadiusPx = brightRadiusPx + dimRadiusPx;
-        console.log(`[PV] Light ${i}:`, { x: light.x, y: light.y, bright: light.bright, dim: light.dim, brightRadiusPx, dimRadiusPx, totalRadiusPx });
         
-        if (totalRadiusPx > 0) {
-          // Draw light with wall occlusion using shadow casting
+        if (totalRadiusPx <= 0) return;
+        
+        // Check if any player can see this light source
+        let lightVisibleToPlayer = false;
+        if (playerVisibilityPolys.length === 0) {
+          // No player tokens with darkvision - show all lights (fallback)
+          lightVisibleToPlayer = true;
+        } else {
+          // Check if light center is within any player's visibility
+          for (const poly of playerVisibilityPolys) {
+            if (this.pointInPolygon(light.x, light.y, poly)) {
+              lightVisibleToPlayer = true;
+              break;
+            }
+          }
+        }
+        
+        if (!lightVisibleToPlayer) {
+          console.log(`[PV] Light ${i} not visible to any player`);
+          return;
+        }
+        
+        // Draw light with wall occlusion, intersected with player visibility
+        this.drawLightWithPlayerVisibility(fogCtx, light.x, light.y, brightRadiusPx, dimRadiusPx, walls, playerVisCanvas);
+      });
+    } else if (allLights.length > 0) {
+      // No player tokens - fallback to drawing all lights normally
+      console.log('[PV] No player tokens, drawing all lights');
+      allLights.forEach((light: any) => {
+        const brightRadiusPx = light.bright * pixelsPerFoot;
+        const dimRadiusPx = light.dim * pixelsPerFoot;
+        if (brightRadiusPx + dimRadiusPx > 0) {
           this.drawLightWithShadows(fogCtx, light.x, light.y, brightRadiusPx, dimRadiusPx, walls);
         }
       });
     }
+    
+    // Darkvision reveals fog but shows grayscale
+    // Collect markers with darkvision
+    const darkvisionMarkers: any[] = [];
+    if (config.markers && config.markers.length > 0) {
+      config.markers.forEach((marker: any) => {
+        if (marker.darkvision && marker.darkvision > 0) {
+          darkvisionMarkers.push({
+            x: marker.position.x,
+            y: marker.position.y,
+            range: marker.darkvision
+          });
+        }
+      });
+    }
+    
+    // Create grayscale overlay canvas (for darkvision-only areas)
+    const grayscaleCanvas = document.createElement('canvas');
+    grayscaleCanvas.width = w;
+    grayscaleCanvas.height = h;
+    const grayCtx = grayscaleCanvas.getContext('2d');
+    
+    if (darkvisionMarkers.length > 0 && grayCtx) {
+      console.log('[PV] Drawing darkvision:', { count: darkvisionMarkers.length });
+      
+      // First, draw darkvision to reveal fog (cuts holes in fog canvas)
+      darkvisionMarkers.forEach((dv: any) => {
+        const radiusPx = dv.range * pixelsPerFoot;
+        if (radiusPx > 0) {
+          // Darkvision reveals fog with wall occlusion
+          this.drawLightWithShadows(fogCtx, dv.x, dv.y, radiusPx, 0, walls);
+        }
+      });
+      
+      // Build grayscale overlay: areas where darkvision reveals but no actual light
+      // Start with dark gray overlay
+      grayCtx.fillStyle = 'rgba(60, 60, 80, 0.6)';
+      grayCtx.fillRect(0, 0, w, h);
+      
+      // Cut out areas where actual lights are (that players can see) - those should be full color
+      grayCtx.globalCompositeOperation = 'destination-out';
+      if (allLights.length > 0 && playerVisibilityPolys.length > 0) {
+        allLights.forEach((light: any) => {
+          // Check if light is visible to any player
+          let lightVisibleToPlayer = false;
+          for (const poly of playerVisibilityPolys) {
+            if (this.pointInPolygon(light.x, light.y, poly)) {
+              lightVisibleToPlayer = true;
+              break;
+            }
+          }
+          if (!lightVisibleToPlayer) return;
+          
+          const brightRadiusPx = light.bright * pixelsPerFoot;
+          const dimRadiusPx = light.dim * pixelsPerFoot;
+          const totalRadiusPx = brightRadiusPx + dimRadiusPx;
+          if (totalRadiusPx > 0 && playerVisCtx) {
+            // Cut out light areas from grayscale overlay (intersected with player visibility)
+            // Create temp canvas for this light
+            const lightMask = document.createElement('canvas');
+            lightMask.width = w;
+            lightMask.height = h;
+            const lightMaskCtx = lightMask.getContext('2d');
+            if (lightMaskCtx) {
+              // Draw light visibility
+              const lightVisPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadiusPx, walls);
+              if (lightVisPoly.length >= 3) {
+                lightMaskCtx.fillStyle = 'white';
+                lightMaskCtx.beginPath();
+                const first = lightVisPoly[0];
+                if (first) {
+                  lightMaskCtx.moveTo(first.x, first.y);
+                  for (let i = 1; i < lightVisPoly.length; i++) {
+                    const pt = lightVisPoly[i];
+                    if (pt) lightMaskCtx.lineTo(pt.x, pt.y);
+                  }
+                  lightMaskCtx.closePath();
+                  lightMaskCtx.fill();
+                  
+                  // Intersect with player visibility
+                  lightMaskCtx.globalCompositeOperation = 'destination-in';
+                  lightMaskCtx.drawImage(playerVisCanvas, 0, 0);
+                  
+                  // Apply to grayscale
+                  grayCtx.drawImage(lightMask, 0, 0);
+                }
+              }
+            }
+          }
+        });
+      } else if (allLights.length > 0) {
+        // Fallback when no player tokens
+        allLights.forEach((light: any) => {
+          const brightRadiusPx = light.bright * pixelsPerFoot;
+          const dimRadiusPx = light.dim * pixelsPerFoot;
+          const totalRadiusPx = brightRadiusPx + dimRadiusPx;
+          if (totalRadiusPx > 0) {
+            this.drawLightWithShadows(grayCtx, light.x, light.y, brightRadiusPx, dimRadiusPx, walls);
+          }
+        });
+      }
+      
+      // Also cut out areas NOT revealed by darkvision (they stay black anyway)
+      // The grayscale should only apply where darkvision sees
+      grayCtx.globalCompositeOperation = 'destination-in';
+      darkvisionMarkers.forEach((dv: any) => {
+        const radiusPx = dv.range * pixelsPerFoot;
+        if (radiusPx > 0) {
+          grayCtx.fillStyle = 'white';
+          grayCtx.beginPath();
+          grayCtx.arc(dv.x, dv.y, radiusPx, 0, Math.PI * 2);
+          grayCtx.fill();
+        }
+      });
+    }
 
-    // Draw fully opaque for player view
+    // Draw fully opaque fog for player view
     ctx.save();
     ctx.globalAlpha = 1.0;
     ctx.drawImage(fogCanvas, 0, 0);
     ctx.restore();
+    
+    // Apply grayscale overlay on top (darkvision tint)
+    if (darkvisionMarkers.length > 0 && grayCtx) {
+      ctx.save();
+      ctx.globalAlpha = 1.0;
+      ctx.drawImage(grayscaleCanvas, 0, 0);
+      ctx.restore();
+    }
   }
 
   /**
-   * Draw light with wall occlusion (shadow casting)
+   * Draw light with wall occlusion using visibility polygon algorithm
    * Bright zone is fully revealed, dim zone is partially revealed (50% fog remains)
    */
   private drawLightWithShadows(
@@ -24233,85 +24474,52 @@ class PlayerMapView extends ItemView {
   ) {
     const totalRadius = brightRadius + dimRadius;
     if (totalRadius <= 0) return;
-    
-    console.log('[PV] drawLightWithShadows:', { lightX, lightY, brightRadius, dimRadius, totalRadius, wallsCount: walls.length });
 
-    // Build shadow polygon by casting rays around the light
-    // For each wall segment, calculate the shadow it casts
-    const shadowPolygons: { x: number; y: number }[][] = [];
+    // Compute visibility polygon using ray casting
+    const visibilityPoly = this.computeVisibilityPolygon(lightX, lightY, totalRadius, walls);
     
-    walls.forEach((wall: any, wallIdx: number) => {
-      // Walls are stored as { start: {x, y}, end: {x, y} }
-      if (!wall.start || !wall.end) {
-        console.log(`[PV] Wall ${wallIdx} skipped - no start/end`);
-        return;
+    if (visibilityPoly.length < 3) {
+      // No walls or no valid polygon - just draw full circle
+      fogCtx.save();
+      fogCtx.globalCompositeOperation = 'destination-out';
+      
+      if (brightRadius > 0) {
+        fogCtx.fillStyle = 'rgba(255, 255, 255, 1.0)';
+        fogCtx.beginPath();
+        fogCtx.arc(lightX, lightY, brightRadius, 0, Math.PI * 2);
+        fogCtx.fill();
       }
       
-      const p1 = wall.start;
-      const p2 = wall.end;
+      if (dimRadius > 0) {
+        fogCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        fogCtx.beginPath();
+        fogCtx.arc(lightX, lightY, totalRadius, 0, Math.PI * 2);
+        fogCtx.arc(lightX, lightY, brightRadius, 0, Math.PI * 2, true);
+        fogCtx.fill();
+      }
       
-      // Calculate distance from light to wall endpoints
-      const dx1 = p1.x - lightX;
-      const dy1 = p1.y - lightY;
-      const dx2 = p2.x - lightX;
-      const dy2 = p2.y - lightY;
-      const dist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
-      const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-      
-      // Skip walls that are completely outside light radius
-      if (dist1 > totalRadius * 2 && dist2 > totalRadius * 2) return;
-      
-      // Avoid division by zero
-      if (dist1 < 0.01 || dist2 < 0.01) return;
-      
-      // Cast shadow from each endpoint
-      const shadowExtend = totalRadius * 3; // Extend shadows well past light radius
-      
-      // Calculate shadow points (extend wall endpoints away from light)
-      const shadow1X = p1.x + (dx1 / dist1) * shadowExtend;
-      const shadow1Y = p1.y + (dy1 / dist1) * shadowExtend;
-      const shadow2X = p2.x + (dx2 / dist2) * shadowExtend;
-      const shadow2Y = p2.y + (dy2 / dist2) * shadowExtend;
-      
-      // Create shadow polygon (wall segment + extended shadow)
-      const shadowPoly = [
-        { x: p1.x, y: p1.y },
-        { x: p2.x, y: p2.y },
-        { x: shadow2X, y: shadow2Y },
-        { x: shadow1X, y: shadow1Y }
-      ];
-      shadowPolygons.push(shadowPoly);
-    });
-    
-    console.log('[PV] Total shadow polygons created:', shadowPolygons.length);
+      fogCtx.restore();
+      return;
+    }
 
-    // First, draw the full light circle (will be masked by shadows)
+    // Draw using visibility polygon as clip
     fogCtx.save();
     
-    // Create a clipping path that excludes shadow areas
+    // Create clipping path from visibility polygon
     fogCtx.beginPath();
-    fogCtx.arc(lightX, lightY, totalRadius, 0, Math.PI * 2);
+    const firstPt = visibilityPoly[0];
+    if (!firstPt) return;
+    fogCtx.moveTo(firstPt.x, firstPt.y);
+    for (let i = 1; i < visibilityPoly.length; i++) {
+      const pt = visibilityPoly[i];
+      if (pt) fogCtx.lineTo(pt.x, pt.y);
+    }
+    fogCtx.closePath();
+    fogCtx.clip();
     
-    // Subtract shadow polygons from the light circle
-    shadowPolygons.forEach(poly => {
-      if (poly.length < 3) return;
-      const first = poly[0];
-      if (!first) return;
-      fogCtx.moveTo(first.x, first.y);
-      for (let i = 1; i < poly.length; i++) {
-        const pt = poly[i];
-        if (pt) fogCtx.lineTo(pt.x, pt.y);
-      }
-      fogCtx.closePath();
-    });
-    
-    // Use evenodd fill rule to cut out shadows
-    fogCtx.clip('evenodd');
-    
-    // Now draw the light gradient within the clipped area
+    // Draw light within clipped area
     fogCtx.globalCompositeOperation = 'destination-out';
     
-    // Step 1: Draw bright zone (full reveal)
     if (brightRadius > 0) {
       fogCtx.fillStyle = 'rgba(255, 255, 255, 1.0)';
       fogCtx.beginPath();
@@ -24319,14 +24527,279 @@ class PlayerMapView extends ItemView {
       fogCtx.fill();
     }
     
-    // Step 2: Draw dim zone (partial reveal - 70% cut, leaving 30% fog)
     if (dimRadius > 0) {
       fogCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
       fogCtx.beginPath();
       fogCtx.arc(lightX, lightY, totalRadius, 0, Math.PI * 2);
-      // Cut out the bright zone so we only affect the dim ring
       fogCtx.arc(lightX, lightY, brightRadius, 0, Math.PI * 2, true);
       fogCtx.fill();
+    }
+    
+    fogCtx.restore();
+  }
+
+  /**
+   * Compute visibility polygon from a point using ray casting
+   * Returns array of points forming the visible area boundary
+   */
+  private computeVisibilityPolygon(
+    originX: number,
+    originY: number,
+    maxRadius: number,
+    walls: any[]
+  ): { x: number; y: number }[] {
+    // Collect all wall segments within range
+    const segments: { p1: { x: number; y: number }; p2: { x: number; y: number } }[] = [];
+    
+    // Add bounding circle as segments (approximated with many points)
+    const circleSegments = 64;
+    for (let i = 0; i < circleSegments; i++) {
+      const angle1 = (i / circleSegments) * Math.PI * 2;
+      const angle2 = ((i + 1) / circleSegments) * Math.PI * 2;
+      segments.push({
+        p1: { x: originX + Math.cos(angle1) * maxRadius, y: originY + Math.sin(angle1) * maxRadius },
+        p2: { x: originX + Math.cos(angle2) * maxRadius, y: originY + Math.sin(angle2) * maxRadius }
+      });
+    }
+    
+    // Add wall segments
+    walls.forEach((wall: any) => {
+      if (!wall.start || !wall.end) return;
+      
+      // Only consider walls that might be within range
+      const dx1 = wall.start.x - originX;
+      const dy1 = wall.start.y - originY;
+      const dx2 = wall.end.x - originX;
+      const dy2 = wall.end.y - originY;
+      const dist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+      const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+      
+      if (dist1 > maxRadius * 2 && dist2 > maxRadius * 2) return;
+      
+      segments.push({
+        p1: { x: wall.start.x, y: wall.start.y },
+        p2: { x: wall.end.x, y: wall.end.y }
+      });
+    });
+    
+    // Collect all unique angles to wall endpoints
+    const angles: number[] = [];
+    const epsilon = 0.00001;
+    
+    segments.forEach(seg => {
+      const dx1 = seg.p1.x - originX;
+      const dy1 = seg.p1.y - originY;
+      const dx2 = seg.p2.x - originX;
+      const dy2 = seg.p2.y - originY;
+      
+      const angle1 = Math.atan2(dy1, dx1);
+      const angle2 = Math.atan2(dy2, dx2);
+      
+      // Cast 3 rays per endpoint: one to the point, one slightly before, one slightly after
+      angles.push(angle1 - epsilon, angle1, angle1 + epsilon);
+      angles.push(angle2 - epsilon, angle2, angle2 + epsilon);
+    });
+    
+    // Sort angles
+    angles.sort((a, b) => a - b);
+    
+    // Cast rays and find intersection points
+    const points: { x: number; y: number; angle: number }[] = [];
+    
+    for (const angle of angles) {
+      const dx = Math.cos(angle);
+      const dy = Math.sin(angle);
+      
+      // Find closest intersection
+      let closestT = maxRadius;
+      
+      for (const seg of segments) {
+        const t = this.raySegmentIntersection(
+          originX, originY, dx, dy,
+          seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y
+        );
+        
+        if (t !== null && t > 0 && t < closestT) {
+          closestT = t;
+        }
+      }
+      
+      points.push({
+        x: originX + dx * closestT,
+        y: originY + dy * closestT,
+        angle: angle
+      });
+    }
+    
+    // Remove duplicate points (very close together)
+    const uniquePoints: { x: number; y: number }[] = [];
+    for (const pt of points) {
+      if (uniquePoints.length === 0) {
+        uniquePoints.push({ x: pt.x, y: pt.y });
+      } else {
+        const last = uniquePoints[uniquePoints.length - 1];
+        if (last) {
+          const dist = Math.sqrt((pt.x - last.x) ** 2 + (pt.y - last.y) ** 2);
+          if (dist > 0.5) {
+            uniquePoints.push({ x: pt.x, y: pt.y });
+          }
+        }
+      }
+    }
+    
+    return uniquePoints;
+  }
+
+  /**
+   * Calculate intersection of ray with line segment
+   * Returns distance t along ray, or null if no intersection
+   */
+  private raySegmentIntersection(
+    rayX: number, rayY: number,
+    rayDx: number, rayDy: number,
+    segX1: number, segY1: number,
+    segX2: number, segY2: number
+  ): number | null {
+    const segDx = segX2 - segX1;
+    const segDy = segY2 - segY1;
+    
+    const denom = rayDx * segDy - rayDy * segDx;
+    if (Math.abs(denom) < 0.00001) return null; // Parallel
+    
+    const t = ((segX1 - rayX) * segDy - (segY1 - rayY) * segDx) / denom;
+    const u = ((segX1 - rayX) * rayDy - (segY1 - rayY) * rayDx) / denom;
+    
+    if (t > 0 && u >= 0 && u <= 1) {
+      return t;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Check if a point is inside a polygon using ray casting algorithm
+   */
+  private pointInPolygon(x: number, y: number, polygon: { x: number; y: number }[]): boolean {
+    if (polygon.length < 3) return false;
+    
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const pi = polygon[i];
+      const pj = polygon[j];
+      if (!pi || !pj) continue;
+      
+      const xi = pi.x, yi = pi.y;
+      const xj = pj.x, yj = pj.y;
+      
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+    }
+    
+    return inside;
+  }
+
+  /**
+   * Draw light with wall occlusion, intersected with player visibility
+   * Only reveals areas that both the light illuminates AND players can see
+   */
+  private drawLightWithPlayerVisibility(
+    fogCtx: CanvasRenderingContext2D,
+    lightX: number,
+    lightY: number,
+    brightRadius: number,
+    dimRadius: number,
+    walls: any[],
+    playerVisCanvas: HTMLCanvasElement
+  ) {
+    const totalRadius = brightRadius + dimRadius;
+    if (totalRadius <= 0) return;
+
+    // Compute light's visibility polygon
+    const lightVisPoly = this.computeVisibilityPolygon(lightX, lightY, totalRadius, walls);
+    
+    if (lightVisPoly.length < 3) {
+      // No valid polygon - fallback
+      return;
+    }
+
+    // Create a temporary canvas for the light
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = fogCtx.canvas.width;
+    tempCanvas.height = fogCtx.canvas.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) return;
+
+    // Draw the light's visibility polygon on temp canvas
+    tempCtx.fillStyle = 'white';
+    tempCtx.beginPath();
+    const first = lightVisPoly[0];
+    if (!first) return;
+    tempCtx.moveTo(first.x, first.y);
+    for (let i = 1; i < lightVisPoly.length; i++) {
+      const pt = lightVisPoly[i];
+      if (pt) tempCtx.lineTo(pt.x, pt.y);
+    }
+    tempCtx.closePath();
+    tempCtx.fill();
+
+    // Intersect with player visibility using destination-in
+    tempCtx.globalCompositeOperation = 'destination-in';
+    tempCtx.drawImage(playerVisCanvas, 0, 0);
+    
+    // Now tempCanvas contains only the intersection of light and player visibility
+    // Use this as a clip mask to draw the light effect on fog
+    fogCtx.save();
+    
+    // Create clip from the intersection
+    fogCtx.globalCompositeOperation = 'destination-out';
+    
+    // Draw bright zone
+    if (brightRadius > 0) {
+      // Create another temp canvas for bright zone clipped by intersection
+      const brightCanvas = document.createElement('canvas');
+      brightCanvas.width = fogCtx.canvas.width;
+      brightCanvas.height = fogCtx.canvas.height;
+      const brightCtx = brightCanvas.getContext('2d');
+      if (brightCtx) {
+        // Draw bright circle
+        brightCtx.fillStyle = 'white';
+        brightCtx.beginPath();
+        brightCtx.arc(lightX, lightY, brightRadius, 0, Math.PI * 2);
+        brightCtx.fill();
+        
+        // Intersect with light+player visibility
+        brightCtx.globalCompositeOperation = 'destination-in';
+        brightCtx.drawImage(tempCanvas, 0, 0);
+        
+        // Apply to fog with full opacity
+        fogCtx.globalAlpha = 1.0;
+        fogCtx.drawImage(brightCanvas, 0, 0);
+      }
+    }
+    
+    // Draw dim zone
+    if (dimRadius > 0) {
+      const dimCanvas = document.createElement('canvas');
+      dimCanvas.width = fogCtx.canvas.width;
+      dimCanvas.height = fogCtx.canvas.height;
+      const dimCtx = dimCanvas.getContext('2d');
+      if (dimCtx) {
+        // Draw dim ring (total - bright)
+        dimCtx.fillStyle = 'white';
+        dimCtx.beginPath();
+        dimCtx.arc(lightX, lightY, totalRadius, 0, Math.PI * 2);
+        dimCtx.arc(lightX, lightY, brightRadius, 0, Math.PI * 2, true);
+        dimCtx.fill();
+        
+        // Intersect with light+player visibility
+        dimCtx.globalCompositeOperation = 'destination-in';
+        dimCtx.drawImage(tempCanvas, 0, 0);
+        
+        // Apply to fog with partial opacity (dim light)
+        fogCtx.globalAlpha = 0.7;
+        fogCtx.drawImage(dimCanvas, 0, 0);
+      }
     }
     
     fogCtx.restore();
