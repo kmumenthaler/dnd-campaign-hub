@@ -4690,6 +4690,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			config.drawings = savedData.drawings || [];
 			config.aoeEffects = savedData.aoeEffects || [];
 			
+			// Load fog of war data
+			config.fogOfWar = savedData.fogOfWar || { enabled: true, regions: [] };
+			
 			// Load active layer (defaults to Player)
 			config.activeLayer = savedData.activeLayer || 'Player';
 			
@@ -4732,7 +4735,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-		let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' = 'pan';
+		let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' = 'pan';
 		let selectedColor = '#ff0000';
 		let selectedMarkerId: string | null = null; // Currently selected marker from library
 		let draggingMarkerIndex = -1; // Index of marker being dragged (-1 = none)
@@ -4751,6 +4754,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let pendingAoeAnchorMarkerId: string | null = null; // Set when AoE is cast from token context menu
 			// Ensure aoeEffects array exists on config
 			if (!config.aoeEffects) config.aoeEffects = [];
+			// Fog of War tool state
+			let selectedFogShape: 'circle' | 'rect' | 'polygon' | 'brush' = 'brush';
+			let fogMode: 'reveal' | 'hide' = 'reveal'; // Whether fog tool reveals or hides
+			let fogDragStart: { x: number; y: number } | null = null;
+			let fogDragEnd: { x: number; y: number } | null = null;
+			let fogPolygonPoints: { x: number; y: number }[] = [];
+			if (!config.fogOfWar) config.fogOfWar = { enabled: true, regions: [] };
 			let isCalibrating = false;
 			let calibrationPoint1: { x: number; y: number } | null = null;
 			let calibrationPoint2: { x: number; y: number } | null = null;
@@ -4812,8 +4822,75 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const rulerBtn = createToolBtn('📏', 'Ruler');
 		const aoeBtn = createToolBtn('💥', 'AoE');
 		const eraserBtn = createToolBtn('🧹', 'Eraser');
+		const fogBtn = createToolBtn('🌫️', 'Fog');
 		const moveGridBtn = createToolBtn('✥', 'Move Grid');
 		const calibrateBtn = createToolBtn('⚙', 'Calibrate');
+
+		// Fog of War shape picker sub-menu (shown when fog tool is active)
+		const fogPicker = fogBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
+		// Fog mode toggle (reveal/hide)
+		const fogModeBtn = fogPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn dnd-fog-mode-btn active',
+			attr: { title: 'Mode: Reveal' }
+		});
+		fogModeBtn.createEl('span', { text: '👁️' });
+		fogModeBtn.addEventListener('click', () => {
+			fogMode = fogMode === 'reveal' ? 'hide' : 'reveal';
+			fogModeBtn.setAttribute('title', fogMode === 'reveal' ? 'Mode: Reveal' : 'Mode: Hide');
+			const iconEl = fogModeBtn.querySelector('span');
+			if (iconEl) iconEl.textContent = fogMode === 'reveal' ? '👁️' : '🚫';
+			fogModeBtn.toggleClass('fog-hide-mode', fogMode === 'hide');
+		});
+		// Separator in picker
+		const fogSep = fogPicker.createDiv({ cls: 'dnd-fog-picker-sep' });
+		// Shape picker buttons
+		const fogShapes: { shape: 'brush' | 'circle' | 'rect' | 'polygon'; icon: string; label: string }[] = [
+			{ shape: 'brush', icon: '🖌️', label: 'Brush (drag)' },
+			{ shape: 'circle', icon: '⭕', label: 'Circle' },
+			{ shape: 'rect', icon: '⬜', label: 'Rectangle' },
+			{ shape: 'polygon', icon: '⬠', label: 'Polygon' },
+		];
+		const fogShapeButtons: Map<string, HTMLButtonElement> = new Map();
+		fogShapes.forEach(({ shape, icon, label }) => {
+			const btn = fogPicker.createEl('button', {
+				cls: 'dnd-map-aoe-shape-btn' + (shape === selectedFogShape ? ' active' : ''),
+				attr: { title: label }
+			});
+			btn.createEl('span', { text: icon });
+			fogShapeButtons.set(shape, btn);
+			btn.addEventListener('click', () => {
+				selectedFogShape = shape;
+				fogShapeButtons.forEach((b) => b.removeClass('active'));
+				btn.addClass('active');
+			});
+		});
+		// Reveal All / Hide All buttons
+		const fogRevealAllBtn = fogPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn dnd-fog-action-btn',
+			attr: { title: 'Reveal All' }
+		});
+		fogRevealAllBtn.createEl('span', { text: '☀️' });
+		fogRevealAllBtn.addEventListener('click', () => {
+			config.fogOfWar.regions = [];
+			config.fogOfWar.enabled = false;
+			redrawAnnotations();
+			this.saveMapAnnotations(config, el);
+			new Notice('Fog cleared — entire map revealed');
+		});
+		const fogHideAllBtn = fogPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn dnd-fog-action-btn',
+			attr: { title: 'Hide All' }
+		});
+		fogHideAllBtn.createEl('span', { text: '🌑' });
+		fogHideAllBtn.addEventListener('click', () => {
+			config.fogOfWar.regions = [];
+			config.fogOfWar.enabled = true;
+			redrawAnnotations();
+			this.saveMapAnnotations(config, el);
+			new Notice('Entire map hidden by fog');
+		});
+		// Only show fog button when on Background layer
+		fogBtn.toggleClass('hidden', config.activeLayer !== 'Background');
 
 		// AoE shape picker sub-menu (shown when AoE tool is active, positioned right of button)
 		const aoePicker = aoeBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
@@ -5012,6 +5089,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 					layers.forEach(l => layerButtons[l].removeClass('active'));
 					btn.addClass('active');
 					layerMenu.removeClass('expanded');
+					// Show/hide fog tool based on layer
+					fogBtn.toggleClass('hidden', layer !== 'Background');
+					if (layer !== 'Background' && activeTool === 'fog') {
+						setActiveTool('pan');
+					}
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
 				}
@@ -5043,6 +5125,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 						markers: config.markers,
 						drawings: config.drawings,
 						highlights: config.highlights,
+						aoeEffects: config.aoeEffects,
+						fogOfWar: config.fogOfWar,
 						gridType: config.gridType,
 						gridSize: config.gridSize,
 						gridOffsetX: config.gridOffsetX || 0,
@@ -5070,6 +5154,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						drawings: config.drawings,
 						highlights: config.highlights,
 						aoeEffects: config.aoeEffects,
+						fogOfWar: config.fogOfWar,
 						gridType: config.gridType,
 						gridSize: config.gridSize,
 						gridOffsetX: config.gridOffsetX || 0,
@@ -5189,6 +5274,20 @@ export default class DndCampaignHubPlugin extends Plugin {
 				// Sync to player view if open
 				if ((viewport as any)._syncPlayerView) {
 					(viewport as any)._syncPlayerView();
+				}
+
+				// Draw Fog of War (GM view: semi-transparent)
+				if (config.fogOfWar && config.fogOfWar.enabled) {
+					drawFogOfWar(ctx, annotationCanvas.width, annotationCanvas.height, false);
+				}
+				// Draw fog preview during drag
+				if (activeTool === 'fog') {
+					if (fogDragStart && fogDragEnd) {
+						drawFogPreview(ctx);
+					}
+					if (fogPolygonPoints.length > 0) {
+						drawFogPolygonPreview(ctx);
+					}
 				}
 				
 				// Draw marker drag ruler
@@ -5647,12 +5746,126 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			};
 
+			// ============ Fog of War Rendering ============
+			
+			// Helper: clip a fog region into a canvas path
+			const clipFogRegion = (ctx: CanvasRenderingContext2D, region: any) => {
+				if (region.shape === 'rect') {
+					ctx.rect(region.x, region.y, region.width, region.height);
+				} else if (region.shape === 'circle') {
+					ctx.arc(region.cx, region.cy, region.radius, 0, Math.PI * 2);
+				} else if (region.shape === 'polygon' && region.points && region.points.length >= 3) {
+					ctx.moveTo(region.points[0].x, region.points[0].y);
+					for (let i = 1; i < region.points.length; i++) {
+						ctx.lineTo(region.points[i].x, region.points[i].y);
+					}
+					ctx.closePath();
+				}
+			};
+
+			// Draw fog of war using an offscreen canvas
+			const drawFogOfWar = (ctx: CanvasRenderingContext2D, w: number, h: number, isPlayerView: boolean) => {
+				const fogAlpha = isPlayerView ? 1.0 : 0.45;
+				
+				// Create offscreen fog canvas
+				const fogCanvas = document.createElement('canvas');
+				fogCanvas.width = w;
+				fogCanvas.height = h;
+				const fogCtx = fogCanvas.getContext('2d');
+				if (!fogCtx) return;
+				
+				// Start fully black
+				fogCtx.fillStyle = '#000000';
+				fogCtx.fillRect(0, 0, w, h);
+				
+				// Process regions in order: reveal cuts holes, hide adds black
+				config.fogOfWar.regions.forEach((region: any) => {
+					if (region.type === 'reveal') {
+						fogCtx.globalCompositeOperation = 'destination-out';
+						fogCtx.fillStyle = '#ffffff';
+					} else {
+						fogCtx.globalCompositeOperation = 'source-over';
+						fogCtx.fillStyle = '#000000';
+					}
+					fogCtx.beginPath();
+					clipFogRegion(fogCtx, region);
+					fogCtx.fill();
+				});
+				
+				// Draw the fog canvas onto the main canvas
+				ctx.save();
+				ctx.globalAlpha = fogAlpha;
+				ctx.drawImage(fogCanvas, 0, 0);
+				ctx.restore();
+			};
+
+			// Draw fog preview while dragging
+			const drawFogPreview = (ctx: CanvasRenderingContext2D) => {
+				if (!fogDragStart || !fogDragEnd) return;
+				ctx.save();
+				ctx.globalAlpha = 0.3;
+				ctx.fillStyle = fogMode === 'reveal' ? '#00ff00' : '#000000';
+				ctx.strokeStyle = fogMode === 'reveal' ? '#00ff00' : '#ff0000';
+				ctx.lineWidth = 2;
+				ctx.setLineDash([6, 3]);
+				
+				if (selectedFogShape === 'brush' || selectedFogShape === 'rect') {
+					const x = Math.min(fogDragStart.x, fogDragEnd.x);
+					const y = Math.min(fogDragStart.y, fogDragEnd.y);
+					const w = Math.abs(fogDragEnd.x - fogDragStart.x);
+					const h = Math.abs(fogDragEnd.y - fogDragStart.y);
+					ctx.fillRect(x, y, w, h);
+					ctx.strokeRect(x, y, w, h);
+				} else if (selectedFogShape === 'circle') {
+					const dx = fogDragEnd.x - fogDragStart.x;
+					const dy = fogDragEnd.y - fogDragStart.y;
+					const r = Math.sqrt(dx * dx + dy * dy);
+					ctx.beginPath();
+					ctx.arc(fogDragStart.x, fogDragStart.y, r, 0, Math.PI * 2);
+					ctx.fill();
+					ctx.stroke();
+				}
+				
+				ctx.restore();
+			};
+
+			// Draw polygon preview while placing points
+			const drawFogPolygonPreview = (ctx: CanvasRenderingContext2D) => {
+				if (fogPolygonPoints.length === 0) return;
+				ctx.save();
+				ctx.globalAlpha = 0.3;
+				ctx.fillStyle = fogMode === 'reveal' ? '#00ff00' : '#000000';
+				ctx.strokeStyle = fogMode === 'reveal' ? '#00ff00' : '#ff0000';
+				ctx.lineWidth = 2;
+				ctx.setLineDash([6, 3]);
+				
+				ctx.beginPath();
+				ctx.moveTo(fogPolygonPoints[0]!.x, fogPolygonPoints[0]!.y);
+				for (let i = 1; i < fogPolygonPoints.length; i++) {
+					ctx.lineTo(fogPolygonPoints[i]!.x, fogPolygonPoints[i]!.y);
+				}
+				ctx.closePath();
+				ctx.fill();
+				ctx.stroke();
+				
+				// Draw dots at each point
+				ctx.globalAlpha = 0.8;
+				ctx.fillStyle = fogMode === 'reveal' ? '#00ff00' : '#ff0000';
+				fogPolygonPoints.forEach(pt => {
+					ctx.beginPath();
+					ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+					ctx.fill();
+				});
+				
+				ctx.restore();
+			};
+
 			// Tool switching function
 			const setActiveTool = (tool: typeof activeTool) => {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-				[panBtn, selectBtn, highlightBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, aoeBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
+				[panBtn, selectBtn, highlightBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, aoeBtn, fogBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
 				
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
@@ -5667,6 +5880,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 					aoeOrigin = null;
 					aoePreviewEnd = null;
 				}
+
+				// Cancel fog placement when switching away
+				if (tool !== 'fog') {
+					fogDragStart = null;
+					fogDragEnd = null;
+					fogPolygonPoints = [];
+				}
 				
 				// Show/hide color picker based on tool (with animation)
 				const showColorPicker = tool === 'highlight' || tool === 'draw' || tool === 'aoe';
@@ -5675,6 +5895,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 				// Show/hide AoE shape picker
 				aoePicker.toggleClass('hidden', tool !== 'aoe');
+				// Show/hide Fog shape picker
+				fogPicker.toggleClass('hidden', tool !== 'fog');
 				
 				if (tool === 'pan') {
 					panBtn.addClass('active');
@@ -5696,6 +5918,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'move';
 				} else if (tool === 'aoe') {
 					aoeBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+				} else if (tool === 'fog') {
+					fogBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
 				}
 				
@@ -5745,6 +5970,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 			eraserBtn.addEventListener('click', () => {
 				console.log('Eraser button clicked');
 				setActiveTool('eraser');
+			});
+			fogBtn.addEventListener('click', () => {
+				console.log('Fog button clicked');
+				setActiveTool('fog');
 			});
 			moveGridBtn.addEventListener('click', () => {
 				console.log('Move Grid button clicked');
@@ -6097,6 +6326,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 						updateGridToolsVisibility();
 						new Notice('Annotation removed');
 					}
+				} else if (activeTool === 'fog') {
+					if (selectedFogShape === 'polygon') {
+						// Polygon: accumulate points, double-click to finish
+						fogPolygonPoints.push({ x: mapPos.x, y: mapPos.y });
+						redrawAnnotations();
+					} else if (selectedFogShape === 'brush' || selectedFogShape === 'rect' || selectedFogShape === 'circle') {
+						// Start drag
+						fogDragStart = { x: mapPos.x, y: mapPos.y };
+						fogDragEnd = { x: mapPos.x, y: mapPos.y };
+					}
 				}
 				
 				e.preventDefault();
@@ -6176,6 +6415,30 @@ export default class DndCampaignHubPlugin extends Plugin {
 					// Update AoE preview
 					aoePreviewEnd = { x: mapPos.x, y: mapPos.y };
 					redrawAnnotations();
+				} else if (activeTool === 'fog' && fogDragStart) {
+					// Update fog drag preview
+					fogDragEnd = { x: mapPos.x, y: mapPos.y };
+					redrawAnnotations();
+				}
+			});
+
+			// Double-click to finish polygon fog region
+			viewport.addEventListener('dblclick', (e: MouseEvent) => {
+				if (activeTool === 'fog' && selectedFogShape === 'polygon' && fogPolygonPoints.length >= 3) {
+					const region = {
+						id: `fog_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+						shape: 'polygon' as const,
+						type: fogMode,
+						points: [...fogPolygonPoints]
+					};
+					config.fogOfWar.enabled = true;
+					config.fogOfWar.regions.push(region);
+					fogPolygonPoints = [];
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
+					new Notice(`Fog polygon ${fogMode === 'reveal' ? 'revealed' : 'hidden'}`);
+					e.preventDefault();
+					e.stopPropagation();
 				}
 			});
 
@@ -6183,6 +6446,43 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (activeTool === 'pan' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'grab';
+				} else if (activeTool === 'fog' && fogDragStart && fogDragEnd) {
+					// Finalize fog region from drag
+					const dx = fogDragEnd.x - fogDragStart.x;
+					const dy = fogDragEnd.y - fogDragStart.y;
+					const dist = Math.sqrt(dx * dx + dy * dy);
+					if (dist > 5) {
+						let region: any;
+						if (selectedFogShape === 'brush' || selectedFogShape === 'rect') {
+							region = {
+								id: `fog_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+								shape: 'rect',
+								type: fogMode,
+								x: Math.min(fogDragStart.x, fogDragEnd.x),
+								y: Math.min(fogDragStart.y, fogDragEnd.y),
+								width: Math.abs(fogDragEnd.x - fogDragStart.x),
+								height: Math.abs(fogDragEnd.y - fogDragStart.y)
+							};
+						} else if (selectedFogShape === 'circle') {
+							region = {
+								id: `fog_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+								shape: 'circle',
+								type: fogMode,
+								cx: fogDragStart.x,
+								cy: fogDragStart.y,
+								radius: dist
+							};
+						}
+						if (region) {
+							config.fogOfWar.enabled = true;
+							config.fogOfWar.regions.push(region);
+							redrawAnnotations();
+							this.saveMapAnnotations(config, el);
+							new Notice(`Fog region ${fogMode === 'reveal' ? 'revealed' : 'hidden'}`);
+						}
+					}
+					fogDragStart = null;
+					fogDragEnd = null;
 				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
 					// Drop marker: snap creature types to grid
 					const m = config.markers[draggingMarkerIndex];
@@ -6591,6 +6891,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				markers: config.markers || [],
 				drawings: config.drawings || [],
 				aoeEffects: config.aoeEffects || [],
+				fogOfWar: config.fogOfWar || { enabled: false, regions: [] },
 				lastModified: new Date().toISOString()
 			};
 			
@@ -21632,6 +21933,11 @@ class PlayerMapView extends ItemView {
     if (config.dragRuler) {
       this.drawDragRuler(ctx, config);
     }
+
+    // Draw Fog of War (Player view: fully opaque black)
+    if (config.fogOfWar && config.fogOfWar.enabled) {
+      this.drawFogOfWar(ctx, this.canvas!.width, this.canvas!.height, config);
+    }
   }
 
   private drawGrid(ctx: CanvasRenderingContext2D, config: any) {
@@ -22028,5 +22334,47 @@ class PlayerMapView extends ItemView {
     if (container) {
       (container as HTMLElement).empty();
     }
+  }
+
+  private drawFogOfWar(ctx: CanvasRenderingContext2D, w: number, h: number, config: any) {
+    const fogCanvas = document.createElement('canvas');
+    fogCanvas.width = w;
+    fogCanvas.height = h;
+    const fogCtx = fogCanvas.getContext('2d');
+    if (!fogCtx) return;
+
+    // Start fully black
+    fogCtx.fillStyle = '#000000';
+    fogCtx.fillRect(0, 0, w, h);
+
+    // Process regions: reveal cuts holes, hide adds black back
+    config.fogOfWar.regions.forEach((region: any) => {
+      if (region.type === 'reveal') {
+        fogCtx.globalCompositeOperation = 'destination-out';
+        fogCtx.fillStyle = '#ffffff';
+      } else {
+        fogCtx.globalCompositeOperation = 'source-over';
+        fogCtx.fillStyle = '#000000';
+      }
+      fogCtx.beginPath();
+      if (region.shape === 'rect') {
+        fogCtx.rect(region.x, region.y, region.width, region.height);
+      } else if (region.shape === 'circle') {
+        fogCtx.arc(region.cx, region.cy, region.radius, 0, Math.PI * 2);
+      } else if (region.shape === 'polygon' && region.points && region.points.length >= 3) {
+        fogCtx.moveTo(region.points[0].x, region.points[0].y);
+        for (let i = 1; i < region.points.length; i++) {
+          fogCtx.lineTo(region.points[i].x, region.points[i].y);
+        }
+        fogCtx.closePath();
+      }
+      fogCtx.fill();
+    });
+
+    // Draw fully opaque for player view
+    ctx.save();
+    ctx.globalAlpha = 1.0;
+    ctx.drawImage(fogCanvas, 0, 0);
+    ctx.restore();
   }
 }
