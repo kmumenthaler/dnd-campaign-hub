@@ -21060,9 +21060,98 @@ class PlayerMapView extends ItemView {
     container.empty();
     container.addClass('dnd-player-map-container');
 
+    // Hide the view header and tab bar for a clean player view
+    this.hideObsidianChrome();
+
     if (this.mapConfig) {
       this.renderPlayerView();
     }
+  }
+
+  /**
+   * Hide the Obsidian view header and tab bar.
+   * Injects CSS into the popout window's document to hide all chrome.
+   * Reveals on hover near the top of the window.
+   */
+  private hideObsidianChrome() {
+    // Get the window that owns this view (popout window, not main window)
+    const win = (this.containerEl as any).win || this.containerEl.ownerDocument?.defaultView || window;
+    const doc = win.document;
+
+    // Only inject if we haven't already
+    if (doc.getElementById('dnd-player-view-chrome-hide')) return;
+
+    const style = doc.createElement('style');
+    style.id = 'dnd-player-view-chrome-hide';
+    style.textContent = `
+      /* Hide the tab header bar */
+      .workspace-tab-header-container {
+        height: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        opacity: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+      }
+
+      /* Hide the view header (title bar) by default */
+      .view-header {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        z-index: 100 !important;
+        opacity: 0 !important;
+        transform: translateY(-100%) !important;
+        transition: opacity 0.3s ease, transform 0.3s ease !important;
+        background: rgba(30, 27, 75, 0.95) !important;
+        backdrop-filter: blur(12px) !important;
+      }
+
+      /* Show the view header on hover */
+      .view-header:hover {
+        opacity: 1 !important;
+        transform: translateY(0) !important;
+      }
+
+      /* Ensure content fills the full window */
+      .workspace-leaf-content {
+        position: relative !important;
+      }
+
+      /* Hover trigger zone at the top */
+      .workspace-leaf-content::before {
+        content: '' !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        height: 30px !important;
+        z-index: 99 !important;
+      }
+
+      .workspace-leaf-content:hover > .view-header {
+        opacity: 1 !important;
+        transform: translateY(0) !important;
+      }
+
+      /* But re-hide when not hovering near top area */
+      .workspace-leaf-content > .view-content:hover ~ .view-header,
+      .dnd-player-map-container:hover ~ .view-header {
+        opacity: 0 !important;
+        transform: translateY(-100%) !important;
+      }
+
+      /* Also hide titlebar padding/decorations if any */
+      .titlebar {
+        display: none !important;
+      }
+      .mod-root {
+        top: 0 !important;
+      }
+    `;
+    doc.head.appendChild(style);
   }
 
   private renderPlayerView() {
