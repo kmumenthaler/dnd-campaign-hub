@@ -4907,6 +4907,66 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Only show fog button when on Background layer
 		fogBtn.toggleClass('hidden', config.activeLayer !== 'Background');
 
+		// Player View controls picker sub-menu (shown when player-view tool is active)
+		const pvPicker = viewBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
+		const pvFullscreenBtn = pvPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn',
+			attr: { title: 'Toggle Fullscreen on Player View' }
+		});
+		pvFullscreenBtn.createEl('span', { text: '🖵' });
+		pvFullscreenBtn.addEventListener('click', () => {
+			if ((this as any)._playerMapViews) {
+				(this as any)._playerMapViews.forEach((pv: any) => {
+					try { if (typeof pv.toggleFullscreen === 'function') pv.toggleFullscreen(); else (pv as any).toggleFullscreen?.(); } catch (e) {}
+				});
+			}
+		});
+		
+		const pvCalibrateBtn = pvPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn',
+			attr: { title: 'Calibrate Player View for Physical Miniatures' }
+		});
+		pvCalibrateBtn.createEl('span', { text: '🎯' });
+		pvCalibrateBtn.addEventListener('click', () => {
+			const popoutWin = window;
+			new TabletopCalibrationModal(this.app, this, popoutWin, () => {
+				// After calibration, compute and send scale to player views based on current gm rect
+				try {
+					const rect = (viewport as any)._gmViewRect || (this as any)._gmViewRect || null;
+					if (!rect) return;
+					if ((this as any)._playerMapViews) {
+						(this as any)._playerMapViews.forEach((pv: any) => {
+							try {
+								// Prefer calibration-derived scale so each grid cell maps to the
+								// configured physical miniature base size on the player's screen.
+								const cal = this.settings.tabletopCalibration;
+								const gridSize = config?.gridSize || 0;
+								if (cal && gridSize > 0) {
+									// scale such that (gridSize * scale) CSS px == (miniBaseMm * pixelsPerMm)
+									const calibratedScale = (cal.pixelsPerMm * cal.miniBaseMm) / gridSize;
+									const safeScale = Math.max(0.001, Math.min(100, calibratedScale));
+									if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(safeScale as number);
+									else pv.tabletopScale = safeScale;
+									if (typeof pv.syncCanvasToImage === 'function') pv.syncCanvasToImage();
+								} else {
+									// Fallback: preserve previous behavior (fit GM view rect into PV viewport)
+									const bounds = getRotatedRectBoundingSize(rect);
+									const wrap = pv?.mapContainer as HTMLElement | undefined;
+									if (wrap && bounds.w > 0 && bounds.h > 0) {
+										const r = wrap.getBoundingClientRect();
+										const desiredScale = Math.max(0.001, Math.min(100, Math.min(r.width / bounds.w, r.height / bounds.h)));
+										if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(desiredScale as number);
+										else pv.tabletopScale = desiredScale;
+										if (typeof pv.syncCanvasToImage === 'function') pv.syncCanvasToImage();
+									}
+								}
+							} catch (e) {}
+						});
+					}
+				} catch (e) { console.warn('pvCalibrate callback error', e); }
+			}).open();
+		});
+
 		// AoE shape picker sub-menu (shown when AoE tool is active, positioned right of button)
 		const aoePicker = aoeBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
 		const aoeShapes: { shape: 'circle' | 'cone' | 'square' | 'line'; icon: string; label: string }[] = [
@@ -5121,14 +5181,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 			attr: { title: 'Open Player View' }
 		});
 		playerViewBtn.innerHTML = '👁️ Player View';
-        
-    // Player view region tool button (GM only): show/move player viewport rectangle
-    const viewRegionBtn = viewport.createEl('button', {
-      cls: 'dnd-map-player-view-btn',
-      attr: { title: 'Player View Region' }
-    });
-    viewRegionBtn.innerHTML = '📺 View';
-    viewRegionBtn.addEventListener('click', () => setActiveTool('player-view'));
 		
 		playerViewBtn.addEventListener('click', async () => {
             // Allow multiple player views; do not close existing player view windows
@@ -5166,15 +5218,38 @@ export default class DndCampaignHubPlugin extends Plugin {
         setTimeout(() => {
           const pv = popoutLeaf.view as any;
           if (pv && typeof pv.setTabletopPanFromImageCoords === 'function') {
-            let topLeft = getRotatedRectTopLeft(rect);
+                try {
+                  const bounds = getRotatedRectBoundingSize(rect);
+                  const cx = rect.x + rect.w / 2;
+                  const cy = rect.y + rect.h / 2;
+                  let topLeft = { x: cx - bounds.w / 2, y: cy - bounds.h / 2 };
+                  const maxX = Math.max(0, img.naturalWidth - bounds.w);
+                  const maxY = Math.max(0, img.naturalHeight - bounds.h);
+                  const preY = topLeft.y;
+                  topLeft.x = Math.max(0, Math.min(maxX, topLeft.x));
+                  topLeft.y = Math.max(0, Math.min(maxY, topLeft.y));
+                  try { console.log('[GM] debugClamp', { site: 'gm-rect-mousemove', rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h, rotation: rect.rotation }, bounds, maxX, maxY, preY, postY: topLeft.y }); } catch (e) { }
+                  // expose topLeft for use below
+                  (pv as any).___topLeftToUse = topLeft;
+                } catch (e) { }
             try {
-              const maxX = Math.max(0, img.naturalWidth - rect.w);
-              const maxY = Math.max(0, img.naturalHeight - rect.h);
-              topLeft.x = Math.max(0, Math.min(maxX, topLeft.x));
-              topLeft.y = Math.max(0, Math.min(maxY, topLeft.y));
+              // compute and set PV scale so GM indicator maps to PV viewport
+              try {
+                const bounds = getRotatedRectBoundingSize(rect);
+                const wrap = (pv as any)?.mapContainer as HTMLElement | undefined;
+                if (wrap && bounds.w > 0 && bounds.h > 0) {
+                  const r = wrap.getBoundingClientRect();
+                  const desiredScale = Math.max(0.001, Math.min(100, Math.min(r.width / bounds.w, r.height / bounds.h)));
+                  try { console.log('[GM] setPVScale', { site: 'open-player-view', scale: desiredScale }); } catch (e) {}
+                  if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(desiredScale as number);
+                  else (pv as any).tabletopScale = desiredScale;
+                }
+              } catch (e) { }
+
+              const t = (pv as any).___topLeftToUse || getRotatedRectTopLeft(rect);
+              try { console.log('[GM] sending pan', { x: t.x, y: t.y, source: 'GM', rect, zoom: config.scale }); } catch (e) {}
+              pv.setTabletopPanFromImageCoords(t.x, t.y);
             } catch (e) { }
-            console.log('[GM] sending pan', { x: topLeft.x, y: topLeft.y, source: 'GM', rect, zoom: config.scale });
-            pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y);
           }
         }, 50);
       }
@@ -5989,6 +6064,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 				aoePicker.toggleClass('hidden', tool !== 'aoe');
 				// Show/hide Fog shape picker
 				fogPicker.toggleClass('hidden', tool !== 'fog');
+				// Show/hide Player View controls picker
+				pvPicker.toggleClass('hidden', tool !== 'player-view');
 				
 				if (tool === 'pan') {
 					panBtn.addClass('active');
@@ -6072,10 +6149,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('Fog button clicked');
 				setActiveTool('fog');
 			});
-			moveGridBtn.addEventListener('click', () => {
-				console.log('Move Grid button clicked');
-				setActiveTool('move-grid');
-			});
+		viewBtn.addEventListener('click', () => {
+			console.log('Player View button clicked');
+			setActiveTool('player-view');
+		});
 			// Hide move-grid if no grid
 			if (!hasGrid) moveGridBtn.addClass('hidden');
 
@@ -6145,9 +6222,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Helper: Calculate the visual top-left corner of a rotated rectangle
 			// Returns the image coordinates that should appear at the player's screen top-left
       const getRotatedRectTopLeft = (rect: any): { x: number; y: number } => {
-        // In image-space we must invert the rotation because the player view
-        // rotates the map by +deg; the visible image footprint rotates by -deg.
-        const deg = -(rect.rotation || 0);
+        // Use the same rotation sign/convention as the PlayerMapView so that
+        // image-space top-left computations match the CSS transform applied
+        // in `PlayerMapView.applyTabletopTransform` (which rotates by +deg).
+        const deg = (rect.rotation || 0);
         const t = (deg * Math.PI) / 180;
 
         const cx = rect.x + rect.w / 2;
@@ -6165,7 +6243,18 @@ export default class DndCampaignHubPlugin extends Plugin {
         const x = cx - rightX * halfW - downX * halfH;
         const y = cy - rightY * halfW - downY * halfH;
 
-        return { x: Math.round(x), y: Math.round(y) };
+        return { x: x, y: y };
+      };
+
+      // Helper: get axis-aligned bounding box size of a rotated rect (image-space)
+      const getRotatedRectBoundingSize = (rect: any): { w: number; h: number } => {
+        const deg = (rect.rotation || 0);
+        const t = (deg * Math.PI) / 180;
+        const ca = Math.abs(Math.cos(t));
+        const sa = Math.abs(Math.sin(t));
+        const w = ca * rect.w + sa * rect.h;
+        const h = sa * rect.w + ca * rect.h;
+        return { w, h };
       };
 
 			// Tool-aware mouse handlers
@@ -6483,14 +6572,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 
             // Check if local coords are inside rect bounds
             if (Math.abs(localX) <= existingRect.w / 2 && Math.abs(localY) <= existingRect.h / 2) {
-              // Move existing rect - store offset in local space
+              // Move existing rect - store offset in WORLD space (center-based)
               isMovingGmRect = true;
-              gmDragStart = { x: localX, y: localY }; // Offset within rect in local space
+              // Keep gmDragCurrent for consistency
               gmDragCurrent = { x: mapPos.x, y: mapPos.y };
               isDraggingGmRect = true;
               viewport.style.cursor = 'grabbing';
-              // Also store as persistent local offset for mousemove logic
-              (this as any)._gmRectDragOffset = { x: localX, y: localY };
+              // Store world-space offset from mouse to rect center so movement is rotation-independent
+              const centerX = existingRect.x + existingRect.w / 2;
+              const centerY = existingRect.y + existingRect.h / 2;
+              (this as any)._gmRectDragOffsetWorld = { x: mapPos.x - centerX, y: mapPos.y - centerY };
             }
           }
 
@@ -6500,8 +6591,9 @@ export default class DndCampaignHubPlugin extends Plugin {
             gmDragCurrent = { x: mapPos.x, y: mapPos.y };
             isDraggingGmRect = true;
             viewport.style.cursor = 'grabbing';
-            // Reset drag offset for new rect
+            // Reset any stored drag offsets
             (this as any)._gmRectDragOffset = null;
+            (this as any)._gmRectDragOffsetWorld = null;
 
             // Calculate rect size and position as an unrotated footprint + rotation
             let rectW = Math.round(img.naturalWidth * 0.3);
@@ -6546,20 +6638,41 @@ export default class DndCampaignHubPlugin extends Plugin {
             // Broadcast initial top-left to player views using rotated-basis top-left
             try {
               if ((this as any)._playerMapViews) {
-                let topLeft = getRotatedRectTopLeft(rect);
-                // Clamp to image bounds so rotation math can't send player views off-map
+                // Compute top-left from rect center using rotated footprint size so rotation preserves center
                 try {
-                  const maxX = Math.max(0, img.naturalWidth - rect.w);
-                  const maxY = Math.max(0, img.naturalHeight - rect.h);
+                  const bounds = getRotatedRectBoundingSize(rect);
+                  const cx = rect.x + rect.w / 2;
+                  const cy = rect.y + rect.h / 2;
+                  let topLeft = { x: cx - bounds.w / 2, y: cy - bounds.h / 2 };
+                  const maxX = Math.max(0, img.naturalWidth - bounds.w);
+                  const maxY = Math.max(0, img.naturalHeight - bounds.h);
+                  const preY = topLeft.y;
                   topLeft.x = Math.max(0, Math.min(maxX, topLeft.x));
                   topLeft.y = Math.max(0, Math.min(maxY, topLeft.y));
+                  try { console.log('[GM] debugClamp', { site: 'initial-sync', rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h, rotation: rect.rotation }, bounds, maxX, maxY, preY, postY: topLeft.y }); } catch (e) { }
+                  (this as any)._playerMapViews.__topLeftToUse = topLeft;
                 } catch (e) { }
                 (this as any)._playerMapViews.forEach((pv: any) => {
                   try {
+                    // Compute and send scale so the GM indicator maps exactly into the PV viewport
+                    try {
+                      const bounds = getRotatedRectBoundingSize(rect);
+                      const wrap = pv?.mapContainer as HTMLElement | undefined;
+                      if (wrap && bounds.w > 0 && bounds.h > 0) {
+                        const r = wrap.getBoundingClientRect();
+                        const desiredScale = Math.max(0.001, Math.min(100, Math.min(r.width / bounds.w, r.height / bounds.h)));
+                        try { console.log('[GM] setPVScale', { site: 'initial-sync', scale: desiredScale }); } catch (e) {}
+                        if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(desiredScale as number);
+                        else (pv as any).tabletopScale = desiredScale;
+                      }
+                    } catch (e) { }
+
+                    try { const t = (this as any)._playerMapViews.__topLeftToUse || getRotatedRectTopLeft(rect); console.log('[GM] broadcastPan', { x: t.x, y: t.y, site: 'initial-sync' }); } catch (e) { }
                     if (typeof pv.setTabletopRotation === 'function') pv.setTabletopRotation(rect.rotation);
-                    if (typeof pv.setTabletopPanFromImageCoords === 'function') pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y);
+                    try { const t = (this as any)._playerMapViews.__topLeftToUse || getRotatedRectTopLeft(rect); if (typeof pv.setTabletopPanFromImageCoords === 'function') pv.setTabletopPanFromImageCoords(t.x, t.y); } catch (e) { }
                   } catch (e) { }
                 });
+                try { delete (this as any)._playerMapViews.__topLeftToUse; } catch (e) { }
               }
             } catch (e) { }
           }
@@ -6654,20 +6767,17 @@ export default class DndCampaignHubPlugin extends Plugin {
           
           // Check if we're moving an existing rect or creating a new one
           if (isMovingGmRect && existingRect) {
-            // Moving existing rect: keep the same offset from mouse to rect center in rotated space
-            const rotation = existingRect.rotation || 0;
-            const rad = (rotation * Math.PI) / 180;
-            let offset = (this as any)._gmRectDragOffset;
-            if (!offset) offset = { x: 0, y: 0 };
-            // Mouse position is mapPos (current), so rect center = mouse - offset (rotated to world)
-            const centerX = mapPos.x - (offset.x * Math.cos(rad) - offset.y * Math.sin(rad));
-            const centerY = mapPos.y - (offset.x * Math.sin(rad) + offset.y * Math.cos(rad));
+            // Moving existing rect: use WORLD-space offset so movement does not depend on rect rotation
+            const off = (this as any)._gmRectDragOffsetWorld || { x: 0, y: 0 };
+            // Rect center follows mouse minus stored world offset
+            const centerX = mapPos.x - off.x;
+            const centerY = mapPos.y - off.y;
             rect = {
-              x: Math.max(0, Math.round(centerX - existingRect.w / 2)),
-              y: Math.max(0, Math.round(centerY - existingRect.h / 2)),
+              x: Math.max(0, centerX - existingRect.w / 2),
+              y: Math.max(0, centerY - existingRect.h / 2),
               w: existingRect.w,
               h: existingRect.h,
-              rotation: rotation
+              rotation: existingRect.rotation || 0
             };
           } else {
             // Creating new rect by dragging corners
@@ -6690,16 +6800,39 @@ export default class DndCampaignHubPlugin extends Plugin {
           // Broadcast top-left image coordinates to player views
           try {
             if ((this as any)._playerMapViews) {
-              let topLeft = getRotatedRectTopLeft(rect);
-              try {
-                const maxX = Math.max(0, img.naturalWidth - rect.w);
-                const maxY = Math.max(0, img.naturalHeight - rect.h);
-                topLeft.x = Math.max(0, Math.min(maxX, topLeft.x));
-                topLeft.y = Math.max(0, Math.min(maxY, topLeft.y));
-              } catch (e) { }
+                try {
+                  const bounds = getRotatedRectBoundingSize(rect);
+                  const cx = rect.x + rect.w / 2;
+                  const cy = rect.y + rect.h / 2;
+                  let topLeft = { x: cx - bounds.w / 2, y: cy - bounds.h / 2 };
+                  const maxX = Math.max(0, img.naturalWidth - bounds.w);
+                  const maxY = Math.max(0, img.naturalHeight - bounds.h);
+                  const preY = topLeft.y;
+                  topLeft.x = Math.max(0, Math.min(maxX, topLeft.x));
+                  topLeft.y = Math.max(0, Math.min(maxY, topLeft.y));
+                  try { console.log('[GM] debugClampFull', { site: 'gm-rect-mousemove', rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h, rotation: rect.rotation }, imgSize: { w: img.naturalWidth, h: img.naturalHeight }, bounds, maxX, maxY, preY, postY: topLeft.y }); } catch (e) { }
+                  (this as any)._playerMapViews.__topLeftToUse = topLeft;
+                } catch (e) { }
               (this as any)._playerMapViews.forEach((pv: any) => {
-                try { if (typeof pv.setTabletopPanFromImageCoords === 'function') pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y); } catch (e) { }
+                try {
+                  // set PV scale so the GM rect footprint fills the PV viewport (fit)
+                  try {
+                    const bounds = getRotatedRectBoundingSize(rect);
+                    const wrap = pv?.mapContainer as HTMLElement | undefined;
+                    if (wrap && bounds.w > 0 && bounds.h > 0) {
+                      const r = wrap.getBoundingClientRect();
+                      const desiredScale = Math.max(0.001, Math.min(100, Math.min(r.width / bounds.w, r.height / bounds.h)));
+                      try { console.log('[GM] setPVScale', { site: 'gm-rect-mousemove', scale: desiredScale }); } catch (e) {}
+                      if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(desiredScale as number);
+                      else (pv as any).tabletopScale = desiredScale;
+                    }
+                  } catch (e) { }
+
+                  try { const t = (this as any)._playerMapViews.__topLeftToUse || getRotatedRectTopLeft(rect); console.log('[GM] broadcastPan', { x: t.x, y: t.y, site: 'gm-rect-mousemove' }); } catch (e) { }
+                  try { const t = (this as any)._playerMapViews.__topLeftToUse || getRotatedRectTopLeft(rect); if (typeof pv.setTabletopPanFromImageCoords === 'function') pv.setTabletopPanFromImageCoords(t.x, t.y); } catch (e) { }
+                } catch (e) { }
               });
+              try { delete (this as any)._playerMapViews.__topLeftToUse; } catch (e) { }
             }
           } catch (e) { }
 				}
@@ -6818,16 +6951,26 @@ export default class DndCampaignHubPlugin extends Plugin {
             // Broadcast final top-left coords to player views
             try {
               if ((this as any)._playerMapViews) {
-                let topLeft = getRotatedRectTopLeft(rect);
                 try {
-                  const maxX = Math.max(0, img.naturalWidth - rect.w);
-                  const maxY = Math.max(0, img.naturalHeight - rect.h);
+                  const bounds = getRotatedRectBoundingSize(rect);
+                  const cx = rect.x + rect.w / 2;
+                  const cy = rect.y + rect.h / 2;
+                  let topLeft = { x: cx - bounds.w / 2, y: cy - bounds.h / 2 };
+                  const maxX = Math.max(0, img.naturalWidth - bounds.w);
+                  const maxY = Math.max(0, img.naturalHeight - bounds.h);
+                  const preY = topLeft.y;
                   topLeft.x = Math.max(0, Math.min(maxX, topLeft.x));
                   topLeft.y = Math.max(0, Math.min(maxY, topLeft.y));
+                  try { console.log('[GM] debugClampFull', { site: 'open-player-view', rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h, rotation: rect.rotation }, imgSize: { w: img.naturalWidth, h: img.naturalHeight }, bounds, maxX, maxY, preY, postY: topLeft.y }); } catch (e) { }
+                  (this as any)._playerMapViews.__topLeftToUse = topLeft;
                 } catch (e) { }
                 (this as any)._playerMapViews.forEach((pv: any) => {
-                  try { if (typeof pv.setTabletopPanFromImageCoords === 'function') pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y); } catch (e) { }
+                  try {
+                    try { const t = (this as any)._playerMapViews.__topLeftToUse || getRotatedRectTopLeft(rect); console.log('[GM] broadcastPan', { x: t.x, y: t.y, site: 'open-player-view' }); } catch (e) { }
+                    try { const t = (this as any)._playerMapViews.__topLeftToUse || getRotatedRectTopLeft(rect); if (typeof pv.setTabletopPanFromImageCoords === 'function') pv.setTabletopPanFromImageCoords(t.x, t.y); } catch (e) { }
+                  } catch (e) { }
                 });
+              try { delete (this as any)._playerMapViews.__topLeftToUse; } catch (e) { }
               }
             } catch (e) { }
           }
@@ -6908,17 +7051,40 @@ export default class DndCampaignHubPlugin extends Plugin {
 						// Broadcast rotation and position to player views
 						try {
 							if ((this as any)._playerMapViews) {
-								const topLeft = getRotatedRectTopLeft(gmRect);
-								(this as any)._playerMapViews.forEach((pv: any) => {
-									try { 
-										if (typeof pv.setTabletopRotation === 'function') {
-											pv.setTabletopRotation(gmRect.rotation);
-										}
-										if (typeof pv.setTabletopPanFromImageCoords === 'function') {
-											pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y);
-										}
-									} catch (e) { }
-								});
+                                let topLeft = getRotatedRectTopLeft(gmRect);
+                                try {
+                                  const bounds = getRotatedRectBoundingSize(gmRect);
+                                  const maxX = Math.max(0, img.naturalWidth - bounds.w);
+                                  const maxY = Math.max(0, img.naturalHeight - bounds.h);
+                                  const preY = topLeft.y;
+                                  topLeft.x = Math.max(0, Math.min(maxX, topLeft.x));
+                                  topLeft.y = Math.max(0, Math.min(maxY, topLeft.y));
+                                  try { console.log('[GM] debugClampFull', { site: 'rotate-ccw', rect: { x: gmRect.x, y: gmRect.y, w: gmRect.w, h: gmRect.h, rotation: gmRect.rotation }, imgSize: { w: img.naturalWidth, h: img.naturalHeight }, bounds, maxX, maxY, preY, postY: topLeft.y }); } catch (e) { }
+                                } catch (e) { }
+                (this as any)._playerMapViews.forEach((pv: any) => {
+                  try {
+                    // set PV scale to project GM rect into PV viewport
+                    try {
+                      const bounds = getRotatedRectBoundingSize(gmRect);
+                      const wrap = pv?.mapContainer as HTMLElement | undefined;
+                      if (wrap && bounds.w > 0 && bounds.h > 0) {
+                        const r = wrap.getBoundingClientRect();
+                        const desiredScale = Math.max(0.001, Math.min(100, Math.min(r.width / bounds.w, r.height / bounds.h)));
+                        try { console.log('[GM] setPVScale', { site: 'rotate-ccw', scale: desiredScale }); } catch (e) {}
+                        if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(desiredScale as number);
+                        else (pv as any).tabletopScale = desiredScale;
+                      }
+                    } catch (e) { }
+
+                    try { console.log('[GM] broadcastPan', { x: topLeft.x, y: topLeft.y, site: 'rotate-ccw' }); } catch (e) { }
+                    if (typeof pv.setTabletopRotation === 'function') {
+                      pv.setTabletopRotation(gmRect.rotation);
+                    }
+                    if (typeof pv.setTabletopPanFromImageCoords === 'function') {
+                      pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y);
+                    }
+                  } catch (e) { }
+                });
 							}
 						} catch (e) { }
 					} else if (e.key === 'e' || e.key === 'E' || e.key === ']') {
@@ -6941,17 +7107,40 @@ export default class DndCampaignHubPlugin extends Plugin {
 						// Broadcast rotation and position to player views
 						try {
 							if ((this as any)._playerMapViews) {
-								const topLeft = getRotatedRectTopLeft(gmRect);
-								(this as any)._playerMapViews.forEach((pv: any) => {
-									try { 
-										if (typeof pv.setTabletopRotation === 'function') {
-											pv.setTabletopRotation(gmRect.rotation);
-										}
-										if (typeof pv.setTabletopPanFromImageCoords === 'function') {
-											pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y);
-										}
-									} catch (e) { }
-								});
+                                let topLeft = getRotatedRectTopLeft(gmRect);
+                                try {
+                                  const bounds = getRotatedRectBoundingSize(gmRect);
+                                  const maxX = Math.max(0, img.naturalWidth - bounds.w);
+                                  const maxY = Math.max(0, img.naturalHeight - bounds.h);
+                                  const preY = topLeft.y;
+                                  topLeft.x = Math.max(0, Math.min(maxX, topLeft.x));
+                                  topLeft.y = Math.max(0, Math.min(maxY, topLeft.y));
+                                  try { console.log('[GM] debugClampFull', { site: 'rotate-cw', rect: { x: gmRect.x, y: gmRect.y, w: gmRect.w, h: gmRect.h, rotation: gmRect.rotation }, imgSize: { w: img.naturalWidth, h: img.naturalHeight }, bounds, maxX, maxY, preY, postY: topLeft.y }); } catch (e) { }
+                                } catch (e) { }
+                (this as any)._playerMapViews.forEach((pv: any) => {
+                  try {
+                    // set PV scale to project GM rect into PV viewport
+                    try {
+                      const bounds = getRotatedRectBoundingSize(gmRect);
+                      const wrap = pv?.mapContainer as HTMLElement | undefined;
+                      if (wrap && bounds.w > 0 && bounds.h > 0) {
+                        const r = wrap.getBoundingClientRect();
+                        const desiredScale = Math.max(0.001, Math.min(100, Math.min(r.width / bounds.w, r.height / bounds.h)));
+                        try { console.log('[GM] setPVScale', { site: 'rotate-cw', scale: desiredScale }); } catch (e) {}
+                        if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(desiredScale as number);
+                        else (pv as any).tabletopScale = desiredScale;
+                      }
+                    } catch (e) { }
+
+                    try { console.log('[GM] broadcastPan', { x: topLeft.x, y: topLeft.y, site: 'rotate-cw' }); } catch (e) { }
+                    if (typeof pv.setTabletopRotation === 'function') {
+                      pv.setTabletopRotation(gmRect.rotation);
+                    }
+                    if (typeof pv.setTabletopPanFromImageCoords === 'function') {
+                      pv.setTabletopPanFromImageCoords(topLeft.x, topLeft.y);
+                    }
+                  } catch (e) { }
+                });
 							}
 						} catch (e) { }
 					}
@@ -22214,7 +22403,7 @@ class PlayerMapView extends ItemView {
   private mapImage: HTMLImageElement | null = null;
   private markerImageCache: Map<string, HTMLImageElement> = new Map();
   // Tabletop mode state
-  private tabletopMode: boolean = false;
+  private tabletopMode: boolean = true;
   private tabletopPanX: number = 0;
   private tabletopPanY: number = 0;
   private tabletopScale: number = 1;
@@ -22276,29 +22465,16 @@ class PlayerMapView extends ItemView {
    * @param y - Image y coordinate (natural pixels)
    */
   setTabletopPanFromImageCoords(x: number, y: number) {
-    if (!this.tabletopMode) {
-      // Auto-enable tabletop mode if GM is controlling view
-      const cal = this.plugin.settings.tabletopCalibration;
-      if (cal) {
-        this.tabletopMode = true;
-        this.syncGmViewRectVisibility();
-        if (this.syncCanvasToImage) this.syncCanvasToImage();
-
-        console.log('[PV] GM pan request', {
-          x, y,
-          scale: this.tabletopScale,
-          rot: this.tabletopRotation,
-          imgNatural: this.mapImage ? { w: this.mapImage.naturalWidth, h: this.mapImage.naturalHeight } : null
-        });
-
-      } else {
-        return; // Can't position without calibration
-      }
-    }
+    // Always log GM pan requests for diagnostics
+    try { console.debug('[PV] setTabletopPanFromImageCoords called', { x, y, scale: this.tabletopScale, rot: this.tabletopRotation }); } catch (e) {}
+    // Player view is passive: do not auto-toggle tabletop mode here.
+    // The GM-side controls and calibration are authoritative.
     
     // Store desired image-space top-left so we can recompute after scale/rotation changes
     this.tabletopTargetX = x;
     this.tabletopTargetY = y;
+
+    try { console.debug('[PV] setTabletopPanFromImageCoords stored target', { targetX: this.tabletopTargetX, targetY: this.tabletopTargetY }); } catch (e) {}
 
     // Apply using centralized transform routine
     this.applyTabletopTransform();
@@ -22316,29 +22492,140 @@ class PlayerMapView extends ItemView {
     this.applyTabletopTransform();
   }
 
+  /**
+   * Set tabletop scale (uniform). Called by GM to project a GM indicator
+   * rectangle exactly into the player viewport.
+   */
+  setTabletopScale(scale: number) {
+    this.tabletopScale = scale || 1;
+    try { console.debug('[PV] setTabletopScale', { scale: this.tabletopScale }); } catch (e) {}
+    this.applyTabletopTransform();
+  }
+
+  /**
+   * Enable/disable tabletop mode programmatically (called from GM view)
+   */
+  setTabletopMode(on: boolean) {
+    // Tabletop mode is always enforced on the player view. Ignore requests
+    // to disable; keep behavior idempotent for callers.
+    this.tabletopMode = true;
+    this.syncGmViewRectVisibility();
+    if (this.syncCanvasToImage) this.syncCanvasToImage();
+    this.applyTabletopTransform();
+  }
+
+  /**
+   * Toggle fullscreen for the player view window (popout leaf document)
+   */
+  toggleFullscreen() {
+    try {
+      const win = (this.containerEl as any).win || this.containerEl.ownerDocument?.defaultView || window;
+      const doc = win.document;
+      if (!doc.fullscreenElement) {
+        doc.documentElement.requestFullscreen();
+      } else {
+        doc.exitFullscreen();
+      }
+    } catch (e) { console.warn('toggleFullscreen failed', e); }
+  }
+
   private applyTabletopTransform() {
-    if (!this.mapContainer) return;
+    if (!this.mapContainer || !this.mapImage) return;
     const sled = this.mapContainer.querySelector('.dnd-player-map-sled') as HTMLElement;
     if (!sled) return;
 
     const s = this.tabletopScale || 1;
     const deg = this.tabletopRotation || 0;
-    const t = (deg * Math.PI) / 180;
-    const c = Math.cos(t);
-    const sn = Math.sin(t);
+    const rad = (deg * Math.PI) / 180;
+    const c = Math.cos(rad);
+    const sn = Math.sin(rad);
 
-    // If GM requested a specific image top-left, recompute pan from that target
+    // If GM requested a specific image top-left, compute pan so that point maps to screen (0,0)
     if (this.tabletopTargetX !== null && this.tabletopTargetY !== null) {
       const x = this.tabletopTargetX;
       const y = this.tabletopTargetY;
+
+      // pan = - R * (s*[x,y])
       this.tabletopPanX = -s * (c * x - sn * y);
       this.tabletopPanY = -s * (sn * x + c * y);
+
+      try { console.debug('[PV] applyTabletopTransform computed pan from target', { targetX: x, targetY: y, panX: this.tabletopPanX, panY: this.tabletopPanY, scale: s, rot: deg }); } catch (e) {}
     }
+
+    // Clamp based on rotated bbox in SCREEN space (no offsets)
+    this.clampTabletopPan();
 
     sled.style.transformOrigin = '0 0';
     sled.style.left = '0px';
     sled.style.top = '0px';
+
+    // IMPORTANT: CSS applies transforms right-to-left, so this results in
+    // rotate first, then translate (which matches our math).
     sled.style.transform = `translate(${this.tabletopPanX}px, ${this.tabletopPanY}px) rotate(${deg}deg)`;
+    try { console.debug('[PV] sled transform applied', { transform: sled.style.transform, panX: this.tabletopPanX, panY: this.tabletopPanY, rot: deg }); } catch (e) {}
+  }
+
+  private clampTabletopPan() {
+    const img = this.mapImage;
+    const wrap = this.mapContainer;
+    if (!img || !wrap) return;
+
+    const s = this.tabletopScale || 1;
+    const deg = this.tabletopRotation || 0;
+    const rad = (deg * Math.PI) / 180;
+    const c = Math.cos(rad);
+    const sn = Math.sin(rad);
+
+    const W = img.naturalWidth * s;
+    const H = img.naturalHeight * s;
+
+    // Rotated corners in SCREEN space (before pan)
+    const pts = [
+      { x: 0, y: 0 },
+      { x: W, y: 0 },
+      { x: 0, y: H },
+      { x: W, y: H }
+    ].map(p => ({ x: c * p.x - sn * p.y, y: sn * p.x + c * p.y }));
+
+    const minX0 = Math.min(...pts.map(p => p.x));
+    const maxX0 = Math.max(...pts.map(p => p.x));
+    const minY0 = Math.min(...pts.map(p => p.y));
+    const maxY0 = Math.max(...pts.map(p => p.y));
+
+    const r = wrap.getBoundingClientRect();
+    const vw = r.width;
+    const vh = r.height;
+
+    // Debug: log computed bbox and viewport sizes to diagnose width clipping
+    console.debug('[PV] clampTabletopPan bbox', { minX0, maxX0, minY0, maxY0, vw, vh, panBefore: this.tabletopPanX });
+
+    // Compute the strict pan ranges that would keep the rotated bbox
+    // fully covering the viewport. For large rotated bboxes this enforces
+    // that no empty area appears; for our UX we want the player to be
+    // able to freely pan the map, so we only CENTER when the rotated
+    // bbox is smaller than the viewport and otherwise allow free panning.
+    const panMinX = vw - maxX0;
+    const panMaxX = -minX0;
+    const panMinY = vh - maxY0;
+    const panMaxY = -minY0;
+
+    // If the rotated bbox is smaller than the viewport, center it.
+    if (panMinX > panMaxX) {
+      const centerX = (vw - (maxX0 - minX0)) / 2;
+      this.tabletopPanX = centerX - minX0;
+    } else {
+      // Otherwise: allow free horizontal panning (do not hard-clamp here).
+      // Leave `this.tabletopPanX` unchanged so the user can explore fully.
+    }
+
+    if (panMinY > panMaxY) {
+      const centerY = (vh - (maxY0 - minY0)) / 2;
+      this.tabletopPanY = centerY - minY0;
+    } else {
+      // Allow free vertical panning as well.
+    }
+
+    console.debug('[PV] clampTabletopPan result', { panMinX, panMaxX, panMinY, panMaxY, panAfterX: this.tabletopPanX, panAfterY: this.tabletopPanY });
   }
 
   /**
@@ -22497,6 +22784,9 @@ class PlayerMapView extends ItemView {
       text: '🎯 Calibrate'
     });
 
+    // Hide player-side calibrate UI: calibration is managed from the GM map view
+    calibrateBtn.style.display = 'none';
+
     // Mini size display
     const miniSizeLabel = toolbar.createEl('span', {
       cls: 'dnd-player-toolbar-label'
@@ -22516,6 +22806,13 @@ class PlayerMapView extends ItemView {
     const rotateLeftBtn = toolbar.createEl('button', { cls: 'dnd-player-toolbar-btn', text: '⤺' });
     const rotateResetBtn = toolbar.createEl('button', { cls: 'dnd-player-toolbar-btn', text: '0°' });
     const rotateRightBtn = toolbar.createEl('button', { cls: 'dnd-player-toolbar-btn', text: '⤻' });
+
+    // Hide player-side controls: GM map view will provide these controls instead
+    fullscreenBtn.style.display = 'none';
+    tabletopBtn.style.display = 'none';
+    rotateLeftBtn.style.display = 'none';
+    rotateResetBtn.style.display = 'none';
+    rotateRightBtn.style.display = 'none';
 
 
     // Map container
@@ -22551,16 +22848,15 @@ class PlayerMapView extends ItemView {
         }
 
         if (this.tabletopMode) {
-          // In tabletop mode: scale so grid cells = physical mm
-          const cal = this.plugin.settings.tabletopCalibration;
-          if (cal && this.mapConfig?.gridSize > 0) {
-            const gridPx = this.mapConfig.gridSize;
-            const targetScreenPx = cal.miniBaseMm * cal.pixelsPerMm;
-            this.tabletopScale = targetScreenPx / gridPx;
-            const scaledW = img.naturalWidth * this.tabletopScale;
-            const scaledH = img.naturalHeight * this.tabletopScale;
+          // In tabletop mode: GM must supply `this.tabletopScale`. Respect the
+          // GM-provided scale and apply it; do not attempt to compute a
+          // calibration-based tabletopScale here.
+          if (this.tabletopScale && this.mapConfig?.gridSize > 0) {
+            const s = this.tabletopScale;
+            const scaledW = img.naturalWidth * s;
+            const scaledH = img.naturalHeight * s;
 
-            // Set image to physical size
+            // Set image to explicit scaled size
             img.style.maxWidth = 'none';
             img.style.maxHeight = 'none';
             img.style.objectFit = 'fill';
@@ -22571,7 +22867,6 @@ class PlayerMapView extends ItemView {
             sled.style.width = scaledW + 'px';
             sled.style.height = scaledH + 'px';
             sled.style.position = 'absolute';
-            // Use single transform (translate + rotate) with top-left origin
             sled.style.transformOrigin = '0 0';
             sled.style.left = '0px';
             sled.style.top = '0px';
@@ -22586,6 +22881,9 @@ class PlayerMapView extends ItemView {
             canvas.style.width = scaledW + 'px';
             canvas.style.height = scaledH + 'px';
           }
+
+          // Expose sync helper so GM-side code can ask the player view to refresh layout
+          try { this.syncCanvasToImage = syncCanvasToImage; } catch (e) { }
 
             // If a GM-side view rect exists on the plugin, update its scaled pixel bounds so redrawAnnotations can draw it
             try {
@@ -22646,21 +22944,8 @@ class PlayerMapView extends ItemView {
       this.tabletopPanX = e.clientX - panStartX;
       this.tabletopPanY = e.clientY - panStartY;
 
-      // Clamp so map doesn't fly off screen entirely
-      const cal = this.plugin.settings.tabletopCalibration;
-      if (cal && this.mapConfig?.gridSize > 0) {
-        const scaledW = img.naturalWidth * this.tabletopScale;
-        const scaledH = img.naturalHeight * this.tabletopScale;
-        const wrapperRect = mapContainer.getBoundingClientRect();
-        const minX = -(scaledW - wrapperRect.width * 0.1);
-        const minY = -(scaledH - wrapperRect.height * 0.1);
-        const maxX = wrapperRect.width * 0.9;
-        const maxY = wrapperRect.height * 0.9;
-        this.tabletopPanX = Math.max(minX, Math.min(maxX, this.tabletopPanX));
-        this.tabletopPanY = Math.max(minY, Math.min(maxY, this.tabletopPanY));
-      }
-
-      // Move the sled (image + canvas move together) via centralized transform
+      // Clamp using rotation-aware bbox and apply transform
+      this.clampTabletopPan();
       this.applyTabletopTransform();
     });
 
@@ -22680,8 +22965,13 @@ class PlayerMapView extends ItemView {
           const c = Math.cos(t);
           const sn = Math.sin(t);
 
-          const imageX = Math.round((-(c * this.tabletopPanX + sn * this.tabletopPanY)) / s);
-          const imageY = Math.round(-(-sn * this.tabletopPanX + c * this.tabletopPanY) / s);
+          // v = -pan
+          const vx = -this.tabletopPanX;
+          const vy = -this.tabletopPanY;
+
+          // [x;y] = R^-1 * v / s  where R^-1 = [ c  sn; -sn  c ]
+          const imageX = Math.round((c * vx + sn * vy) / s);
+          const imageY = Math.round((-sn * vx + c * vy) / s);
           
           // Update GM rect position and trigger redraw
           try {
@@ -22745,30 +23035,13 @@ class PlayerMapView extends ItemView {
     };
 
     tabletopBtn.addEventListener('click', () => {
-      const cal = this.plugin.settings.tabletopCalibration;
-      if (!cal) {
-        // Open calibration first
-        const popoutWin = (this.containerEl as any).win || window;
-        new TabletopCalibrationModal(this.plugin.app, this.plugin, popoutWin, () => {
-          updateMiniLabel();
-          this.tabletopMode = true;
-          applyTabletopMode();
-        }).open();
-        return;
-      }
-      this.tabletopMode = !this.tabletopMode;
+      // Tabletop mode is enforced on the player view (GM is authoritative).
+      // Ignore user clicks that attempt to disable it; refresh UI instead.
+      this.tabletopMode = true;
       applyTabletopMode();
     });
 
-    calibrateBtn.addEventListener('click', () => {
-      const popoutWin = (this.containerEl as any).win || window;
-      new TabletopCalibrationModal(this.plugin.app, this.plugin, popoutWin, () => {
-        updateMiniLabel();
-        if (this.tabletopMode) {
-          syncCanvasToImage();
-        }
-      }).open();
-    });
+    // Player-side calibration removed; calibration should be performed from GM view.
 
     // Size canvas when image loads
     img.addEventListener('load', () => {

@@ -3135,6 +3135,20 @@
   top: 60px;
 }
 
+/* Stack third button (if present) below second button */
+.dnd-map-player-view-btn:nth-of-type(3) {
+  top: 110px;
+}
+
+/* When player-view control buttons are placed inside the toolbar, override
+   absolute positioning so they flow inline with other toolbar controls. */
+.dnd-map-player-view-controls .dnd-map-player-view-btn {
+  position: static;
+  top: auto;
+  right: auto;
+  margin-left: 6px;
+}
+
 /* Player Map View (Popout Window) */
 .dnd-player-map-container {
   background: #000;
@@ -3151,14 +3165,16 @@
   width: 100%;
   height: 100%;
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;      /* important for viewport behavior */
+  display: block;        /* stop flex centering fighting your transforms */
 }
 
 .dnd-player-map-sled {
-  position: relative;
-  display: inline-block;
+  position: absolute;    /* world anchored at (0,0) of wrapper */
+  left: 0;
+  top: 0;
+  display: block;
+  will-change: transform;
 }
 
 .dnd-player-map-image {
