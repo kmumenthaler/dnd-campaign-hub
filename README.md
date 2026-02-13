@@ -1,12 +1,26 @@
 ﻿# D&D Campaign Hub
 
-A comprehensive Obsidian plugin for managing D&D (or any TTRPG) campaigns with integrated calendars, session tracking, NPC management, and more.
+A comprehensive Obsidian plugin for managing D&D (or any TTRPG) campaigns with interactive battle maps, integrated calendars, session tracking, NPC management, and more.
 
 > **⚠️ Project Status: Early Preview**
 >
 > The core workflows are still under active construction and may change without notice. Expect breaking changes, incomplete features, and missing polish while the project matures. Feedback and issue reports are very welcome during this incubation phase!
 
 ## Features
+
+### 🗺️ Interactive Battle Maps
+- **Full-Featured Map Viewer**: Display battle maps with adjustable grids (square, hex-horizontal, hex-vertical)
+- **Annotation Tools**: Highlight cells, place markers, draw freehand, measure distances, add AoE effects, and erase
+- **Marker Library**: Persistent token library for PCs, NPCs, creatures, and custom markers with image support
+- **AoE Effects**: Circle, cone, square, and line area effects with optional token anchoring (moves with tokens)
+- **Fog of War**: Reveal/hide areas dynamically with brush, circle, rectangle, and polygon tools
+- **Layer System**: Organize annotations across Player, DM, and Background layers for better control
+- **Player View**: Clean popout window for players with fullscreen support and automatic sync from GM view
+- **Tabletop Miniature Mode**: Physical calibration mode to match on-screen grid to real 25-32mm miniatures on your monitor
+- **Pan & Drag**: Free navigation in tabletop mode when maps exceed screen size
+- **Grid Calibration**: Two-point calibration tool to perfectly align grids with pre-gridded map images
+- **Real-time Sync**: GM annotations automatically update in the Player View window
+- **Keyboard Shortcuts**: Q (pan), W (select), E (highlight), R (marker), D (draw), Z (ruler), X (AoE), C (eraser), V (fog), ⚙ (calibrate), ✥ (move grid)
 
 ### 🎲 Campaign Management
 - **Initialize Campaign Structure**: Automatically create organized folders for NPCs, PCs, sessions, adventures, items, spells, and factions
@@ -25,7 +39,7 @@ A comprehensive Obsidian plugin for managing D&D (or any TTRPG) campaigns with i
 - **PC Templates**: Player character sheets with stats, backstory, and development
 - **Faction System**: Track organizations, their goals, and relationships
 
-### 🗺️ World Building
+### 🌍 World Building
 - **Campaign Truths**: Define fundamental truths about your world
 - **Adventure Tracking**: Organize story arcs and quests
 - **Item Database**: Catalog magical items and equipment
@@ -52,15 +66,14 @@ A comprehensive Obsidian plugin for managing D&D (or any TTRPG) campaigns with i
 
 ## Dependencies
 
-D&D Campaign Hub requires these community plugins for full functionality:
+D&D Campaign Hub works standalone for battle maps. For full campaign management functionality, these community plugins are recommended:
 
-- **[Buttons](https://github.com/shabegom/buttons)** - Interactive buttons for creating campaign elements
 - **[Buttons](https://github.com/shabegom/buttons)** - Interactive buttons for creating campaign elements
 - **[Dataview](https://github.com/blacksmithgu/obsidian-dataview)** - Dynamic tables and queries for organizing data
 - **[Calendarium](https://github.com/javalent/calendarium)** - Fantasy calendar integration for tracking in-game dates
 - **[Templater](https://github.com/SilentVoid13/Templater)** - Template engine for dynamic content in NPC and other files
 
-The plugin will prompt you to install these dependencies if they're missing.
+The plugin will prompt you to install these dependencies if they're missing and you're using campaign management features.
 
 ## Quick Start
 
@@ -77,23 +90,45 @@ The plugin will prompt you to install these dependencies if they're missing.
 3. Choose your role (GM or Player)
 4. Select or create a fantasy calendar
 
-### 3. Start Your First Session
+### 3. Set Up Your First Battle Map
+
+1. Use Command Palette: **Create New Battle Map**
+2. Select a map image from your vault
+3. Choose grid type (square, hex-horizontal, hex-vertical, or none)
+4. Set grid size and use the two-point calibration tool to align the grid perfectly
+5. Embed the map in your notes with the provided code block
+
+### 4. Use the Map in Play
+
+1. Click on the embedded map to open the interactive viewer
+2. Use toolbar buttons to switch between tools (highlight, marker, draw, ruler, AoE, fog of war)
+3. Click **👁️ Player View** to open a clean window for your players
+4. Annotations sync automatically between GM and Player View
+5. For in-person games, click **🎲 Tabletop**, then **🎯 Calibrate** to match grid to physical miniatures
+
+### 5. Start Your First Session
 
 1. Navigate to your campaign's World.md file
 2. Click the "Create New Session" button
 3. Fill in session details (date, location, etc.)
-4. Start documenting your adventure!
+4. Embed maps and start documenting your adventure!
 
 ## Commands
 
 Access these via the Command Palette (`Ctrl/Cmd + P`):
 
+### Campaign Management
 - **Initialize D&D Campaign Hub** - Set up vault structure and templates
 - **Create New D&D Campaign** - Start a new campaign
 - **Switch D&D Campaign** - Switch between campaigns
 - **Update D&D Hub Templates** - Apply template updates (with backup)
 - **Check D&D Hub Dependencies** - Verify required community plugins are installed
 - **Purge D&D Campaign Hub** - Remove all plugin data (use with caution)
+
+### Battle Maps
+- **Create New Battle Map** - Create and configure a new interactive map
+- **Manage Battle Maps** - Browse, edit, and delete existing maps
+- **Manage Marker Library** - Create and organize reusable tokens for PCs, NPCs, and creatures
 
 ## Template Structure
 
@@ -163,9 +198,18 @@ npm run dev
 
 ```
 src/
-  main.ts          # Main plugin logic
-  templates.ts     # Template definitions
-  styles.css       # Plugin styles
+  main.ts                      # Main plugin logic and map viewer
+  templates.ts                 # Template definitions
+  styles.css                   # Plugin styles
+  map/
+    MapManager.ts              # Map creation and configuration
+    MapCreationModal.ts        # Map setup dialog
+    types.ts                   # Map type definitions
+  marker/
+    MarkerLibrary.ts           # Token library manager
+    MarkerLibraryModal.ts      # Marker library UI
+    MarkerPickerModal.ts       # Marker selection dialog
+    MarkerTypes.ts             # Marker type definitions
 ```
 
 ## Customization
@@ -186,6 +230,107 @@ tags: [npc, ally, merchant]
 
 This enables powerful Dataview queries across your campaign.
 
+## Battle Map Usage
+
+### Creating a Map
+
+1. Run **Create New Battle Map** from Command Palette
+2. Select your map image (stored in your vault)
+3. Configure:
+   - **Grid Type**: Square, Hex-Horizontal, Hex-Vertical, or None
+   - **Grid Size**: Pixel size of one grid cell
+   - **Scale**: Real-world distance per grid cell (e.g., 5 feet per square)
+   - **Calibration**: Use the two-point tool to align grid with pre-gridded images
+
+### Embedding Maps
+
+Maps are embedded using code blocks:
+
+````markdown
+```dnd-map
+{"mapId": "unique-map-id"}
+```
+````
+
+Click the embedded map to open the interactive viewer.
+
+### Annotation Tools
+
+- **Pan (Q)**: Navigate the map (drag with mouse)
+- **Select (W)**: Select and move annotations
+- **Highlight (E)**: Highlight grid cells with colors
+- **Marker (R)**: Place tokens from your marker library
+- **Draw (D)**: Freehand drawing on the map
+- **Ruler (Z)**: Measure distances between points
+- **AoE (X)**: Place area effects (circle, cone, square, line)
+- **Eraser (C)**: Remove annotations
+- **Fog (V)**: Reveal or hide areas (Background layer only)
+- **Calibrate (⚙)**: Two-point calibration for grid alignment
+- **Move Grid (✥)**: Adjust grid offsets with arrow keys
+
+### Layers
+
+- **Player Layer**: Visible to players in Player View
+- **DM Layer**: Only visible to the GM (for secret info, enemy positions)
+- **Background Layer**: Base layer for fog of war and map features
+
+### Player View
+
+1. Click **👁️ Player View** button in map viewer
+2. A clean popout window opens (can be moved to a second monitor/projector)
+3. All Obsidian UI chrome is hidden for immersive display
+4. Annotations sync automatically from GM view
+5. Only Player layer annotations are shown (DM layer is hidden)
+6. Fullscreen support with **🖵 Fullscreen** button
+
+### Tabletop Miniature Mode
+
+For in-person games with physical miniatures:
+
+1. Open Player View and click **🎲 Tabletop**
+2. Click **🎯 Calibrate**
+3. Enter your monitor diagonal size (in inches)
+4. Set miniature base size (usually 25mm or 32mm)
+5. Fine-tune with the on-screen ruler (use a credit card as 85.6mm reference)
+6. Grid cells now match physical miniature size
+7. Pan/drag oversized maps to move around the battlefield
+
+### Marker Library
+
+Create reusable tokens:
+
+1. Run **Manage Marker Library** from Command Palette
+2. Click **Create New Marker**
+3. Configure:
+   - **Type**: Player, NPC, Creature, Location, Object, Custom
+   - **Image**: Optional token image from vault
+   - **Size**: For creatures, select size (Tiny, Small, Medium, Large, Huge, Gargantuan)
+   - **Colors**: Background and border colors
+   - **Icon**: Emoji or text icon overlay
+4. Use **R** tool to place markers from library
+5. Right-click markers on map to:
+   - Delete marker
+   - Cast AoE from this position (anchors to token)
+   - Move marker (shows distance ruler)
+
+### AoE Effects
+
+1. Select **AoE (X)** tool
+2. Choose shape: Circle (burst), Cone, Square (cube), Line
+3. Click origin point, drag to set size
+4. Distance snaps to grid increments
+5. AoE effects can anchor to tokens (right-click token → Cast AoE)
+6. Anchored effects move automatically when the token moves
+
+### Fog of War
+
+1. Switch to **Background Layer**
+2. Select **Fog (V)** tool
+3. Choose mode: Reveal (👁️) or Hide (🌑)
+4. Choose shape: Brush (drag), Circle, Rectangle, Polygon (click points)
+5. Click **☀️ Reveal All** or **🌑 Hide All** for quick reset
+6. Fog updates sync to Player View in real-time
+
 ## Tips & Best Practices
 
 1. **Use Buttons**: Click buttons in World.md instead of creating files manually
@@ -193,6 +338,11 @@ This enables powerful Dataview queries across your campaign.
 3. **Link Liberally**: Use `[[wikilinks]]` to connect NPCs, locations, and events
 4. **Review Backups**: Check `z_Backups/` if you need to restore content
 5. **Update Regularly**: Apply template updates to get new features
+6. **Separate Player View**: Move Player View to a second monitor or projector for in-person games
+7. **Use Layers**: Keep secret information on DM layer so it doesn't show in Player View
+8. **Calibrate Once**: Save tabletop calibration settings and reuse across all maps
+9. **Anchor AoE to Tokens**: Cast AoE from token context menu to auto-update positions
+10. **Pre-create Markers**: Build your marker library before the session for faster setup
 
 ## Troubleshooting
 
@@ -213,6 +363,36 @@ If you see a dependency warning:
 - Ensure Calendarium plugin is installed and enabled
 - Create a calendar in Calendarium settings
 - Re-run "Create New D&D Campaign" to link the calendar
+
+### Map Grid Not Aligned
+- Use the **Calibrate (⚙)** tool to set two reference points
+- Click first point on a grid intersection, then another intersection
+- Enter the real number of grid cells between the points
+- Adjust grid offset with **Move Grid (✥)** tool and arrow keys
+
+### Player View Not Syncing
+- Ensure Player View window is still open
+- Check that annotations are on the Player layer (not DM layer)
+- Try closing and reopening Player View
+- Verify map annotations were saved (they auto-save on change)
+
+### Tabletop Mode Sizing Wrong
+- Re-calibrate with correct monitor diagonal size
+- Check that miniature base size matches your physical minis (25mm or 32mm)
+- Use fine-tune slider with a physical ruler or credit card (85.6mm)
+- Verify browser zoom is at 100% (Ctrl+0)
+
+### Markers Not Appearing
+- Check that marker has a valid image path or background color
+- Ensure marker is on the active layer (switch layers to check)
+- Run **Manage Marker Library** to verify marker exists
+- Try recreating the marker in the library
+
+### Performance Issues with Large Maps
+- Close other Obsidian panes to free memory
+- Reduce map image resolution (4k+ images can be slow)
+- Clear fog of war regions if you have hundreds (Reveal All → recreate)
+- Disable grid overlay if not needed (set grid type to "none")
 
 ## Contributing
 
