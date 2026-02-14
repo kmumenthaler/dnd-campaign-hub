@@ -3825,9 +3825,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 			
 			// Load dynamic lighting walls (Background layer only)
 			config.walls = savedData.walls || [];
+			console.log('Loaded walls from savedData:', config.walls.length, 'walls');
 			
 			// Load light sources (Background layer only)
 			config.lightSources = savedData.lightSources || [];
+			console.log('Loaded light sources from savedData:', config.lightSources.length, 'lights');
 			
 			// Load active layer (defaults to Player)
 			config.activeLayer = savedData.activeLayer || 'Player';
@@ -4958,9 +4960,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 						
 						// Only draw light radii if the light is active
 						if (isActive) {
-							// Draw light radius (bright light)
+							// Draw light radius (bright light) - subtle on Background layer
 							if (brightRadiusPx > 0) {
-								ctx.globalAlpha = 0.3;
+								ctx.globalAlpha = 0.12;
 								ctx.fillStyle = '#ffff88';
 								ctx.beginPath();
 								ctx.arc(light.x, light.y, brightRadiusPx, 0, Math.PI * 2);
@@ -4968,9 +4970,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 								ctx.globalAlpha = 1.0;
 							}
 							
-							// Draw dim light radius
+							// Draw dim light radius - very subtle on Background layer
 							if (dimRadiusPx > 0) {
-								ctx.globalAlpha = 0.15;
+								ctx.globalAlpha = 0.06;
 								ctx.fillStyle = '#aaaa44';
 								ctx.beginPath();
 								ctx.arc(light.x, light.y, brightRadiusPx + dimRadiusPx, 0, Math.PI * 2);
@@ -4978,12 +4980,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 								ctx.globalAlpha = 1.0;
 							}
 							
-							// Draw cone for bullseye lantern (showing direction)
+							// Draw cone for bullseye lantern (showing direction) - subtle
 							if (light.cone) {
 								const direction = (light.direction || 0) * Math.PI / 180; // Convert degrees to radians
 								const coneAngle = Math.PI / 6; // 30 degree half-angle (60 degree total cone)
 								
-								ctx.globalAlpha = 0.2;
+								ctx.globalAlpha = 0.1;
 								ctx.fillStyle = '#ffffff';
 								ctx.beginPath();
 								ctx.moveTo(light.x, light.y);
@@ -7822,6 +7824,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			console.log('Highlights count:', mapData.highlights.length);
 			console.log('Markers count:', mapData.markers.length);
 			console.log('Drawings count:', mapData.drawings.length);
+			console.log('Walls count:', mapData.walls.length);
+			console.log('Light sources count:', mapData.lightSources.length);
 			
 			// Save to dedicated file using adapter for config directory files
 			const annotationPath = this.getMapAnnotationPath(config.mapId);
