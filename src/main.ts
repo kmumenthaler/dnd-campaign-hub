@@ -5669,8 +5669,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Tool-aware mouse handlers
 			viewport.addEventListener('mousedown', (e: MouseEvent) => {
-				// Ignore clicks on the toolbar
-				if (toolbar.contains(e.target as Node)) {
+				// Ignore clicks on UI panels (toolbar, layer menu, player view button, controls)
+				const target = e.target as Node;
+				if (toolbarWrapper.contains(target) || playerViewBtn.contains(target) || controls.contains(target)) {
 					return;
 				}
 				
@@ -6327,6 +6328,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 // Double-click to finish polygon fog region or wall chain
 		viewport.addEventListener('dblclick', (e: MouseEvent) => {
+			// Ignore double-clicks on UI panels
+			const target = e.target as Node;
+			if (toolbarWrapper.contains(target) || playerViewBtn.contains(target) || controls.contains(target)) {
+				return;
+			}
 			if (activeTool === 'fog' && selectedFogShape === 'polygon' && fogPolygonPoints.length >= 3) {
 				const region = {
 					id: `fog_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -6668,6 +6674,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Right-click for marker context menu
 			viewport.addEventListener('contextmenu', (e: MouseEvent) => {
+				// Ignore right-clicks on UI panels
+				const target = e.target as Node;
+				if (toolbarWrapper.contains(target) || playerViewBtn.contains(target) || controls.contains(target)) {
+					return;
+				}
 				const mapPos = screenToMap(e.clientX, e.clientY);
 				for (let i = config.markers.length - 1; i >= 0; i--) {
 					const m = config.markers[i];
