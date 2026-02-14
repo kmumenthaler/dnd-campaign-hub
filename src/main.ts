@@ -24221,7 +24221,15 @@ class PlayerMapView extends ItemView {
     }
     
     const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
-    console.log('[PV] Vision calculation params:', { gridSize: config.gridSize, scale: config.scale?.value, pixelsPerFoot });
+    console.log('[PV] Vision calculation params:', { 
+      gridSize: config.gridSize, 
+      scale: config.scale?.value, 
+      pixelsPerFoot,
+      playerTokens: playerTokens.length,
+      allLights: allLights.length,
+      playerTokenDetails: playerTokens.map(pt => ({ x: pt.x.toFixed(1), y: pt.y.toFixed(1), darkvision: pt.darkvision })),
+      lightDetails: allLights.map(l => ({ x: l.x.toFixed(1), y: l.y.toFixed(1), bright: l.bright, dim: l.dim, attached: l.attachedToMarker }))
+    });
     // Filter walls to only include those that block sight
     // Open doors/windows allow light through, windows/terrain always allow light
     const walls = (config.walls || []).filter((wall: any) => {
@@ -24301,37 +24309,75 @@ class PlayerMapView extends ItemView {
     
     // Draw lights - intersect each light with player vision cones
     if (allLights.length > 0 && playerVisionCtx) {
-      console.log('[PV] Drawing lights intersected with player vision:', { lights: allLights.length, playerTokens: playerTokens.length });
+      console.log('[PV] Drawing lights intersected with player vision:',{ lights: allLights.length, playerTokens: playerTokens.length });
       
       allLights.forEach((light: any, i: number) => {
         const brightRadiusPx = light.bright * pixelsPerFoot;
         const dimRadiusPx = light.dim * pixelsPerFoot;
         const totalRadiusPx = brightRadiusPx + dimRadiusPx;
         
-        if (totalRadiusPx <= 0) return;
+        if (totalRadiusPx <= 0) {
+          console.log(`[PV] Light ${i}: SKIPPING (no radius) - bright=${light.bright}, dim=${light.dim}`);
+          return;
+        }
         
-        // Draw light to temp canvas
+        console.log(`[PV] Light ${i} at (${light.x.toFixed(1)}, ${light.y.toFixed(1)}): bright=${light.bright}ft (${brightRadiusPx.toFixed(1)}px), dim=${light.dim}ft (${dimRadiusPx.toFixed(1)}px) - DRAWING WITH PLAYER VISION CLIP`);
+        
+        // Create temp canvas for this light
         const lightCanvas = document.createElement('canvas');
         lightCanvas.width = w;
         lightCanvas.height = h;
         const lightCtx = lightCanvas.getContext('2d');
         
         if (lightCtx) {
-          // Start with black fog
-          lightCtx.fillStyle = '#000000';
-          lightCtx.fillRect(0, 0, w, h);
+          // Draw the light on transparent canvas (makes white areas)
+          lightCtx.save();
           
-          // Draw the light (reveals by cutting holes)
-          this.drawLightWithShadows(lightCtx, light.x, light.y, brightRadiusPx, dimRadiusPx, walls);
+          // Compute light visibility with wall occlusion
+          const lightVisPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadiusPx, walls);
           
-          // Intersect with player vision - only reveal parts players can see
+          if (lightVisPoly.length >= 3) {
+            // Clip to light visibility
+            lightCtx.beginPath();
+            const firstPt = lightVisPoly[0];
+            if (firstPt) {
+              lightCtx.moveTo(firstPt.x, firstPt.y);
+              for (let j = 1; j < lightVisPoly.length; j++) {
+                const pt = lightVisPoly[j];
+                if (pt) lightCtx.lineTo(pt.x, pt.y);
+              }
+              lightCtx.closePath();
+              lightCtx.clip();
+            }
+            
+            // Draw light as white circles
+            if (brightRadiusPx > 0) {
+              lightCtx.fillStyle = 'rgba(255, 255, 255, 1.0)';
+              lightCtx.beginPath();
+              lightCtx.arc(light.x, light.y, brightRadiusPx, 0, Math.PI * 2);
+              lightCtx.fill();
+            }
+            
+            if (dimRadiusPx > 0) {
+              lightCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+              lightCtx.beginPath();
+              lightCtx.arc(light.x, light.y, totalRadiusPx, 0, Math.PI * 2);
+              lightCtx.fill();
+            }
+          }
+          
+          lightCtx.restore();
+          
+          // Now intersect with player vision - only show where light rays AND player vision overlap
           lightCtx.globalCompositeOperation = 'destination-in';
           lightCtx.drawImage(playerVisionCanvas, 0, 0);
           
-          // Apply to main fog canvas
+          // Apply to fog canvas (remove fog where light is)
           fogCtx.globalCompositeOperation = 'destination-out';
           fogCtx.drawImage(lightCanvas, 0, 0);
           fogCtx.globalCompositeOperation = 'source-over';
+          
+          console.log(`[PV] Light ${i}: Applied to fog (intersection of light rays + player vision)`);
         }
       });
     }
@@ -24345,6 +24391,7 @@ class PlayerMapView extends ItemView {
         if (marker.markerId && marker.darkvision && marker.darkvision > 0) {
           const markerDef = this.plugin.markerLibrary.getMarker(marker.markerId);
           if (markerDef && markerDef.type === 'player') {
+            console.log('[PV] Adding darkvision marker:', { x: marker.position.x.toFixed(1), y: marker.position.y.toFixed(1), range: marker.darkvision, name: markerDef.name });
             darkvisionMarkers.push({
               x: marker.position.x,
               y: marker.position.y,
@@ -24355,6 +24402,13 @@ class PlayerMapView extends ItemView {
       });
     }
     
+    console.log('[PV] Fog reveal summary:', {
+      playerTokens: playerTokens.length,
+      lightsTotal: allLights.length,
+      darkvisionMarkers: darkvisionMarkers.length,
+      message: darkvisionMarkers.length === 0 && allLights.length === 0 ? 'NO FOG WILL BE REVEALED (no lights or darkvision)' : 'Fog will be revealed'
+    });
+    
     // Create grayscale overlay canvas (for darkvision-only areas)
     const grayscaleCanvas = document.createElement('canvas');
     grayscaleCanvas.width = w;
@@ -24362,12 +24416,13 @@ class PlayerMapView extends ItemView {
     const grayCtx = grayscaleCanvas.getContext('2d');
     
     if (darkvisionMarkers.length > 0 && grayCtx) {
-      console.log('[PV] Drawing darkvision:', { count: darkvisionMarkers.length });
+      console.log('[PV] Drawing darkvision fog reveal:', { count: darkvisionMarkers.length, markers: darkvisionMarkers.map(dv => ({ x: dv.x.toFixed(1), y: dv.y.toFixed(1), range: dv.range })) });
       
       // First, draw darkvision to reveal fog (cuts holes in fog canvas)
-      darkvisionMarkers.forEach((dv: any) => {
+      darkvisionMarkers.forEach((dv: any, i: number) => {
         const radiusPx = dv.range * pixelsPerFoot;
         if (radiusPx > 0) {
+          console.log(`[PV] Darkvision ${i}: Revealing ${dv.range}ft (${radiusPx.toFixed(1)}px) radius at (${dv.x.toFixed(1)}, ${dv.y.toFixed(1)})`);
           // Darkvision reveals fog with wall occlusion
           this.drawLightWithShadows(fogCtx, dv.x, dv.y, radiusPx, 0, walls);
         }
@@ -24378,7 +24433,13 @@ class PlayerMapView extends ItemView {
       grayCtx.fillStyle = 'rgba(60, 60, 80, 0.6)';
       grayCtx.fillRect(0, 0, w, h);
       
-      // Cut out areas where actual lights are visible to players - those should be full color
+      // FIRST: Clip grayscale to ONLY darkvision areas (before cutting out lights)
+      grayCtx.globalCompositeOperation = 'destination-in';
+      if (playerDarkvisionCtx) {
+        grayCtx.drawImage(playerDarkvisionCanvas, 0, 0);
+      }
+      
+      // SECOND: Cut out areas where actual lights are visible to players - those should be full color
       grayCtx.globalCompositeOperation = 'destination-out';
       if (allLights.length > 0 && playerVisionCtx) {
         allLights.forEach((light: any) => {
@@ -24388,35 +24449,58 @@ class PlayerMapView extends ItemView {
           
           if (totalRadiusPx <= 0) return;
           
-          // Create temp canvas for this light intersected with player vision
+          // Create temp canvas for this light's illuminated area
           const lightCanvas = document.createElement('canvas');
           lightCanvas.width = w;
           lightCanvas.height = h;
           const lightCtx = lightCanvas.getContext('2d');
           
           if (lightCtx) {
-            lightCtx.fillStyle = 'white';
-            lightCtx.fillRect(0, 0, w, h);
+            // Compute light visibility with wall occlusion
+            const lightVisPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadiusPx, walls);
             
-            // Draw light visibility (cuts holes)
-            lightCtx.globalCompositeOperation = 'destination-out';
-            this.drawLightWithShadows(lightCtx, light.x, light.y, brightRadiusPx, dimRadiusPx, walls);
-            
-            // Clip to player vision (only parts players can see)
-            lightCtx.globalCompositeOperation = 'destination-in';
-            lightCtx.drawImage(playerVisionCanvas, 0, 0);
-            
-            // Remove from grayscale (make these areas full color)
-            grayCtx.drawImage(lightCanvas, 0, 0);
+            if (lightVisPoly.length >= 3) {
+              lightCtx.save();
+              
+              // Clip to light visibility
+              lightCtx.beginPath();
+              const firstPt = lightVisPoly[0];
+              if (firstPt) {
+                lightCtx.moveTo(firstPt.x, firstPt.y);
+                for (let j = 1; j < lightVisPoly.length; j++) {
+                  const pt = lightVisPoly[j];
+                  if (pt) lightCtx.lineTo(pt.x, pt.y);
+                }
+                lightCtx.closePath();
+                lightCtx.clip();
+              }
+              
+              // Draw light as white (where light IS present)
+              if (brightRadiusPx > 0) {
+                lightCtx.fillStyle = 'rgba(255, 255, 255, 1.0)';
+                lightCtx.beginPath();
+                lightCtx.arc(light.x, light.y, brightRadiusPx, 0, Math.PI * 2);
+                lightCtx.fill();
+              }
+              
+              if (dimRadiusPx > 0) {
+                lightCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                lightCtx.beginPath();
+                lightCtx.arc(light.x, light.y, totalRadiusPx, 0, Math.PI * 2);
+                lightCtx.fill();
+              }
+              
+              lightCtx.restore();
+              
+              // Clip to player vision (only parts players can see)
+              lightCtx.globalCompositeOperation = 'destination-in';
+              lightCtx.drawImage(playerVisionCanvas, 0, 0);
+              
+              // Remove from grayscale (make these lit areas full color)
+              grayCtx.drawImage(lightCanvas, 0, 0);
+            }
           }
         });
-      }
-      
-      // Clip the grayscale to only darkvision areas
-      // The grayscale should only apply where darkvision reveals (not where lights illuminate)
-      grayCtx.globalCompositeOperation = 'destination-in';
-      if (playerDarkvisionCtx) {
-        grayCtx.drawImage(playerDarkvisionCanvas, 0, 0);
       }
     }
 
@@ -24428,10 +24512,14 @@ class PlayerMapView extends ItemView {
     
     // Apply grayscale overlay on top (darkvision tint)
     if (darkvisionMarkers.length > 0 && grayCtx) {
+      console.log('[PV] Applying grayscale overlay for darkvision areas');
       ctx.save();
       ctx.globalAlpha = 1.0;
+      ctx.globalCompositeOperation = 'source-over';
       ctx.drawImage(grayscaleCanvas, 0, 0);
       ctx.restore();
+    } else {
+      console.log('[PV] Not applying grayscale overlay:', { darkvisionMarkers: darkvisionMarkers.length, hasGrayCtx: !!grayCtx });
     }
   }
 
