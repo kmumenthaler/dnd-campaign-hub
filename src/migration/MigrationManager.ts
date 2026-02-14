@@ -9,7 +9,7 @@ export const TEMPLATE_VERSIONS = {
   world: "1.0.0",
   session: "1.2.1", // Fixed escaping issues in interactive scene checkboxes
   npc: "1.1.0", // Added token_id for map markers
-  pc: "1.0.0",
+  pc: "1.1.0", // Added token_id for map markers (same as player)
   player: "1.1.0", // Added token_id for map markers
   adventure: "1.1.1", // Fixed escaping issues in interactive scene checkboxes
   scene: "2.0.0", // Specialized scene templates (social, combat, exploration, puzzle, montage)
@@ -61,6 +61,32 @@ export class MigrationManager {
   }
 
   /**
+   * Parse frontmatter fields from file content
+   * More reliable than metadataCache which might not be populated yet
+   */
+  async parseFrontmatter(file: TFile): Promise<Record<string, any> | null> {
+    const content = await this.app.vault.read(file);
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!frontmatterMatch || !frontmatterMatch[1]) return null;
+
+    const frontmatter = frontmatterMatch[1];
+    const result: Record<string, any> = {};
+
+    // Parse each line as key: value
+    const lines = frontmatter.split('\n');
+    for (const line of lines) {
+      const match = line.match(/^(\w+):\s*(.*)$/);
+      if (match) {
+        const key = match[1];
+        const value = match[2].trim();
+        result[key] = value;
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Check if a file needs migration
    */
   async needsMigration(file: TFile): Promise<boolean> {
@@ -74,7 +100,22 @@ export class MigrationManager {
     if (!currentVersion) return true;
 
     // Compare versions
-    return this.compareVersions(currentVersion, targetVersion) < 0;
+    if (this.compareVersions(currentVersion, targetVersion) < 0) {
+      return true;
+    }
+
+    // Even if version matches, check if required fields are missing
+    // This handles cases where migration partially failed
+    const frontmatter = await this.parseFrontmatter(file);
+    if (!frontmatter) return false;
+
+    // Check for token_id field in types that should have it
+    const typesThatNeedTokens = ['player', 'npc', 'creature'];
+    if (typesThatNeedTokens.includes(fileType) && !frontmatter.token_id) {
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -321,10 +362,12 @@ export class MigrationManager {
   async migratePlayerTo1_1_0(file: TFile): Promise<void> {
     console.log(`Migrating player ${file.path} to v1.1.0`);
 
-    const cache = this.app.metadataCache.getFileCache(file);
-    const frontmatter = cache?.frontmatter;
+    const frontmatter = await this.parseFrontmatter(file);
     
-    if (!frontmatter) return;
+    if (!frontmatter) {
+      console.error(`Failed to parse frontmatter for ${file.path}`);
+      return;
+    }
     
     // Check if already has token_id
     if (frontmatter.token_id) {
@@ -346,10 +389,12 @@ export class MigrationManager {
   async migrateNPCTo1_1_0(file: TFile): Promise<void> {
     console.log(`Migrating NPC ${file.path} to v1.1.0`);
 
-    const cache = this.app.metadataCache.getFileCache(file);
-    const frontmatter = cache?.frontmatter;
+    const frontmatter = await this.parseFrontmatter(file);
     
-    if (!frontmatter) return;
+    if (!frontmatter) {
+      console.error(`Failed to parse frontmatter for ${file.path}`);
+      return;
+    }
     
     // Check if already has token_id
     if (frontmatter.token_id) {
@@ -371,10 +416,12 @@ export class MigrationManager {
   async migrateCreatureTo1_2_0(file: TFile): Promise<void> {
     console.log(`Migrating creature ${file.path} to v1.2.0`);
 
-    const cache = this.app.metadataCache.getFileCache(file);
-    const frontmatter = cache?.frontmatter;
+    const frontmatter = await this.parseFrontmatter(file);
     
-    if (!frontmatter) return;
+    if (!frontmatter) {
+      console.error(`Failed to parse frontmatter for ${file.path}`);
+      return;
+    }
     
     // Check if already has token_id
     if (frontmatter.token_id) {
@@ -430,8 +477,15 @@ export class MigrationManager {
       }
 
       // Player/PC-specific migrations (add token)
-      if (fileType === "player") {
+      if (fileType === "player" || fileType === "pc") {
         if (this.compareVersions(currentVersion, "1.1.0") < 0) {
+          await this.migratePlayerTo1_1_0(file);
+          return true;
+        }
+        // Check if token_id is missing even if version is up to date
+        const frontmatter = await this.parseFrontmatter(file);
+        if (frontmatter && !frontmatter.token_id) {
+          console.log(`${file.path} has correct version but missing token_id, re-running migration`);
           await this.migratePlayerTo1_1_0(file);
           return true;
         }
@@ -443,11 +497,25 @@ export class MigrationManager {
           await this.migrateNPCTo1_1_0(file);
           return true;
         }
+        // Check if token_id is missing even if version is up to date
+        const frontmatter = await this.parseFrontmatter(file);
+        if (frontmatter && !frontmatter.token_id) {
+          console.log(`${file.path} has correct version but missing token_id, re-running migration`);
+          await this.migrateNPCTo1_1_0(file);
+          return true;
+        }
       }
 
       // Creature-specific migrations (add token)
       if (fileType === "creature") {
         if (this.compareVersions(currentVersion, "1.2.0") < 0) {
+          await this.migrateCreatureTo1_2_0(file);
+          return true;
+        }
+        // Check if token_id is missing even if version is up to date
+        const frontmatter = await this.parseFrontmatter(file);
+        if (frontmatter && !frontmatter.token_id) {
+          console.log(`${file.path} has correct version but missing token_id, re-running migration`);
           await this.migrateCreatureTo1_2_0(file);
           return true;
         }
