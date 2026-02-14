@@ -4081,18 +4081,23 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Add undo/redo bar at top center
 		const undoRedoBar = viewport.createDiv({ cls: 'dnd-map-undoredo-bar' });
 		undoRedoBar.style.cssText = 'position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; gap: 4px; background: var(--background-secondary); border-radius: 6px; padding: 4px 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);';
+		// Prevent clicks on the bar from propagating to map tools
+		undoRedoBar.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
+		undoRedoBar.addEventListener('click', (e) => { e.stopPropagation(); });
 		
 		const undoBtn = undoRedoBar.createEl('button', { cls: 'dnd-map-undoredo-btn', attr: { title: 'Undo (Ctrl+Z)' } });
 		undoBtn.innerHTML = '↶';
 		undoBtn.style.cssText = 'background: transparent; border: none; font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 4px; color: var(--text-normal);';
-		undoBtn.addEventListener('click', () => undo());
+		undoBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); undo(); });
+		undoBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
 		undoBtn.addEventListener('mouseenter', () => undoBtn.style.background = 'var(--background-modifier-hover)');
 		undoBtn.addEventListener('mouseleave', () => undoBtn.style.background = 'transparent');
 		
 		const redoBtn = undoRedoBar.createEl('button', { cls: 'dnd-map-undoredo-btn', attr: { title: 'Redo (Ctrl+Y)' } });
 		redoBtn.innerHTML = '↷';
 		redoBtn.style.cssText = 'background: transparent; border: none; font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 4px; color: var(--text-normal);';
-		redoBtn.addEventListener('click', () => redo());
+		redoBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); redo(); });
+		redoBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
 		redoBtn.addEventListener('mouseenter', () => redoBtn.style.background = 'var(--background-modifier-hover)');
 		redoBtn.addEventListener('mouseleave', () => redoBtn.style.background = 'transparent');
 		
