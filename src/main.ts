@@ -23720,8 +23720,24 @@ class PlayerMapView extends ItemView {
     // Draw drawings
     playerDrawings.forEach((d: any) => this.drawDrawing(ctx, d));
 
-    // Draw markers
-    playerMarkers.forEach((m: any) => this.drawMarker(ctx, m));
+    // Separate player tokens from other markers - player tokens should always be visible
+    const playerTokens: any[] = [];
+    const otherMarkers: any[] = [];
+    playerMarkers.forEach((m: any) => {
+      if (m.markerId) {
+        const markerDef = this.plugin.markerLibrary.getMarker(m.markerId);
+        if (markerDef && markerDef.type === 'player') {
+          playerTokens.push(m);
+        } else {
+          otherMarkers.push(m);
+        }
+      } else {
+        otherMarkers.push(m);
+      }
+    });
+
+    // Draw non-player markers (these will be obscured by fog)
+    otherMarkers.forEach((m: any) => this.drawMarker(ctx, m));
 
     // Draw drag ruler (distance indicator) if a marker is being moved
     if (config.dragRuler) {
@@ -23735,6 +23751,9 @@ class PlayerMapView extends ItemView {
       console.log('[PV] Drawing fog of war with lights');
       this.drawFogOfWar(ctx, this.canvas!.width, this.canvas!.height, config);
     }
+
+    // Draw player tokens on top of fog - they should always be visible
+    playerTokens.forEach((m: any) => this.drawMarker(ctx, m));
   }
 
   private drawGrid(ctx: CanvasRenderingContext2D, config: any) {
@@ -24204,16 +24223,20 @@ class PlayerMapView extends ItemView {
       });
     }
     
-    // Collect player tokens (markers with darkvision) - they define what's visible to players
-    const playerTokens: { x: number; y: number; range: number }[] = [];
+    // Collect ALL player tokens - they define what's visible to players
+    // Player tokens have vision from EITHER darkvision OR visible light sources
+    const playerTokens: { x: number; y: number; darkvision: number }[] = [];
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
-        if (marker.darkvision && marker.darkvision > 0) {
-          playerTokens.push({
-            x: marker.position.x,
-            y: marker.position.y,
-            range: marker.darkvision
-          });
+        if (marker.markerId) {
+          const markerDef = this.plugin.markerLibrary.getMarker(marker.markerId);
+          if (markerDef && markerDef.type === 'player') {
+            playerTokens.push({
+              x: marker.position.x,
+              y: marker.position.y,
+              darkvision: marker.darkvision || 0
+            });
+          }
         }
       });
     }
@@ -24239,17 +24262,37 @@ class PlayerMapView extends ItemView {
     });
     
     // Compute combined player visibility polygon (what all players can see)
-    // This will be used to filter/intersect with light visibility
+    // Each player sees from their darkvision AND from any lights they have line-of-sight to
     let playerVisibilityPolys: { x: number; y: number }[][] = [];
     if (playerTokens.length > 0) {
       playerTokens.forEach((pt: any) => {
-        const radiusPx = pt.range * pixelsPerFoot;
-        if (radiusPx > 0) {
+        // Darkvision grants vision
+        if (pt.darkvision > 0) {
+          const radiusPx = pt.darkvision * pixelsPerFoot;
           const visPoly = this.computeVisibilityPolygon(pt.x, pt.y, radiusPx, walls);
           if (visPoly.length >= 3) {
             playerVisibilityPolys.push(visPoly);
           }
         }
+        
+        // Check each light source - if player can see it, they gain vision from that light
+        allLights.forEach((light: any) => {
+          const brightRadiusPx = light.bright * pixelsPerFoot;
+          const dimRadiusPx = light.dim * pixelsPerFoot;
+          const totalRadiusPx = brightRadiusPx + dimRadiusPx;
+          
+          if (totalRadiusPx > 0) {
+            // Check if player has line of sight to the light source
+            const hasLoS = this.hasLineOfSight(pt.x, pt.y, light.x, light.y, walls);
+            if (hasLoS) {
+              // Player can see this light - add its visibility polygon to player vision
+              const lightVisPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadiusPx, walls);
+              if (lightVisPoly.length >= 3) {
+                playerVisibilityPolys.push(lightVisPoly);
+              }
+            }
+          }
+        });
       });
     }
     
@@ -24324,16 +24367,20 @@ class PlayerMapView extends ItemView {
     }
     
     // Darkvision reveals fog but shows grayscale
-    // Collect markers with darkvision
+    // Collect markers with darkvision (only player tokens)
     const darkvisionMarkers: any[] = [];
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
-        if (marker.darkvision && marker.darkvision > 0) {
-          darkvisionMarkers.push({
-            x: marker.position.x,
-            y: marker.position.y,
-            range: marker.darkvision
-          });
+        // Only player tokens should reveal fog with darkvision
+        if (marker.markerId && marker.darkvision && marker.darkvision > 0) {
+          const markerDef = this.plugin.markerLibrary.getMarker(marker.markerId);
+          if (markerDef && markerDef.type === 'player') {
+            darkvisionMarkers.push({
+              x: marker.position.x,
+              y: marker.position.y,
+              range: marker.darkvision
+            });
+          }
         }
       });
     }
@@ -24535,6 +24582,42 @@ class PlayerMapView extends ItemView {
    * Compute visibility polygon from a point using ray casting
    * Returns array of points forming the visible area boundary
    */
+  /**
+   * Check if there is a clear line of sight between two points (not blocked by walls)
+   */
+  private hasLineOfSight(
+    x1: number, y1: number,
+    x2: number, y2: number,
+    walls: any[]
+  ): boolean {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance === 0) return true; // Same point
+    
+    const dirX = dx / distance;
+    const dirY = dy / distance;
+    
+    // Check if ray from (x1,y1) to (x2,y2) intersects any wall
+    for (const wall of walls) {
+      if (!wall.start || !wall.end) continue;
+      
+      const t = this.raySegmentIntersection(
+        x1, y1, dirX, dirY,
+        wall.start.x, wall.start.y,
+        wall.end.x, wall.end.y
+      );
+      
+      // If intersection exists and is closer than target, line of sight is blocked
+      if (t !== null && t > 0.1 && t < distance - 0.1) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
   private computeVisibilityPolygon(
     originX: number,
     originY: number,
