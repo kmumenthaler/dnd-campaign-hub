@@ -23720,8 +23720,24 @@ class PlayerMapView extends ItemView {
     // Draw drawings
     playerDrawings.forEach((d: any) => this.drawDrawing(ctx, d));
 
-    // Draw markers
-    playerMarkers.forEach((m: any) => this.drawMarker(ctx, m));
+    // Separate player tokens from other markers - player tokens should always be visible
+    const playerTokens: any[] = [];
+    const otherMarkers: any[] = [];
+    playerMarkers.forEach((m: any) => {
+      if (m.markerId) {
+        const markerDef = this.plugin.markerLibrary.getMarker(m.markerId);
+        if (markerDef && markerDef.type === 'player') {
+          playerTokens.push(m);
+        } else {
+          otherMarkers.push(m);
+        }
+      } else {
+        otherMarkers.push(m);
+      }
+    });
+
+    // Draw non-player markers (these will be obscured by fog)
+    otherMarkers.forEach((m: any) => this.drawMarker(ctx, m));
 
     // Draw drag ruler (distance indicator) if a marker is being moved
     if (config.dragRuler) {
@@ -23735,6 +23751,9 @@ class PlayerMapView extends ItemView {
       console.log('[PV] Drawing fog of war with lights');
       this.drawFogOfWar(ctx, this.canvas!.width, this.canvas!.height, config);
     }
+
+    // Draw player tokens on top of fog - they should always be visible
+    playerTokens.forEach((m: any) => this.drawMarker(ctx, m));
   }
 
   private drawGrid(ctx: CanvasRenderingContext2D, config: any) {
