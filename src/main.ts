@@ -3883,6 +3883,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let dragOffsetX = 0;
 		let dragOffsetY = 0;
 		let markerDragOrigin: { x: number; y: number } | null = null; // Original position when dragging a marker
+		// Light dragging state
+		let draggingLightIndex = -1; // Index of light being dragged (-1 = none)
+		let lightDragOffsetX = 0;
+		let lightDragOffsetY = 0;
+		let lightDragOrigin: { x: number; y: number } | null = null;
 			let rulerStart: { x: number; y: number } | null = null;
 			let rulerEnd: { x: number; y: number } | null = null;
 			let rulerComplete = false; // Track if ruler endpoint was set by click (not just mousemove preview)
@@ -3919,6 +3924,23 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let wallPoints: { x: number; y: number }[] = [];
 			let wallPreviewPos: { x: number; y: number } | null = null;
 			if (!config.walls) config.walls = [];
+			// Wall drag state
+			let draggingWallIndex = -1; // Index of wall being dragged (-1 = none)
+			let wallDragOffsetStartX = 0;
+			let wallDragOffsetStartY = 0;
+			let wallDragOffsetEndX = 0;
+			let wallDragOffsetEndY = 0;
+			// Wall types for dynamic lighting
+			const WALL_TYPES = {
+				wall: { name: 'Wall', icon: '🧱', color: '#ff4500', style: 'solid', blocksSight: true, blocksMovement: true },
+				door: { name: 'Door', icon: '🚪', color: '#8B4513', style: 'door', blocksSight: true, blocksMovement: true },
+				window: { name: 'Window', icon: '🪟', color: '#87CEEB', style: 'window', blocksSight: false, blocksMovement: true },
+				secret: { name: 'Secret Door', icon: '🔒', color: '#666666', style: 'dashed', blocksSight: true, blocksMovement: true },
+				invisible: { name: 'Invisible Wall', icon: '👻', color: '#cccccc', style: 'dotted', blocksSight: true, blocksMovement: true },
+				terrain: { name: 'Terrain', icon: '🪨', color: '#8B7355', style: 'solid', blocksSight: false, blocksMovement: true },
+			} as const;
+			type WallType = keyof typeof WALL_TYPES;
+			let selectedWallType: WallType = 'wall';
 			// Dynamic Lighting sources state
 			let selectedLightSource: LightSourceType = 'torch';
 			if (!config.lightSources) config.lightSources = [];
@@ -4064,6 +4086,43 @@ export default class DndCampaignHubPlugin extends Plugin {
 		fogBtn.toggleClass('hidden', config.activeLayer !== 'Background');
 		wallsBtn.toggleClass('hidden', config.activeLayer !== 'Background');
 		lightsBtn.toggleClass('hidden', config.activeLayer !== 'Background');
+
+		// Wall type picker sub-menu (shown when walls tool is active)
+		const wallsPicker = wallsBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
+		const wallTypeButtons: Map<string, HTMLButtonElement> = new Map();
+		(Object.entries(WALL_TYPES) as [WallType, typeof WALL_TYPES[WallType]][]).forEach(([type, wallDef]) => {
+			const btn = wallsPicker.createEl('button', {
+				cls: 'dnd-map-aoe-shape-btn' + (type === selectedWallType ? ' active' : ''),
+				attr: { title: wallDef.name }
+			});
+			btn.createEl('span', { text: wallDef.icon });
+			wallTypeButtons.set(type, btn);
+			btn.addEventListener('click', () => {
+				selectedWallType = type;
+				wallTypeButtons.forEach((b) => b.removeClass('active'));
+				btn.addClass('active');
+			});
+		});
+		// Separator
+		wallsPicker.createDiv({ cls: 'dnd-fog-picker-sep' });
+		// Delete all walls button
+		const clearWallsBtn = wallsPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn dnd-fog-action-btn',
+			attr: { title: 'Delete All Walls' }
+		});
+		clearWallsBtn.createEl('span', { text: '🗑️' });
+		clearWallsBtn.addEventListener('click', () => {
+			if (config.walls && config.walls.length > 0) {
+				config.walls = [];
+				redrawAnnotations();
+				this.saveMapAnnotations(config, el);
+				const viewport = el.querySelector('.dnd-map-viewport') as any;
+				if (viewport && viewport._syncPlayerView) viewport._syncPlayerView();
+				new Notice('All walls deleted');
+			} else {
+				new Notice('No walls to delete');
+			}
+		});
 
 		// Light Sources picker sub-menu (shown when lights tool is active)
 		const lightsPicker = lightsBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
@@ -4690,20 +4749,173 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 				// Draw Dynamic Lighting Walls (only on Background layer)
 				if (config.activeLayer === 'Background' && config.walls && config.walls.length > 0) {
-					ctx.strokeStyle = '#ff4500'; // Orange-red for visibility
-					ctx.lineWidth = 4;
-					ctx.lineCap = 'round';
-					ctx.setLineDash([]);
 					config.walls.forEach((wall: any) => {
-						ctx.beginPath();
-						ctx.moveTo(wall.start.x, wall.start.y);
-						ctx.lineTo(wall.end.x, wall.end.y);
-						ctx.stroke();
+						const wallType = wall.type || 'wall';
+						const wallDef = WALL_TYPES[wallType as WallType] || WALL_TYPES.wall;
+						const isOpen = wall.open === true;
+						
+						ctx.strokeStyle = wallDef.color;
+						ctx.lineWidth = 4;
+						ctx.lineCap = 'round';
+						
+						// Set line dash based on style
+						if (wallDef.style === 'dashed') {
+							ctx.setLineDash([10, 6]);
+						} else if (wallDef.style === 'dotted') {
+							ctx.setLineDash([3, 6]);
+						} else {
+							ctx.setLineDash([]);
+						}
+						
+						// Calculate wall segment properties
+						const dx = wall.end.x - wall.start.x;
+						const dy = wall.end.y - wall.start.y;
+						const length = Math.sqrt(dx * dx + dy * dy);
+						const angle = Math.atan2(dy, dx);
+						const midX = (wall.start.x + wall.end.x) / 2;
+						const midY = (wall.start.y + wall.end.y) / 2;
+						const isDraggingThis = draggingWallIndex === config.walls.indexOf(wall);
+						
+						// Draw selection indicator if dragging
+						if (isDraggingThis) {
+							ctx.strokeStyle = '#00ff00';
+							ctx.lineWidth = 2;
+							ctx.setLineDash([4, 4]);
+							const selPad = 12;
+							ctx.strokeRect(
+								Math.min(wall.start.x, wall.end.x) - selPad,
+								Math.min(wall.start.y, wall.end.y) - selPad,
+								Math.abs(dx) + selPad * 2,
+								Math.abs(dy) + selPad * 2
+							);
+							ctx.setLineDash([]);
+						}
+						
+						// Draw based on type
+						if (wallDef.style === 'door') {
+							// Roll20-style door: rectangular door frame with swing arc
+							const doorWidth = Math.max(length, 20);
+							const doorHeight = 8;
+							
+							ctx.save();
+							ctx.translate(midX, midY);
+							ctx.rotate(angle);
+							
+							if (isOpen) {
+								// Open door: draw frame outline, door swung open
+								// Frame (empty rectangle)
+								ctx.strokeStyle = '#654321';
+								ctx.lineWidth = 2;
+								ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+								
+								// Door panel swung open (perpendicular)
+								ctx.fillStyle = '#8B6914';
+								ctx.globalAlpha = 0.7;
+								ctx.save();
+								ctx.rotate(Math.PI / 2); // Rotate 90 degrees for open
+								ctx.fillRect(-doorWidth / 2, -doorHeight / 2 - doorWidth / 2, doorWidth, doorHeight);
+								ctx.strokeStyle = '#654321';
+								ctx.strokeRect(-doorWidth / 2, -doorHeight / 2 - doorWidth / 2, doorWidth, doorHeight);
+								ctx.restore();
+								ctx.globalAlpha = 1.0;
+								
+								// Swing arc
+								ctx.strokeStyle = '#888888';
+								ctx.lineWidth = 1;
+								ctx.setLineDash([4, 4]);
+								ctx.beginPath();
+								ctx.arc(-doorWidth / 2, 0, doorWidth, 0, -Math.PI / 2, true);
+								ctx.stroke();
+								ctx.setLineDash([]);
+							} else {
+								// Closed door: solid door panel in frame
+								ctx.fillStyle = '#8B4513';
+								ctx.fillRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+								
+								// Door frame
+								ctx.strokeStyle = '#654321';
+								ctx.lineWidth = 2;
+								ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+								
+								// Door handle
+								ctx.fillStyle = '#FFD700';
+								ctx.beginPath();
+								ctx.arc(doorWidth / 2 - 6, 0, 3, 0, Math.PI * 2);
+								ctx.fill();
+								
+								// Swing arc hint
+								ctx.strokeStyle = '#888888';
+								ctx.lineWidth = 1;
+								ctx.setLineDash([4, 4]);
+								ctx.globalAlpha = 0.4;
+								ctx.beginPath();
+								ctx.arc(-doorWidth / 2, 0, doorWidth, 0, -Math.PI / 2, true);
+								ctx.stroke();
+								ctx.setLineDash([]);
+								ctx.globalAlpha = 1.0;
+							}
+							
+							ctx.restore();
+							
+						} else if (wallDef.style === 'window') {
+							// Roll20-style window: rectangular pane with cross-hatching
+							const windowWidth = Math.max(length, 16);
+							const windowHeight = 8;
+							
+							ctx.save();
+							ctx.translate(midX, midY);
+							ctx.rotate(angle);
+							
+							// Window frame (outer)
+							ctx.fillStyle = '#4488aa';
+							ctx.globalAlpha = 0.4;
+							ctx.fillRect(-windowWidth / 2, -windowHeight / 2, windowWidth, windowHeight);
+							ctx.globalAlpha = 1.0;
+							
+							// Window frame border
+							ctx.strokeStyle = '#336688';
+							ctx.lineWidth = 2;
+							ctx.strokeRect(-windowWidth / 2, -windowHeight / 2, windowWidth, windowHeight);
+							
+							// Window panes (vertical dividers)
+							ctx.strokeStyle = '#557799';
+							ctx.lineWidth = 1;
+							// Center divider
+							ctx.beginPath();
+							ctx.moveTo(0, -windowHeight / 2);
+							ctx.lineTo(0, windowHeight / 2);
+							ctx.stroke();
+							
+							// Cross pattern for glass effect
+							ctx.strokeStyle = '#aaccdd';
+							ctx.globalAlpha = 0.5;
+							ctx.lineWidth = 0.5;
+							const crossSize = 4;
+							for (let cx = -windowWidth / 2 + crossSize; cx < windowWidth / 2; cx += crossSize * 2) {
+								ctx.beginPath();
+								ctx.moveTo(cx, -windowHeight / 2);
+								ctx.lineTo(cx, windowHeight / 2);
+								ctx.stroke();
+							}
+							ctx.globalAlpha = 1.0;
+							
+							ctx.restore();
+							
+						} else {
+							// Standard wall/secret/invisible/terrain - just draw line
+							ctx.beginPath();
+							ctx.moveTo(wall.start.x, wall.start.y);
+							ctx.lineTo(wall.end.x, wall.end.y);
+							ctx.stroke();
+						}
+						
+						ctx.setLineDash([]);
 					});
 				}
 				// Draw wall preview (chain drawing)
 				if (activeTool === 'walls' && wallPoints.length > 0) {
-					ctx.strokeStyle = '#ff4500';
+					const previewWallDef = WALL_TYPES[selectedWallType];
+					ctx.strokeStyle = previewWallDef.color;
 					ctx.lineWidth = 4;
 					ctx.lineCap = 'round';
 					ctx.setLineDash([5, 5]);
@@ -4723,7 +4935,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					}
 					ctx.setLineDash([]);
 					// Draw points
-					ctx.fillStyle = '#ff4500';
+					ctx.fillStyle = previewWallDef.color;
 					wallPoints.forEach((p: any) => {
 						ctx.beginPath();
 						ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
@@ -4736,53 +4948,143 @@ export default class DndCampaignHubPlugin extends Plugin {
 					// Calculate pixels per foot based on grid settings
 					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
 					
-					config.lightSources.forEach((light: any) => {
+					config.lightSources.forEach((light: any, idx: number) => {
+						const isActive = light.active !== false; // Default to active
+						const isDragging = draggingLightIndex === idx;
+						
 						// Convert feet to pixels
 						const brightRadiusPx = light.bright * pixelsPerFoot;
 						const dimRadiusPx = light.dim * pixelsPerFoot;
 						
-						// Draw light source icon/marker
-						ctx.fillStyle = '#ffff00';
-						ctx.strokeStyle = '#ff8800';
-						ctx.lineWidth = 2;
+						// Only draw light radii if the light is active
+						if (isActive) {
+							// Draw light radius (bright light)
+							if (brightRadiusPx > 0) {
+								ctx.globalAlpha = 0.3;
+								ctx.fillStyle = '#ffff88';
+								ctx.beginPath();
+								ctx.arc(light.x, light.y, brightRadiusPx, 0, Math.PI * 2);
+								ctx.fill();
+								ctx.globalAlpha = 1.0;
+							}
+							
+							// Draw dim light radius
+							if (dimRadiusPx > 0) {
+								ctx.globalAlpha = 0.15;
+								ctx.fillStyle = '#aaaa44';
+								ctx.beginPath();
+								ctx.arc(light.x, light.y, brightRadiusPx + dimRadiusPx, 0, Math.PI * 2);
+								ctx.fill();
+								ctx.globalAlpha = 1.0;
+							}
+							
+							// Draw cone for bullseye lantern (showing direction)
+							if (light.cone) {
+								const direction = (light.direction || 0) * Math.PI / 180; // Convert degrees to radians
+								const coneAngle = Math.PI / 6; // 30 degree half-angle (60 degree total cone)
+								
+								ctx.globalAlpha = 0.2;
+								ctx.fillStyle = '#ffffff';
+								ctx.beginPath();
+								ctx.moveTo(light.x, light.y);
+								ctx.arc(light.x, light.y, brightRadiusPx, direction - coneAngle, direction + coneAngle);
+								ctx.closePath();
+								ctx.fill();
+								ctx.globalAlpha = 1.0;
+							}
+						}
+						
+// Draw dashed selection rectangle to show clickable area
+							const selectionPadding = 15; // Same as lightClickRadius
+							ctx.globalAlpha = 0.5;
+							ctx.strokeStyle = isDragging ? '#00ff00' : '#888888';
+							ctx.lineWidth = 1;
+							ctx.setLineDash([4, 4]);
+							ctx.strokeRect(
+								light.x - selectionPadding,
+								light.y - selectionPadding,
+								selectionPadding * 2,
+								selectionPadding * 2
+							);
+							ctx.setLineDash([]);
+							ctx.globalAlpha = 1.0;
+							
+							// Draw light source icon (subtle light bulb) - always visible for editing
+						const iconRadius = 12;
+						ctx.globalAlpha = isDragging ? 1.0 : (isActive ? 0.8 : 0.4);
+						
+						// Draw bulb body (circle)
+						ctx.fillStyle = isActive ? '#ffdd44' : '#666666';
+						ctx.strokeStyle = isDragging ? '#00ff00' : (isActive ? '#ff8800' : '#444444');
+						ctx.lineWidth = isDragging ? 3 : 2;
 						ctx.beginPath();
-						ctx.arc(light.x, light.y, 8, 0, Math.PI * 2);
+						ctx.arc(light.x, light.y - 2, iconRadius * 0.6, 0, Math.PI * 2);
 						ctx.fill();
 						ctx.stroke();
 						
-						// Draw light radius (bright light)
-						if (brightRadiusPx > 0) {
-							ctx.globalAlpha = 0.3;
-							ctx.fillStyle = '#ffff88';
-							ctx.beginPath();
-							ctx.arc(light.x, light.y, brightRadiusPx, 0, Math.PI * 2);
-							ctx.fill();
-							ctx.globalAlpha = 1.0;
+						// Draw bulb base (small rectangle)
+						ctx.fillStyle = isActive ? '#ccaa33' : '#555555';
+						ctx.fillRect(light.x - 4, light.y + 4, 8, 5);
+						
+						// Draw light rays or direction arrow if active
+						if (isActive) {
+							ctx.lineWidth = 1.5;
+							const rayOffset = iconRadius * 0.8;
+							
+							// If cone light (bullseye), draw direction arrow instead of rays
+							if (light.cone) {
+								const direction = (light.direction || 0) * Math.PI / 180;
+								const arrowLength = 18;
+								const arrowHeadSize = 6;
+								
+								ctx.strokeStyle = '#ff6600';
+								ctx.fillStyle = '#ff6600';
+								ctx.lineWidth = 2;
+								
+								// Arrow shaft
+								const startX = light.x + Math.cos(direction) * rayOffset;
+								const startY = light.y - 2 + Math.sin(direction) * rayOffset;
+								const endX = light.x + Math.cos(direction) * (rayOffset + arrowLength);
+								const endY = light.y - 2 + Math.sin(direction) * (rayOffset + arrowLength);
+								
+								ctx.beginPath();
+								ctx.moveTo(startX, startY);
+								ctx.lineTo(endX, endY);
+								ctx.stroke();
+								
+								// Arrow head
+								ctx.beginPath();
+								ctx.moveTo(endX, endY);
+								ctx.lineTo(
+									endX - Math.cos(direction - Math.PI / 6) * arrowHeadSize,
+									endY - Math.sin(direction - Math.PI / 6) * arrowHeadSize
+								);
+								ctx.lineTo(
+									endX - Math.cos(direction + Math.PI / 6) * arrowHeadSize,
+									endY - Math.sin(direction + Math.PI / 6) * arrowHeadSize
+								);
+								ctx.closePath();
+								ctx.fill();
+							} else {
+								// Regular rays for non-cone lights
+								ctx.strokeStyle = '#ffff88';
+								const rayLength = 6;
+								for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+									ctx.beginPath();
+									ctx.moveTo(
+										light.x + Math.cos(angle) * rayOffset,
+										light.y - 2 + Math.sin(angle) * rayOffset
+									);
+									ctx.lineTo(
+										light.x + Math.cos(angle) * (rayOffset + rayLength),
+										light.y - 2 + Math.sin(angle) * (rayOffset + rayLength)
+									);
+									ctx.stroke();
+								}
+							}
 						}
 						
-						// Draw dim light radius
-						if (dimRadiusPx > 0) {
-							ctx.globalAlpha = 0.15;
-							ctx.fillStyle = '#aaaa44';
-							ctx.beginPath();
-							ctx.arc(light.x, light.y, brightRadiusPx + dimRadiusPx, 0, Math.PI * 2);
-							ctx.fill();
-							ctx.globalAlpha = 1.0;
-						}
-						
-						// Draw cone for bullseye lantern (showing direction)
-						if (light.cone) {
-							ctx.globalAlpha = 0.2;
-							ctx.fillStyle = '#ffffff';
-							// For now, draw cone facing right (0 degrees)
-							// TODO: Make cone direction adjustable
-							ctx.beginPath();
-							ctx.moveTo(light.x, light.y);
-							ctx.arc(light.x, light.y, brightRadiusPx, -Math.PI/6, Math.PI/6);
-							ctx.closePath();
-							ctx.fill();
-							ctx.globalAlpha = 1.0;
-						}
+						ctx.globalAlpha = 1.0;
 					});
 				}
 
@@ -5480,6 +5782,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 				aoePicker.toggleClass('hidden', tool !== 'aoe');
 				// Show/hide Fog shape picker
 				fogPicker.toggleClass('hidden', tool !== 'fog');
+				// Show/hide Walls type picker
+				wallsPicker.toggleClass('hidden', tool !== 'walls');
 				// Show/hide Lights picker
 				lightsPicker.toggleClass('hidden', tool !== 'lights');
 				// Show/hide Player View controls picker
@@ -5757,6 +6061,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'grabbing';
 				} else if (activeTool === 'select') {
 					// Check if clicking on a marker for drag
+					let foundMarker = false;
 					for (let i = config.markers.length - 1; i >= 0; i--) {
 						const m = config.markers[i];
 						const mDef = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
@@ -5768,7 +6073,59 @@ export default class DndCampaignHubPlugin extends Plugin {
 							dragOffsetY = m.position.y - mapPos.y;
 							markerDragOrigin = { x: m.position.x, y: m.position.y };
 							viewport.style.cursor = 'grabbing';
+							foundMarker = true;
 							break;
+						}
+					}
+					// Check if clicking on a light for drag (only if no marker found)
+					if (!foundMarker && config.lightSources && config.lightSources.length > 0) {
+						const lightClickRadius = 15; // Radius for detecting light clicks
+						for (let i = config.lightSources.length - 1; i >= 0; i--) {
+							const light = config.lightSources[i];
+							const dist = Math.sqrt(Math.pow(light.x - mapPos.x, 2) + Math.pow(light.y - mapPos.y, 2));
+							if (dist <= lightClickRadius) {
+								draggingLightIndex = i;
+								lightDragOffsetX = light.x - mapPos.x;
+								lightDragOffsetY = light.y - mapPos.y;
+								lightDragOrigin = { x: light.x, y: light.y };
+								viewport.style.cursor = 'grabbing';
+								redrawAnnotations();
+								break;
+							}
+						}
+					}
+					// Check if clicking on a wall/door/window for drag (only if no marker or light found)
+					if (!foundMarker && draggingLightIndex < 0 && config.walls && config.walls.length > 0) {
+						const wallClickRadius = 12; // Radius for detecting wall clicks
+						for (let i = config.walls.length - 1; i >= 0; i--) {
+							const wall = config.walls[i];
+							// Check distance from point to center of wall segment
+							const midX = (wall.start.x + wall.end.x) / 2;
+							const midY = (wall.start.y + wall.end.y) / 2;
+							const dist = Math.sqrt(Math.pow(midX - mapPos.x, 2) + Math.pow(midY - mapPos.y, 2));
+							
+							// Also check if click is on the line segment itself
+							const dx = wall.end.x - wall.start.x;
+							const dy = wall.end.y - wall.start.y;
+							const lengthSq = dx * dx + dy * dy;
+							let t = 0;
+							if (lengthSq > 0) {
+								t = Math.max(0, Math.min(1, ((mapPos.x - wall.start.x) * dx + (mapPos.y - wall.start.y) * dy) / lengthSq));
+							}
+							const nearestX = wall.start.x + t * dx;
+							const nearestY = wall.start.y + t * dy;
+							const lineDist = Math.sqrt(Math.pow(mapPos.x - nearestX, 2) + Math.pow(mapPos.y - nearestY, 2));
+							
+							if (dist <= wallClickRadius || lineDist <= wallClickRadius) {
+								draggingWallIndex = i;
+								wallDragOffsetStartX = wall.start.x - mapPos.x;
+								wallDragOffsetStartY = wall.start.y - mapPos.y;
+								wallDragOffsetEndX = wall.end.x - mapPos.x;
+								wallDragOffsetEndY = wall.end.y - mapPos.y;
+								viewport.style.cursor = 'grabbing';
+								redrawAnnotations();
+								break;
+							}
 						}
 					}
 				} else if (activeTool === 'highlight') {
@@ -6224,6 +6581,20 @@ export default class DndCampaignHubPlugin extends Plugin {
 						});
 					}
 					redrawAnnotations();
+				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
+					// Dragging a light
+					const draggedLight = config.lightSources[draggingLightIndex];
+					draggedLight.x = mapPos.x + lightDragOffsetX;
+					draggedLight.y = mapPos.y + lightDragOffsetY;
+					redrawAnnotations();
+				} else if (activeTool === 'select' && draggingWallIndex >= 0) {
+					// Dragging a wall/door/window
+					const draggedWall = config.walls[draggingWallIndex];
+					draggedWall.start.x = mapPos.x + wallDragOffsetStartX;
+					draggedWall.start.y = mapPos.y + wallDragOffsetStartY;
+					draggedWall.end.x = mapPos.x + wallDragOffsetEndX;
+					draggedWall.end.y = mapPos.y + wallDragOffsetEndY;
+					redrawAnnotations();
 				} else if (activeTool === 'draw' && isDrawing) {
 					currentPath.push({ x: mapPos.x, y: mapPos.y });
 					redrawAnnotations();
@@ -6350,11 +6721,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 				e.stopPropagation();
 			} else if (activeTool === 'walls' && wallPoints.length >= 2) {
 				// Finish wall chain - create wall segments
+				const wallDef = WALL_TYPES[selectedWallType];
 				for (let i = 0; i < wallPoints.length - 1; i++) {
 					const wall = {
 						id: `wall_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+						type: selectedWallType,
+						name: wallDef.name,
 						start: { x: wallPoints[i]!.x, y: wallPoints[i]!.y },
-						end: { x: wallPoints[i + 1]!.x, y: wallPoints[i + 1]!.y }
+						end: { x: wallPoints[i + 1]!.x, y: wallPoints[i + 1]!.y },
+						open: false // For doors - starts closed
 					};
 					config.walls.push(wall);
 				}
@@ -6362,7 +6737,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				wallPreviewPos = null;
 				redrawAnnotations();
 				this.saveMapAnnotations(config, el);
-				new Notice(`Wall chain saved (${config.walls.length} total segments)`);
+				new Notice(`${wallDef.name} chain saved (${config.walls.length} total segments)`);
 					e.preventDefault();
 					e.stopPropagation();
 				}
@@ -6454,6 +6829,27 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
+				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
+					// Drop light: save position
+					draggingLightIndex = -1;
+					lightDragOrigin = null;
+					viewport.style.cursor = 'default';
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
+					// Sync to player views
+					if ((viewport as any)._syncPlayerView) {
+						(viewport as any)._syncPlayerView();
+					}
+				} else if (activeTool === 'select' && draggingWallIndex >= 0) {
+					// Drop wall/door/window: save position
+					draggingWallIndex = -1;
+					viewport.style.cursor = 'default';
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
+					// Sync to player views
+					if ((viewport as any)._syncPlayerView) {
+						(viewport as any)._syncPlayerView();
+					}
 				} else if (activeTool === 'move-grid' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'move';
@@ -6516,6 +6912,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
+				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
+					draggingLightIndex = -1;
+					lightDragOrigin = null;
+					viewport.style.cursor = 'default';
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
+				} else if (activeTool === 'select' && draggingWallIndex >= 0) {
+					draggingWallIndex = -1;
+					viewport.style.cursor = 'default';
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
 				} else if (activeTool === 'move-grid' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'move';
@@ -6545,11 +6952,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 					if (e.key === 'Enter' && wallPoints.length >= 2) {
 						// Finish wall chain - create wall segments
 						e.preventDefault();
+						const wallDef = WALL_TYPES[selectedWallType];
 						for (let i = 0; i < wallPoints.length - 1; i++) {
 							const wall = {
 								id: `wall_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+								type: selectedWallType,
+								name: wallDef.name,
 								start: { x: wallPoints[i]!.x, y: wallPoints[i]!.y },
-								end: { x: wallPoints[i + 1]!.x, y: wallPoints[i + 1]!.y }
+								end: { x: wallPoints[i + 1]!.x, y: wallPoints[i + 1]!.y },
+								open: false
 							};
 							config.walls.push(wall);
 						}
@@ -6557,7 +6968,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						wallPreviewPos = null;
 						redrawAnnotations();
 						this.saveMapAnnotations(config, el);
-						new Notice(`Wall chain added (${config.walls.length} segments total)`);
+						new Notice(`${wallDef.name} chain added (${config.walls.length} segments total)`);
 					} else if (e.key === 'Escape') {
 						// Cancel wall drawing
 						e.preventDefault();
@@ -6889,6 +7300,303 @@ export default class DndCampaignHubPlugin extends Plugin {
 						setTimeout(() => document.addEventListener('click', removeMenu), 10);
 						
 						return;
+					}
+				}
+				
+				// Check if right-clicking on a light source
+				if (config.lightSources && config.lightSources.length > 0) {
+					const lightClickRadius = 15;
+					for (let i = config.lightSources.length - 1; i >= 0; i--) {
+						const light = config.lightSources[i];
+						const dist = Math.sqrt(Math.pow(light.x - mapPos.x, 2) + Math.pow(light.y - mapPos.y, 2));
+						if (dist <= lightClickRadius) {
+							e.preventDefault();
+							
+							// Create light context menu
+							const contextMenu = document.createElement('div');
+							contextMenu.addClass('dnd-map-context-menu');
+							contextMenu.style.position = 'fixed';
+							contextMenu.style.left = `${e.clientX}px`;
+							contextMenu.style.top = `${e.clientY}px`;
+							
+							// Light name header
+							const header = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+							header.textContent = light.name || 'Light Source';
+							
+							// Active/Inactive toggle
+							const isActive = light.active !== false;
+							const toggleOption = contextMenu.createDiv({ 
+								cls: 'dnd-map-context-menu-item'
+							});
+							toggleOption.innerHTML = isActive 
+								? `<span>🔆</span> Active (click to extinguish)`
+								: `<span>💡</span> Inactive (click to ignite)`;
+							toggleOption.addEventListener('click', () => {
+								light.active = !isActive;
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								document.body.removeChild(contextMenu);
+								new Notice(light.active ? `${light.name || 'Light'} lit` : `${light.name || 'Light'} extinguished`);
+							});
+							
+							// Separator
+							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+							
+							// Change light type header
+							const typeHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+							typeHeader.textContent = 'Change Type:';
+							
+							// Light type options
+							const lightTypes: { type: LightSourceType; icon: string; name: string }[] = [
+								{ type: 'candle', icon: '🕯️', name: 'Candle (5ft)' },
+								{ type: 'torch', icon: '🔥', name: 'Torch (20ft)' },
+								{ type: 'lantern', icon: '🏮', name: 'Lantern (30ft)' },
+								{ type: 'bullseye', icon: '🔦', name: 'Bullseye (60ft)' },
+								{ type: 'light', icon: '✨', name: 'Light Spell (20ft)' },
+								{ type: 'dancing', icon: '💫', name: 'Dancing Lights (10ft dim)' },
+								{ type: 'daylight', icon: '☀️', name: 'Daylight (60ft)' },
+							];
+							
+							lightTypes.forEach(({ type, icon, name }) => {
+								const option = contextMenu.createDiv({ 
+									cls: 'dnd-map-context-menu-item' + (light.type === type ? ' active' : '')
+								});
+								option.innerHTML = `<span>${icon}</span> ${name}`;
+								option.addEventListener('click', () => {
+									const lightDef = LIGHT_SOURCES[type];
+									light.type = type;
+									light.bright = lightDef.bright;
+									light.dim = lightDef.dim;
+									light.name = lightDef.name;
+									light.cone = 'cone' in lightDef ? lightDef.cone : false;
+									redrawAnnotations();
+									this.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									document.body.removeChild(contextMenu);
+									new Notice(`Changed to ${lightDef.name}`);
+								});
+							});
+							
+							// Direction control for cone lights (bullseye lantern)
+							if (light.cone) {
+								contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+								
+								const dirHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+								dirHeader.textContent = 'Aim Direction:';
+								
+								// Direction preset buttons (compass directions)
+								const dirPresets = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+								dirPresets.style.display = 'flex';
+								dirPresets.style.justifyContent = 'space-around';
+								dirPresets.style.padding = '8px 4px';
+								
+								const directions = [
+									{ label: '↑', angle: -90, title: 'North' },
+									{ label: '→', angle: 0, title: 'East' },
+									{ label: '↓', angle: 90, title: 'South' },
+									{ label: '←', angle: 180, title: 'West' },
+								];
+								
+								directions.forEach(({ label, angle, title }) => {
+									const btn = dirPresets.createEl('button', { text: label });
+									btn.title = title;
+									btn.style.width = '32px';
+									btn.style.height = '32px';
+									btn.style.fontSize = '16px';
+									btn.style.cursor = 'pointer';
+									btn.style.border = (light.direction || 0) === angle ? '2px solid var(--interactive-accent)' : '1px solid var(--background-modifier-border)';
+									btn.style.borderRadius = '4px';
+									btn.style.background = 'var(--background-secondary)';
+									btn.addEventListener('click', (e) => {
+										e.stopPropagation();
+										light.direction = angle;
+										redrawAnnotations();
+										this.saveMapAnnotations(config, el);
+										if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+										// Update button styles
+										dirPresets.querySelectorAll('button').forEach((b: HTMLButtonElement) => {
+											b.style.border = '1px solid var(--background-modifier-border)';
+										});
+										btn.style.border = '2px solid var(--interactive-accent)';
+									});
+								});
+								
+								// Fine rotation slider
+								const sliderContainer = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+								sliderContainer.style.display = 'flex';
+								sliderContainer.style.alignItems = 'center';
+								sliderContainer.style.gap = '8px';
+								sliderContainer.style.padding = '8px';
+								
+								const sliderLabel = sliderContainer.createEl('span', { text: '🔄' });
+								sliderLabel.style.fontSize = '14px';
+								
+								const slider = sliderContainer.createEl('input');
+								slider.type = 'range';
+								slider.min = '-180';
+								slider.max = '180';
+								slider.value = String(light.direction || 0);
+								slider.style.flex = '1';
+								slider.style.cursor = 'pointer';
+								
+								const angleDisplay = sliderContainer.createEl('span', { text: `${light.direction || 0}°` });
+								angleDisplay.style.minWidth = '40px';
+								angleDisplay.style.textAlign = 'right';
+								angleDisplay.style.fontSize = '12px';
+								
+								slider.addEventListener('input', (e) => {
+									const angle = parseInt((e.target as HTMLInputElement).value);
+									light.direction = angle;
+									angleDisplay.textContent = `${angle}°`;
+									redrawAnnotations();
+								});
+								
+								slider.addEventListener('change', () => {
+									this.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								});
+							}
+							
+							// Separator
+							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+							
+							// Delete option
+							const deleteOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item delete' });
+							deleteOption.innerHTML = `<span>🗑️</span> Delete`;
+							deleteOption.addEventListener('click', () => {
+								config.lightSources.splice(i, 1);
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								document.body.removeChild(contextMenu);
+								new Notice('Light removed');
+							});
+							
+							// Add to body and remove on outside click
+							document.body.appendChild(contextMenu);
+							const removeMenu = (event: MouseEvent) => {
+								if (!contextMenu.contains(event.target as Node)) {
+									document.body.removeChild(contextMenu);
+									document.removeEventListener('click', removeMenu);
+								}
+							};
+							setTimeout(() => document.addEventListener('click', removeMenu), 10);
+							
+							return;
+						}
+					}
+				}
+				
+				// Check if right-clicking on a wall segment
+				if (config.walls && config.walls.length > 0) {
+					const wallClickRadius = 10;
+					for (let i = config.walls.length - 1; i >= 0; i--) {
+						const wall = config.walls[i];
+						// Check distance from point to line segment
+						const dx = wall.end.x - wall.start.x;
+						const dy = wall.end.y - wall.start.y;
+						const lengthSq = dx * dx + dy * dy;
+						
+						let t = 0;
+						if (lengthSq > 0) {
+							t = Math.max(0, Math.min(1, ((mapPos.x - wall.start.x) * dx + (mapPos.y - wall.start.y) * dy) / lengthSq));
+						}
+						
+						const nearestX = wall.start.x + t * dx;
+						const nearestY = wall.start.y + t * dy;
+						const dist = Math.sqrt(Math.pow(mapPos.x - nearestX, 2) + Math.pow(mapPos.y - nearestY, 2));
+						
+						if (dist <= wallClickRadius) {
+							e.preventDefault();
+							
+							const wallType = wall.type || 'wall';
+							const wallDef = WALL_TYPES[wallType as WallType] || WALL_TYPES.wall;
+							
+							// Create wall context menu
+							const contextMenu = document.createElement('div');
+							contextMenu.addClass('dnd-map-context-menu');
+							contextMenu.style.position = 'fixed';
+							contextMenu.style.left = `${e.clientX}px`;
+							contextMenu.style.top = `${e.clientY}px`;
+							
+							// Wall name header
+							const header = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+							header.textContent = wall.name || wallDef.name;
+							
+							// Door open/close toggle (only for doors)
+							if (wallType === 'door') {
+								const isOpen = wall.open === true;
+								const toggleOption = contextMenu.createDiv({ 
+									cls: 'dnd-map-context-menu-item'
+								});
+								toggleOption.innerHTML = isOpen 
+									? `<span>🚪</span> Close Door`
+									: `<span>🚪</span> Open Door`;
+								toggleOption.addEventListener('click', () => {
+									wall.open = !isOpen;
+									redrawAnnotations();
+									this.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									document.body.removeChild(contextMenu);
+									new Notice(wall.open ? 'Door opened' : 'Door closed');
+								});
+								
+								contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+							}
+							
+							// Change wall type header
+							const typeHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+							typeHeader.textContent = 'Change Type:';
+							
+							// Wall type options
+							(Object.entries(WALL_TYPES) as [WallType, typeof WALL_TYPES[WallType]][]).forEach(([type, def]) => {
+								const option = contextMenu.createDiv({ 
+									cls: 'dnd-map-context-menu-item' + (wallType === type ? ' active' : '')
+								});
+								option.innerHTML = `<span>${def.icon}</span> ${def.name}`;
+								option.addEventListener('click', () => {
+									wall.type = type;
+									wall.name = def.name;
+									// Reset open state when changing away from door
+									if (type !== 'door') {
+										wall.open = false;
+									}
+									redrawAnnotations();
+									this.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									document.body.removeChild(contextMenu);
+									new Notice(`Changed to ${def.name}`);
+								});
+							});
+							
+							// Separator
+							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+							
+							// Delete option
+							const deleteOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item delete' });
+							deleteOption.innerHTML = `<span>🗑️</span> Delete`;
+							deleteOption.addEventListener('click', () => {
+								config.walls.splice(i, 1);
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								document.body.removeChild(contextMenu);
+								new Notice('Wall removed');
+							});
+							
+							// Add to body and remove on outside click
+							document.body.appendChild(contextMenu);
+							const removeMenu = (event: MouseEvent) => {
+								if (!contextMenu.contains(event.target as Node)) {
+									document.body.removeChild(contextMenu);
+									document.removeEventListener('click', removeMenu);
+								}
+							};
+							setTimeout(() => document.addEventListener('click', removeMenu), 10);
+							
+							return;
+						}
 					}
 				}
 			});
@@ -23242,7 +23950,24 @@ class PlayerMapView extends ItemView {
     }
     
     const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
-    const walls = config.walls || [];
+    // Filter walls to only include those that block sight
+    // Open doors/windows allow light through, windows/terrain always allow light
+    const walls = (config.walls || []).filter((wall: any) => {
+      const type = wall.type || 'wall';
+      // Open doors (and open secret doors) allow light through
+      if ((type === 'door' || type === 'secret') && wall.open) {
+        return false;
+      }
+      // Windows are transparent - always allow light through (even when closed)
+      if (type === 'window') {
+        return false;
+      }
+      // Terrain doesn't block sight
+      if (type === 'terrain') {
+        return false;
+      }
+      return true;
+    });
     
     // Compute combined player visibility polygon (what all players can see)
     // This will be used to filter/intersect with light visibility
