@@ -23,6 +23,7 @@ import { MapManager } from "./map/MapManager";
 import { MapCreationModal } from "./map/MapCreationModal";
 import { MarkerLibrary } from "./marker/MarkerLibrary";
 import { MarkerReference, MarkerDefinition, CREATURE_SIZE_SQUARES, CreatureSize, Layer } from "./marker/MarkerTypes";
+import { MigrationManager, MigrationModal, TEMPLATE_VERSIONS } from "./migration";
 
 interface TabletopCalibration {
   monitorDiagonalInch: number;  // e.g. 27
@@ -41,885 +42,6 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   pluginVersion: "0.0.0",
   tabletopCalibration: null,
 };
-
-// Current template versions - increment when templates change
-const TEMPLATE_VERSIONS = {
-  world: "1.0.0",
-  session: "1.2.1", // Fixed escaping issues in interactive scene checkboxes
-  npc: "1.0.0",
-  pc: "1.0.0",
-  adventure: "1.1.1", // Fixed escaping issues in interactive scene checkboxes
-  scene: "2.0.0", // Specialized scene templates (social, combat, exploration, puzzle, montage)
-  faction: "1.0.0",
-  item: "1.1.0", // Updated with Edit/Delete buttons
-  spell: "1.0.0",
-  campaign: "1.0.0",
-  trap: "1.1.0", // Updated with Edit/Delete buttons
-  creature: "1.1.0" // Updated with Edit/Delete buttons
-};
-
-/**
- * Safe template migration system
- * Tracks versions and applies incremental updates without data loss
- */
-class MigrationManager {
-  private app: App;
-  private plugin: DndCampaignHubPlugin;
-
-  constructor(app: App, plugin: DndCampaignHubPlugin) {
-    this.app = app;
-    this.plugin = plugin;
-  }
-
-  /**
-   * Get the current template version from a file's frontmatter
-   */
-  async getFileTemplateVersion(file: TFile): Promise<string | null> {
-    const content = await this.app.vault.read(file);
-    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
-    if (!frontmatterMatch || !frontmatterMatch[1]) return null;
-
-    const frontmatter = frontmatterMatch[1];
-    const versionMatch = frontmatter.match(/^template_version:\s*(.+)$/m);
-    return versionMatch && versionMatch[1] ? versionMatch[1].trim() : null;
-  }
-
-  /**
-   * Get the file type from frontmatter
-   */
-  async getFileType(file: TFile): Promise<string | null> {
-    const content = await this.app.vault.read(file);
-    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
-    if (!frontmatterMatch || !frontmatterMatch[1]) return null;
-
-    const frontmatter = frontmatterMatch[1];
-    const typeMatch = frontmatter.match(/^type:\s*(.+)$/m);
-    return typeMatch && typeMatch[1] ? typeMatch[1].trim() : null;
-  }
-
-  /**
-   * Check if a file needs migration
-   */
-  async needsMigration(file: TFile): Promise<boolean> {
-    const fileType = await this.getFileType(file);
-    if (!fileType || !(fileType in TEMPLATE_VERSIONS)) return false;
-
-    const currentVersion = await this.getFileTemplateVersion(file);
-    const targetVersion = TEMPLATE_VERSIONS[fileType as keyof typeof TEMPLATE_VERSIONS];
-
-    // No version means old template, needs migration
-    if (!currentVersion) return true;
-
-    // Compare versions
-    return this.compareVersions(currentVersion, targetVersion) < 0;
-  }
-
-  /**
-   * Compare semantic versions (returns -1 if a < b, 0 if equal, 1 if a > b)
-   */
-  private compareVersions(a: string, b: string): number {
-    const aParts = a.split('.').map(Number);
-    const bParts = b.split('.').map(Number);
-
-    for (let i = 0; i < 3; i++) {
-      const aVal = aParts[i] || 0;
-      const bVal = bParts[i] || 0;
-      if (aVal < bVal) return -1;
-      if (aVal > bVal) return 1;
-    }
-    return 0;
-  }
-
-  /**
-   * Find all files that need migration in a campaign
-   */
-  async findFilesNeedingMigration(campaignPath: string): Promise<TFile[]> {
-    const filesNeedingMigration: TFile[] = [];
-    const campaignFolder = this.app.vault.getAbstractFileByPath(campaignPath);
-
-    if (!(campaignFolder instanceof TFolder)) return filesNeedingMigration;
-
-    const processFolder = async (folder: TFolder) => {
-      for (const child of folder.children) {
-        if (child instanceof TFile && child.extension === "md") {
-          if (await this.needsMigration(child)) {
-            filesNeedingMigration.push(child);
-          }
-        } else if (child instanceof TFolder) {
-          await processFolder(child);
-        }
-      }
-    };
-
-    await processFolder(campaignFolder);
-    
-    // Also check root-level z_Traps folder (for traps created before campaign structure)
-    const rootTrapsFolder = this.app.vault.getAbstractFileByPath("z_Traps");
-    if (rootTrapsFolder instanceof TFolder) {
-      await processFolder(rootTrapsFolder);
-    }
-    
-    return filesNeedingMigration;
-  }
-
-  /**
-   * Update only the template_version field in frontmatter
-   */
-  async updateTemplateVersion(file: TFile, newVersion: string): Promise<void> {
-    const content = await this.app.vault.read(file);
-    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
-    
-    if (!frontmatterMatch || !frontmatterMatch[1]) {
-      console.error(`No frontmatter found in ${file.path}`);
-      return;
-    }
-
-    let frontmatter = frontmatterMatch[1];
-    const versionMatch = frontmatter.match(/^template_version:\s*(.+)$/m);
-
-    if (versionMatch) {
-      // Update existing version
-      frontmatter = frontmatter.replace(
-        /^template_version:\s*(.+)$/m,
-        `template_version: ${newVersion}`
-      );
-    } else {
-      // Add version field after type field if it exists
-      if (frontmatter.match(/^type:/m)) {
-        frontmatter = frontmatter.replace(
-          /^(type:\s*.+)$/m,
-          `$1\ntemplate_version: ${newVersion}`
-        );
-      } else {
-        // Add at the beginning
-        frontmatter = `template_version: ${newVersion}\n${frontmatter}`;
-      }
-    }
-
-    const newContent = content.replace(
-      /^---\n[\s\S]*?\n---/,
-      `---\n${frontmatter}\n---`
-    );
-
-    await this.app.vault.modify(file, newContent);
-  }
-
-  /**
-   * Add a new frontmatter field if it doesn't exist
-   */
-  async addFrontmatterField(
-    file: TFile,
-    fieldName: string,
-    defaultValue: string
-  ): Promise<void> {
-    const content = await this.app.vault.read(file);
-    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
-    
-    if (!frontmatterMatch || !frontmatterMatch[1]) return;
-
-    let frontmatter = frontmatterMatch[1];
-    const fieldMatch = frontmatter.match(new RegExp(`^${fieldName}:`, "m"));
-
-    if (!fieldMatch) {
-      // Add field at the end of frontmatter
-      frontmatter = `${frontmatter}\n${fieldName}: ${defaultValue}`;
-
-      const newContent = content.replace(
-        /^---\n[\s\S]*?\n---/,
-        `---\n${frontmatter}\n---`
-      );
-
-      await this.app.vault.modify(file, newContent);
-    }
-  }
-
-  /**
-   * Inject a new section into a file if it doesn't exist
-   */
-  async injectSection(
-    file: TFile,
-    sectionHeading: string,
-    sectionContent: string,
-    insertAfterHeading?: string
-  ): Promise<void> {
-    const content = await this.app.vault.read(file);
-
-    // Check if section already exists
-    const sectionRegex = new RegExp(`^#{1,6}\\s+${sectionHeading}`, "m");
-    if (sectionRegex.test(content)) {
-      console.log(`Section "${sectionHeading}" already exists in ${file.path}`);
-      return;
-    }
-
-    let newContent: string;
-
-    if (insertAfterHeading) {
-      // Insert after specific heading
-      const afterRegex = new RegExp(`(^#{1,6}\\s+${insertAfterHeading}[^\n]*\n(?:.*\n)*?)(?=^#{1,6}\\s+|$)`, "m");
-      const match = content.match(afterRegex);
-
-      if (match) {
-        newContent = content.replace(
-          afterRegex,
-          `${match[1]}\n${sectionContent}\n\n`
-        );
-      } else {
-        // Fallback: add at the end
-        newContent = `${content}\n\n${sectionContent}`;
-      }
-    } else {
-      // Add at the end of the file
-      newContent = `${content}\n\n${sectionContent}`;
-    }
-
-    await this.app.vault.modify(file, newContent);
-  }
-
-  /**
-   * Update a specific dataview query in a file
-   */
-  async updateDataviewQuery(
-    file: TFile,
-    queryIdentifier: string,
-    newQuery: string
-  ): Promise<void> {
-    const content = await this.app.vault.read(file);
-
-    // Match dataview code blocks with the identifier nearby
-    const queryRegex = new RegExp(
-      `(\`\`\`dataview[^\`]*${queryIdentifier}[^\`]*\`\`\`)`,
-      "g"
-    );
-
-    if (!queryRegex.test(content)) {
-      console.log(`Query "${queryIdentifier}" not found in ${file.path}`);
-      return;
-    }
-
-    const newContent = content.replace(queryRegex, newQuery);
-    await this.app.vault.modify(file, newContent);
-  }
-
-  /**
-   * Replace a dataviewjs code block that contains a specific marker text
-   */
-  async replaceDataviewjsBlock(
-    file: TFile,
-    markerText: string,
-    newBlock: string
-  ): Promise<boolean> {
-    const content = await this.app.vault.read(file);
-
-    // Find dataviewjs blocks
-    const blockRegex = /```dataviewjs\n([\s\S]*?)```/g;
-    let match;
-    let found = false;
-    
-    while ((match = blockRegex.exec(content)) !== null) {
-      if (match[1] && match[1].includes(markerText)) {
-        // Replace this block
-        const oldBlock = match[0];
-        const newContent = content.replace(oldBlock, newBlock);
-        await this.app.vault.modify(file, newContent);
-        found = true;
-        break;
-      }
-    }
-
-    return found;
-  }
-
-  /**
-   * Apply scene v1.1.0 migration (Initiative Tracker integration)
-   */
-  async migrateSceneTo1_1_0(file: TFile): Promise<void> {
-    console.log(`Migrating scene ${file.path} to v1.1.0`);
-
-    // 1. Add tracker_encounter field to frontmatter
-    await this.addFrontmatterField(file, "tracker_encounter", "");
-    
-    // 2. Add encounter_creatures field to frontmatter
-    await this.addFrontmatterField(file, "encounter_creatures", "[]");
-
-    // 2. Inject Initiative Tracker section in Combat section
-    const trackerSection = `### Initiative Tracker
-
-\`\`\`dataview
-TABLE WITHOUT ID
-  choice(tracker_encounter != "" and tracker_encounter != null,
-    "🎲 **Encounter Linked:** " + tracker_encounter + "\\n\\n" +
-    "\`\`\`button\\nname Open Initiative Tracker\\ntype command\\naction Initiative Tracker: Open Tracker View\\n\`\`\`",
-    "ℹ️ **No encounter linked yet**\\n\\nTo use the Initiative Tracker:\\n1. Create an encounter in the Initiative Tracker plugin\\n2. Add the encounter name to the \`tracker_encounter\` field in this note's frontmatter\\n3. The button to open the tracker will appear here"
-  ) AS "Combat Tracker"
-FROM ""
-WHERE file.path = this.file.path
-LIMIT 1
-\`\`\``;
-
-    await this.injectSection(file, "Initiative Tracker", trackerSection, "Combat");
-
-    // 3. Update template version
-    await this.updateTemplateVersion(file, "1.1.0");
-
-    console.log(`Scene ${file.path} migrated successfully`);
-  }
-
-  async migrateSceneTo1_2_0(file: TFile): Promise<void> {
-    console.log(`Migrating scene ${file.path} to v1.2.0`);
-
-    // Ensure encounter_creatures field exists
-    await this.addFrontmatterField(file, "encounter_creatures", "[]");
-
-    // Update template version
-    await this.updateTemplateVersion(file, "1.2.0");
-
-    console.log(`Scene ${file.path} migrated to v1.2.0 successfully`);
-  }
-
-  /**
-   * Apply item v1.1.0 migration (Edit/Delete buttons)
-   */
-  async migrateItemTo1_1_0(file: TFile): Promise<void> {
-    console.log(`Migrating item ${file.path} to v1.1.0`);
-
-    const content = await this.app.vault.read(file);
-    
-    // Check if edit/delete buttons already exist
-    if (content.includes("Edit Item") && content.includes("Delete Item")) {
-      console.log("Edit/Delete buttons already exist, just updating version");
-      await this.updateTemplateVersion(file, "1.1.0");
-      return;
-    }
-
-    // Find the item name heading (# Item Name)
-    const headingMatch = content.match(/^(# .+)$/m);
-    
-    if (headingMatch) {
-      const buttonSection = `
-
-\`\`\`dataviewjs
-// Action buttons for item management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Edit Item button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit Item",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-item");
-});
-
-// Delete Item button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete Item",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-item");
-});
-\`\`\`
-`;
-
-      // Insert button section after the heading
-      const newContent = content.replace(
-        headingMatch[0],
-        `${headingMatch[0]}${buttonSection}`
-      );
-
-      await this.app.vault.modify(file, newContent);
-    }
-
-    // Update template version
-    await this.updateTemplateVersion(file, "1.1.0");
-
-    console.log(`Item ${file.path} migrated to v1.1.0 successfully`);
-  }
-
-  /**
-   * Apply trap v1.1.0 migration (Edit/Delete buttons)
-   */
-  async migrateTrapTo1_1_0(file: TFile): Promise<void> {
-    console.log(`Migrating trap ${file.path} to v1.1.0`);
-
-    const content = await this.app.vault.read(file);
-    
-    // Check if edit/delete buttons already exist
-    if (content.includes("Edit Trap") && content.includes("Delete Trap")) {
-      console.log("Edit/Delete buttons already exist, just updating version");
-      await this.updateTemplateVersion(file, "1.1.0");
-      return;
-    }
-
-    // Find the trap name heading (# Trap Name)
-    const headingMatch = content.match(/^(# .+)$/m);
-    
-    if (headingMatch) {
-      const buttonSection = `
-
-\`\`\`dataviewjs
-// Action buttons for trap management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Edit Trap button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit Trap",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-trap");
-});
-
-// Delete Trap button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete Trap",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-trap");
-});
-\`\`\`
-`;
-
-      // Insert button section after the heading
-      const newContent = content.replace(
-        headingMatch[0],
-        `${headingMatch[0]}${buttonSection}`
-      );
-
-      await this.app.vault.modify(file, newContent);
-    }
-
-    // Update template version
-    await this.updateTemplateVersion(file, "1.1.0");
-
-    console.log(`Trap ${file.path} migrated to v1.1.0 successfully`);
-  }
-
-  /**
-   * Apply creature v1.1.0 migration (Edit/Delete buttons)
-   */
-  async migrateCreatureTo1_1_0(file: TFile): Promise<void> {
-    console.log(`Migrating creature ${file.path} to v1.1.0`);
-
-    const content = await this.app.vault.read(file);
-    
-    // Check if edit/delete buttons already exist
-    if (content.includes("Edit Creature") && content.includes("Delete Creature")) {
-      console.log("Edit/Delete buttons already exist, just updating version");
-      await this.updateTemplateVersion(file, "1.1.0");
-      return;
-    }
-
-    // Find the position before the statblock
-    const statblockMatch = content.match(/```statblock/);
-    
-    if (statblockMatch && statblockMatch.index !== undefined) {
-      const buttonSection = `\`\`\`dataviewjs
-// Action buttons for creature management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Edit Creature button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit Creature",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-creature");
-});
-
-// Delete Creature button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete Creature",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-creature");
-});
-\`\`\`
-
-`;
-
-      // Insert button section before the statblock
-      const beforeStatblock = content.substring(0, statblockMatch.index);
-      const afterStatblock = content.substring(statblockMatch.index);
-      const newContent = beforeStatblock + buttonSection + afterStatblock;
-
-      await this.app.vault.modify(file, newContent);
-    }
-
-    // Update template version
-    await this.updateTemplateVersion(file, "1.1.0");
-
-    console.log(`Creature ${file.path} migrated to v1.1.0 successfully`);
-  }
-
-  /**
-   * Apply session v1.2.1 migration (Interactive scene checkboxes - fixed escaping)
-   */
-  async migrateSessionTo1_2_1(file: TFile): Promise<void> {
-    console.log(`Migrating session ${file.path} to v1.2.1`);
-
-    const newDataviewjsBlock = `\`\`\`dataviewjs
-// Get current session's adventure (if linked)
-const sessionFile = dv.current();
-let adventureLink = sessionFile.adventure;
-
-// Parse wikilink if present: "[[path]]" -> path
-if (adventureLink && typeof adventureLink === 'string') {
-  const match = adventureLink.match(/\\[\\[(.+?)\\]\\]/);
-  if (match) adventureLink = match[1];
-}
-
-if (adventureLink) {
-  // Get the adventure file
-  const adventurePage = dv.page(adventureLink);
-  
-  if (adventurePage) {
-    const adventureName = adventurePage.name || adventurePage.file.name;
-    const campaignFolder = adventurePage.campaign;
-    const adventureFolder = adventurePage.file.folder;
-    
-    // Find scenes in both flat and folder structures
-    let scenesFlat = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`)
-      .where(p => p.file.name.startsWith("Scene"));
-    let scenesFolder = dv.pages(\`"\${adventureFolder}"\`)
-      .where(p => p.file.name.startsWith("Scene"));
-    
-    let allScenes = [...scenesFlat, ...scenesFolder];
-    
-    if (allScenes.length > 0) {
-      // Sort by scene number
-      allScenes.sort((a, b) => {
-        const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
-        const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
-        return aNum - bNum;
-      });
-      
-      dv.header(4, "Adventure Scenes");
-      for (const scene of allScenes) {
-        const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
-        const duration = scene.duration || "?min";
-        const type = scene.type || "?";
-        
-        // Create clickable status button
-        const sceneDiv = dv.el('div', '', { cls: 'scene-item' });
-        const statusBtn = dv.el('button', status, { container: sceneDiv });
-        statusBtn.style.border = 'none';
-        statusBtn.style.background = 'transparent';
-        statusBtn.style.cursor = 'pointer';
-        statusBtn.style.fontSize = '1.2em';
-        statusBtn.title = 'Click to change status';
-        statusBtn.onclick = async () => {
-          const file = app.vault.getAbstractFileByPath(scene.file.path);
-          if (file) {
-            const content = await app.vault.read(file);
-            const currentStatus = scene.status || 'not-started';
-            const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
-                               currentStatus === 'in-progress' ? 'completed' : 'not-started';
-            const newContent = content.replace(
-              /^status:\\s*.+$/m,
-              \`status: \${nextStatus}\`
-            );
-            await app.vault.modify(file, newContent);
-          }
-        };
-        dv.span(' ', { container: sceneDiv });
-        dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
-        dv.span(\` - \\\`\${duration} | \${type}\\\`\`, { container: sceneDiv });
-      }
-    }
-  }
-} else {
-  dv.paragraph("*No adventure linked to this session.*");
-  dv.paragraph("To link an adventure, add it to the frontmatter:");
-  dv.paragraph(\`\\\`\\\`\\\`yaml\\nadventure: "[[Your Adventure Name]]"\\n\\\`\\\`\\\`\`);
-  dv.paragraph("Or create a new adventure:");
-  const createAdvBtn = dv.el('button', '🗺️ Create Adventure');
-  createAdvBtn.className = 'mod-cta';
-  createAdvBtn.style.marginTop = '10px';
-  createAdvBtn.onclick = () => {
-    app.commands.executeCommandById('dnd-campaign-hub:create-adventure');
-  };
-}
-\`\`\``;
-
-    const updated = await this.replaceDataviewjsBlock(
-      file,
-      "Get current session's adventure",
-      newDataviewjsBlock
-    );
-
-    if (updated) {
-      console.log("Updated session adventure scenes dataviewjs block");
-    }
-
-    // Update template version
-    await this.updateTemplateVersion(file, "1.2.1");
-
-    console.log(`Session ${file.path} migrated to v1.2.1 successfully`);
-  }
-
-  /**
-   * Apply adventure v1.1.1 migration (Interactive scene checkboxes - fixed escaping)
-   */
-  async migrateAdventureTo1_1_1(file: TFile): Promise<void> {
-    console.log(`Migrating adventure ${file.path} to v1.1.1`);
-
-    const newScenesBlock = `\`\`\`dataviewjs
-// Get all scenes for this adventure
-const adventureName = dv.current().name || dv.current().file.name;
-const campaignFolder = dv.current().campaign;
-const adventureFolder = dv.current().file.folder;
-
-// Find scenes in both flat and folder structures
-// Flat: Adventures/Adventure - Scenes/
-// Folder: Adventures/Adventure/ (scenes directly or in Act subfolders)
-let scenesFlat = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`)
-  .where(p => p.file.name.startsWith("Scene"));
-let scenesFolder = dv.pages(\`"\${adventureFolder}"\`)
-  .where(p => p.file.name.startsWith("Scene"));
-
-let allScenes = [...scenesFlat, ...scenesFolder];
-
-if (allScenes.length === 0) {
-  dv.paragraph("*No scenes created yet. Use the button above to create your first scene.*");
-} else {
-  // Sort by scene number
-  allScenes.sort((a, b) => {
-    const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
-    const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
-    return aNum - bNum;
-  });
-
-  // Group by act if act numbers exist
-  const hasActs = allScenes.some(s => s.act);
-  
-  if (hasActs) {
-    // Display grouped by acts
-    const acts = {1: [], 2: [], 3: []};
-    allScenes.forEach(scene => {
-      const act = scene.act || 1;
-      if (acts[act]) acts[act].push(scene);
-    });
-
-    const actNames = {
-      1: "Act 1: Setup & Inciting Incident",
-      2: "Act 2: Rising Action & Confrontation",
-      3: "Act 3: Climax & Resolution"
-    };
-
-    for (const [actNum, actScenes] of Object.entries(acts)) {
-      if (actScenes.length > 0) {
-        dv.header(3, actNames[actNum]);
-        for (const scene of actScenes) {
-          const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
-          const duration = scene.duration || "?min";
-          const type = scene.type || "?";
-          const difficulty = scene.difficulty || "?";
-          
-          // Create clickable status button
-          const sceneDiv = dv.el('div', '', { cls: 'scene-item' });
-          const statusBtn = dv.el('button', status, { container: sceneDiv });
-          statusBtn.style.border = 'none';
-          statusBtn.style.background = 'transparent';
-          statusBtn.style.cursor = 'pointer';
-          statusBtn.style.fontSize = '1.2em';
-          statusBtn.title = 'Click to change status';
-          statusBtn.onclick = async () => {
-            const file = app.vault.getAbstractFileByPath(scene.file.path);
-            if (file) {
-              const content = await app.vault.read(file);
-              const currentStatus = scene.status || 'not-started';
-              const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
-                                 currentStatus === 'in-progress' ? 'completed' : 'not-started';
-              const newContent = content.replace(
-                /^status:\\s*.+$/m,
-                \`status: \${nextStatus}\`
-              );
-              await app.vault.modify(file, newContent);
-            }
-          };
-          dv.span(' **', { container: sceneDiv });
-          dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
-          dv.span(\`**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`, { container: sceneDiv });
-        }
-      }
-    }
-  } else {
-    // Display as simple list
-    for (const scene of allScenes) {
-      const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
-      const duration = scene.duration || "?min";
-      const type = scene.type || "?";
-      const difficulty = scene.difficulty || "?";
-      
-      // Create clickable status button
-      const sceneDiv = dv.el('div', '', { cls: 'scene-item' });
-      const statusBtn = dv.el('button', status, { container: sceneDiv });
-      statusBtn.style.border = 'none';
-      statusBtn.style.background = 'transparent';
-      statusBtn.style.cursor = 'pointer';
-      statusBtn.style.fontSize = '1.2em';
-      statusBtn.title = 'Click to change status';
-      statusBtn.onclick = async () => {
-        const file = app.vault.getAbstractFileByPath(scene.file.path);
-        if (file) {
-          const content = await app.vault.read(file);
-          const currentStatus = scene.status || 'not-started';
-          const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
-                             currentStatus === 'in-progress' ? 'completed' : 'not-started';
-          const newContent = content.replace(
-            /^status:\\s*.+$/m,
-            \`status: \${nextStatus}\`
-          );
-          await app.vault.modify(file, newContent);
-        }
-      };
-      dv.span(' **', { container: sceneDiv });
-      dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
-      dv.span(\`**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`, { container: sceneDiv });
-    }
-  }
-}
-\`\`\``;
-
-    const updated = await this.replaceDataviewjsBlock(
-      file,
-      "Get all scenes for this adventure",
-      newScenesBlock
-    );
-
-    if (updated) {
-      console.log("Updated adventure scenes dataviewjs block");
-    }
-
-    // Update template version
-    await this.updateTemplateVersion(file, "1.1.1");
-
-    console.log(`Adventure ${file.path} migrated to v1.1.1 successfully`);
-  }
-
-  /**
-   * Apply migration based on file type and version
-   */
-  async migrateFile(file: TFile): Promise<boolean> {
-    try {
-      const fileType = await this.getFileType(file);
-      const currentVersion = await this.getFileTemplateVersion(file);
-
-      if (!fileType) {
-        console.error(`No file type found in ${file.path}`);
-        return false;
-      }
-
-      // Get target version for this file type
-      const targetVersion = TEMPLATE_VERSIONS[fileType as keyof typeof TEMPLATE_VERSIONS];
-      if (!targetVersion) {
-        console.warn(`No template version defined for type: ${fileType}`);
-        return false;
-      }
-
-      // If file has no version, add the current template version
-      if (!currentVersion) {
-        console.log(`Adding template_version to ${file.path}`);
-        await this.updateTemplateVersion(file, targetVersion);
-        return true;
-      }
-
-      // Scene-specific migrations
-      if (fileType === "scene") {
-        if (this.compareVersions(currentVersion, "1.1.0") < 0) {
-          await this.migrateSceneTo1_1_0(file);
-          return true;
-        }
-        if (this.compareVersions(currentVersion, "1.2.0") < 0) {
-          await this.migrateSceneTo1_2_0(file);
-          return true;
-        }
-      }
-
-      // Item-specific migrations
-      if (fileType === "item") {
-        if (this.compareVersions(currentVersion, "1.1.0") < 0) {
-          await this.migrateItemTo1_1_0(file);
-          return true;
-        }
-      }
-
-      // Trap-specific migrations
-      if (fileType === "trap") {
-        if (this.compareVersions(currentVersion, "1.1.0") < 0) {
-          await this.migrateTrapTo1_1_0(file);
-          return true;
-        }
-      }
-
-      // Creature-specific migrations
-      if (fileType === "creature") {
-        if (this.compareVersions(currentVersion, "1.1.0") < 0) {
-          await this.migrateCreatureTo1_1_0(file);
-          return true;
-        }
-      }
-
-      // Session-specific migrations
-      if (fileType === "session") {
-        if (this.compareVersions(currentVersion, "1.2.1") < 0) {
-          await this.migrateSessionTo1_2_1(file);
-          return true;
-        }
-      }
-
-      // Adventure-specific migrations
-      if (fileType === "adventure") {
-        if (this.compareVersions(currentVersion, "1.1.1") < 0) {
-          await this.migrateAdventureTo1_1_1(file);
-          return true;
-        }
-      }
-
-      // For other types, if version is outdated, update it
-      // (In the future, add type-specific migration logic here as needed)
-      if (this.compareVersions(currentVersion, targetVersion) < 0) {
-        console.log(`Updating ${file.path} from v${currentVersion} to v${targetVersion}`);
-        await this.updateTemplateVersion(file, targetVersion);
-        return true;
-      }
-
-      // File is already up to date
-      return true;
-    } catch (error) {
-      console.error(`Error migrating ${file.path}:`, error);
-      return false;
-    }
-  }
-
-  /**
-   * Migrate multiple files with progress tracking
-   */
-  async migrateFiles(files: TFile[]): Promise<{ success: number; failed: number }> {
-    let success = 0;
-    let failed = 0;
-
-    for (const file of files) {
-      const result = await this.migrateFile(file);
-      if (result) {
-        success++;
-      } else {
-        failed++;
-      }
-    }
-
-    return { success, failed };
-  }
-}
 
 class CalibrationModal extends Modal {
   pixelDistance: number;
@@ -3236,9 +2358,6 @@ export default class DndCampaignHubPlugin extends Plugin {
       }
     );
 
-    // Initialize the migration manager
-    this.migrationManager = new MigrationManager(this.app, this);
-    
     // Initialize the encounter builder
     this.encounterBuilder = new EncounterBuilder(this.app, this);
 
@@ -3248,6 +2367,9 @@ export default class DndCampaignHubPlugin extends Plugin {
     // Initialize the marker library
     this.markerLibrary = new MarkerLibrary(this.app, this.manifest.id);
     await this.markerLibrary.load();
+
+    // Initialize the migration manager (after marker library)
+    this.migrationManager = new MigrationManager(this.app, this.markerLibrary);
 
     // Register markdown code block processor for rendering maps
     this.registerMarkdownCodeBlockProcessor('dnd-map', (source, el, ctx) => {
@@ -9089,211 +8211,6 @@ class ClearDrawingsConfirmModal extends Modal {
   }
 }
 
-class MigrationModal extends Modal {
-  plugin: DndCampaignHubPlugin;
-  private filesNeedingMigration: TFile[] = [];
-  private selectedFiles: Set<TFile> = new Set();
-  private currentCampaign: string = "";
-
-  constructor(app: App, plugin: DndCampaignHubPlugin) {
-    super(app);
-    this.plugin = plugin;
-  }
-
-  async onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("dnd-migration-modal");
-
-    contentEl.createEl("h2", { text: "🛡️ Safe File Migration" });
-
-    // Get current campaign
-    const campaigns = this.plugin.getAllCampaigns();
-    if (campaigns.length === 0) {
-      contentEl.createEl("p", { text: "No campaigns found. Nothing to migrate." });
-      const closeBtn = contentEl.createEl("button", { text: "Close", cls: "mod-cta" });
-      closeBtn.addEventListener("click", () => this.close());
-      return;
-    }
-
-    // Campaign selector
-    const campaignContainer = contentEl.createDiv({ cls: "setting-item" });
-    campaignContainer.createEl("label", { text: "Select Campaign:" });
-    const campaignSelect = campaignContainer.createEl("select");
-    
-    campaigns.forEach(campaign => {
-      const campaignName = typeof campaign === 'string' ? campaign : campaign.name;
-      const option = campaignSelect.createEl("option", { 
-        text: campaignName,
-        value: `ttrpgs/${campaignName}`
-      });
-      if (`ttrpgs/${campaign}` === this.plugin.settings.currentCampaign) {
-        option.selected = true;
-      }
-    });
-
-    this.currentCampaign = campaignSelect.value;
-
-    // Scan button
-    const scanBtn = contentEl.createEl("button", {
-      text: "🔍 Scan for Updates",
-      cls: "mod-cta"
-    });
-
-    const resultsContainer = contentEl.createDiv({ cls: "migration-results" });
-
-    scanBtn.addEventListener("click", async () => {
-      scanBtn.disabled = true;
-      scanBtn.textContent = "Scanning...";
-      resultsContainer.empty();
-
-      this.filesNeedingMigration = await this.plugin.migrationManager.findFilesNeedingMigration(this.currentCampaign);
-      
-      if (this.filesNeedingMigration.length === 0) {
-        resultsContainer.createEl("p", { 
-          text: "✅ All files are up to date!",
-          cls: "migration-success"
-        });
-        scanBtn.disabled = false;
-        scanBtn.textContent = "🔍 Scan for Updates";
-        return;
-      }
-
-      // Show results
-      resultsContainer.createEl("h3", { 
-        text: `Found ${this.filesNeedingMigration.length} file(s) that can be updated:` 
-      });
-
-      // Select all checkbox
-      const selectAllContainer = resultsContainer.createDiv({ cls: "setting-item" });
-      const selectAllCheckbox = selectAllContainer.createEl("input", { type: "checkbox" });
-      selectAllCheckbox.checked = true;
-      selectAllContainer.createEl("label", { text: " Select all files" });
-      
-      selectAllCheckbox.addEventListener("change", () => {
-        const allCheckboxes = resultsContainer.querySelectorAll('input[type="checkbox"]:not(:first-child)');
-        allCheckboxes.forEach((element) => {
-          const checkbox = element as HTMLInputElement;
-          checkbox.checked = selectAllCheckbox.checked;
-        });
-        this.updateSelectedFiles();
-      });
-
-      // File list
-      const fileList = resultsContainer.createEl("div", { cls: "migration-file-list" });
-      
-      for (const file of this.filesNeedingMigration) {
-        const fileItem = fileList.createDiv({ cls: "migration-file-item" });
-        
-        const checkbox = fileItem.createEl("input", { type: "checkbox" });
-        checkbox.checked = true;
-        this.selectedFiles.add(file);
-
-        const fileType = await this.plugin.migrationManager.getFileType(file);
-        const currentVersion = await this.plugin.migrationManager.getFileTemplateVersion(file) || "none";
-        const targetVersion = TEMPLATE_VERSIONS[fileType as keyof typeof TEMPLATE_VERSIONS];
-
-        const fileInfo = fileItem.createEl("span", {
-          text: `${file.path} (${fileType}: v${currentVersion} → v${targetVersion})`
-        });
-
-        checkbox.addEventListener("change", () => {
-          if (checkbox.checked) {
-            this.selectedFiles.add(file);
-          } else {
-            this.selectedFiles.delete(file);
-          }
-        });
-      }
-
-      this.updateSelectedFiles();
-
-      // Migration info
-      const infoBox = resultsContainer.createDiv({ cls: "migration-info" });
-      infoBox.createEl("h3", { text: "What will be updated:" });
-      const updateList = infoBox.createEl("ul");
-      updateList.createEl("li", { text: "✅ New frontmatter fields will be added" });
-      updateList.createEl("li", { text: "✅ New sections will be injected (not replacing existing ones)" });
-      updateList.createEl("li", { text: "✅ Dataview queries may be updated" });
-      updateList.createEl("li", { text: "✅ Template version will be tracked" });
-      
-      infoBox.createEl("h3", { text: "What will be preserved:" });
-      const preserveList = infoBox.createEl("ul");
-      preserveList.createEl("li", { text: "🛡️ All your existing content" });
-      preserveList.createEl("li", { text: "🛡️ All frontmatter values" });
-      preserveList.createEl("li", { text: "🛡️ All sections you've written" });
-
-      // Migrate button
-      const migrateBtn = resultsContainer.createEl("button", {
-        text: `Migrate ${this.selectedFiles.size} file(s)`,
-        cls: "mod-cta"
-      });
-
-      migrateBtn.addEventListener("click", async () => {
-        await this.performMigration(migrateBtn, resultsContainer);
-      });
-
-      scanBtn.disabled = false;
-      scanBtn.textContent = "🔍 Scan for Updates";
-    });
-
-    campaignSelect.addEventListener("change", () => {
-      this.currentCampaign = campaignSelect.value;
-      resultsContainer.empty();
-      this.filesNeedingMigration = [];
-      this.selectedFiles.clear();
-    });
-
-    // Close button
-    const closeBtn = contentEl.createEl("button", { text: "Close" });
-    closeBtn.addEventListener("click", () => this.close());
-  }
-
-  private updateSelectedFiles() {
-    // This method can be used to update UI based on selection
-  }
-
-  private async performMigration(button: HTMLButtonElement, container: HTMLElement) {
-    if (this.selectedFiles.size === 0) {
-      new Notice("No files selected for migration.");
-      return;
-    }
-
-    button.disabled = true;
-    button.textContent = "Migrating...";
-
-    const filesToMigrate = Array.from(this.selectedFiles);
-    const result = await this.plugin.migrationManager.migrateFiles(filesToMigrate);
-
-    container.empty();
-    
-    if (result.success > 0) {
-      container.createEl("p", {
-        text: `✅ Successfully migrated ${result.success} file(s)!`,
-        cls: "migration-success"
-      });
-    }
-
-    if (result.failed > 0) {
-      container.createEl("p", {
-        text: `⚠️ Failed to migrate ${result.failed} file(s). Check console for details.`,
-        cls: "migration-warning"
-      });
-    }
-
-    new Notice(`Migration complete: ${result.success} succeeded, ${result.failed} failed.`);
-
-    // Add close button
-    const closeBtn = container.createEl("button", { text: "Close", cls: "mod-cta" });
-    closeBtn.addEventListener("click", () => this.close());
-  }
-
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
-  }
-}
-
 class PurgeConfirmModal extends Modal {
   plugin: DndCampaignHubPlugin;
 
@@ -9993,6 +8910,22 @@ class PCCreationModal extends Modal {
         }
       }
 
+      // Create a map token for this PC
+      const now = Date.now();
+      const tokenId = this.plugin.markerLibrary.generateId();
+      const tokenDef: MarkerDefinition = {
+        id: tokenId,
+        name: this.pcName,
+        type: 'player',
+        icon: '🛡️',
+        backgroundColor: '#4a90d9',  // Blue for players
+        borderColor: '#ffffff',
+        creatureSize: 'medium',
+        createdAt: now,
+        updatedAt: now
+      };
+      await this.plugin.markerLibrary.setMarker(tokenDef);
+
       // Get PC template
       const templatePath = "z_Templates/Frontmatter - Player Character.md";
       const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
@@ -10033,6 +8966,7 @@ alignment:
 experience: 0
 readonlyUrl: ${this.characterSheetUrl}
 characterSheetPdf: ${this.characterSheetPdf}
+token_id: ${tokenId}
 date: ${currentDate}
 ---`;
 
@@ -10429,6 +9363,22 @@ class NPCCreationModal extends Modal {
         }
       }
 
+      // Create a map token for this NPC
+      const now = Date.now();
+      const tokenId = this.plugin.markerLibrary.generateId();
+      const tokenDef: MarkerDefinition = {
+        id: tokenId,
+        name: this.npcName,
+        type: 'npc',
+        icon: '👤',
+        backgroundColor: '#6b8e23',  // Olive green for NPCs
+        borderColor: '#ffffff',
+        creatureSize: 'medium',
+        createdAt: now,
+        updatedAt: now
+      };
+      await this.plugin.markerLibrary.setMarker(tokenDef);
+
       // Get NPC template
       const templatePath = "z_Templates/npc.md";
       const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
@@ -10448,7 +9398,7 @@ class NPCCreationModal extends Modal {
         .replace(/name: $/m, `name: ${this.npcName}`)
         .replace(/world: $/m, `world: ${worldName}`)
         .replace(/campaign: $/m, `campaign: ${campaignName}`)
-        .replace(/date: $/m, `date: ${currentDate}`)
+        .replace(/date: $/m, `date: ${currentDate}\ntoken_id: ${tokenId}`)
         .replace(/motivation: $/m, `motivation: "${this.motivation}"`)
         .replace(/pursuit: $/m, `pursuit: "${this.pursuit}"`)
         .replace(/physical_detail: $/m, `physical_detail: "${this.physicalDetail}"`)
@@ -20033,6 +18983,9 @@ class CreatureCreationModal extends Modal {
   originalCreaturePath = "";
   originalCreatureName = "";
   
+  // Token ID for map markers
+  tokenId = "";
+  
   // Creature properties
   creatureName = "";
   size: 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan' = 'Medium';
@@ -20670,6 +19623,9 @@ class CreatureCreationModal extends Modal {
       this.senses = frontmatter.senses || "";
       this.languages = frontmatter.languages || "";
       this.cr = frontmatter.cr?.toString() || "";
+      
+      // Load token ID if exists
+      this.tokenId = frontmatter.token_id || "";
 
       // Load saves
       if (frontmatter.saves) {
@@ -20769,6 +19725,37 @@ class CreatureCreationModal extends Modal {
           return;
         }
       }
+
+      // Create or update map token for this creature
+      const now = Date.now();
+      // Map creature size to CreatureSize type
+      const creatureSizeMap: Record<string, CreatureSize> = {
+        'Tiny': 'tiny',
+        'Small': 'small',
+        'Medium': 'medium',
+        'Large': 'large',
+        'Huge': 'huge',
+        'Gargantuan': 'gargantuan'
+      };
+      const mappedSize = creatureSizeMap[this.size] || 'medium';
+      
+      if (!this.tokenId) {
+        // Generate new token ID for new creatures
+        this.tokenId = this.plugin.markerLibrary.generateId();
+      }
+      
+      const tokenDef: MarkerDefinition = {
+        id: this.tokenId,
+        name: this.creatureName,
+        type: 'creature',
+        icon: '🐉',
+        backgroundColor: '#8b0000',  // Dark red for creatures
+        borderColor: '#ffffff',
+        creatureSize: mappedSize,
+        createdAt: now,
+        updatedAt: now
+      };
+      await this.plugin.markerLibrary.setMarker(tokenDef);
 
       // Create creature content
       const creatureContent = this.createCreatureContent();
@@ -20926,6 +19913,7 @@ fage_stats:
     frontmatter += `\nlegendary_actions:`;
     frontmatter += `\nbonus_actions:`;
     frontmatter += `\nreactions:`;
+    frontmatter += `\ntoken_id: ${this.tokenId}`;
     frontmatter += `\n---\n\n`;
 
     // Add description
