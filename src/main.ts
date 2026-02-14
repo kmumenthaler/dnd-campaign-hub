@@ -23713,10 +23713,6 @@ class PlayerMapView extends ItemView {
     // Draw highlights
     playerHighlights.forEach((h: any) => this.drawHighlight(ctx, h));
 
-    // Draw AoE effects (Player layer only)
-    const playerAoeEffects = (config.aoeEffects || []).filter((a: any) => (a.layer || 'Player') === 'Player');
-    playerAoeEffects.forEach((aoe: any) => this.drawAoeEffect(ctx, aoe, config));
-
     // Draw drawings
     playerDrawings.forEach((d: any) => this.drawDrawing(ctx, d));
 
@@ -23754,6 +23750,33 @@ class PlayerMapView extends ItemView {
 
     // Draw player tokens on top of fog - they should always be visible
     playerTokens.forEach((m: any) => this.drawMarker(ctx, m));
+
+    // Draw auras on top of fog (for all player layer markers)
+    const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+    playerMarkers.forEach((marker: any) => {
+      if (marker.auras && marker.auras.length > 0) {
+        marker.auras.forEach((aura: any) => {
+          const radiusPx = (aura.radius || 0) * pixelsPerFoot;
+          if (radiusPx > 0) {
+            ctx.globalAlpha = aura.opacity || 0.25;
+            ctx.fillStyle = aura.color || '#ffcc00';
+            ctx.beginPath();
+            ctx.arc(marker.position.x, marker.position.y, radiusPx, 0, Math.PI * 2);
+            ctx.fill();
+            // Draw aura border
+            ctx.globalAlpha = Math.min((aura.opacity || 0.25) + 0.3, 0.8);
+            ctx.strokeStyle = aura.color || '#ffcc00';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.globalAlpha = 1.0;
+          }
+        });
+      }
+    });
+
+    // Draw AoE effects on top of fog (Player layer only)
+    const playerAoeEffects = (config.aoeEffects || []).filter((a: any) => (a.layer || 'Player') === 'Player');
+    playerAoeEffects.forEach((aoe: any) => this.drawAoeEffect(ctx, aoe, config));
   }
 
   private drawGrid(ctx: CanvasRenderingContext2D, config: any) {
@@ -24181,12 +24204,14 @@ class PlayerMapView extends ItemView {
     // Combine standalone lights and marker-attached lights
     const allLights: any[] = [];
     
-    // Add standalone light sources
+    // Add standalone light sources (only active ones - default to active if not specified)
     if (config.lightSources && config.lightSources.length > 0) {
-      allLights.push(...config.lightSources);
+      const activeLights = config.lightSources.filter((light: any) => light.active !== false);
+      allLights.push(...activeLights);
     }
     
     // Add lights attached to markers (follows marker position)
+    // Note: Marker lights don't have an active property - they're always active
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
         if (marker.light && marker.light.bright !== undefined) {
