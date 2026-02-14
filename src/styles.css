@@ -2663,11 +2663,11 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
-  width: 48px;
+  width: 96px;
 }
 
 .dnd-map-toolbar.collapsed {
-  width: 48px;
+  width: 96px;
 }
 
 .dnd-map-toolbar.collapsed .dnd-map-toolbar-content {
@@ -2720,10 +2720,17 @@
 }
 
 .dnd-map-tool-group {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
+}
+
+.dnd-map-tool-group.single-column {
+  grid-template-columns: 1fr;
+}
+
+.dnd-map-tool-group.full-width {
+  grid-column: 1 / -1;
 }
 
 .dnd-map-tool-btn {
@@ -2790,6 +2797,92 @@
   opacity: 1;
   visibility: visible;
   margin-left: 12px;
+  z-index: 1001;
+}
+
+/* Right column tooltips go to the right with extra offset */
+.dnd-map-tool-btn-label.right-column-tooltip {
+  margin-left: 16px;
+}
+
+.dnd-map-tool-btn:hover .dnd-map-tool-btn-label.right-column-tooltip {
+  margin-left: 20px;
+}
+
+.dnd-map-tool-btn.full-width {
+  grid-column: 1 / -1;
+}
+
+/* Section headers for tool groups */
+.dnd-map-section-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  margin-top: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease;
+}
+
+.dnd-map-section-header.hidden {
+  display: none;
+}
+
+.dnd-map-section-header:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dnd-map-section-header:first-child {
+  margin-top: 0;
+}
+
+.dnd-map-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dnd-map-section-toggle {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  transition: transform 0.2s ease;
+}
+
+.dnd-map-section-header.collapsed .dnd-map-section-toggle {
+  transform: rotate(-90deg);
+}
+
+.dnd-map-section-content {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  max-height: 400px;
+  opacity: 1;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: visible;
+}
+
+.dnd-map-section-content.collapsed {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  margin: 0;
+  gap: 0;
+}
+
+.dnd-map-section-content.hidden {
+  display: none;
+}
+
+.dnd-map-section-content.single-column {
+  grid-template-columns: 1fr;
 }
 
 .dnd-map-tool-separator {

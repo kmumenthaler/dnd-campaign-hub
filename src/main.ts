@@ -4123,34 +4123,68 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Toolbar content wrapper for collapse animation
 		const toolbarContent = toolbar.createDiv({ cls: 'dnd-map-toolbar-content' });
 		
-		// Tool buttons group
-		const toolGroup = toolbarContent.createDiv({ cls: 'dnd-map-tool-group' });
+		// === COMMON TOOLS (2-column grid, always visible) ===
+		const commonToolGroup = toolbarContent.createDiv({ cls: 'dnd-map-tool-group' });
 		
 		// Helper to create icon-only buttons with hover labels
-		const createToolBtn = (icon: string, label: string, isActive = false): HTMLButtonElement => {
-			const btn = toolGroup.createEl('button', { 
-				cls: 'dnd-map-tool-btn' + (isActive ? ' active' : '')
+		const createToolBtn = (parent: HTMLElement, icon: string, label: string, isActive = false, fullWidth = false): HTMLButtonElement => {
+			const btn = parent.createEl('button', { 
+				cls: 'dnd-map-tool-btn' + (isActive ? ' active' : '') + (fullWidth ? ' full-width' : '')
 			});
 			btn.createEl('span', { text: icon, cls: 'dnd-map-tool-btn-icon' });
-			btn.createEl('span', { text: label, cls: 'dnd-map-tool-btn-label' });
+			const labelSpan = btn.createEl('span', { text: label, cls: 'dnd-map-tool-btn-label' });
+			// Check if button will be in the right column (every even button in 2-column grid)
+			// We'll mark right-column buttons to adjust tooltip position
+			setTimeout(() => {
+				const parentGrid = btn.parentElement;
+				if (parentGrid && parentGrid.classList.contains('dnd-map-tool-group')) {
+					const buttons = Array.from(parentGrid.querySelectorAll('.dnd-map-tool-btn:not(.full-width)'));
+					const index = buttons.indexOf(btn);
+					if (index % 2 === 1) {
+						labelSpan.classList.add('right-column-tooltip');
+					}
+				}
+			}, 0);
 			return btn;
 		};
 		
-		const panBtn = createToolBtn('⬆', 'Pan', true);
-		const selectBtn = createToolBtn('👆', 'Select');
+		// Common navigation and editing tools (2 columns)
+		const panBtn = createToolBtn(commonToolGroup, '⬆', 'Pan', true);
+		const selectBtn = createToolBtn(commonToolGroup, '👆', 'Select');
 		const highlightIcon = config.gridType === 'square' ? '⬜' : '⬡';
-		const highlightBtn = createToolBtn(highlightIcon, 'Highlight');
-		const markerBtn = createToolBtn('📍', 'Marker');
-		const drawBtn = createToolBtn('✏', 'Draw');
-		const rulerBtn = createToolBtn('📏', 'Ruler');
-		const aoeBtn = createToolBtn('💥', 'AoE');
-		const eraserBtn = createToolBtn('🧹', 'Eraser');
-      const viewBtn = createToolBtn('📺', 'Player View');
-		const fogBtn = createToolBtn('🌫️', 'Fog');
-		const wallsBtn = createToolBtn('🧱', 'Walls');
-		const lightsBtn = createToolBtn('💡', 'Lights');
-		const moveGridBtn = createToolBtn('✥', 'Move Grid');
-		const calibrateBtn = createToolBtn('⚙', 'Calibrate');
+		const highlightBtn = createToolBtn(commonToolGroup, highlightIcon, 'Highlight');
+		const markerBtn = createToolBtn(commonToolGroup, '📍', 'Marker');
+		const drawBtn = createToolBtn(commonToolGroup, '✏', 'Draw');
+		const rulerBtn = createToolBtn(commonToolGroup, '📏', 'Ruler');
+		const aoeBtn = createToolBtn(commonToolGroup, '💥', 'AoE');
+		const eraserBtn = createToolBtn(commonToolGroup, '🧹', 'Eraser');
+		
+		// === VISION SECTION (expandable, Background layer only) ===
+		const visionSectionHeader = toolbarContent.createDiv({ cls: 'dnd-map-section-header' });
+		visionSectionHeader.createEl('span', { text: 'Vision', cls: 'dnd-map-section-title' });
+		visionSectionHeader.createEl('span', { text: '▼', cls: 'dnd-map-section-toggle' });
+		const visionContent = toolbarContent.createDiv({ cls: 'dnd-map-section-content' });
+		
+		const fogBtn = createToolBtn(visionContent, '🌫️', 'Fog');
+		const wallsBtn = createToolBtn(visionContent, '🧱', 'Walls');
+		const lightsBtn = createToolBtn(visionContent, '💡', 'Lights');
+		
+		// Toggle vision section visibility based on layer
+		visionSectionHeader.toggleClass('hidden', config.activeLayer !== 'Background');
+		visionContent.toggleClass('hidden', config.activeLayer !== 'Background');
+		
+		// === SETUP SECTION (expandable) ===
+		const setupSectionHeader = toolbarContent.createDiv({ cls: 'dnd-map-section-header' });
+		setupSectionHeader.createEl('span', { text: 'Setup', cls: 'dnd-map-section-title' });
+		setupSectionHeader.createEl('span', { text: '▼', cls: 'dnd-map-section-toggle' });
+		const setupContent = toolbarContent.createDiv({ cls: 'dnd-map-section-content' });
+		
+		const moveGridBtn = createToolBtn(setupContent, '✥', 'Move Grid');
+		const calibrateBtn = createToolBtn(setupContent, '⚙', 'Calibrate');
+		
+		// === PLAYER VIEW (full-width, prominent) ===
+		const viewGroup = toolbarContent.createDiv({ cls: 'dnd-map-tool-group' });
+		const viewBtn = createToolBtn(viewGroup, '📺', 'Player View', false, true);
 
 		// Fog of War shape picker sub-menu (shown when fog tool is active)
 		const fogPicker = fogBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
@@ -4527,6 +4561,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 		toolbarHeader.addEventListener('click', () => {
 			toolbar.toggleClass('collapsed', !toolbar.hasClass('collapsed'));
 		});
+		
+		// Section header collapse/expand functionality
+		visionSectionHeader.addEventListener('click', () => {
+			const isCollapsed = visionSectionHeader.hasClass('collapsed');
+			visionSectionHeader.toggleClass('collapsed', !isCollapsed);
+			visionContent.toggleClass('collapsed', !isCollapsed);
+		});
+		
+		setupSectionHeader.addEventListener('click', () => {
+			const isCollapsed = setupSectionHeader.hasClass('collapsed');
+			setupSectionHeader.toggleClass('collapsed', !isCollapsed);
+			setupContent.toggleClass('collapsed', !isCollapsed);
+		});
 
 		// Add layer menu below toolbar - append to wrapper as sibling
 		const layerMenu = toolbarWrapper.createDiv({ cls: 'dnd-map-layer-menu' });
@@ -4560,10 +4607,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 					layers.forEach(l => layerButtons[l].removeClass('active'));
 					btn.addClass('active');
 					layerMenu.removeClass('expanded');
-					// Show/hide fog, walls, and lights tools based on layer
-					fogBtn.toggleClass('hidden', layer !== 'Background');
-					wallsBtn.toggleClass('hidden', layer !== 'Background');
-					lightsBtn.toggleClass('hidden', layer !== 'Background');
+					// Show/hide Vision section based on layer (only available on Background)
+					if (layer !== 'Background') {
+						visionSectionHeader.addClass('hidden');
+						visionContent.addClass('hidden');
+					} else {
+						visionSectionHeader.removeClass('hidden');
+						visionContent.removeClass('hidden');
+						// Ensure section is expanded when switching to Background layer
+						visionSectionHeader.removeClass('collapsed');
+						visionContent.removeClass('collapsed');
+					}
 					if (layer !== 'Background' && (activeTool === 'fog' || activeTool === 'walls' || activeTool === 'lights')) {
 						setActiveTool('pan');
 					}
