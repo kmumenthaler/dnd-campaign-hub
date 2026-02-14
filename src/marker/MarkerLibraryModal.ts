@@ -174,7 +174,7 @@ export class MarkerLibraryModal extends Modal {
 			.onClick(() => {
 				// Get all image files from the vault
 				const imageFiles = this.app.vault.getFiles().filter(f =>
-					/\.(png|jpg|jpeg|gif|svg|webp|bmp)$/i.test(f.extension)
+					/^(png|jpg|jpeg|gif|svg|webp|bmp)$/i.test(f.extension)
 				);
 				// Sort z_Assets files first, then by path
 				imageFiles.sort((a, b) => {
