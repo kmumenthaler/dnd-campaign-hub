@@ -4710,6 +4710,14 @@ export default class DndCampaignHubPlugin extends Plugin {
               current: { x: config.markers[draggingMarkerIndex].position.x, y: config.markers[draggingMarkerIndex].position.y }
             };
           }
+          // Build measure ruler data if ruler is active
+          let measureRuler: { start: { x: number; y: number }; end: { x: number; y: number } } | null = null;
+          if (rulerStart && rulerEnd && rulerComplete) {
+            measureRuler = {
+              start: { x: rulerStart.x, y: rulerStart.y },
+              end: { x: rulerEnd.x, y: rulerEnd.y }
+            };
+          }
           const payload = {
             markers: config.markers,
             drawings: config.drawings,
@@ -4724,7 +4732,8 @@ export default class DndCampaignHubPlugin extends Plugin {
             gridOffsetY: config.gridOffsetY || 0,
             scale: config.scale,
             name: config.name,
-            dragRuler: dragRuler
+            dragRuler: dragRuler,
+            measureRuler: measureRuler
           };
           const mapId = config.mapId || resourcePath;
           console.log('[GM] Syncing player views for mapId:', mapId);
@@ -6387,14 +6396,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 						rulerComplete = true;
 						console.log('Set rulerEnd to:', rulerEnd);
 						redrawAnnotations();
-					} else {
+            // Sync ruler to player view
+            if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();					
+          } else {
 						// Third click - clear ruler
 						rulerStart = null;
 						rulerEnd = null;
 						rulerComplete = false;
 						redrawAnnotations();
+            // Sync cleared ruler to player view
+            if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();				
 					}
-				} else if (activeTool === 'marker') {
+        } else if (activeTool === 'marker') {
 					console.log('Marker tool: placing marker');
 					if (!selectedMarkerId) {
 						new Notice('Please select a marker first');
@@ -23831,6 +23844,11 @@ class PlayerMapView extends ItemView {
     // Draw AoE effects on top of fog (Player layer only)
     const playerAoeEffects = (config.aoeEffects || []).filter((a: any) => (a.layer || 'Player') === 'Player');
     playerAoeEffects.forEach((aoe: any) => this.drawAoeEffect(ctx, aoe, config));
+
+    // Draw measure ruler if active
+    if (config.measureRuler) {
+      this.drawMeasureRuler(ctx, config);
+    }
   }
 
   private drawGrid(ctx: CanvasRenderingContext2D, config: any) {
@@ -23925,6 +23943,51 @@ class PlayerMapView extends ItemView {
     }
     ctx.closePath();
     ctx.stroke();
+  }
+
+  private drawMeasureRuler(ctx: CanvasRenderingContext2D, config: any) {
+    if (!config.measureRuler) return;
+
+    const { start, end } = config.measureRuler;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    // Calculate distance in grid units (feet)
+    const gridSize = config.gridSize || 70;
+    const scale = config.scale?.value || 5;
+    const distanceInFeet = (distance / gridSize) * scale;
+
+    // Draw the ruler line
+    ctx.save();
+    ctx.strokeStyle = '#ffff00'; // Yellow
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 5]);
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw distance text at midpoint
+    const midX = (start.x + end.x) / 2;
+    const midY = (start.y + end.y) / 2;
+    const text = `${Math.round(distanceInFeet)}ft`;
+
+    ctx.font = 'bold 24px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Draw text outline for better visibility
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 4;
+    ctx.strokeText(text, midX, midY);
+    
+    // Draw text fill
+    ctx.fillStyle = '#ffff00';
+    ctx.fillText(text, midX, midY);
+
+    ctx.restore();
   }
 
   private drawDragRuler(ctx: CanvasRenderingContext2D, config: any) {
