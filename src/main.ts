@@ -3949,6 +3949,111 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let isCalibrating = false;
 			let calibrationPoint1: { x: number; y: number } | null = null;
 			let calibrationPoint2: { x: number; y: number } | null = null;
+			
+			// Undo/Redo history stack
+			interface HistoryState {
+				markers: any[];
+				walls: any[];
+				lightSources: any[];
+				drawings: any[];
+				fogOfWar: any;
+				highlights: any[];
+				aoeEffects: any[];
+			}
+			const undoStack: HistoryState[] = [];
+			const redoStack: HistoryState[] = [];
+			const MAX_HISTORY = 50;
+			
+			// Placeholder for button visibility function (assigned after buttons are created)
+			let updateUndoRedoButtons: () => void = () => {};
+			
+			// Save current state to undo stack
+			const saveToHistory = () => {
+				const state: HistoryState = {
+					markers: JSON.parse(JSON.stringify(config.markers || [])),
+					walls: JSON.parse(JSON.stringify(config.walls || [])),
+					lightSources: JSON.parse(JSON.stringify(config.lightSources || [])),
+					drawings: JSON.parse(JSON.stringify(config.drawings || [])),
+					fogOfWar: JSON.parse(JSON.stringify(config.fogOfWar || { enabled: true, regions: [] })),
+					highlights: JSON.parse(JSON.stringify(config.highlights || [])),
+					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || []))
+				};
+				undoStack.push(state);
+				if (undoStack.length > MAX_HISTORY) undoStack.shift();
+				// Clear redo stack when new action is taken
+				redoStack.length = 0;
+				updateUndoRedoButtons();
+			};
+			
+			// Undo function
+			const undo = () => {
+				if (undoStack.length === 0) {
+					new Notice('Nothing to undo');
+					return;
+				}
+				// Save current state to redo before restoring
+				const currentState: HistoryState = {
+					markers: JSON.parse(JSON.stringify(config.markers || [])),
+					walls: JSON.parse(JSON.stringify(config.walls || [])),
+					lightSources: JSON.parse(JSON.stringify(config.lightSources || [])),
+					drawings: JSON.parse(JSON.stringify(config.drawings || [])),
+					fogOfWar: JSON.parse(JSON.stringify(config.fogOfWar || { enabled: true, regions: [] })),
+					highlights: JSON.parse(JSON.stringify(config.highlights || [])),
+					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || []))
+				};
+				redoStack.push(currentState);
+				
+				// Restore previous state
+				const prevState = undoStack.pop()!;
+				config.markers = prevState.markers;
+				config.walls = prevState.walls;
+				config.lightSources = prevState.lightSources;
+				config.drawings = prevState.drawings;
+				config.fogOfWar = prevState.fogOfWar;
+				config.highlights = prevState.highlights;
+				config.aoeEffects = prevState.aoeEffects;
+				
+				redrawAnnotations();
+				this.saveMapAnnotations(config, el);
+				if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+				updateUndoRedoButtons();
+				new Notice('Undo');
+			};
+			
+			// Redo function
+			const redo = () => {
+				if (redoStack.length === 0) {
+					new Notice('Nothing to redo');
+					return;
+				}
+				// Save current state to undo before restoring
+				const currentState: HistoryState = {
+					markers: JSON.parse(JSON.stringify(config.markers || [])),
+					walls: JSON.parse(JSON.stringify(config.walls || [])),
+					lightSources: JSON.parse(JSON.stringify(config.lightSources || [])),
+					drawings: JSON.parse(JSON.stringify(config.drawings || [])),
+					fogOfWar: JSON.parse(JSON.stringify(config.fogOfWar || { enabled: true, regions: [] })),
+					highlights: JSON.parse(JSON.stringify(config.highlights || [])),
+					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || []))
+				};
+				undoStack.push(currentState);
+				
+				// Restore redo state
+				const nextState = redoStack.pop()!;
+				config.markers = nextState.markers;
+				config.walls = nextState.walls;
+				config.lightSources = nextState.lightSources;
+				config.drawings = nextState.drawings;
+				config.fogOfWar = nextState.fogOfWar;
+				config.highlights = nextState.highlights;
+				config.aoeEffects = nextState.aoeEffects;
+				
+				redrawAnnotations();
+				this.saveMapAnnotations(config, el);
+				if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+				updateUndoRedoButtons();
+				new Notice('Redo');
+			};
 
 
 		// Create scrollable viewport
@@ -3972,6 +4077,33 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 		// Add floating toolbar wrapper (holds toolbar + layer menu)
 		const toolbarWrapper = viewport.createDiv({ cls: 'dnd-map-toolbar-wrapper' });
+		
+		// Add undo/redo bar at top center
+		const undoRedoBar = viewport.createDiv({ cls: 'dnd-map-undoredo-bar' });
+		undoRedoBar.style.cssText = 'position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; gap: 4px; background: var(--background-secondary); border-radius: 6px; padding: 4px 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);';
+		
+		const undoBtn = undoRedoBar.createEl('button', { cls: 'dnd-map-undoredo-btn', attr: { title: 'Undo (Ctrl+Z)' } });
+		undoBtn.innerHTML = '↶';
+		undoBtn.style.cssText = 'background: transparent; border: none; font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 4px; color: var(--text-normal);';
+		undoBtn.addEventListener('click', () => undo());
+		undoBtn.addEventListener('mouseenter', () => undoBtn.style.background = 'var(--background-modifier-hover)');
+		undoBtn.addEventListener('mouseleave', () => undoBtn.style.background = 'transparent');
+		
+		const redoBtn = undoRedoBar.createEl('button', { cls: 'dnd-map-undoredo-btn', attr: { title: 'Redo (Ctrl+Y)' } });
+		redoBtn.innerHTML = '↷';
+		redoBtn.style.cssText = 'background: transparent; border: none; font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 4px; color: var(--text-normal);';
+		redoBtn.addEventListener('click', () => redo());
+		redoBtn.addEventListener('mouseenter', () => redoBtn.style.background = 'var(--background-modifier-hover)');
+		redoBtn.addEventListener('mouseleave', () => redoBtn.style.background = 'transparent');
+		
+		// Update undo/redo button visibility based on stack state
+		updateUndoRedoButtons = () => {
+			undoBtn.style.display = undoStack.length > 0 ? '' : 'none';
+			redoBtn.style.display = redoStack.length > 0 ? '' : 'none';
+			// Hide the bar entirely if both are hidden
+			undoRedoBar.style.display = (undoStack.length > 0 || redoStack.length > 0) ? 'flex' : 'none';
+		};
+		updateUndoRedoButtons(); // Initialize visibility
 
 		// Add floating toolbar inside wrapper
 		const toolbar = toolbarWrapper.createDiv({ cls: 'dnd-map-toolbar' });
@@ -4115,6 +4247,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		clearWallsBtn.createEl('span', { text: '🗑️' });
 		clearWallsBtn.addEventListener('click', () => {
 			if (config.walls && config.walls.length > 0) {
+				saveToHistory();
 				config.walls = [];
 				redrawAnnotations();
 				this.saveMapAnnotations(config, el);
@@ -4708,6 +4841,31 @@ export default class DndCampaignHubPlugin extends Plugin {
 								ctx.fill();
 								ctx.globalAlpha = 1.0;
 							}
+						}
+					});
+				}
+				
+				// Draw token auras (behind markers)
+				if (config.markers) {
+					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+					config.markers.forEach((marker: any) => {
+						if (marker.auras && marker.auras.length > 0) {
+							marker.auras.forEach((aura: any) => {
+								const radiusPx = (aura.radius || 0) * pixelsPerFoot;
+								if (radiusPx > 0) {
+									ctx.globalAlpha = aura.opacity || 0.25;
+									ctx.fillStyle = aura.color || '#ffcc00';
+									ctx.beginPath();
+									ctx.arc(marker.position.x, marker.position.y, radiusPx, 0, Math.PI * 2);
+									ctx.fill();
+									// Draw aura border
+									ctx.globalAlpha = Math.min((aura.opacity || 0.25) + 0.3, 0.8);
+									ctx.strokeStyle = aura.color || '#ffcc00';
+									ctx.lineWidth = 2;
+									ctx.stroke();
+									ctx.globalAlpha = 1.0;
+								}
+							});
 						}
 					});
 				}
@@ -6070,6 +6228,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const r = mDef ? getMarkerRadius(mDef) : 15;
 						const dist = Math.sqrt(Math.pow(m.position.x - mapPos.x, 2) + Math.pow(m.position.y - mapPos.y, 2));
 						if (dist <= r) {
+							saveToHistory();
 							draggingMarkerIndex = i;
 							dragOffsetX = m.position.x - mapPos.x;
 							dragOffsetY = m.position.y - mapPos.y;
@@ -6086,6 +6245,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							const light = config.lightSources[i];
 							const dist = Math.sqrt(Math.pow(light.x - mapPos.x, 2) + Math.pow(light.y - mapPos.y, 2));
 							if (dist <= lightClickRadius) {
+								saveToHistory();
 								draggingLightIndex = i;
 								lightDragOffsetX = light.x - mapPos.x;
 								lightDragOffsetY = light.y - mapPos.y;
@@ -6119,6 +6279,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							const lineDist = Math.sqrt(Math.pow(mapPos.x - nearestX, 2) + Math.pow(mapPos.y - nearestY, 2));
 							
 							if (dist <= wallClickRadius || lineDist <= wallClickRadius) {
+								saveToHistory();
 								draggingWallIndex = i;
 								wallDragOffsetStartX = wall.start.x - mapPos.x;
 								wallDragOffsetStartY = wall.start.y - mapPos.y;
@@ -6136,6 +6297,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const existingIndex = config.highlights.findIndex(
 						(h: any) => h.col === hex.col && h.row === hex.row
 					);
+					saveToHistory();
 					if (existingIndex >= 0) {
 						config.highlights.splice(existingIndex, 1);
 					} else {
@@ -6206,6 +6368,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						layer: config.activeLayer || 'Player'
 					};
 					
+					saveToHistory();
 					config.markers.push(markerRef);
 					console.log('Placed marker:', markerRef);
 					redrawAnnotations();
@@ -6256,6 +6419,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								Math.pow(aoe.origin.y - mapPos.y, 2)
 							);
 							if (dist < (config.gridSize || 70)) {
+								saveToHistory();
 								config.aoeEffects.splice(i, 1);
 								console.log('Removed AoE effect');
 								removed = true;
@@ -6271,6 +6435,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						(h: any) => h.col === hex.col && h.row === hex.row
 					);
 					if (highlightIndex >= 0) {
+						saveToHistory();
 						config.highlights.splice(highlightIndex, 1);
 						console.log('Removed highlight at', hex);
 						removed = true;
@@ -6385,8 +6550,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 							type: selectedLightSource,
 							...LIGHT_SOURCES[selectedLightSource as LightSourceType]
 						};
+						saveToHistory();
 						config.lightSources.push(light);
 						redrawAnnotations();
+						this.saveMapAnnotations(config, el);
 						
 						// Sync to player views
 						if ((viewport as any)._syncPlayerView) {
@@ -6723,6 +6890,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				e.stopPropagation();
 			} else if (activeTool === 'walls' && wallPoints.length >= 2) {
 				// Finish wall chain - create wall segments
+				saveToHistory();
 				const wallDef = WALL_TYPES[selectedWallType];
 				for (let i = 0; i < wallPoints.length - 1; i++) {
 					const wall = {
@@ -6788,6 +6956,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							};
 						}
 						if (region) {
+							saveToHistory();
 							config.fogOfWar.enabled = true;
 							config.fogOfWar.regions.push(region);
 							redrawAnnotations();
@@ -6888,6 +7057,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (activeTool === 'draw' && isDrawing) {
 					isDrawing = false;
 					if (currentPath.length > 2) {
+						saveToHistory();
 						config.drawings.push({
 							id: `drawing_${Date.now()}`,
 							type: 'freehand',
@@ -6954,6 +7124,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					if (e.key === 'Enter' && wallPoints.length >= 2) {
 						// Finish wall chain - create wall segments
 						e.preventDefault();
+						saveToHistory();
 						const wallDef = WALL_TYPES[selectedWallType];
 						for (let i = 0; i < wallPoints.length - 1; i++) {
 							const wall = {
@@ -7156,6 +7327,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 									// Remove any existing anchored AoE for this token
 									const oldIdx = config.aoeEffects.findIndex((a: any) => a.anchorMarkerId === m.id);
 									if (oldIdx >= 0) {
+										saveToHistory();
 										const oldShape = config.aoeEffects[oldIdx].shape;
 										config.aoeEffects.splice(oldIdx, 1);
 										// If same shape clicked, just remove (toggle off)
@@ -7209,6 +7381,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							});
 							offBtn.createEl('span', { text: '❌' });
 							offBtn.addEventListener('click', () => {
+								saveToHistory();
 								delete m.light;
 								redrawAnnotations();
 								this.saveMapAnnotations(config, el);
@@ -7224,6 +7397,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								});
 								btn.createEl('span', { text: icon });
 								btn.addEventListener('click', () => {
+									saveToHistory();
 									// Attach light to marker
 									const lightDef = LIGHT_SOURCES[type];
 									m.light = {
@@ -7257,6 +7431,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							darkRow.createEl('span', { text: 'ft' });
 							
 							darkInput.addEventListener('change', () => {
+								saveToHistory();
 								const value = parseInt(darkInput.value) || 0;
 								if (value > 0) {
 									m.darkvision = value;
@@ -7276,6 +7451,86 @@ export default class DndCampaignHubPlugin extends Plugin {
 								}
 							});
 							
+							// Token Auras section
+							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+							const auraHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+							auraHeader.innerHTML = '🔵 Token Auras';
+							
+							// Initialize auras array if needed
+							if (!m.auras) m.auras = [];
+							
+							// Render existing auras
+							const aurasContainer = contextMenu.createDiv({ cls: 'dnd-map-auras-container' });
+							
+							const renderAurasList = () => {
+								aurasContainer.empty();
+								m.auras.forEach((aura: any, auraIdx: number) => {
+									const auraRow = aurasContainer.createDiv({ cls: 'dnd-map-aura-row' });
+									
+									// Radius input
+									const radiusInput = auraRow.createEl('input', {
+										cls: 'dnd-map-aura-radius',
+										attr: { type: 'number', min: '5', max: '120', step: '5', value: aura.radius || '10', title: 'Radius (ft)' }
+									});
+									auraRow.createEl('span', { text: 'ft' });
+									
+									// Color picker
+									const colorInput = auraRow.createEl('input', {
+										cls: 'dnd-map-aura-color',
+										attr: { type: 'color', value: aura.color || '#ffcc00', title: 'Aura color' }
+									});
+									
+									// Delete button
+									const deleteBtn = auraRow.createEl('button', { cls: 'dnd-map-aura-delete', attr: { title: 'Remove aura' } });
+									deleteBtn.textContent = '✕';
+									
+									// Event handlers
+									radiusInput.addEventListener('change', () => {
+										saveToHistory();
+										aura.radius = parseInt(radiusInput.value) || 10;
+										redrawAnnotations();
+										this.saveMapAnnotations(config, el);
+										if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									});
+									
+									colorInput.addEventListener('change', () => {
+										saveToHistory();
+										aura.color = colorInput.value;
+										redrawAnnotations();
+										this.saveMapAnnotations(config, el);
+										if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									});
+									
+									deleteBtn.addEventListener('click', (e) => {
+										e.stopPropagation();
+										saveToHistory();
+										m.auras.splice(auraIdx, 1);
+										renderAurasList();
+										redrawAnnotations();
+										this.saveMapAnnotations(config, el);
+										if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									});
+									
+									// Prevent menu close on input click
+									radiusInput.addEventListener('click', (e) => e.stopPropagation());
+									colorInput.addEventListener('click', (e) => e.stopPropagation());
+								});
+							};
+							renderAurasList();
+							
+							// Add aura button
+							const addAuraBtn = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+							addAuraBtn.innerHTML = '<span>➕</span> Add Aura';
+							addAuraBtn.addEventListener('click', (e) => {
+								e.stopPropagation();
+								saveToHistory();
+								m.auras.push({ radius: 10, color: '#ffcc00', opacity: 0.25 });
+								renderAurasList();
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+							});
+							
 							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
 						}
 						
@@ -7283,6 +7538,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const deleteOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item delete' });
 						deleteOption.innerHTML = `<span>🗑️</span> Delete`;
 						deleteOption.addEventListener('click', () => {
+							saveToHistory();
 							config.markers.splice(i, 1);
 							redrawAnnotations();
 							this.saveMapAnnotations(config, el);
@@ -7467,6 +7723,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							const deleteOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item delete' });
 							deleteOption.innerHTML = `<span>🗑️</span> Delete`;
 							deleteOption.addEventListener('click', () => {
+								saveToHistory();
 								config.lightSources.splice(i, 1);
 								redrawAnnotations();
 								this.saveMapAnnotations(config, el);
@@ -7536,6 +7793,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 									? `<span>🚪</span> Close Door`
 									: `<span>🚪</span> Open Door`;
 								toggleOption.addEventListener('click', () => {
+									saveToHistory();
 									wall.open = !isOpen;
 									redrawAnnotations();
 									this.saveMapAnnotations(config, el);
@@ -7558,6 +7816,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								});
 								option.innerHTML = `<span>${def.icon}</span> ${def.name}`;
 								option.addEventListener('click', () => {
+									saveToHistory();
 									wall.type = type;
 									wall.name = def.name;
 									// Reset open state when changing away from door
@@ -7579,6 +7838,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							const deleteOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item delete' });
 							deleteOption.innerHTML = `<span>🗑️</span> Delete`;
 							deleteOption.addEventListener('click', () => {
+								saveToHistory();
 								config.walls.splice(i, 1);
 								redrawAnnotations();
 								this.saveMapAnnotations(config, el);
