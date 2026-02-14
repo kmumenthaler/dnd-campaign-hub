@@ -76,7 +76,7 @@ export class MigrationManager {
     const lines = frontmatter.split('\n');
     for (const line of lines) {
       const match = line.match(/^(\w+):\s*(.*)$/);
-      if (match) {
+      if (match && match[1] && match[2] !== undefined) {
         const key = match[1];
         const value = match[2].trim();
         result[key] = value;
