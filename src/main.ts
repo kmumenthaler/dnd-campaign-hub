@@ -527,9 +527,10 @@ class EncounterBuilderModal extends Modal {
             cr: c.cr,
             source: c.source,
             path: c.path,
-            isFriendly: c.is_friendly || false,
-            isHidden: c.is_hidden || false
+            isFriendly: c.is_friendly === true || c.is_friendly === "true",
+            isHidden: c.is_hidden === true || c.is_hidden === "true"
           }));
+          console.log("[EncounterBuilder] Loaded creatures:", this.creatures);
         }
       }
 
@@ -1154,7 +1155,7 @@ class EncounterBuilderModal extends Modal {
       
       // Friendly toggle button
       const friendlyBtn = creatureItem.createEl("button", {
-        text: creature.isFriendly ? "Mark Hostile" : "Mark Friendly",
+        text: "Friendly",
         cls: `dnd-creature-friendly-toggle${creature.isFriendly ? ' active' : ''}`
       });
       friendlyBtn.addEventListener("click", () => {
@@ -1165,7 +1166,7 @@ class EncounterBuilderModal extends Modal {
       
       // Hidden toggle button
       const hiddenBtn = creatureItem.createEl("button", {
-        text: creature.isHidden ? "Mark Visible" : "Mark Hidden",
+        text: "Hidden",
         cls: `dnd-creature-hidden-toggle${creature.isHidden ? ' active' : ''}`
       });
       hiddenBtn.addEventListener("click", () => {
@@ -16307,7 +16308,9 @@ class SceneCreationModal extends Modal {
               cr: c.cr,
               source: c.source || "vault",
               path: c.path,
-              isTrap: c.is_trap || false
+              isTrap: c.is_trap || false,
+              isFriendly: c.is_friendly === true || c.is_friendly === "true",
+              isHidden: c.is_hidden === true || c.is_hidden === "true"
             };
             
             // If it's a trap, load the trap data from the trap file
@@ -17500,7 +17503,7 @@ class SceneCreationModal extends Modal {
       
       // Friendly toggle button
       const friendlyBtn = creatureItem.createEl("button", {
-        text: creature.isFriendly ? "Mark Hostile" : "Mark Friendly",
+        text: "Friendly",
         cls: `dnd-creature-friendly-toggle${creature.isFriendly ? ' active' : ''}`
       });
       friendlyBtn.addEventListener("click", () => {
@@ -17510,7 +17513,7 @@ class SceneCreationModal extends Modal {
       
       // Hidden toggle button
       const hiddenBtn = creatureItem.createEl("button", {
-        text: creature.isHidden ? "Mark Visible" : "Mark Hidden",
+        text: "Hidden",
         cls: `dnd-creature-hidden-toggle${creature.isHidden ? ' active' : ''}`
       });
       hiddenBtn.addEventListener("click", () => {
