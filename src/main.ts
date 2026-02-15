@@ -11190,13 +11190,10 @@ class SessionPrepDashboardView extends ItemView {
   }
 
   async onOpen() {
-    // Set min and max width for the leaf to ensure usability
-    const leafContainer = this.leaf.view.containerEl.parentElement;
-    if (leafContainer) {
-      leafContainer.style.minWidth = "320px";
-      leafContainer.style.maxWidth = "450px";
-      leafContainer.style.width = "400px";
-    }
+    // Ensure the view container takes full width of the leaf
+    this.containerEl.style.width = "100%";
+    this.containerEl.style.minWidth = "0";
+    this.containerEl.style.maxWidth = "none";
     
     await this.render();
 

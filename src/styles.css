@@ -461,12 +461,36 @@
 
 /* Session Prep Dashboard - Compact & Collapsible Design */
 .session-prep-dashboard {
-  width: 100%;
+  width: 100% !important;
   height: 100%;
   overflow-y: auto;
   padding: 0;
   box-sizing: border-box;
   font-size: 12px;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
+/* Ensure parent containers are also flexible - multiple selector variations */
+.workspace-leaf-content[data-type="session-prep-dashboard"],
+.workspace-leaf-content:has(.session-prep-dashboard) {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
+.workspace-leaf-content[data-type="session-prep-dashboard"] .view-content,
+.workspace-leaf-content:has(.session-prep-dashboard) .view-content {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
+/* Override any view-header constraints */
+.view-header:has(+ .view-content .session-prep-dashboard) {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
 }
 
 /* Header - Compact */
