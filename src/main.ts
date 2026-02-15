@@ -11118,9 +11118,13 @@ class SessionPrepDashboardView extends ItemView {
   }
 
   async onOpen() {
-    // Set minimum width for the leaf pane
-    const leafContainer = this.containerEl;
-    leafContainer.style.minWidth = "800px";
+    // Set min and max width for the leaf to ensure usability
+    const leafContainer = this.leaf.view.containerEl.parentElement;
+    if (leafContainer) {
+      leafContainer.style.minWidth = "320px";
+      leafContainer.style.maxWidth = "450px";
+      leafContainer.style.width = "400px";
+    }
     
     await this.render();
 
@@ -11142,51 +11146,145 @@ class SessionPrepDashboardView extends ItemView {
     container.empty();
     container.addClass("session-prep-dashboard");
 
-    // Header
+    // Compact Header
     const header = container.createEl("div", { cls: "dashboard-header" });
-    header.createEl("h2", { text: "📋 Session Prep Dashboard" });
-    
-    const campaignName = this.campaignPath.split('/').pop() || "Unknown Campaign";
-    header.createEl("p", { 
-      text: `Campaign: ${campaignName}`,
+    const headerTitle = header.createEl("div", { cls: "dashboard-header-title" });
+    headerTitle.createEl("span", { text: "📋 Session Prep", cls: "dashboard-title" });
+    const campaignName = this.campaignPath.split('/').pop() || "Unknown";
+    headerTitle.createEl("span", { 
+      text: campaignName,
       cls: "dashboard-campaign-name"
     });
 
-    // Last Session Recap
-    await this.renderLastSessionRecap(container);
-
-    // Main content container
-    const mainContainer = container.createEl("div", { cls: "dashboard-main" });
-
-    // Left column - Adventures & Scenes
-    const leftColumn = mainContainer.createEl("div", { cls: "dashboard-column-left" });
-    await this.renderAdventuresAndScenes(leftColumn);
-
-    // Right column - Quick Reference
-    const rightColumn = mainContainer.createEl("div", { cls: "dashboard-column-right" });
-    await this.renderQuickReference(rightColumn);
-
-    // Bottom - Session Notes
-    const bottomSection = container.createEl("div", { cls: "dashboard-bottom" });
-    await this.renderSessionNotes(bottomSection);
-
-    // Action buttons
-    const actions = container.createEl("div", { cls: "dashboard-actions" });
-    
-    const createSessionBtn = actions.createEl("button", {
-      text: "📝 Create New Session",
-      cls: "mod-cta"
+    // Main action button
+    const mainAction = container.createEl("button", {
+      text: "📝 New Session",
+      cls: "dashboard-main-action mod-cta"
     });
-    createSessionBtn.addEventListener("click", () => {
+    mainAction.addEventListener("click", () => {
       this.plugin.createSession();
     });
 
-    const refreshBtn = actions.createEl("button", { text: "🔄 Refresh" });
+    // Adventures & Next Scene (Primary focus)
+    await this.renderAdventuresAndScenes(container);
+
+    // Quick Actions (Collapsible)
+    await this.renderQuickActions(container);
+
+    // Party Overview (Collapsible)
+    await this.renderPartyStats(container);
+
+    // Recent NPCs (Collapsible)
+    await this.renderRecentNPCsSection(container);
+
+    // Last Session Recap (Collapsible)
+    await this.renderLastSessionRecap(container);
+
+    // Footer with refresh
+    const footer = container.createEl("div", { cls: "dashboard-footer" });
+    const refreshBtn = footer.createEl("button", { 
+      text: "🔄",
+      cls: "dashboard-refresh-btn"
+    });
     refreshBtn.addEventListener("click", () => this.render());
   }
 
+  async renderQuickActions(container: HTMLElement) {
+    const section = container.createEl("div", { cls: "dashboard-section collapsible" });
+    const header = section.createEl("div", { cls: "section-header" });
+    const toggle = header.createEl("span", { text: "▶", cls: "toggle-icon" });
+    header.createEl("span", { text: "⚡ Quick Actions" });
+    
+    const content = section.createEl("div", { cls: "section-content" });
+    content.style.display = "none";
+    
+    const actionsGrid = content.createEl("div", { cls: "actions-grid" });
+    const allActions = [
+      { text: "📝 Session", cmd: "dnd-campaign-hub:create-session" },
+      { text: "🎬 Scene", cmd: "dnd-campaign-hub:create-scene" },
+      { text: "⚔️ Encounter", cmd: "dnd-campaign-hub:create-encounter" },
+      { text: "🗺️ Adventure", cmd: "dnd-campaign-hub:create-adventure" },
+      { text: "👤 NPC", cmd: "dnd-campaign-hub:create-npc" },
+      { text: "🎭 PC", cmd: "dnd-campaign-hub:create-pc" },
+      { text: "🐉 Creature", cmd: "dnd-campaign-hub:create-creature" },
+      { text: "🏛️ Faction", cmd: "dnd-campaign-hub:create-faction" },
+      { text: "⚔️ Item", cmd: "dnd-campaign-hub:create-item" },
+      { text: "✨ Spell", cmd: "dnd-campaign-hub:create-spell" },
+      { text: "🪤 Trap", cmd: "dnd-campaign-hub:create-trap" }
+    ];
+
+    for (const action of allActions) {
+      const btn = actionsGrid.createEl("button", {
+        text: action.text,
+        cls: "action-btn"
+      });
+      btn.addEventListener("click", () => {
+        (this.app as any).commands?.executeCommandById(action.cmd);
+      });
+    }
+
+    let isExpanded = false;
+    header.addEventListener("click", () => {
+      isExpanded = !isExpanded;
+      content.style.display = isExpanded ? "block" : "none";
+      toggle.textContent = isExpanded ? "▼" : "▶";
+    });
+  }
+
+  async renderRecentNPCsSection(container: HTMLElement) {
+    const section = container.createEl("div", { cls: "dashboard-section collapsible" });
+    const header = section.createEl("div", { cls: "section-header" });
+    const toggle = header.createEl("span", { text: "▶", cls: "toggle-icon" });
+    header.createEl("span", { text: "👥 Recent NPCs" });
+    
+    const content = section.createEl("div", { cls: "section-content" });
+    content.style.display = "none";
+
+    // Get NPCs from the campaign
+    const npcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/NPCs`);
+    
+    if (!(npcsFolder instanceof TFolder)) {
+      content.createEl("p", { text: "No NPCs found", cls: "empty-msg" });
+    } else {
+      const npcFiles: TFile[] = [];
+      for (const item of npcsFolder.children) {
+        if (item instanceof TFile && item.extension === "md") {
+          npcFiles.push(item);
+        }
+      }
+
+      npcFiles.sort((a, b) => b.stat.mtime - a.stat.mtime);
+      const recentNPCs = npcFiles.slice(0, 8);
+
+      if (recentNPCs.length === 0) {
+        content.createEl("p", { text: "No NPCs yet", cls: "empty-msg" });
+      } else {
+        const npcGrid = content.createEl("div", { cls: "npc-grid" });
+        for (const npc of recentNPCs) {
+          const npcLink = npcGrid.createEl("a", { 
+            href: npc.path,
+            cls: "npc-tag"
+          });
+          npcLink.textContent = npc.basename;
+          npcLink.addEventListener("click", async (e) => {
+            e.preventDefault();
+            await this.app.workspace.openLinkText(npc.path, "", false);
+          });
+        }
+      }
+    }
+
+    let isExpanded = false;
+    header.addEventListener("click", () => {
+      isExpanded = !isExpanded;
+      content.style.display = isExpanded ? "block" : "none";
+      toggle.textContent = isExpanded ? "▼" : "▶";
+    });
+  }
+
   async renderAdventuresAndScenes(container: HTMLElement) {
-    container.createEl("h3", { text: "🗺️ Active Adventures" });
+    const section = container.createEl("div", { cls: "dashboard-section" });
+    section.createEl("h3", { text: "🗺️ Adventure Progress", cls: "section-title" });
 
     // Get all adventures in this campaign
     const adventures = await this.getActiveAdventures();
@@ -11328,53 +11426,31 @@ class SessionPrepDashboardView extends ItemView {
     npcsSection.createEl("h4", { text: "👥 Recent NPCs" });
     await this.renderRecentNPCs(npcsSection);
 
-    // Quick Actions - Organized by category
+    // Quick Actions - Compact single grid
     const actionsSection = container.createEl("div", { cls: "quick-ref-section" });
     actionsSection.createEl("h4", { text: "⚡ Quick Actions" });
     
-    // Session Management
-    const sessionGroup = actionsSection.createEl("div", { cls: "quick-action-group" });
-    sessionGroup.createEl("h5", { text: "Session Management", cls: "action-group-title" });
-    const sessionActions = [
-      { text: "📝 Create Session", cmd: "dnd-campaign-hub:create-session" },
-      { text: "🎬 Create Scene", cmd: "dnd-campaign-hub:create-scene" },
-      { text: "⚔️ Create Encounter", cmd: "dnd-campaign-hub:create-encounter" }
+    // All actions in one compact grid
+    const allActions = [
+      { text: "📝 Session", cmd: "dnd-campaign-hub:create-session" },
+      { text: "🎬 Scene", cmd: "dnd-campaign-hub:create-scene" },
+      { text: "⚔️ Encounter", cmd: "dnd-campaign-hub:create-encounter" },
+      { text: "🗺️ Adventure", cmd: "dnd-campaign-hub:create-adventure" },
+      { text: "👤 NPC", cmd: "dnd-campaign-hub:create-npc" },
+      { text: "🎭 PC", cmd: "dnd-campaign-hub:create-pc" },
+      { text: "🐉 Creature", cmd: "dnd-campaign-hub:create-creature" },
+      { text: "🏛️ Faction", cmd: "dnd-campaign-hub:create-faction" },
+      { text: "⚔️ Item", cmd: "dnd-campaign-hub:create-item" },
+      { text: "✨ Spell", cmd: "dnd-campaign-hub:create-spell" },
+      { text: "🪤 Trap", cmd: "dnd-campaign-hub:create-trap" }
     ];
-    this.renderActionButtons(sessionGroup, sessionActions);
-
-    // World Building
-    const worldGroup = actionsSection.createEl("div", { cls: "quick-action-group" });
-    worldGroup.createEl("h5", { text: "World Building", cls: "action-group-title" });
-    const worldActions = [
-      { text: "🗺️ Create Adventure", cmd: "dnd-campaign-hub:create-adventure" },
-      { text: "🏛️ Create Faction", cmd: "dnd-campaign-hub:create-faction" }
-    ];
-    this.renderActionButtons(worldGroup, worldActions);
-
-    // Characters
-    const characterGroup = actionsSection.createEl("div", { cls: "quick-action-group" });
-    characterGroup.createEl("h5", { text: "Characters", cls: "action-group-title" });
-    const characterActions = [
-      { text: "👤 Create NPC", cmd: "dnd-campaign-hub:create-npc" },
-      { text: "🎭 Create PC", cmd: "dnd-campaign-hub:create-pc" },
-      { text: "🐉 Create Creature", cmd: "dnd-campaign-hub:create-creature" }
-    ];
-    this.renderActionButtons(characterGroup, characterActions);
-
-    // Resources
-    const resourceGroup = actionsSection.createEl("div", { cls: "quick-action-group" });
-    resourceGroup.createEl("h5", { text: "Resources", cls: "action-group-title" });
-    const resourceActions = [
-      { text: "⚔️ Create Item", cmd: "dnd-campaign-hub:create-item" },
-      { text: "✨ Create Spell", cmd: "dnd-campaign-hub:create-spell" },
-      { text: "🪤 Create Trap", cmd: "dnd-campaign-hub:create-trap" }
-    ];
-    this.renderActionButtons(resourceGroup, resourceActions);
+    this.renderActionButtons(actionsSection, allActions);
   }
 
   renderActionButtons(container: HTMLElement, actions: Array<{text: string, cmd: string}>) {
+    const buttonsWrapper = container.createEl("div", { cls: "action-buttons" });
     for (const action of actions) {
-      const btn = container.createEl("button", {
+      const btn = buttonsWrapper.createEl("button", {
         text: action.text,
         cls: "quick-action-btn"
       });
@@ -11424,122 +11500,94 @@ class SessionPrepDashboardView extends ItemView {
   }
 
   async renderPartyStats(container: HTMLElement) {
-    const partySection = container.createEl("div", { cls: "quick-ref-section" });
-    partySection.createEl("h4", { text: "🎭 Party Overview" });
+    const section = container.createEl("div", { cls: "dashboard-section collapsible" });
+    const header = section.createEl("div", { cls: "section-header" });
+    const toggle = header.createEl("span", { text: "▶", cls: "toggle-icon" });
+    header.createEl("span", { text: "🎭 Party Overview" });
+    
+    const content = section.createEl("div", { cls: "section-content" });
+    content.style.display = "none";
 
     // Get PCs from the campaign
     const pcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/PCs`);
     
     if (!(pcsFolder instanceof TFolder)) {
-      partySection.createEl("p", { text: "No PCs found", cls: "empty-message" });
-      return;
-    }
+      content.createEl("p", { text: "No PCs found", cls: "empty-msg" });
+    } else {
+      const pcFiles: TFile[] = [];
+      for (const item of pcsFolder.children) {
+        if (item instanceof TFile && item.extension === "md") {
+          pcFiles.push(item);
+        }
+      }
 
-    const pcFiles: TFile[] = [];
-    for (const item of pcsFolder.children) {
-      if (item instanceof TFile && item.extension === "md") {
-        pcFiles.push(item);
+      if (pcFiles.length === 0) {
+        content.createEl("p", { text: "No PCs yet", cls: "empty-msg" });
+      } else {
+        // Collect PC stats
+        const party: Array<{
+          name: string;
+          hp: number;
+          hpMax: number;
+          ac: number;
+          path: string;
+        }> = [];
+
+        for (const pcFile of pcFiles) {
+          const cache = this.app.metadataCache.getFileCache(pcFile);
+          const fm = cache?.frontmatter;
+          
+          if (fm && fm.type === "player") {
+            party.push({
+              name: fm.name || pcFile.basename,
+              hp: parseInt(fm.hp) || 0,
+              hpMax: parseInt(fm.hp_max) || 0,
+              ac: parseInt(fm.ac) || 10,
+              path: pcFile.path
+            });
+          }
+        }
+
+        party.sort((a, b) => a.name.localeCompare(b.name));
+
+        // Party grid
+        const partyGrid = content.createEl("div", { cls: "party-grid" });
+        
+        for (const pc of party) {
+          const pcCard = partyGrid.createEl("div", { cls: "party-card" });
+          
+          const pcLink = pcCard.createEl("a", { 
+            href: pc.path,
+            cls: "pc-name"
+          });
+          pcLink.textContent = pc.name;
+          pcLink.addEventListener("click", async (e) => {
+            e.preventDefault();
+            await this.app.workspace.openLinkText(pc.path, "", false);
+          });
+
+          // HP bar
+          const hpPercent = pc.hpMax > 0 ? (pc.hp / pc.hpMax) * 100 : 0;
+          const hpBar = pcCard.createEl("div", { cls: "pc-hp-bar" });
+          const hpFill = hpBar.createEl("div", { cls: "pc-hp-fill" });
+          hpFill.style.width = `${hpPercent}%`;
+          if (hpPercent < 25) hpFill.style.backgroundColor = "#cc0000";
+          else if (hpPercent < 50) hpFill.style.backgroundColor = "#cc6600";
+          
+          pcCard.createEl("div", { 
+            cls: "pc-stats",
+            text: `❤️ ${pc.hp}/${pc.hpMax} • AC ${pc.ac}`
+          });
+        }
       }
     }
 
-    if (pcFiles.length === 0) {
-      partySection.createEl("p", { text: "No PCs yet", cls: "empty-message" });
-      return;
-    }
-
-    // Collect PC stats
-    const party: Array<{
-      name: string;
-      player: string;
-      class: string;
-      level: number;
-      hp: number;
-      hpMax: number;
-      ac: number;
-      passivePerception: number;
-      path: string;
-    }> = [];
-
-    for (const pcFile of pcFiles) {
-      const cache = this.app.metadataCache.getFileCache(pcFile);
-      const fm = cache?.frontmatter;
-      
-      if (fm && fm.type === "player") {
-        party.push({
-          name: fm.name || pcFile.basename,
-          player: fm.player || "Unknown",
-          class: fm.class || "?",
-          level: parseInt(fm.level) || 1,
-          hp: parseInt(fm.hp) || 0,
-          hpMax: parseInt(fm.hp_max) || 0,
-          ac: parseInt(fm.ac) || 10,
-          passivePerception: parseInt(fm.passive_perception) || 10,
-          path: pcFile.path
-        });
-      }
-    }
-
-    if (party.length === 0) {
-      partySection.createEl("p", { text: "No active PCs", cls: "empty-message" });
-      return;
-    }
-
-    // Sort by name
-    party.sort((a, b) => a.name.localeCompare(b.name));
-
-    // Party summary stats
-    const avgLevel = Math.round(party.reduce((sum, pc) => sum + pc.level, 0) / party.length);
-    const avgAC = Math.round(party.reduce((sum, pc) => sum + pc.ac, 0) / party.length);
-    const avgHP = Math.round(party.reduce((sum, pc) => sum + pc.hpMax, 0) / party.length);
-    const minPP = Math.min(...party.map(pc => pc.passivePerception));
-    const maxPP = Math.max(...party.map(pc => pc.passivePerception));
-
-    const summary = partySection.createEl("div", { cls: "party-summary" });
-    summary.createEl("div", { text: `👥 ${party.length} PCs • Avg Lvl ${avgLevel}` });
-    summary.createEl("div", { text: `🛡️ Avg AC ${avgAC} • ❤️ Avg HP ${avgHP}` });
-    summary.createEl("div", { text: `👁️ PP ${minPP}-${maxPP}` });
-
-    // Individual PC list
-    const partyList = partySection.createEl("div", { cls: "party-list" });
-    
-    for (const pc of party) {
-      const pcCard = partyList.createEl("div", { cls: "party-member" });
-      
-      // PC name and link
-      const pcHeader = pcCard.createEl("div", { cls: "party-member-header" });
-      const pcLink = pcHeader.createEl("a", { 
-        href: pc.path,
-        cls: "party-member-name"
-      });
-      pcLink.textContent = pc.name;
-      pcLink.addEventListener("click", async (e) => {
-        e.preventDefault();
-        await this.app.workspace.openLinkText(pc.path, "", false);
-      });
-
-      // HP bar with status color
-      const hpPercent = pc.hpMax > 0 ? (pc.hp / pc.hpMax) * 100 : 0;
-      let hpStatus = "healthy";
-      if (hpPercent < 25) hpStatus = "critical";
-      else if (hpPercent < 50) hpStatus = "wounded";
-
-      const hpBar = pcCard.createEl("div", { cls: "party-hp-bar" });
-      const hpFill = hpBar.createEl("div", { 
-        cls: `party-hp-fill hp-${hpStatus}`
-      });
-      hpFill.style.width = `${hpPercent}%`;
-      
-      const hpText = pcCard.createEl("div", { 
-        cls: "party-member-stats",
-        text: `❤️ ${pc.hp}/${pc.hpMax} • 🛡️ AC ${pc.ac} • 👁️ PP ${pc.passivePerception}`
-      });
-
-      // Class and level
-      pcCard.createEl("div", { 
-        cls: "party-member-class",
-        text: `Lvl ${pc.level} ${pc.class}`
-      });
-    }
+    let isExpanded = false;
+    header.addEventListener("click", () => {
+      isExpanded = !isExpanded;
+      content.style.display = isExpanded ? "block" : "none";
+      toggle.textContent = isExpanded ? "▼" : "▶";
+    });
   }
 
   async renderSessionNotes(container: HTMLElement) {
@@ -11761,8 +11809,13 @@ class SessionPrepDashboardView extends ItemView {
   }
 
   async renderLastSessionRecap(container: HTMLElement) {
-    const recapSection = container.createEl("div", { cls: "last-session-recap" });
-    recapSection.createEl("h3", { text: "📖 Last Session Recap" });
+    const section = container.createEl("div", { cls: "dashboard-section collapsible" });
+    const header = section.createEl("div", { cls: "section-header" });
+    const toggle = header.createEl("span", { text: "▶", cls: "toggle-icon" });
+    header.createEl("span", { text: "📖 Last Session" });
+    
+    const content = section.createEl("div", { cls: "section-content" });
+    content.style.display = "none";
 
     // Get recent sessions
     const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
@@ -11789,126 +11842,57 @@ class SessionPrepDashboardView extends ItemView {
     }
 
     if (sessionFiles.length === 0) {
-      recapSection.createEl("p", { 
-        text: "No previous sessions yet. Start your first session!",
-        cls: "empty-message"
+      content.createEl("p", { 
+        text: "No previous sessions yet.",
+        cls: "empty-msg"
       });
-      return;
-    }
-
-    // Sort by session number (descending)
-    sessionFiles.sort((a, b) => {
-      const cacheA = this.app.metadataCache.getFileCache(a);
-      const cacheB = this.app.metadataCache.getFileCache(b);
-      
-      const aNum = cacheA?.frontmatter?.sessionNum || this.extractSessionNumber(a.basename);
-      const bNum = cacheB?.frontmatter?.sessionNum || this.extractSessionNumber(b.basename);
-      
-      return bNum - aNum;
-    });
-
-    const lastSession = sessionFiles[0];
-    if (!lastSession) {
-      recapSection.createEl("p", { 
-        text: "No previous sessions yet. Start your first session!",
-        cls: "empty-message"
-      });
-      return;
-    }
-
-    const cache = this.app.metadataCache.getFileCache(lastSession);
-
-    // Create recap card
-    const recapCard = recapSection.createEl("div", { cls: "recap-card" });
-
-    // Session title and info
-    const recapHeader = recapCard.createEl("div", { cls: "recap-header" });
-    const sessionLink = recapHeader.createEl("a", { 
-      href: lastSession.path,
-      cls: "recap-session-link"
-    });
-    sessionLink.textContent = lastSession.basename;
-    sessionLink.addEventListener("click", async (e) => {
-      e.preventDefault();
-      await this.app.workspace.openLinkText(lastSession.path, "", false);
-    });
-
-    // Session date
-    if (cache?.frontmatter?.date || cache?.frontmatter?.gameDate) {
-      const dateInfo = recapHeader.createEl("span", { cls: "recap-date" });
-      const date = cache.frontmatter.date || cache.frontmatter.gameDate;
-      dateInfo.textContent = ` • ${date}`;
-    }
-
-    // Read session content for highlights
-    try {
-      const content = await this.app.vault.read(lastSession);
-      const recapContent = recapCard.createEl("div", { cls: "recap-content" });
-
-      // Look for highlights section
-      let highlightsMatch = content.match(/##\s*(?:Highlights?|Key Events?)\s*\n([\s\S]*?)(?=\n##|$)/i);
-      if (highlightsMatch && highlightsMatch[1]) {
-        const highlightsList = recapContent.createEl("div", { cls: "recap-highlights" });
-        highlightsList.createEl("strong", { text: "Key Events:" });
+    } else {
+      // Sort by session number (descending)
+      sessionFiles.sort((a, b) => {
+        const cacheA = this.app.metadataCache.getFileCache(a);
+        const cacheB = this.app.metadataCache.getFileCache(b);
         
-        const highlightsText = highlightsMatch[1];
-        // Extract bullet points
-        const bullets = highlightsText.match(/^[-*]\s+(.+)$/gm);
-        if (bullets && bullets.length > 0) {
-          const ul = highlightsList.createEl("ul");
-          bullets.slice(0, 5).forEach(bullet => {
-            const text = bullet.replace(/^[-*]\s+/, '').trim();
-            ul.createEl("li", { text });
-          });
-        } else {
-          // Use first paragraph if no bullets
-          const firstPara = highlightsText.trim().split('\n')[0];
-          recapContent.createEl("p", { text: firstPara, cls: "recap-summary" });
-        }
-      } else {
-        // Try summary section
-        const summaryMatch = content.match(/##\s*Summary\s*\n([\s\S]*?)(?=\n##|$)/i);
-        if (summaryMatch && summaryMatch[1]) {
-          const summaryText = summaryMatch[1]!.trim();
-          const bullets = summaryText.match(/^[-*]\s+(.+)$/gm);
-          
-          if (bullets && bullets.length > 0) {
-            const highlightsList = recapContent.createEl("div", { cls: "recap-highlights" });
-            highlightsList.createEl("strong", { text: "Summary:" });
-            const ul = highlightsList.createEl("ul");
-            bullets.slice(0, 5).forEach(bullet => {
-              const text = bullet.replace(/^[-*]\s+/, '').trim();
-              ul.createEl("li", { text });
-            });
-          } else {
-            const firstPara = (summaryText.split('\n')[0] || '').substring(0, 300);
-            recapContent.createEl("p", { 
-              text: firstPara + (summaryText.length > 300 ? "..." : ""),
-              cls: "recap-summary"
+        const aNum = cacheA?.frontmatter?.sessionNum || this.extractSessionNumber(a.basename);
+        const bNum = cacheB?.frontmatter?.sessionNum || this.extractSessionNumber(b.basename);
+        
+        return bNum - aNum;
+      });
+
+      const lastSession = sessionFiles[0];
+      if (lastSession) {
+        const sessionLink = content.createEl("a", { 
+          href: lastSession.path,
+          cls: "session-link"
+        });
+        sessionLink.textContent = lastSession.basename;
+        sessionLink.addEventListener("click", async (e) => {
+          e.preventDefault();
+          await this.app.workspace.openLinkText(lastSession.path, "", false);
+        });
+
+        // Try to extract summary
+        try {
+          const fileContent = await this.app.vault.read(lastSession);
+          const summaryMatch = fileContent.match(/##\s*(?:Summary|Highlights?)\s*\n([\s\S]*?)(?=\n##|$)/i);
+          if (summaryMatch && summaryMatch[1]) {
+            const summary = summaryMatch[1].trim().substring(0, 150);
+            content.createEl("p", {
+              text: summary + (summaryMatch[1].length > 150 ? "..." : ""),
+              cls: "session-summary"
             });
           }
+        } catch (error) {
+          // Ignore read errors
         }
       }
-
-      // Look for cliffhanger
-      const cliffhangerMatch = content.match(/##\s*(?:Cliffhanger|Next Time|Where We Left Off)\s*\n([\s\S]*?)(?=\n##|$)/i);
-      if (cliffhangerMatch && cliffhangerMatch[1]) {
-        const cliffhangerText = cliffhangerMatch[1]!.trim();
-        const firstLine = (cliffhangerText.split('\n')[0] || '').replace(/^[-*]\s+/, '');
-        if (firstLine) {
-          const cliffhangerDiv = recapCard.createEl("div", { cls: "recap-cliffhanger" });
-          cliffhangerDiv.createEl("strong", { text: "🎬 Cliffhanger: " });
-          cliffhangerDiv.createEl("span", { text: firstLine });
-        }
-      }
-
-    } catch (error) {
-      console.error("Error reading session file:", error);
-      recapCard.createEl("p", { 
-        text: "Unable to load session details",
-        cls: "empty-message"
-      });
     }
+
+    let isExpanded = false;
+    header.addEventListener("click", () => {
+      isExpanded = !isExpanded;
+      content.style.display = isExpanded ? "block" : "none";
+      toggle.textContent = isExpanded ? "▼" : "▶";
+    });
   }
 
   extractSessionNumber(filename: string): number {
