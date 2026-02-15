@@ -1140,7 +1140,8 @@ class EncounterBuilderModal extends Modal {
       
       const nameEl = creatureItem.createSpan({ cls: "dnd-creature-name" });
       const friendlyIndicator = creature.isFriendly ? "🤝 " : "";
-      nameEl.setText(`${friendlyIndicator}${creature.name} x${creature.count}`);
+      const hiddenIndicator = creature.isHidden ? "👁️‍🗨️ " : "";
+      nameEl.setText(`${friendlyIndicator}${hiddenIndicator}${creature.name} x${creature.count}`);
       
       const statsEl = creatureItem.createSpan({ cls: "dnd-creature-stats" });
       const stats: string[] = [];
@@ -1148,6 +1149,7 @@ class EncounterBuilderModal extends Modal {
       if (creature.ac) stats.push(`AC: ${creature.ac}`);
       if (creature.cr) stats.push(`CR: ${creature.cr}`);
       if (creature.isFriendly) stats.push("🤝 Friendly");
+      if (creature.isHidden) stats.push("👁️‍🗨️ Hidden");
       statsEl.setText(stats.length > 0 ? ` | ${stats.join(" | ")}` : "");
       
       // Friendly toggle button
@@ -1157,6 +1159,17 @@ class EncounterBuilderModal extends Modal {
       });
       friendlyBtn.addEventListener("click", () => {
         creature.isFriendly = !creature.isFriendly;
+        this.renderCreatureList();
+        this.updateDifficultyDisplay();
+      });
+      
+      // Hidden toggle button
+      const hiddenBtn = creatureItem.createEl("button", {
+        text: creature.isHidden ? "Mark Visible" : "Mark Hidden",
+        cls: `dnd-creature-hidden-toggle${creature.isHidden ? ' active' : ''}`
+      });
+      hiddenBtn.addEventListener("click", () => {
+        creature.isHidden = !creature.isHidden;
         this.renderCreatureList();
         this.updateDifficultyDisplay();
       });
@@ -17467,17 +17480,43 @@ class SceneCreationModal extends Modal {
     }
     
     this.creatures.forEach((creature, index) => {
-      const creatureItem = this.creatureListContainer!.createDiv({ cls: "dnd-creature-item" });
+      const creatureItem = this.creatureListContainer!.createDiv({ 
+        cls: `dnd-creature-item${creature.isFriendly ? ' friendly' : ''}` 
+      });
       
       const nameEl = creatureItem.createSpan({ cls: "dnd-creature-name" });
-      nameEl.setText(`${creature.name} x${creature.count}`);
+      const friendlyIndicator = creature.isFriendly ? "🤝 " : "";
+      const hiddenIndicator = creature.isHidden ? "👁️‍🗨️ " : "";
+      nameEl.setText(`${friendlyIndicator}${hiddenIndicator}${creature.name} x${creature.count}`);
       
       const statsEl = creatureItem.createSpan({ cls: "dnd-creature-stats" });
       const stats: string[] = [];
       if (creature.hp) stats.push(`HP: ${creature.hp}`);
       if (creature.ac) stats.push(`AC: ${creature.ac}`);
       if (creature.cr) stats.push(`CR: ${creature.cr}`);
+      if (creature.isFriendly) stats.push("🤝 Friendly");
+      if (creature.isHidden) stats.push("👁️‍🗨️ Hidden");
       statsEl.setText(stats.length > 0 ? ` | ${stats.join(" | ")}` : "");
+      
+      // Friendly toggle button
+      const friendlyBtn = creatureItem.createEl("button", {
+        text: creature.isFriendly ? "Mark Hostile" : "Mark Friendly",
+        cls: `dnd-creature-friendly-toggle${creature.isFriendly ? ' active' : ''}`
+      });
+      friendlyBtn.addEventListener("click", () => {
+        creature.isFriendly = !creature.isFriendly;
+        this.renderCreatureList();
+      });
+      
+      // Hidden toggle button
+      const hiddenBtn = creatureItem.createEl("button", {
+        text: creature.isHidden ? "Mark Visible" : "Mark Hidden",
+        cls: `dnd-creature-hidden-toggle${creature.isHidden ? ' active' : ''}`
+      });
+      hiddenBtn.addEventListener("click", () => {
+        creature.isHidden = !creature.isHidden;
+        this.renderCreatureList();
+      });
       
       const removeBtn = creatureItem.createEl("button", {
         text: "Remove",
