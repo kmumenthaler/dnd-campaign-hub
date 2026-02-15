@@ -1,4 +1,4 @@
-import { App, ItemView, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
+import { App, AbstractInputSuggest, ItemView, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TextComponent, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
 import {
   WORLD_TEMPLATE,
   SESSION_GM_TEMPLATE,
@@ -9718,6 +9718,160 @@ class NamePromptModal extends Modal {
   }
 }
 
+/**
+ * File suggest component for PDF files in the vault
+ */
+class PDFFileSuggest extends AbstractInputSuggest<TFile> {
+  private inputEl: HTMLInputElement;
+
+  constructor(app: App, inputEl: HTMLInputElement) {
+    super(app, inputEl);
+    this.inputEl = inputEl;
+  }
+
+  getSuggestions(query: string): TFile[] {
+    // Get all PDF files from vault
+    const allFiles = this.app.vault.getFiles();
+    const pdfFiles = allFiles.filter(f => f.extension === 'pdf');
+    const lowerQuery = query.toLowerCase();
+    
+    if (!query) {
+      return pdfFiles.slice(0, 50); // Show first 50 PDFs when no input
+    }
+    
+    return pdfFiles
+      .filter(file => 
+        file.path.toLowerCase().includes(lowerQuery) ||
+        file.basename.toLowerCase().includes(lowerQuery)
+      )
+      .slice(0, 50); // Max 50 suggestions
+  }
+
+  renderSuggestion(file: TFile, el: HTMLElement): void {
+    const div = el.createDiv({ cls: 'suggestion-item' });
+    
+    // Filename in bold
+    const titleDiv = div.createDiv({ cls: 'suggestion-title' });
+    titleDiv.setText(file.basename);
+    titleDiv.style.fontWeight = '600';
+    
+    // Path in gray below
+    if (file.path !== file.basename + '.pdf') {
+      const pathDiv = div.createDiv({ cls: 'suggestion-note' });
+      pathDiv.setText(file.path);
+      pathDiv.style.fontSize = '0.85em';
+      pathDiv.style.color = 'var(--text-muted)';
+    }
+  }
+
+  selectSuggestion(file: TFile): void {
+    // Set the path
+    this.inputEl.value = file.path;
+    this.inputEl.dispatchEvent(new Event('input'));
+    this.close();
+  }
+}
+
+/**
+ * Modal for browsing and selecting PDF files from the vault
+ */
+class PDFBrowserModal extends Modal {
+  private files: TFile[];
+  private onSelect: (file: TFile) => void;
+  private filterText: string = '';
+
+  constructor(app: App, files: TFile[], onSelect: (file: TFile) => void) {
+    super(app);
+    this.files = files;
+    this.onSelect = onSelect;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl('h2', { text: 'Select PDF File' });
+
+    // Search filter
+    const searchContainer = contentEl.createDiv();
+    searchContainer.style.marginBottom = '10px';
+    const searchInput = searchContainer.createEl('input', { 
+      type: 'text', 
+      placeholder: 'Filter PDFs...' 
+    });
+    searchInput.style.width = '100%';
+    searchInput.style.padding = '8px';
+    searchInput.style.borderRadius = '4px';
+    searchInput.style.border = '1px solid var(--background-modifier-border)';
+
+    const listContainer = contentEl.createDiv({ cls: 'pdf-browser-list' });
+    listContainer.style.maxHeight = '400px';
+    listContainer.style.overflowY = 'auto';
+    listContainer.style.padding = '10px';
+
+    const renderFiles = (filter: string) => {
+      listContainer.empty();
+      const filtered = filter
+        ? this.files.filter(f => f.path.toLowerCase().includes(filter.toLowerCase()))
+        : this.files;
+
+      if (filtered.length === 0) {
+        listContainer.createEl('p', { 
+          text: 'No PDF files found.',
+          cls: 'setting-item-description'
+        });
+        return;
+      }
+
+      for (const file of filtered) {
+        const item = listContainer.createDiv();
+        item.style.padding = '8px';
+        item.style.border = '1px solid var(--background-modifier-border)';
+        item.style.borderRadius = '4px';
+        item.style.marginBottom = '6px';
+        item.style.cursor = 'pointer';
+        item.style.transition = 'all 0.15s ease';
+
+        // Filename
+        const nameEl = item.createEl('div', { text: file.basename });
+        nameEl.style.fontWeight = '600';
+        nameEl.style.marginBottom = '2px';
+
+        // Path
+        const pathEl = item.createEl('div', { text: file.path });
+        pathEl.style.fontSize = '0.85em';
+        pathEl.style.color = 'var(--text-muted)';
+
+        // Hover effect
+        item.addEventListener('mouseenter', () => {
+          item.style.backgroundColor = 'var(--background-modifier-hover)';
+        });
+        item.addEventListener('mouseleave', () => {
+          item.style.backgroundColor = '';
+        });
+
+        // Click to select
+        item.addEventListener('click', () => {
+          this.onSelect(file);
+          this.close();
+        });
+      }
+    };
+
+    searchInput.addEventListener('input', (e) => {
+      const target = e.target as HTMLInputElement;
+      renderFiles(target.value);
+    });
+
+    // Initial render
+    renderFiles('');
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
 class PCCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
   pcName = "";
@@ -10001,25 +10155,93 @@ class PCCreationModal extends Modal {
         );
     }
 
-    new Setting(contentEl)
+    // Character Sheet PDF with file browsing and suggestions
+    let pdfTextComponent: TextComponent;
+    const pdfSetting = new Setting(contentEl)
       .setName("Character Sheet PDF")
-      .setDesc("Optional: Upload or link to a PDF character sheet")
-      .addButton((button) =>
-        button
-          .setButtonText("📎 Attach PDF")
-          .onClick(async () => {
-            new Notice("PDF upload: Please manually add the PDF to your vault and reference it in the note.");
-            // In a full implementation, this could trigger file picker
-          })
-      )
-      .addText((text) =>
-        text
-          .setPlaceholder("Path to PDF in vault or external link")
-          .setValue(this.characterSheetPdf)
-          .onChange((value) => {
-            this.characterSheetPdf = value;
-          })
-      );
+      .setDesc(this.characterSheetPdf ? `Selected: ${this.characterSheetPdf}` : 'Browse vault, import file, or type to search PDFs');
+
+    pdfSetting.addButton(btn => btn
+      .setButtonText('Browse Vault')
+      .onClick(() => {
+        // Get all PDF files from the vault
+        const pdfFiles = this.app.vault.getFiles().filter(f => f.extension === 'pdf');
+        
+        if (pdfFiles.length === 0) {
+          new Notice('No PDF files found in vault');
+          return;
+        }
+        
+        // Sort PDFs by path
+        pdfFiles.sort((a, b) => a.path.localeCompare(b.path));
+        
+        new PDFBrowserModal(this.app, pdfFiles, (file: TFile) => {
+          this.characterSheetPdf = file.path;
+          pdfSetting.setDesc(`Selected: ${this.characterSheetPdf}`);
+          pdfTextComponent?.setValue(file.path);
+        }).open();
+      })
+    );
+
+    pdfSetting.addButton(btn => btn
+      .setButtonText('Import File')
+      .onClick(() => {
+        // Use hidden file input to pick from OS file system
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pdf,application/pdf';
+        input.addEventListener('change', async () => {
+          const file = input.files?.[0];
+          if (!file) return;
+          
+          // Validate it's a PDF
+          if (!file.name.toLowerCase().endsWith('.pdf')) {
+            new Notice('Please select a PDF file');
+            return;
+          }
+          
+          try {
+            const buffer = await file.arrayBuffer();
+            // Ensure z_Assets folder exists
+            const assetsFolder = this.app.vault.getAbstractFileByPath('z_Assets');
+            if (!assetsFolder) {
+              await this.app.vault.createFolder('z_Assets');
+            }
+            // Save to z_Assets with original filename
+            const destPath = `z_Assets/${file.name}`;
+            const existing = this.app.vault.getAbstractFileByPath(destPath);
+            if (existing) {
+              // File already exists, just use it
+              this.characterSheetPdf = destPath;
+            } else {
+              await this.app.vault.createBinary(destPath, buffer);
+              this.characterSheetPdf = destPath;
+            }
+            pdfSetting.setDesc(`Selected: ${this.characterSheetPdf}`);
+            pdfTextComponent?.setValue(this.characterSheetPdf);
+            new Notice(`PDF saved to ${destPath}`);
+          } catch (err) {
+            new Notice('Failed to import PDF');
+            console.error('PDF import error:', err);
+          }
+        });
+        input.click();
+      })
+    );
+
+    pdfSetting.addText((text) => {
+      pdfTextComponent = text;
+      text
+        .setPlaceholder("Type to search vault PDFs...")
+        .setValue(this.characterSheetPdf)
+        .onChange((value) => {
+          this.characterSheetPdf = value;
+          pdfSetting.setDesc(value ? `Selected: ${value}` : 'Browse vault, import file, or type to search PDFs');
+        });
+      
+      // Enable file suggestions for PDFs
+      new PDFFileSuggest(this.app, text.inputEl);
+    });
 
     // Buttons
     const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
@@ -10204,15 +10426,22 @@ class PCCreationModal extends Modal {
         }
       }
 
-      // Get PC template
-      const templatePath = "z_Templates/Frontmatter - Player Character.md";
-      const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
+      // Get PC content - use existing file content when editing, template for new PCs
       let pcContent: string;
 
-      if (templateFile instanceof TFile) {
-        pcContent = await this.app.vault.read(templateFile);
+      if (this.isEdit && pcFile) {
+        // Preserve existing content when editing
+        pcContent = await this.app.vault.read(pcFile);
       } else {
-        pcContent = PC_TEMPLATE;
+        // Use template for new PCs
+        const templatePath = "z_Templates/Frontmatter - Player Character.md";
+        const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
+        
+        if (templateFile instanceof TFile) {
+          pcContent = await this.app.vault.read(templateFile);
+        } else {
+          pcContent = PC_TEMPLATE;
+        }
       }
 
       // Get current date
@@ -10269,6 +10498,23 @@ date: ${currentDate}
         .replace(/<% tp\.frontmatter\.characterSheetPdf \? "\[\[" \+ tp\.frontmatter\.characterSheetPdf \+ "\|Character Sheet PDF\]\]" : "_No PDF uploaded_" %>/g,
           this.characterSheetPdf ? `[[${this.characterSheetPdf}|Character Sheet PDF]]` : "_No PDF uploaded_");
 
+      // When editing, also replace already-rendered content (not just Templater placeholders)
+      if (this.isEdit) {
+        // Replace existing PDF link or placeholder
+        pcContent = pcContent
+          .replace(/\[\[[^\]]+\|Character Sheet PDF\]\]/g, 
+            this.characterSheetPdf ? `[[${this.characterSheetPdf}|Character Sheet PDF]]` : "_No PDF uploaded_")
+          .replace(/_No PDF uploaded_/g, 
+            this.characterSheetPdf ? `[[${this.characterSheetPdf}|Character Sheet PDF]]` : "_No PDF uploaded_");
+        
+        // Replace existing URL link or placeholder
+        pcContent = pcContent
+          .replace(/\[Digital Character Sheet\]\([^)]+\)/g, 
+            this.characterSheetUrl ? `[Digital Character Sheet](${this.characterSheetUrl})` : "_No digital sheet linked_")
+          .replace(/_No digital sheet linked_/g, 
+            this.characterSheetUrl ? `[Digital Character Sheet](${this.characterSheetUrl})` : "_No digital sheet linked_");
+      }
+
       // Create or update the file
       if (this.isEdit && pcFile) {
         await this.app.vault.modify(pcFile, pcContent);
@@ -10281,7 +10527,7 @@ date: ${currentDate}
 
       // Open the file
       if (pcFile) {
-        await this.app.workspace.openLinkText(filePath, "", true);
+        await this.app.workspace.openLinkText(filePath, "", false);
       }
       
       // Register in Initiative Tracker if requested (only for new PCs)
@@ -10773,15 +11019,22 @@ class NPCCreationModal extends Modal {
         }
       }
 
-      // Get NPC template
-      const templatePath = "z_Templates/npc.md";
-      const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
+      // Get NPC content - use existing file content when editing, template for new NPCs
       let npcContent: string;
 
-      if (templateFile instanceof TFile) {
-        npcContent = await this.app.vault.read(templateFile);
+      if (this.isEdit && npcFile) {
+        // Preserve existing content when editing
+        npcContent = await this.app.vault.read(npcFile);
       } else {
-        npcContent = NPC_TEMPLATE;
+        // Use template for new NPCs
+        const templatePath = "z_Templates/npc.md";
+        const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
+        
+        if (templateFile instanceof TFile) {
+          npcContent = await this.app.vault.read(templateFile);
+        } else {
+          npcContent = NPC_TEMPLATE;
+        }
       }
 
       // Get current date
@@ -10818,7 +11071,7 @@ class NPCCreationModal extends Modal {
 
       // Open the file
       if (npcFile) {
-        await this.app.workspace.openLinkText(filePath, "", true);
+        await this.app.workspace.openLinkText(filePath, "", false);
       }
     } catch (error) {
       new Notice(`❌ Error ${this.isEdit ? 'updating' : 'creating'} NPC: ${error instanceof Error ? error.message : String(error)}`);
@@ -20247,7 +20500,7 @@ class ItemCreationModal extends Modal {
 
       // Open the file
       if (itemFile) {
-        await this.app.workspace.openLinkText(itemPath, "", true);
+        await this.app.workspace.openLinkText(itemPath, "", false);
       }
     } catch (error) {
       console.error("Error creating/editing item:", error);
@@ -21178,7 +21431,7 @@ class CreatureCreationModal extends Modal {
 
       // Open the creature file
       if (creatureFile) {
-        await this.app.workspace.openLinkText(creaturePath, "", true);
+        await this.app.workspace.openLinkText(creaturePath, "", false);
       }
     } catch (error) {
       console.error("Error creating/editing creature:", error);

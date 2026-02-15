@@ -115,6 +115,15 @@ export class MigrationManager {
       return true;
     }
 
+    // Check for missing edit/delete buttons in PC/NPC notes
+    if (fileType === 'player' || fileType === 'pc' || fileType === 'npc') {
+      const content = await this.app.vault.read(file);
+      const buttonCommand = fileType === 'npc' ? 'dnd-campaign-hub:edit-npc' : 'dnd-campaign-hub:edit-pc';
+      if (!content.includes(buttonCommand)) {
+        return true;
+      }
+    }
+
     return false;
   }
 
@@ -610,6 +619,13 @@ deleteBtn.addEventListener("click", () => {
           await this.migratePlayerTo1_1_0(file);
           return true;
         }
+        // Check if edit/delete buttons are missing even if version is 1.2.0
+        const playerContent = await this.app.vault.read(file);
+        if (!playerContent.includes("dnd-campaign-hub:edit-pc")) {
+          console.log(`${file.path} has v1.2.0 but missing buttons, re-running migration`);
+          await this.migratePlayerTo1_2_0(file);
+          return true;
+        }
       }
 
       // NPC-specific migrations
@@ -634,6 +650,13 @@ deleteBtn.addEventListener("click", () => {
         if (frontmatter && !frontmatter.token_id) {
           console.log(`${file.path} has correct version but missing token_id, re-running migration`);
           await this.migrateNPCTo1_1_0(file);
+          return true;
+        }
+        // Check if edit/delete buttons are missing even if version is 1.2.0
+        const npcContent = await this.app.vault.read(file);
+        if (!npcContent.includes("dnd-campaign-hub:edit-npc")) {
+          console.log(`${file.path} has v1.2.0 but missing buttons, re-running migration`);
+          await this.migrateNPCTo1_2_0(file);
           return true;
         }
       }
