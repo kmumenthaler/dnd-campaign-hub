@@ -4024,3 +4024,24 @@
   border-color: #4caf50;
   color: #4caf50;
 }
+
+/* Hidden creature toggle button styling */
+.dnd-creature-hidden-toggle {
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  background-color: var(--interactive-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dnd-creature-hidden-toggle:hover {
+  background-color: var(--interactive-hover);
+}
+
+.dnd-creature-hidden-toggle.active {
+  background-color: rgba(156, 39, 176, 0.3);
+  border-color: #9c27b0;
+  color: #9c27b0;
+}
