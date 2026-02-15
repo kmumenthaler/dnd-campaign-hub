@@ -8,9 +8,9 @@ import { MarkerDefinition, CreatureSize } from "../marker/MarkerTypes";
 export const TEMPLATE_VERSIONS = {
   world: "1.0.0",
   session: "1.2.1", // Fixed escaping issues in interactive scene checkboxes
-  npc: "1.1.0", // Added token_id for map markers
-  pc: "1.1.0", // Added token_id for map markers (same as player)
-  player: "1.1.0", // Added token_id for map markers
+  npc: "1.2.0", // Added Edit/Delete buttons
+  pc: "1.2.0", // Added Edit/Delete buttons
+  player: "1.2.0", // Added Edit/Delete buttons (same as pc)
   adventure: "1.1.1", // Fixed escaping issues in interactive scene checkboxes
   scene: "2.0.0", // Specialized scene templates (social, combat, exploration, puzzle, montage)
   faction: "1.0.0",
@@ -450,6 +450,116 @@ export class MigrationManager {
   }
 
   /**
+   * Migrate PC/Player to v1.2.0 (add edit/delete buttons)
+   */
+  async migratePlayerTo1_2_0(file: TFile): Promise<void> {
+    console.log(`Migrating player ${file.path} to v1.2.0`);
+
+    const content = await this.app.vault.read(file);
+    
+    // Check if edit/delete buttons already exist
+    if (content.includes("dnd-campaign-hub:edit-pc")) {
+      console.log(`Player ${file.path} already has edit/delete buttons`);
+      await this.updateTemplateVersion(file, "1.2.0");
+      return;
+    }
+    
+    const buttonBlock = `\`\`\`dataviewjs
+// Action buttons for PC management
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
+
+// Edit PC button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit PC",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-pc");
+});
+
+// Delete PC button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete PC",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-pc");
+});
+\`\`\`
+`;
+    
+    // Insert button block after the title (first # heading)
+    const titleMatch = content.match(/^(---\n[\s\S]*?\n---\n\n)(# .+\n)/m);
+    if (titleMatch) {
+      const newContent = content.replace(
+        titleMatch[0],
+        `${titleMatch[1]}${titleMatch[2]}\n${buttonBlock}\n`
+      );
+      await this.app.vault.modify(file, newContent);
+    }
+    
+    await this.updateTemplateVersion(file, "1.2.0");
+    console.log(`Player ${file.path} migrated to v1.2.0 with edit/delete buttons`);
+  }
+
+  /**
+   * Migrate NPC to v1.2.0 (add edit/delete buttons)
+   */
+  async migrateNPCTo1_2_0(file: TFile): Promise<void> {
+    console.log(`Migrating NPC ${file.path} to v1.2.0`);
+
+    const content = await this.app.vault.read(file);
+    
+    // Check if edit/delete buttons already exist
+    if (content.includes("dnd-campaign-hub:edit-npc")) {
+      console.log(`NPC ${file.path} already has edit/delete buttons`);
+      await this.updateTemplateVersion(file, "1.2.0");
+      return;
+    }
+    
+    const buttonBlock = `\`\`\`dataviewjs
+// Action buttons for NPC management
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
+
+// Edit NPC button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit NPC",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-npc");
+});
+
+// Delete NPC button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete NPC",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-npc");
+});
+\`\`\`
+`;
+    
+    // Insert button block after the title (first # heading)
+    const titleMatch = content.match(/^(---\n[\s\S]*?\n---\n\n)(# .+\n)/m);
+    if (titleMatch) {
+      const newContent = content.replace(
+        titleMatch[0],
+        `${titleMatch[1]}${titleMatch[2]}\n${buttonBlock}\n`
+      );
+      await this.app.vault.modify(file, newContent);
+    }
+    
+    await this.updateTemplateVersion(file, "1.2.0");
+    console.log(`NPC ${file.path} migrated to v1.2.0 with edit/delete buttons`);
+  }
+
+  /**
    * Apply migration based on file type and version
    */
   async migrateFile(file: TFile): Promise<boolean> {
@@ -476,10 +586,21 @@ export class MigrationManager {
         return true;
       }
 
-      // Player/PC-specific migrations (add token)
+      // Player/PC-specific migrations
       if (fileType === "player" || fileType === "pc") {
+        // Migrate to 1.1.0 (add token)
         if (this.compareVersions(currentVersion, "1.1.0") < 0) {
           await this.migratePlayerTo1_1_0(file);
+          // After migrating to 1.1.0, continue to check for 1.2.0
+          const updatedVersion = await this.getFileTemplateVersion(file);
+          if (updatedVersion && this.compareVersions(updatedVersion, "1.2.0") < 0) {
+            await this.migratePlayerTo1_2_0(file);
+          }
+          return true;
+        }
+        // Migrate from 1.1.0 to 1.2.0 (add edit/delete buttons)
+        if (this.compareVersions(currentVersion, "1.2.0") < 0) {
+          await this.migratePlayerTo1_2_0(file);
           return true;
         }
         // Check if token_id is missing even if version is up to date
@@ -491,10 +612,21 @@ export class MigrationManager {
         }
       }
 
-      // NPC-specific migrations (add token)
+      // NPC-specific migrations
       if (fileType === "npc") {
+        // Migrate to 1.1.0 (add token)
         if (this.compareVersions(currentVersion, "1.1.0") < 0) {
           await this.migrateNPCTo1_1_0(file);
+          // After migrating to 1.1.0, continue to check for 1.2.0
+          const updatedVersion = await this.getFileTemplateVersion(file);
+          if (updatedVersion && this.compareVersions(updatedVersion, "1.2.0") < 0) {
+            await this.migrateNPCTo1_2_0(file);
+          }
+          return true;
+        }
+        // Migrate from 1.1.0 to 1.2.0 (add edit/delete buttons)
+        if (this.compareVersions(currentVersion, "1.2.0") < 0) {
+          await this.migrateNPCTo1_2_0(file);
           return true;
         }
         // Check if token_id is missing even if version is up to date

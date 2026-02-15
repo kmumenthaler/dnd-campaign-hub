@@ -2452,9 +2452,109 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "edit-npc",
+      name: "Edit NPC",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "npc") {
+            this.editNpc(file.path);
+          } else {
+            new Notice("This is not an NPC note");
+          }
+        } else {
+          new Notice("Please open an NPC note first");
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "delete-npc",
+      name: "Delete NPC",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "npc") {
+            const npcName = cache.frontmatter.name || file.basename;
+            const confirmed = await this.confirmDelete(file.name);
+            if (confirmed) {
+              // Delete the map token if it exists
+              const tokenId = cache.frontmatter.token_id;
+              if (tokenId) {
+                await this.markerLibrary.deleteMarker(tokenId);
+              }
+              
+              // Delete from vault
+              await this.app.vault.delete(file);
+              console.log(`Deleted NPC file: ${file.path}`);
+              
+              new Notice(`✓ NPC "${npcName}" deleted`);
+            }
+          } else {
+            new Notice("This is not an NPC note");
+          }
+        } else {
+          new Notice("Please open an NPC note first");
+        }
+      },
+    });
+
+    this.addCommand({
       id: "create-pc",
       name: "Create New PC",
       callback: () => this.createPc(),
+    });
+
+    this.addCommand({
+      id: "edit-pc",
+      name: "Edit PC",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "player") {
+            this.editPc(file.path);
+          } else {
+            new Notice("This is not a PC note");
+          }
+        } else {
+          new Notice("Please open a PC note first");
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "delete-pc",
+      name: "Delete PC",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "player") {
+            const pcName = cache.frontmatter.name || file.basename;
+            const confirmed = await this.confirmDelete(file.name);
+            if (confirmed) {
+              // Delete the map token if it exists
+              const tokenId = cache.frontmatter.token_id;
+              if (tokenId) {
+                await this.markerLibrary.deleteMarker(tokenId);
+              }
+              
+              // Delete from vault
+              await this.app.vault.delete(file);
+              console.log(`Deleted PC file: ${file.path}`);
+              
+              new Notice(`✓ PC "${pcName}" deleted`);
+            }
+          } else {
+            new Notice("This is not a PC note");
+          }
+        } else {
+          new Notice("Please open a PC note first");
+        }
+      },
     });
 
     this.addCommand({
@@ -3208,9 +3308,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 		new NPCCreationModal(this.app, this).open();
 	}
 
+	async editNpc(npcPath: string) {
+		// Open NPC creation modal in edit mode
+		new NPCCreationModal(this.app, this, npcPath).open();
+	}
+
 	async createPc() {
 		// Open PC creation modal
 		new PCCreationModal(this.app, this).open();
+	}
+
+	async editPc(pcPath: string) {
+		// Open PC creation modal in edit mode
+		new PCCreationModal(this.app, this, pcPath).open();
 	}
 
 	async createAdventure() {
@@ -9625,17 +9735,31 @@ class PCCreationModal extends Modal {
   isGM = false;
   registerInTracker = true;  // Default: register PCs in Initiative Tracker
 
-  constructor(app: App, plugin: DndCampaignHubPlugin) {
+  // For editing existing PCs
+  isEdit = false;
+  originalPCPath = "";
+  originalPCName = "";
+
+  constructor(app: App, plugin: DndCampaignHubPlugin, pcPath?: string) {
     super(app);
     this.plugin = plugin;
     this.campaign = plugin.settings.currentCampaign;
+    if (pcPath) {
+      this.isEdit = true;
+      this.originalPCPath = pcPath;
+    }
   }
 
-  onOpen() {
+  async onOpen() {
     const { contentEl } = this;
     contentEl.empty();
 
-    contentEl.createEl("h2", { text: "🛡️ Create New Player Character" });
+    // Load existing PC data if editing
+    if (this.isEdit) {
+      await this.loadPCData();
+    }
+
+    contentEl.createEl("h2", { text: this.isEdit ? "✏️ Edit Player Character" : "🛡️ Create New Player Character" });
 
     contentEl.createEl("p", {
       text: "Create a new player character with detailed stats and information.",
@@ -9906,7 +10030,7 @@ class PCCreationModal extends Modal {
     });
 
     const createButton = buttonContainer.createEl("button", {
-      text: "Create PC",
+      text: this.isEdit ? "Update PC" : "Create PC",
       cls: "mod-cta",
     });
 
@@ -9924,6 +10048,46 @@ class PCCreationModal extends Modal {
   refresh() {
     const { contentEl } = this;
     this.buildForm(contentEl);
+  }
+
+  async loadPCData() {
+    try {
+      const file = this.app.vault.getAbstractFileByPath(this.originalPCPath) as TFile;
+      if (!file) {
+        new Notice("PC file not found!");
+        return;
+      }
+
+      const content = await this.app.vault.read(file);
+      const cache = this.app.metadataCache.getFileCache(file);
+      
+      if (cache?.frontmatter) {
+        const fm = cache.frontmatter;
+        this.pcName = fm.name || file.basename;
+        this.originalPCName = this.pcName;
+        this.playerName = fm.player || "";
+        this.campaign = fm.campaign ? `ttrpgs/${fm.campaign}` : this.campaign;
+        
+        // Parse class string (could be multiclass like "Fighter/Wizard")
+        if (fm.class) {
+          this.classes = fm.class.toString().split("/").map((c: string) => c.trim());
+        }
+        
+        this.level = fm.level?.toString() || "1";
+        this.hpCurrent = fm.hp?.toString() || "";
+        this.hpMax = fm.hp_max?.toString() || "";
+        this.ac = fm.ac?.toString() || "10";
+        this.initBonus = fm.init_bonus?.toString() || "0";
+        this.speed = fm.speed?.toString() || "30";
+        this.characterSheetUrl = fm.readonlyUrl || "";
+        this.characterSheetPdf = fm.characterSheetPdf || "";
+      }
+
+      console.log(`[PC Edit] Loaded PC data: ${this.pcName}`);
+    } catch (error) {
+      console.error("Error loading PC data:", error);
+      new Notice("Error loading PC data. Check console for details.");
+    }
   }
 
   getAllCampaigns(): Array<{ path: string; name: string }> {
@@ -9948,7 +10112,7 @@ class PCCreationModal extends Modal {
     const campaignName = this.campaign.split('/').pop() || "Unknown";
     const pcPath = `${this.campaign}/PCs`;
     
-    new Notice(`Creating PC "${this.pcName}"...`);
+    new Notice(this.isEdit ? `Updating PC "${this.pcName}"...` : `Creating PC "${this.pcName}"...`);
 
     try {
       await this.plugin.ensureFolderExists(pcPath);
@@ -9965,21 +10129,80 @@ class PCCreationModal extends Modal {
         }
       }
 
-      // Create a map token for this PC
-      const now = Date.now();
-      const tokenId = this.plugin.markerLibrary.generateId();
-      const tokenDef: MarkerDefinition = {
-        id: tokenId,
-        name: this.pcName,
-        type: 'player',
-        icon: '🛡️',
-        backgroundColor: '#4a90d9',  // Blue for players
-        borderColor: '#ffffff',
-        creatureSize: 'medium',
-        createdAt: now,
-        updatedAt: now
-      };
-      await this.plugin.markerLibrary.setMarker(tokenDef);
+      let tokenId: string;
+      let pcFile: TFile | null = null;
+      let filePath: string;
+
+      if (this.isEdit) {
+        // Editing existing PC
+        pcFile = this.app.vault.getAbstractFileByPath(this.originalPCPath) as TFile;
+        if (!pcFile) {
+          new Notice("Original PC file not found!");
+          return;
+        }
+        
+        // Get existing token ID from frontmatter
+        const cache = this.app.metadataCache.getFileCache(pcFile);
+        tokenId = cache?.frontmatter?.token_id || this.plugin.markerLibrary.generateId();
+        
+        filePath = this.originalPCPath;
+
+        // If PC name changed, rename the file
+        if (this.pcName !== this.originalPCName) {
+          const folder = filePath.substring(0, filePath.lastIndexOf('/'));
+          const newPath = `${folder}/${this.pcName}.md`;
+          
+          // Check if new name conflicts
+          if (await this.app.vault.adapter.exists(newPath)) {
+            new Notice(`A PC named "${this.pcName}" already exists!`);
+            return;
+          }
+          
+          await this.app.fileManager.renameFile(pcFile, newPath);
+          filePath = newPath;
+          pcFile = this.app.vault.getAbstractFileByPath(newPath) as TFile;
+        }
+        
+        // Update the map token
+        const now = Date.now();
+        const tokenDef: MarkerDefinition = {
+          id: tokenId,
+          name: this.pcName,
+          type: 'player',
+          icon: '🛡️',
+          backgroundColor: '#4a90d9',
+          borderColor: '#ffffff',
+          creatureSize: 'medium',
+          createdAt: now,
+          updatedAt: now
+        };
+        await this.plugin.markerLibrary.setMarker(tokenDef);
+      } else {
+        // Creating new PC
+        // Create a map token for this PC
+        const now = Date.now();
+        tokenId = this.plugin.markerLibrary.generateId();
+        const tokenDef: MarkerDefinition = {
+          id: tokenId,
+          name: this.pcName,
+          type: 'player',
+          icon: '🛡️',
+          backgroundColor: '#4a90d9',  // Blue for players
+          borderColor: '#ffffff',
+          creatureSize: 'medium',
+          createdAt: now,
+          updatedAt: now
+        };
+        await this.plugin.markerLibrary.setMarker(tokenDef);
+
+        filePath = `${pcPath}/${this.pcName}.md`;
+
+        // Check if PC already exists
+        if (await this.app.vault.adapter.exists(filePath)) {
+          new Notice(`A PC named "${this.pcName}" already exists!`);
+          return;
+        }
+      }
 
       // Get PC template
       const templatePath = "z_Templates/Frontmatter - Player Character.md";
@@ -10046,21 +10269,28 @@ date: ${currentDate}
         .replace(/<% tp\.frontmatter\.characterSheetPdf \? "\[\[" \+ tp\.frontmatter\.characterSheetPdf \+ "\|Character Sheet PDF\]\]" : "_No PDF uploaded_" %>/g,
           this.characterSheetPdf ? `[[${this.characterSheetPdf}|Character Sheet PDF]]` : "_No PDF uploaded_");
 
-      const filePath = `${pcPath}/${this.pcName}.md`;
-      await this.app.vault.create(filePath, pcContent);
+      // Create or update the file
+      if (this.isEdit && pcFile) {
+        await this.app.vault.modify(pcFile, pcContent);
+        new Notice(`✅ PC "${this.pcName}" updated successfully!`);
+      } else {
+        await this.app.vault.create(filePath, pcContent);
+        new Notice(`✅ PC "${this.pcName}" created successfully!`);
+        pcFile = this.app.vault.getAbstractFileByPath(filePath) as TFile;
+      }
 
       // Open the file
-      await this.app.workspace.openLinkText(filePath, "", true);
-
-      new Notice(`✅ PC "${this.pcName}" created successfully!`);
+      if (pcFile) {
+        await this.app.workspace.openLinkText(filePath, "", true);
+      }
       
-      // Register in Initiative Tracker if requested
-      if (this.registerInTracker && this.isGM) {
+      // Register in Initiative Tracker if requested (only for new PCs)
+      if (!this.isEdit && this.registerInTracker && this.isGM) {
         await this.registerPCInInitiativeTracker(filePath);
       }
     } catch (error) {
-      new Notice(`❌ Error creating PC: ${error instanceof Error ? error.message : String(error)}`);
-      console.error("PC creation error:", error);
+      new Notice(`❌ Error ${this.isEdit ? 'updating' : 'creating'} PC: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`PC ${this.isEdit ? 'update' : 'creation'} error:`, error);
     }
   }
 
@@ -10239,17 +10469,31 @@ class NPCCreationModal extends Modal {
   speechPattern = "";
   activeProblem = "";
 
-  constructor(app: App, plugin: DndCampaignHubPlugin) {
+  // For editing existing NPCs
+  isEdit = false;
+  originalNPCPath = "";
+  originalNPCName = "";
+
+  constructor(app: App, plugin: DndCampaignHubPlugin, npcPath?: string) {
     super(app);
     this.plugin = plugin;
     this.campaign = plugin.settings.currentCampaign;
+    if (npcPath) {
+      this.isEdit = true;
+      this.originalNPCPath = npcPath;
+    }
   }
 
-  onOpen() {
+  async onOpen() {
     const { contentEl } = this;
     contentEl.empty();
 
-    contentEl.createEl("h2", { text: "👤 Create New NPC" });
+    // Load existing NPC data if editing
+    if (this.isEdit) {
+      await this.loadNPCData();
+    }
+
+    contentEl.createEl("h2", { text: this.isEdit ? "✏️ Edit NPC" : "👤 Create New NPC" });
 
     contentEl.createEl("p", {
       text: "Build your NPC's core engine with these essential questions.",
@@ -10263,10 +10507,11 @@ class NPCCreationModal extends Modal {
       .addText((text) => {
         text
           .setPlaceholder("e.g., Gundren Rockseeker")
+          .setValue(this.npcName)
           .onChange((value) => {
             this.npcName = value;
           });
-        text.inputEl.focus();
+        if (!this.isEdit) text.inputEl.focus();
       });
 
     // Campaign Selection
@@ -10293,6 +10538,7 @@ class NPCCreationModal extends Modal {
       .addTextArea((text) => {
         text
           .setPlaceholder("e.g., To reclaim their family's mine from goblin invaders")
+          .setValue(this.motivation)
           .onChange((value) => {
             this.motivation = value;
           });
@@ -10306,6 +10552,7 @@ class NPCCreationModal extends Modal {
       .addTextArea((text) => {
         text
           .setPlaceholder("e.g., By hiring adventurers and offering generous rewards")
+          .setValue(this.pursuit)
           .onChange((value) => {
             this.pursuit = value;
           });
@@ -10321,6 +10568,7 @@ class NPCCreationModal extends Modal {
       .addTextArea((text) => {
         text
           .setPlaceholder("e.g., Scarred hands from years of mining, always wears a bronze pendant")
+          .setValue(this.physicalDetail)
           .onChange((value) => {
             this.physicalDetail = value;
           });
@@ -10334,6 +10582,7 @@ class NPCCreationModal extends Modal {
       .addTextArea((text) => {
         text
           .setPlaceholder("e.g., Gruff but warm, often uses mining metaphors")
+          .setValue(this.speechPattern)
           .onChange((value) => {
             this.speechPattern = value;
           });
@@ -10349,6 +10598,7 @@ class NPCCreationModal extends Modal {
       .addTextArea((text) => {
         text
           .setPlaceholder("e.g., Captured by goblins while traveling to Phandalin")
+          .setValue(this.activeProblem)
           .onChange((value) => {
             this.activeProblem = value;
           });
@@ -10364,7 +10614,7 @@ class NPCCreationModal extends Modal {
     });
 
     const createButton = buttonContainer.createEl("button", {
-      text: "Create NPC",
+      text: this.isEdit ? "Update NPC" : "Create NPC",
       cls: "mod-cta",
     });
 
@@ -10377,6 +10627,36 @@ class NPCCreationModal extends Modal {
       this.close();
       await this.createNPCFile();
     });
+  }
+
+  async loadNPCData() {
+    try {
+      const file = this.app.vault.getAbstractFileByPath(this.originalNPCPath) as TFile;
+      if (!file) {
+        new Notice("NPC file not found!");
+        return;
+      }
+
+      const content = await this.app.vault.read(file);
+      const cache = this.app.metadataCache.getFileCache(file);
+      
+      if (cache?.frontmatter) {
+        const fm = cache.frontmatter;
+        this.npcName = fm.name || file.basename;
+        this.originalNPCName = this.npcName;
+        this.campaign = fm.campaign ? `ttrpgs/${fm.campaign}` : this.campaign;
+        this.motivation = fm.motivation || "";
+        this.pursuit = fm.pursuit || "";
+        this.physicalDetail = fm.physical_detail || "";
+        this.speechPattern = fm.speech_pattern || "";
+        this.activeProblem = fm.active_problem || "";
+      }
+
+      console.log(`[NPC Edit] Loaded NPC data: ${this.npcName}`);
+    } catch (error) {
+      console.error("Error loading NPC data:", error);
+      new Notice("Error loading NPC data. Check console for details.");
+    }
   }
 
   getAllCampaigns(): Array<{ path: string; name: string }> {
@@ -10401,7 +10681,7 @@ class NPCCreationModal extends Modal {
     const campaignName = this.campaign.split('/').pop() || "Unknown";
     const npcPath = `${this.campaign}/NPCs`;
     
-    new Notice(`Creating NPC "${this.npcName}"...`);
+    new Notice(this.isEdit ? `Updating NPC "${this.npcName}"...` : `Creating NPC "${this.npcName}"...`);
 
     try {
       await this.plugin.ensureFolderExists(npcPath);
@@ -10418,21 +10698,80 @@ class NPCCreationModal extends Modal {
         }
       }
 
-      // Create a map token for this NPC
-      const now = Date.now();
-      const tokenId = this.plugin.markerLibrary.generateId();
-      const tokenDef: MarkerDefinition = {
-        id: tokenId,
-        name: this.npcName,
-        type: 'npc',
-        icon: '👤',
-        backgroundColor: '#6b8e23',  // Olive green for NPCs
-        borderColor: '#ffffff',
-        creatureSize: 'medium',
-        createdAt: now,
-        updatedAt: now
-      };
-      await this.plugin.markerLibrary.setMarker(tokenDef);
+      let tokenId: string;
+      let npcFile: TFile | null = null;
+      let filePath: string;
+
+      if (this.isEdit) {
+        // Editing existing NPC
+        npcFile = this.app.vault.getAbstractFileByPath(this.originalNPCPath) as TFile;
+        if (!npcFile) {
+          new Notice("Original NPC file not found!");
+          return;
+        }
+        
+        // Get existing token ID from frontmatter
+        const cache = this.app.metadataCache.getFileCache(npcFile);
+        tokenId = cache?.frontmatter?.token_id || this.plugin.markerLibrary.generateId();
+        
+        filePath = this.originalNPCPath;
+
+        // If NPC name changed, rename the file
+        if (this.npcName !== this.originalNPCName) {
+          const folder = filePath.substring(0, filePath.lastIndexOf('/'));
+          const newPath = `${folder}/${this.npcName}.md`;
+          
+          // Check if new name conflicts
+          if (await this.app.vault.adapter.exists(newPath)) {
+            new Notice(`An NPC named "${this.npcName}" already exists!`);
+            return;
+          }
+          
+          await this.app.fileManager.renameFile(npcFile, newPath);
+          filePath = newPath;
+          npcFile = this.app.vault.getAbstractFileByPath(newPath) as TFile;
+        }
+        
+        // Update the map token
+        const now = Date.now();
+        const tokenDef: MarkerDefinition = {
+          id: tokenId,
+          name: this.npcName,
+          type: 'npc',
+          icon: '👤',
+          backgroundColor: '#6b8e23',
+          borderColor: '#ffffff',
+          creatureSize: 'medium',
+          createdAt: now,
+          updatedAt: now
+        };
+        await this.plugin.markerLibrary.setMarker(tokenDef);
+      } else {
+        // Creating new NPC
+        // Create a map token for this NPC
+        const now = Date.now();
+        tokenId = this.plugin.markerLibrary.generateId();
+        const tokenDef: MarkerDefinition = {
+          id: tokenId,
+          name: this.npcName,
+          type: 'npc',
+          icon: '👤',
+          backgroundColor: '#6b8e23',  // Olive green for NPCs
+          borderColor: '#ffffff',
+          creatureSize: 'medium',
+          createdAt: now,
+          updatedAt: now
+        };
+        await this.plugin.markerLibrary.setMarker(tokenDef);
+
+        filePath = `${npcPath}/${this.npcName}.md`;
+
+        // Check if NPC already exists
+        if (await this.app.vault.adapter.exists(filePath)) {
+          new Notice(`An NPC named "${this.npcName}" already exists!`);
+          return;
+        }
+      }
 
       // Get NPC template
       const templatePath = "z_Templates/npc.md";
@@ -10467,16 +10806,23 @@ class NPCCreationModal extends Modal {
         .replace(/<% tp\.frontmatter\.physical_detail %>/g, this.physicalDetail)
         .replace(/<% tp\.frontmatter\.speech_pattern %>/g, this.speechPattern);
 
-      const filePath = `${npcPath}/${this.npcName}.md`;
-      await this.app.vault.create(filePath, npcContent);
+      // Create or update the file
+      if (this.isEdit && npcFile) {
+        await this.app.vault.modify(npcFile, npcContent);
+        new Notice(`✅ NPC "${this.npcName}" updated successfully!`);
+      } else {
+        await this.app.vault.create(filePath, npcContent);
+        new Notice(`✅ NPC "${this.npcName}" created successfully!`);
+        npcFile = this.app.vault.getAbstractFileByPath(filePath) as TFile;
+      }
 
       // Open the file
-      await this.app.workspace.openLinkText(filePath, "", true);
-
-      new Notice(`✅ NPC "${this.npcName}" created successfully!`);
+      if (npcFile) {
+        await this.app.workspace.openLinkText(filePath, "", true);
+      }
     } catch (error) {
-      new Notice(`❌ Error creating NPC: ${error instanceof Error ? error.message : String(error)}`);
-      console.error("NPC creation error:", error);
+      new Notice(`❌ Error ${this.isEdit ? 'updating' : 'creating'} NPC: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`NPC ${this.isEdit ? 'update' : 'creation'} error:`, error);
     }
   }
 

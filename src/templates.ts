@@ -342,7 +342,7 @@ art: ""
 
 export const NPC_TEMPLATE = `---
 type: npc
-template_version: 1.0.0
+template_version: 1.2.0
 name: 
 world: 
 campaign: 
@@ -383,6 +383,31 @@ notes: []
 ---
 
 # <% tp.frontmatter.name %>
+
+\`\`\`dataviewjs
+// Action buttons for NPC management
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
+
+// Edit NPC button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit NPC",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-npc");
+});
+
+// Delete NPC button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete NPC",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-npc");
+});
+\`\`\`
 
 > [!abstract]- Quick Reference
 > **Motivation:** <% tp.frontmatter.motivation %>  
@@ -488,7 +513,7 @@ notes: []
 
 export const PC_TEMPLATE = `---
 type: player
-template_version: 1.0.0
+template_version: 1.2.0
 name: 
 player: 
 campaign: 
@@ -513,6 +538,31 @@ date:
 ---
 
 # <% tp.frontmatter.name %>
+
+\`\`\`dataviewjs
+// Action buttons for PC management
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
+
+// Edit PC button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit PC",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-pc");
+});
+
+// Delete PC button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete PC",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-pc");
+});
+\`\`\`
 
 > [!info] Quick Stats
 > **Class:** <% tp.frontmatter.class %> <% tp.frontmatter.level %>  
