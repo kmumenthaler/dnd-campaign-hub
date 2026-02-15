@@ -526,7 +526,9 @@ class EncounterBuilderModal extends Modal {
             ac: c.ac,
             cr: c.cr,
             source: c.source,
-            path: c.path
+            path: c.path,
+            isFriendly: c.is_friendly || false,
+            isHidden: c.is_hidden || false
           }));
         }
       }
@@ -2045,6 +2047,8 @@ creatures:`;
       if (creature.cr) frontmatter += `\n    cr: ${this.escapeYamlString(creature.cr)}`;
       if (creature.source) frontmatter += `\n    source: ${this.escapeYamlString(creature.source)}`;
       if (creature.path) frontmatter += `\n    path: ${this.escapeYamlString(creature.path)}`;
+      if (creature.isFriendly) frontmatter += `\n    is_friendly: ${creature.isFriendly}`;
+      if (creature.isHidden) frontmatter += `\n    is_hidden: ${creature.isHidden}`;
     }
 
     frontmatter += `
@@ -16214,6 +16218,8 @@ class SceneCreationModal extends Modal {
     cr?: string;
     source?: string;
     path?: string;  // Path to creature file for statblock plugin
+    isFriendly?: boolean;
+    isHidden?: boolean;
   }> = [];
   
   // UI state
@@ -18219,6 +18225,8 @@ creatures:`;
       if (creature.cr) frontmatter += `\n    cr: ${this.escapeYamlString(creature.cr)}`;
       if (creature.source) frontmatter += `\n    source: ${this.escapeYamlString(creature.source)}`;
       if (creature.path) frontmatter += `\n    path: ${this.escapeYamlString(creature.path)}`;
+      if (creature.isFriendly) frontmatter += `\n    is_friendly: ${creature.isFriendly}`;
+      if (creature.isHidden) frontmatter += `\n    is_hidden: ${creature.isHidden}`;
     }
 
     frontmatter += `
