@@ -740,6 +740,8 @@ class EncounterBuilderModal extends Modal {
     
     let selectedCreature: { name: string; path: string; hp: number; ac: number; cr?: string } | null = null;
     let vaultCreatureCount = "1";
+    let vaultCreatureIsFriendly = false;
+    let vaultCreatureIsHidden = false;
     let searchResults: HTMLElement | null = null;
     
     // Load creatures from vault
@@ -845,14 +847,16 @@ class EncounterBuilderModal extends Modal {
             source: "vault",
             path: selectedCreature.path,
             isCustom: false,
-            isFriendly: false,
-            isHidden: false
+            isFriendly: vaultCreatureIsFriendly,
+            isHidden: vaultCreatureIsHidden
           });
           this.renderCreatureList();
           this.updateDifficultyDisplay();
           new Notice(`Added ${vaultCreatureCount}x ${selectedCreature.name}`);
           searchInput.value = "";
           selectedCreature = null;
+          vaultCreatureIsFriendly = false;
+          vaultCreatureIsHidden = false;
         }
       });
       
@@ -874,6 +878,26 @@ class EncounterBuilderModal extends Modal {
         text.inputEl.style.width = "60px";
       });
       
+      // Friendly checkbox
+      vaultCreatureSetting.addToggle(toggle => {
+        toggle
+          .setValue(false)
+          .onChange(value => vaultCreatureIsFriendly = value);
+        const labelEl = toggle.toggleEl.createSpan({ cls: "dnd-checkbox-label" });
+        labelEl.setText(" Friendly");
+        toggle.toggleEl.after(labelEl);
+      });
+      
+      // Hidden checkbox
+      vaultCreatureSetting.addToggle(toggle => {
+        toggle
+          .setValue(false)
+          .onChange(value => vaultCreatureIsHidden = value);
+        const labelEl = toggle.toggleEl.createSpan({ cls: "dnd-checkbox-label" });
+        labelEl.setText(" Hidden");
+        toggle.toggleEl.after(labelEl);
+      });
+      
       // Add button
       vaultCreatureSetting.addButton(btn => btn
         .setButtonText("Add")
@@ -893,17 +917,19 @@ class EncounterBuilderModal extends Modal {
             source: "vault",
             path: selectedCreature.path,
             isCustom: false,
-            isFriendly: false,
-            isHidden: false
+            isFriendly: vaultCreatureIsFriendly,
+            isHidden: vaultCreatureIsHidden
           });
           
           this.renderCreatureList();
           this.updateDifficultyDisplay();
           new Notice(`Added ${vaultCreatureCount}x ${selectedCreature.name}`);
           
-          // Clear search
+          // Clear search and reset checkboxes
           searchInput.value = "";
           selectedCreature = null;
+          vaultCreatureIsFriendly = false;
+          vaultCreatureIsHidden = false;
         }));
     } else {
       vaultCreatureSection.createEl("p", {
@@ -920,6 +946,8 @@ class EncounterBuilderModal extends Modal {
     let newCreatureHP = "";
     let newCreatureAC = "";
     let newCreatureCR = "";
+    let newCreatureIsFriendly = false;
+    let newCreatureIsHidden = false;
     
     const addCreatureSetting = new Setting(addCreatureSection)
       .setName("Add Custom Creature")
@@ -964,6 +992,26 @@ class EncounterBuilderModal extends Modal {
       text.inputEl.style.width = "60px";
     });
     
+    // Friendly checkbox
+    addCreatureSetting.addToggle(toggle => {
+      toggle
+        .setValue(false)
+        .onChange(value => newCreatureIsFriendly = value);
+      const labelEl = toggle.toggleEl.createSpan({ cls: "dnd-checkbox-label" });
+      labelEl.setText(" Friendly");
+      toggle.toggleEl.after(labelEl);
+    });
+    
+    // Hidden checkbox
+    addCreatureSetting.addToggle(toggle => {
+      toggle
+        .setValue(false)
+        .onChange(value => newCreatureIsHidden = value);
+      const labelEl = toggle.toggleEl.createSpan({ cls: "dnd-checkbox-label" });
+      labelEl.setText(" Hidden");
+      toggle.toggleEl.after(labelEl);
+    });
+    
     // Add button
     addCreatureSetting.addButton(btn => btn
       .setButtonText("Add")
@@ -983,13 +1031,22 @@ class EncounterBuilderModal extends Modal {
           source: "manual",
           path: undefined,
           isCustom: true,
-          isFriendly: false,
-          isHidden: false
+          isFriendly: newCreatureIsFriendly,
+          isHidden: newCreatureIsHidden
         });
         
         this.renderCreatureList();
         this.updateDifficultyDisplay();
         new Notice(`Added ${newCreatureCount}x ${newCreatureName}`);
+        
+        // Reset all input fields
+        newCreatureName = "";
+        newCreatureCount = "1";
+        newCreatureHP = "";
+        newCreatureAC = "";
+        newCreatureCR = "";
+        newCreatureIsFriendly = false;
+        newCreatureIsHidden = false;
       }));
     
     // Info text
