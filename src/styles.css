@@ -3975,3 +3975,28 @@
   padding: 40px 20px;
   font-style: italic;
 }
+/* Friendly creature styling */
+.dnd-creature-item.friendly {
+  border-left: 3px solid #4caf50;
+  background-color: rgba(76, 175, 80, 0.1);
+}
+
+.dnd-creature-friendly-toggle {
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  background-color: var(--interactive-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dnd-creature-friendly-toggle:hover {
+  background-color: var(--interactive-hover);
+}
+
+.dnd-creature-friendly-toggle.active {
+  background-color: rgba(76, 175, 80, 0.3);
+  border-color: #4caf50;
+  color: #4caf50;
+}

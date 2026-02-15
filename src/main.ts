@@ -1018,17 +1018,32 @@ class EncounterBuilderModal extends Modal {
     }
 
     this.creatures.forEach((creature, index) => {
-      const creatureItem = this.creatureListContainer!.createDiv({ cls: "dnd-creature-item" });
+      const creatureItem = this.creatureListContainer!.createDiv({ 
+        cls: `dnd-creature-item${creature.isFriendly ? ' friendly' : ''}` 
+      });
       
       const nameEl = creatureItem.createSpan({ cls: "dnd-creature-name" });
-      nameEl.setText(`${creature.name} x${creature.count}`);
+      const friendlyIndicator = creature.isFriendly ? "🤝 " : "";
+      nameEl.setText(`${friendlyIndicator}${creature.name} x${creature.count}`);
       
       const statsEl = creatureItem.createSpan({ cls: "dnd-creature-stats" });
       const stats: string[] = [];
       if (creature.hp) stats.push(`HP: ${creature.hp}`);
       if (creature.ac) stats.push(`AC: ${creature.ac}`);
       if (creature.cr) stats.push(`CR: ${creature.cr}`);
+      if (creature.isFriendly) stats.push("🤝 Friendly");
       statsEl.setText(stats.length > 0 ? ` | ${stats.join(" | ")}` : "");
+      
+      // Friendly toggle button
+      const friendlyBtn = creatureItem.createEl("button", {
+        text: creature.isFriendly ? "Mark Hostile" : "Mark Friendly",
+        cls: `dnd-creature-friendly-toggle${creature.isFriendly ? ' active' : ''}`
+      });
+      friendlyBtn.addEventListener("click", () => {
+        creature.isFriendly = !creature.isFriendly;
+        this.renderCreatureList();
+        this.updateDifficultyDisplay();
+      });
       
       const removeBtn = creatureItem.createEl("button", {
         text: "Remove",
@@ -1471,6 +1486,13 @@ class EncounterBuilderModal extends Modal {
     let enemyTotalAttackBonus = 0;
     let enemyCount = 0;
     
+    // Track friendly creatures to add to party
+    let friendlyTotalHP = 0;
+    let friendlyTotalAC = 0;
+    let friendlyTotalDPR = 0;
+    let friendlyTotalAttackBonus = 0;
+    let friendlyCount = 0;
+    
     console.log("=== ENCOUNTER DIFFICULTY CALCULATION ===");
     
     for (const creature of this.creatures) {
@@ -1480,6 +1502,36 @@ class EncounterBuilderModal extends Modal {
       console.log(`Path: ${creature.path || 'none'}`);
       console.log(`CR: ${creature.cr || 'unknown'}`);
       console.log(`Is Trap: ${creature.isTrap || false}`);
+      console.log(`Is Friendly: ${creature.isFriendly || false}`);
+      
+      // Handle friendly creatures - add them to the party side
+      if (creature.isFriendly) {
+        console.log(`🤝 FRIENDLY CREATURE - Adding to party stats`);
+        
+        // Get stats for friendly creature (same logic as enemies)
+        let realStats = null;
+        if (creature.path && typeof creature.path === 'string') {
+          console.log(`Attempting to parse statblock: ${creature.path}`);
+          realStats = await this.parseStatblockStats(creature.path);
+          console.log(`Parsed stats:`, realStats);
+        }
+        
+        const crStats = this.getCRStats(creature.cr);
+        const hp = creature.hp || realStats?.hp || crStats.hp;
+        const ac = creature.ac || realStats?.ac || crStats.ac;
+        const dpr = realStats?.dpr || crStats.dpr;
+        const attackBonus = realStats?.attackBonus || crStats.attackBonus;
+        
+        console.log(`Friendly stats: HP=${hp}, AC=${ac}, DPR=${dpr}, Attack=${attackBonus}`);
+        console.log(`Total contribution (x${count}): HP=${hp * count}, DPR=${dpr * count}`);
+        
+        friendlyTotalHP += hp * count;
+        friendlyTotalAC += ac * count;
+        friendlyTotalDPR += dpr * count;
+        friendlyTotalAttackBonus += attackBonus * count;
+        friendlyCount += count;
+        continue;
+      }
       
       // Handle traps differently from creatures
       if (creature.isTrap && creature.trapData) {
@@ -1569,7 +1621,19 @@ class EncounterBuilderModal extends Modal {
       totalLevel += member.level;
     }
     
-    const memberCount = partyMembers.length;
+    // Add friendly creatures to party totals
+    console.log(`\n=== ADDING FRIENDLY CREATURES TO PARTY ===`);
+    console.log(`Friendly creatures: ${friendlyCount}`);
+    console.log(`Friendly HP contribution: ${friendlyTotalHP}`);
+    console.log(`Friendly DPR contribution: ${friendlyTotalDPR}`);
+    
+    partyTotalHP += friendlyTotalHP;
+    partyTotalAC += friendlyTotalAC;
+    partyTotalDPR += friendlyTotalDPR;
+    partyTotalAttackBonus += friendlyTotalAttackBonus;
+    
+    const memberCount = partyMembers.length + friendlyCount;
+    const pcMemberCount = partyMembers.length;
     
     let avgPartyAC: number;
     let avgPartyAttackBonus: number;
@@ -1579,7 +1643,7 @@ class EncounterBuilderModal extends Modal {
     if (memberCount > 0) {
       avgPartyAC = partyTotalAC / memberCount;
       avgPartyAttackBonus = partyTotalAttackBonus / memberCount;
-      avgLevel = totalLevel / memberCount;
+      avgLevel = pcMemberCount > 0 ? totalLevel / pcMemberCount : 3;
       effectivePartyCount = memberCount;
     } else {
       const defaultStats = this.getLevelStats(3);
@@ -1667,11 +1731,19 @@ class EncounterBuilderModal extends Modal {
     
     // Generate summary
     let summary = "";
-    if (partyMembers.length === 0) {
+    if (partyMembers.length === 0 && friendlyCount === 0) {
       summary = `⚠️ No party found. Using default 4-player party (Level 3).\\n`;
       summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}.`;
     } else {
-      summary = `Party: ${memberCount} members (Avg Level ${avgLevel.toFixed(1)})\\n`;
+      const partyText = pcMemberCount > 0 ? `${pcMemberCount} PC${pcMemberCount !== 1 ? 's' : ''}` : '';
+      const friendlyText = friendlyCount > 0 ? `${friendlyCount} friendly creature${friendlyCount !== 1 ? 's' : ''}` : '';
+      const combatants = [partyText, friendlyText].filter(t => t).join(' + ');
+      
+      summary = `Party: ${combatants}`;
+      if (pcMemberCount > 0) {
+        summary += ` (Avg Level ${avgLevel.toFixed(1)})`;
+      }
+      summary += `\\n`;
       summary += `Enemies: ${enemyCount} creatures\\n`;
       summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}`;
     }
@@ -15415,6 +15487,13 @@ class EncounterBuilder {
     let enemyTotalAttackBonus = 0;
     let enemyCount = 0;
     
+    // Track friendly creatures to add to party
+    let friendlyTotalHP = 0;
+    let friendlyTotalAC = 0;
+    let friendlyTotalDPR = 0;
+    let friendlyTotalAttackBonus = 0;
+    let friendlyCount = 0;
+    
     console.log("=== ENCOUNTER DIFFICULTY CALCULATION (EncounterBuilder) ===");
     
     for (const creature of this.creatures) {
@@ -15424,6 +15503,36 @@ class EncounterBuilder {
       console.log(`Path: ${creature.path || 'none'}`);
       console.log(`CR: ${creature.cr || 'unknown'}`);
       console.log(`Is Trap: ${creature.isTrap || false}`);
+      console.log(`Is Friendly: ${creature.isFriendly || false}`);
+      
+      // Handle friendly creatures - add them to the party side
+      if (creature.isFriendly) {
+        console.log(`🤝 FRIENDLY CREATURE - Adding to party stats`);
+        
+        // Get stats for friendly creature (same logic as enemies)
+        let realStats = null;
+        if (creature.path && typeof creature.path === 'string') {
+          console.log(`Attempting to parse statblock: ${creature.path}`);
+          realStats = await this.parseStatblockStats(creature.path);
+          console.log(`Parsed stats:`, realStats);
+        }
+        
+        const crStats = this.getCRStats(creature.cr);
+        const hp = creature.hp || realStats?.hp || crStats.hp;
+        const ac = creature.ac || realStats?.ac || crStats.ac;
+        const dpr = realStats?.dpr || crStats.dpr;
+        const attackBonus = realStats?.attackBonus || crStats.attackBonus;
+        
+        console.log(`Friendly stats: HP=${hp}, AC=${ac}, DPR=${dpr}, Attack=${attackBonus}`);
+        console.log(`Total contribution (x${count}): HP=${hp * count}, DPR=${dpr * count}`);
+        
+        friendlyTotalHP += hp * count;
+        friendlyTotalAC += ac * count;
+        friendlyTotalDPR += dpr * count;
+        friendlyTotalAttackBonus += attackBonus * count;
+        friendlyCount += count;
+        continue;
+      }
       
       // Handle traps differently from creatures
       if (creature.isTrap && creature.trapData) {
@@ -15512,8 +15621,20 @@ class EncounterBuilder {
       partyTotalAttackBonus += levelStats.attackBonus;
       totalLevel += member.level;
     }
+    
+    // Add friendly creatures to party totals
+    console.log(`\n=== ADDING FRIENDLY CREATURES TO PARTY ===`);
+    console.log(`Friendly creatures: ${friendlyCount}`);
+    console.log(`Friendly HP contribution: ${friendlyTotalHP}`);
+    console.log(`Friendly DPR contribution: ${friendlyTotalDPR}`);
+    
+    partyTotalHP += friendlyTotalHP;
+    partyTotalAC += friendlyTotalAC;
+    partyTotalDPR += friendlyTotalDPR;
+    partyTotalAttackBonus += friendlyTotalAttackBonus;
 
-    const memberCount = partyMembers.length;
+    const memberCount = partyMembers.length + friendlyCount;
+    const pcMemberCount = partyMembers.length;
 
     let avgPartyAC: number;
     let avgPartyAttackBonus: number;
@@ -15522,7 +15643,7 @@ class EncounterBuilder {
     if (memberCount > 0) {
       avgPartyAC = partyTotalAC / memberCount;
       avgPartyAttackBonus = partyTotalAttackBonus / memberCount;
-      avgLevel = totalLevel / memberCount;
+      avgLevel = pcMemberCount > 0 ? totalLevel / pcMemberCount : 3;
     } else {
       const defaultStats = this.getLevelStats(3);
       partyTotalHP = defaultStats.hp * 4;
@@ -15573,11 +15694,19 @@ class EncounterBuilder {
 
     // Generate summary
     let summary = "";
-    if (partyMembers.length === 0) {
+    if (partyMembers.length === 0 && friendlyCount === 0) {
       summary = `⚠️ No party found. Using default 4-player party (Level 3).\n`;
       summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}.`;
     } else {
-      summary = `Party: ${memberCount} members (Avg Level ${avgLevel.toFixed(1)})\n`;
+      const partyText = pcMemberCount > 0 ? `${pcMemberCount} PC${pcMemberCount !== 1 ? 's' : ''}` : '';
+      const friendlyText = friendlyCount > 0 ? `${friendlyCount} friendly creature${friendlyCount !== 1 ? 's' : ''}` : '';
+      const combatants = [partyText, friendlyText].filter(t => t).join(' + ');
+      
+      summary = `Party: ${combatants}`;
+      if (pcMemberCount > 0) {
+        summary += ` (Avg Level ${avgLevel.toFixed(1)})`;
+      }
+      summary += `\n`;
       summary += `Enemies: ${enemyCount} creatures\n`;
       summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}`;
     }
