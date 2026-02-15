@@ -743,6 +743,8 @@ class EncounterBuilderModal extends Modal {
     let vaultCreatureIsFriendly = false;
     let vaultCreatureIsHidden = false;
     let searchResults: HTMLElement | null = null;
+    let friendlyCheckbox: HTMLInputElement;
+    let hiddenCheckbox: HTMLInputElement;
     
     // Load creatures from vault
     this.syncEncounterBuilder();
@@ -857,6 +859,13 @@ class EncounterBuilderModal extends Modal {
           selectedCreature = null;
           vaultCreatureIsFriendly = false;
           vaultCreatureIsHidden = false;
+          // Reset checkboxes (they're created later but will exist when this callback runs)
+          setTimeout(() => {
+            const friendlyCheckbox = searchInput.closest('.setting-item')?.querySelector('.dnd-inline-checkbox input[type=\"checkbox\"]') as HTMLInputElement;
+            const hiddenCheckbox = searchInput.closest('.setting-item')?.querySelectorAll('.dnd-inline-checkbox input[type=\"checkbox\"]')[1] as HTMLInputElement;
+            if (friendlyCheckbox) friendlyCheckbox.checked = false;
+            if (hiddenCheckbox) hiddenCheckbox.checked = false;
+          }, 0);
         }
       });
       
@@ -878,24 +887,46 @@ class EncounterBuilderModal extends Modal {
         text.inputEl.style.width = "60px";
       });
       
-      // Friendly checkbox
-      vaultCreatureSetting.addToggle(toggle => {
-        toggle
-          .setValue(false)
-          .onChange(value => vaultCreatureIsFriendly = value);
-        const labelEl = toggle.toggleEl.createSpan({ cls: "dnd-checkbox-label" });
-        labelEl.setText(" Friendly");
-        toggle.toggleEl.after(labelEl);
+      // Friendly checkbox container
+      const friendlyContainer = vaultCreatureSetting.controlEl.createDiv({ cls: "dnd-inline-checkbox" });
+      friendlyContainer.style.display = "inline-flex";
+      friendlyContainer.style.alignItems = "center";
+      friendlyContainer.style.marginLeft = "8px";
+      
+      friendlyCheckbox = friendlyContainer.createEl("input", { type: "checkbox" });
+      friendlyCheckbox.style.marginRight = "4px";
+      friendlyCheckbox.addEventListener("change", (e) => {
+        vaultCreatureIsFriendly = (e.target as HTMLInputElement).checked;
       });
       
-      // Hidden checkbox
-      vaultCreatureSetting.addToggle(toggle => {
-        toggle
-          .setValue(false)
-          .onChange(value => vaultCreatureIsHidden = value);
-        const labelEl = toggle.toggleEl.createSpan({ cls: "dnd-checkbox-label" });
-        labelEl.setText(" Hidden");
-        toggle.toggleEl.after(labelEl);
+      const friendlyLabel = friendlyContainer.createEl("label");
+      friendlyLabel.setText("Friendly");
+      friendlyLabel.style.fontSize = "13px";
+      friendlyLabel.style.cursor = "pointer";
+      friendlyLabel.addEventListener("click", () => {
+        friendlyCheckbox.checked = !friendlyCheckbox.checked;
+        vaultCreatureIsFriendly = friendlyCheckbox.checked;
+      });
+      
+      // Hidden checkbox container
+      const hiddenContainer = vaultCreatureSetting.controlEl.createDiv({ cls: "dnd-inline-checkbox" });
+      hiddenContainer.style.display = "inline-flex";
+      hiddenContainer.style.alignItems = "center";
+      hiddenContainer.style.marginLeft = "8px";
+      
+      hiddenCheckbox = hiddenContainer.createEl("input", { type: "checkbox" });
+      hiddenCheckbox.style.marginRight = "4px";
+      hiddenCheckbox.addEventListener("change", (e) => {
+        vaultCreatureIsHidden = (e.target as HTMLInputElement).checked;
+      });
+      
+      const hiddenLabel = hiddenContainer.createEl("label");
+      hiddenLabel.setText("Hidden");
+      hiddenLabel.style.fontSize = "13px";
+      hiddenLabel.style.cursor = "pointer";
+      hiddenLabel.addEventListener("click", () => {
+        hiddenCheckbox.checked = !hiddenCheckbox.checked;
+        vaultCreatureIsHidden = hiddenCheckbox.checked;
       });
       
       // Add button
@@ -930,6 +961,8 @@ class EncounterBuilderModal extends Modal {
           selectedCreature = null;
           vaultCreatureIsFriendly = false;
           vaultCreatureIsHidden = false;
+          friendlyCheckbox.checked = false;
+          hiddenCheckbox.checked = false;
         }));
     } else {
       vaultCreatureSection.createEl("p", {
@@ -992,24 +1025,46 @@ class EncounterBuilderModal extends Modal {
       text.inputEl.style.width = "60px";
     });
     
-    // Friendly checkbox
-    addCreatureSetting.addToggle(toggle => {
-      toggle
-        .setValue(false)
-        .onChange(value => newCreatureIsFriendly = value);
-      const labelEl = toggle.toggleEl.createSpan({ cls: "dnd-checkbox-label" });
-      labelEl.setText(" Friendly");
-      toggle.toggleEl.after(labelEl);
+    // Friendly checkbox container
+    const manualFriendlyContainer = addCreatureSetting.controlEl.createDiv({ cls: "dnd-inline-checkbox" });
+    manualFriendlyContainer.style.display = "inline-flex";
+    manualFriendlyContainer.style.alignItems = "center";
+    manualFriendlyContainer.style.marginLeft = "8px";
+    
+    const manualFriendlyCheckbox = manualFriendlyContainer.createEl("input", { type: "checkbox" });
+    manualFriendlyCheckbox.style.marginRight = "4px";
+    manualFriendlyCheckbox.addEventListener("change", (e) => {
+      newCreatureIsFriendly = (e.target as HTMLInputElement).checked;
     });
     
-    // Hidden checkbox
-    addCreatureSetting.addToggle(toggle => {
-      toggle
-        .setValue(false)
-        .onChange(value => newCreatureIsHidden = value);
-      const labelEl = toggle.toggleEl.createSpan({ cls: "dnd-checkbox-label" });
-      labelEl.setText(" Hidden");
-      toggle.toggleEl.after(labelEl);
+    const manualFriendlyLabel = manualFriendlyContainer.createEl("label");
+    manualFriendlyLabel.setText("Friendly");
+    manualFriendlyLabel.style.fontSize = "13px";
+    manualFriendlyLabel.style.cursor = "pointer";
+    manualFriendlyLabel.addEventListener("click", () => {
+      manualFriendlyCheckbox.checked = !manualFriendlyCheckbox.checked;
+      newCreatureIsFriendly = manualFriendlyCheckbox.checked;
+    });
+    
+    // Hidden checkbox container
+    const manualHiddenContainer = addCreatureSetting.controlEl.createDiv({ cls: "dnd-inline-checkbox" });
+    manualHiddenContainer.style.display = "inline-flex";
+    manualHiddenContainer.style.alignItems = "center";
+    manualHiddenContainer.style.marginLeft = "8px";
+    
+    const manualHiddenCheckbox = manualHiddenContainer.createEl("input", { type: "checkbox" });
+    manualHiddenCheckbox.style.marginRight = "4px";
+    manualHiddenCheckbox.addEventListener("change", (e) => {
+      newCreatureIsHidden = (e.target as HTMLInputElement).checked;
+    });
+    
+    const manualHiddenLabel = manualHiddenContainer.createEl("label");
+    manualHiddenLabel.setText("Hidden");
+    manualHiddenLabel.style.fontSize = "13px";
+    manualHiddenLabel.style.cursor = "pointer";
+    manualHiddenLabel.addEventListener("click", () => {
+      manualHiddenCheckbox.checked = !manualHiddenCheckbox.checked;
+      newCreatureIsHidden = manualHiddenCheckbox.checked;
     });
     
     // Add button
@@ -1047,6 +1102,8 @@ class EncounterBuilderModal extends Modal {
         newCreatureCR = "";
         newCreatureIsFriendly = false;
         newCreatureIsHidden = false;
+        manualFriendlyCheckbox.checked = false;
+        manualHiddenCheckbox.checked = false;
       }));
     
     // Info text
@@ -2295,8 +2352,8 @@ _Add notes about tactics, environment, or special conditions here._
             status: [],  // Array of status effects
             enabled: true,
             active: false,  // Whether this creature is currently active in turn order
-            hidden: false,  // Hidden from players
-            friendly: false,  // Friendly to players
+            hidden: c.isHidden || false,  // Hidden from players
+            friendly: c.isFriendly || false,  // Friendly to players
             rollHP: false  // Whether to roll HP when adding to tracker
           };
           console.log(`Created creature instance:`, creature);
@@ -3870,8 +3927,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 						status: [],  // CRITICAL: Initialize empty status array
 						enabled: true,
 						active: false,
-						hidden: false,
-						friendly: false,
+						hidden: c.isHidden || false,
+						friendly: c.isFriendly || false,
 						rollHP: false,
 						note: c.path || '',
 						path: c.path || ''
