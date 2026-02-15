@@ -651,7 +651,7 @@ class EncounterBuilderModal extends Modal {
         };
       }
 
-      // Select All / Deselect All buttons
+      // Select All / Deselect All / Refresh buttons
       const buttonsDiv = selectionDiv.createDiv();
       buttonsDiv.style.marginTop = "10px";
       buttonsDiv.style.display = "flex";
@@ -673,6 +673,18 @@ class EncounterBuilderModal extends Modal {
         this.renderPartySelection();
         this.renderPartyMemberList();
         this.updateDifficultyDisplay();
+      };
+
+      const refreshBtn = buttonsDiv.createEl("button", { text: "🔄 Refresh Stats" });
+      refreshBtn.style.fontSize = "0.85em";
+      refreshBtn.title = "Reload party stats from Initiative Tracker";
+      refreshBtn.onclick = async () => {
+        const success = await this.encounterBuilder.refreshPartyData();
+        if (success) {
+          this.renderPartySelection();
+          this.renderPartyMemberList();
+          this.updateDifficultyDisplay();
+        }
       };
     } catch (error) {
       console.error("Error rendering party selection:", error);
@@ -2283,6 +2295,7 @@ _Add notes about tactics, environment, or special conditions here._
           this.syncEncounterBuilder();
           const selectedPlayers = await this.encounterBuilder.getSelectedPartyPlayers();
           console.log("Adding party members to encounter:", selectedPlayers.length);
+          console.log("⚠️ Note: Party member stats are loaded from Initiative Tracker. If stats seem outdated, refresh Initiative Tracker from the Character Notes plugin.");
           for (const player of selectedPlayers) {
             const hp = player.hp || player.currentMaxHP || 20;
             const ac = player.ac || player.currentAC || 14;
@@ -2303,7 +2316,7 @@ _Add notes about tactics, environment, or special conditions here._
               enabled: true,
               active: false,
               hidden: false,
-              friendly: true,
+              friendly: false,  // Party members should NOT be marked as friendly
               player: true,
               rollHP: false
             });
@@ -3902,7 +3915,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 					partyMembers = (party as any).players.map((player: any) => ({
 						...player,
 						id: player.id || generateId(),
-						status: player.status || []
+						status: player.status || [],
+						friendly: false,  // Party members should NOT be marked as friendly
+						player: true  // Ensure player flag is set
 					}));
 					console.log(`[UpdateTracker] Loaded ${partyMembers.length} party members from party: ${(party as any).name}`);
 				}
@@ -14698,6 +14713,37 @@ class EncounterBuilder {
     this.plugin = plugin;
   }
 
+  /**
+   * Refresh party data from Initiative Tracker by reloading its settings
+   * This attempts to sync the latest player stats from Character Notes through Initiative Tracker
+   */
+  async refreshPartyData(): Promise<boolean> {
+    try {
+      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+      if (!initiativePlugin) {
+        console.warn("[RefreshPartyData] Initiative Tracker plugin not found");
+        return false;
+      }
+
+      // Check if the plugin has a loadSettings method (standard Obsidian plugin pattern)
+      if (typeof initiativePlugin.loadSettings === 'function') {
+        console.log("[RefreshPartyData] Calling Initiative Tracker's loadSettings()...");
+        await initiativePlugin.loadSettings();
+        console.log("[RefreshPartyData] ✅ Successfully reloaded Initiative Tracker data");
+        new Notice("✅ Party stats refreshed from Initiative Tracker");
+        return true;
+      } else {
+        console.warn("[RefreshPartyData] Initiative Tracker doesn't expose loadSettings() method");
+        new Notice("⚠️ Cannot refresh party stats - Initiative Tracker doesn't support refresh API");
+        return false;
+      }
+    } catch (error) {
+      console.error("[RefreshPartyData] Error refreshing party data:", error);
+      new Notice("❌ Failed to refresh party stats");
+      return false;
+    }
+  }
+
   findCampaignFolder(filePath: string): string | null {
     // Look for campaign folder in path (folders containing "ttrpgs" subdirectory)
     const parts = filePath.split('/');
@@ -17703,7 +17749,7 @@ class SceneCreationModal extends Modal {
         };
       }
 
-      // Select All / Deselect All buttons
+      // Select All / Deselect All / Refresh buttons
       const buttonsDiv = selectionDiv.createDiv();
       buttonsDiv.style.marginTop = "10px";
       buttonsDiv.style.display = "flex";
@@ -17725,6 +17771,18 @@ class SceneCreationModal extends Modal {
         this.renderPartySelection();
         this.renderPartyMemberList();
         this.updateDifficultyDisplay();
+      };
+
+      const refreshBtn = buttonsDiv.createEl("button", { text: "🔄 Refresh Stats" });
+      refreshBtn.style.fontSize = "0.85em";
+      refreshBtn.title = "Reload party stats from Initiative Tracker";
+      refreshBtn.onclick = async () => {
+        const success = await this.encounterBuilder.refreshPartyData();
+        if (success) {
+          this.renderPartySelection();
+          this.renderPartyMemberList();
+          this.updateDifficultyDisplay();
+        }
       };
     } catch (error) {
       console.error("Error rendering party selection:", error);
