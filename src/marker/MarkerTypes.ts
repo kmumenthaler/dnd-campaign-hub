@@ -5,8 +5,13 @@ export type MarkerType = 'player' | 'npc' | 'creature' | 'poi' | 'other';
 
 /**
  * Layer types for organizing map content
+ * - Player: Ground level, visible to all
+ * - Elevated: Flying creatures, visible to all with transparency
+ * - Subterranean: Underground but visible, shown with transparency
+ * - DM: Hidden from players (actively burrowing creatures)
+ * - Background: Map features
  */
-export type Layer = 'Player' | 'DM' | 'Background';
+export type Layer = 'Player' | 'DM' | 'Background' | 'Elevated' | 'Subterranean';
 
 /**
  * D&D creature size categories with grid coverage
@@ -25,6 +30,16 @@ export const CREATURE_SIZE_SQUARES: Record<CreatureSize, number> = {
 	'huge': 3,
 	'gargantuan': 4
 };
+
+/**
+ * Elevation data for tokens (flight and burrowing)
+ */
+export interface TokenElevation {
+	height?: number;      // feet above ground (flying)
+	depth?: number;       // feet below ground (burrowing)
+	isBurrowing?: boolean; // actively burrowed (affects visibility)
+	leaveTunnel?: boolean; // creature leaves tunnel behind
+}
 
 /**
  * A marker definition stored in the global marker library
@@ -46,6 +61,15 @@ export interface MarkerDefinition {
 }
 
 /**
+ * Tunnel traversal state for tokens inside tunnels
+ */
+export interface TunnelState {
+	tunnelId: string;      // Which tunnel the token is in
+	pathIndex: number;     // Current position along the tunnel path
+	enteredAt: number;     // Timestamp when token entered
+}
+
+/**
  * A marker reference placed on a map
  */
 export interface MarkerReference {
@@ -57,6 +81,8 @@ export interface MarkerReference {
 	};
 	placedAt: number;
 	layer?: Layer; // Which layer this marker belongs to (defaults to 'Player')
+	elevation?: TokenElevation; // Elevation data for flight/burrowing
+	tunnelState?: TunnelState; // Tunnel traversal state (when token is in a tunnel)
 }
 
 /**
@@ -65,4 +91,19 @@ export interface MarkerReference {
 export interface MarkerLibraryData {
 	markers: MarkerDefinition[];
 	version: string;
+}
+
+/**
+ * Represents a tunnel segment left behind by a burrowing creature
+ */
+export interface TunnelSegment {
+	id: string;                        // Unique tunnel ID
+	creatorMarkerId: string;           // ID of the marker that created this tunnel
+	entrancePosition: { x: number; y: number }; // Where the creature first burrowed
+	path: { x: number; y: number }[];  // Positions traveled while burrowed
+	creatureSize: CreatureSize;        // Determines tunnel width/visibility
+	depth: number;                     // Depth in feet (inherited by tokens entering tunnel)
+	createdAt: number;                 // Timestamp
+	visible: boolean;                  // Whether entrance is visible to players
+	active: boolean;                   // Whether tunnel is currently being extended
 }

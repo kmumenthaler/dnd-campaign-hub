@@ -4155,6 +4155,51 @@
   height: 28px;
 }
 
+/* Burrow action buttons */
+.dnd-map-burrow-action-btn {
+  padding: 6px 12px;
+  background-color: rgba(139, 69, 19, 0.3);
+  border: 1px solid rgba(139, 69, 19, 0.5);
+  border-radius: 6px;
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.dnd-map-burrow-action-btn:hover {
+  background-color: rgba(139, 69, 19, 0.5);
+  border-color: rgba(139, 69, 19, 0.8);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.dnd-map-burrow-action-btn.active {
+  background-color: rgba(139, 69, 19, 0.6);
+  border-color: rgba(210, 105, 30, 0.8);
+  box-shadow: 0 0 8px rgba(210, 105, 30, 0.4);
+}
+
+.dnd-map-context-tunnel-checkbox {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.dnd-map-context-tunnel-checkbox label {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dnd-map-context-tunnel-checkbox input[type="checkbox"] {
+  cursor: pointer;
+}
+
 .dnd-map-context-menu-item .layer-icon {
   font-size: 16px;
   line-height: 1;

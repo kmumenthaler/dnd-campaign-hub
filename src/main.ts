@@ -4313,6 +4313,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			config.markers = savedData.markers || [];
 			config.drawings = savedData.drawings || [];
 			config.aoeEffects = savedData.aoeEffects || [];
+			config.tunnels = savedData.tunnels || [];
 			config.poiReferences = savedData.poiReferences || [];
 			
 			// Load fog of war data
@@ -4488,6 +4489,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				fogOfWar: any;
 				highlights: any[];
 				aoeEffects: any[];
+				tunnels: any[];
 			}
 			const undoStack: HistoryState[] = [];
 			const redoStack: HistoryState[] = [];
@@ -4505,7 +4507,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					drawings: JSON.parse(JSON.stringify(config.drawings || [])),
 					fogOfWar: JSON.parse(JSON.stringify(config.fogOfWar || { enabled: true, regions: [] })),
 					highlights: JSON.parse(JSON.stringify(config.highlights || [])),
-					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || []))
+					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || [])),
+					tunnels: JSON.parse(JSON.stringify(config.tunnels || []))
 				};
 				undoStack.push(state);
 				if (undoStack.length > MAX_HISTORY) undoStack.shift();
@@ -4528,7 +4531,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					drawings: JSON.parse(JSON.stringify(config.drawings || [])),
 					fogOfWar: JSON.parse(JSON.stringify(config.fogOfWar || { enabled: true, regions: [] })),
 					highlights: JSON.parse(JSON.stringify(config.highlights || [])),
-					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || []))
+					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || [])),
+					tunnels: JSON.parse(JSON.stringify(config.tunnels || []))
 				};
 				redoStack.push(currentState);
 				
@@ -4541,6 +4545,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				config.fogOfWar = prevState.fogOfWar;
 				config.highlights = prevState.highlights;
 				config.aoeEffects = prevState.aoeEffects;
+				config.tunnels = prevState.tunnels;
 				
 				redrawAnnotations();
 				this.saveMapAnnotations(config, el);
@@ -4563,7 +4568,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					drawings: JSON.parse(JSON.stringify(config.drawings || [])),
 					fogOfWar: JSON.parse(JSON.stringify(config.fogOfWar || { enabled: true, regions: [] })),
 					highlights: JSON.parse(JSON.stringify(config.highlights || [])),
-					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || []))
+					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || [])),
+					tunnels: JSON.parse(JSON.stringify(config.tunnels || []))
 				};
 				undoStack.push(currentState);
 				
@@ -4576,6 +4582,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				config.fogOfWar = nextState.fogOfWar;
 				config.highlights = nextState.highlights;
 				config.aoeEffects = nextState.aoeEffects;
+				config.tunnels = nextState.tunnels;
 				
 				redrawAnnotations();
 				this.saveMapAnnotations(config, el);
@@ -4711,6 +4718,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		
 		const moveGridBtn = createToolBtn(setupContent, '✥', 'Move Grid');
 		const calibrateBtn = createToolBtn(setupContent, '⚙', 'Calibrate');
+		const clearTunnelsBtn = createToolBtn(setupContent, '🧹', 'Clear Tunnels');
 		
 		// === PLAYER VIEW (full-width, prominent) ===
 		const viewGroup = toolbarContent.createDiv({ cls: 'dnd-map-tool-group' });
@@ -5001,6 +5009,20 @@ export default class DndCampaignHubPlugin extends Plugin {
 				new Notice('Click two points on the map to measure one hex width');
 			}
 		});
+		
+		clearTunnelsBtn.addEventListener('click', () => {
+			if (!config.tunnels || config.tunnels.length === 0) {
+				new Notice('No tunnels to clear');
+				return;
+			}
+			
+			const tunnelCount = config.tunnels.length;
+			config.tunnels = [];
+			this.saveMapAnnotations(config, el);
+			redrawAnnotations();
+			if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+			new Notice(`Cleared ${tunnelCount} tunnel${tunnelCount === 1 ? '' : 's'}`);
+		});
 
 		// Grid size slider (flyout on move-grid button, visible when grid is enabled)
 		const hasGrid = config.gridType && config.gridType !== 'none';
@@ -5133,12 +5155,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Layer icons
 		const layerIcons: Record<Layer, string> = {
 			'Player': '👥',
+			'Elevated': '🦅',
+			'Subterranean': '🕳️',
 			'DM': '🎲',
 			'Background': '🗺️'
 		};
 		
 		// Create layer buttons
-		const layers: Layer[] = ['Player', 'DM', 'Background'];
+		const layers: Layer[] = ['Player', 'Elevated', 'Subterranean', 'DM', 'Background'];
 		const layerButtons: Record<Layer, HTMLButtonElement> = {} as any;
 		
 		layers.forEach(layer => {
@@ -5278,6 +5302,8 @@ export default class DndCampaignHubPlugin extends Plugin {
             fogOfWar: config.fogOfWar,
             walls: config.walls,
             lightSources: config.lightSources,
+            tunnels: config.tunnels,
+            poiReferences: config.poiReferences,
             gridType: config.gridType,
             gridSize: config.gridSize,
             gridOffsetX: config.gridOffsetX || 0,
@@ -5541,6 +5567,94 @@ export default class DndCampaignHubPlugin extends Plugin {
 					});
 				}
 				
+				// Draw tunnel entrances and exits (below markers so tokens aren't covered)
+				console.log('[Tunnel Debug GM Render] config.tunnels:', config.tunnels ? config.tunnels.length : 'undefined');
+				if (config.tunnels && config.tunnels.length > 0) {
+					const CREATURE_SIZE_SQUARES: Record<string, number> = {
+						'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+					};
+					
+					config.tunnels.forEach((tunnel: any) => {
+						console.log('[Tunnel Debug GM Render] Rendering tunnel:', tunnel.id, 'visible:', tunnel.visible, 'active:', tunnel.active, 'entrance:', tunnel.entrancePosition);
+						if (!tunnel.visible) return;
+						
+						const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
+						const radius = (squares * config.gridSize) / 2.5;
+						
+						// Draw entrance
+						const entrance = tunnel.entrancePosition;
+						ctx.save();
+						ctx.globalAlpha = 0.7;
+						
+						// Draw dark circle for tunnel entrance
+						ctx.fillStyle = '#1a1a1a';
+						ctx.beginPath();
+						ctx.arc(entrance.x, entrance.y, radius, 0, Math.PI * 2);
+						ctx.fill();
+						
+						// Draw rocky border
+						ctx.strokeStyle = '#654321';
+						ctx.lineWidth = Math.max(3, radius * 0.15);
+						ctx.stroke();
+						
+						// Add inner shadow effect
+						const gradient = ctx.createRadialGradient(entrance.x, entrance.y, radius * 0.3, entrance.x, entrance.y, radius);
+						gradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
+						gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+						ctx.fillStyle = gradient;
+						ctx.fill();
+						
+						// Add tunnel entrance icon
+						ctx.globalAlpha = 0.8;
+						ctx.fillStyle = '#8B4513';
+						ctx.font = `${Math.max(12, radius * 0.8)}px sans-serif`;
+						ctx.textAlign = 'center';
+						ctx.textBaseline = 'middle';
+						ctx.fillText('🕳️', entrance.x, entrance.y);
+						
+						ctx.restore();
+						
+						// Draw exit if tunnel is inactive (completed) and has a different exit position
+						if (!tunnel.active && tunnel.path && tunnel.path.length > 1) {
+							const exit = tunnel.path[tunnel.path.length - 1];
+							// Only draw exit if it's different from entrance
+							if (Math.abs(exit.x - entrance.x) > 5 || Math.abs(exit.y - entrance.y) > 5) {
+								ctx.save();
+								ctx.globalAlpha = 0.7;
+								
+								// Draw dark circle for tunnel exit
+								ctx.fillStyle = '#1a1a1a';
+								ctx.beginPath();
+								ctx.arc(exit.x, exit.y, radius, 0, Math.PI * 2);
+								ctx.fill();
+								
+								// Draw rocky border
+								ctx.strokeStyle = '#654321';
+								ctx.lineWidth = Math.max(3, radius * 0.15);
+								ctx.stroke();
+								
+								// Add inner shadow effect
+								const exitGradient = ctx.createRadialGradient(exit.x, exit.y, radius * 0.3, exit.x, exit.y, radius);
+								exitGradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
+								exitGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+								ctx.fillStyle = exitGradient;
+								ctx.fill();
+								
+								// Add tunnel exit icon
+								ctx.globalAlpha = 0.8;
+								ctx.fillStyle = '#8B4513';
+								ctx.font = `${Math.max(12, radius * 0.8)}px sans-serif`;
+								ctx.textAlign = 'center';
+								ctx.textBaseline = 'middle';
+								ctx.fillText('🕳️', exit.x, exit.y);
+								
+								console.log('[Tunnel Debug GM Render] Drew exit at:', exit);
+								ctx.restore();
+							}
+						}
+					});
+				}
+				
 				// Draw token auras (behind markers)
 				if (config.markers) {
 					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
@@ -5570,6 +5684,60 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (config.markers) {
 					config.markers.forEach((marker: any) => {
 						drawMarker(ctx, marker);
+					});
+				}
+				
+				// Draw tunnel paths (GM view only - shows where burrowed creatures traveled)
+				// Only visible on Subterranean layer to avoid visual clutter
+				if (config.tunnels && config.tunnels.length > 0 && config.activeLayer === 'Subterranean') {
+					const CREATURE_SIZE_SQUARES: Record<string, number> = {
+						'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+					};
+					
+					config.tunnels.forEach((tunnel: any) => {
+						if (!tunnel.path || tunnel.path.length < 2) return;
+						
+						const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
+						const tunnelWidth = (squares * config.gridSize) / 2; // Tunnel width matches creature
+						
+						ctx.save();
+						ctx.globalAlpha = 0.5;
+						ctx.strokeStyle = '#2a2a2a';
+						ctx.lineWidth = tunnelWidth;
+						ctx.lineCap = 'round';
+						ctx.lineJoin = 'round';
+						
+						// Draw tunnel path as a thick line
+						ctx.beginPath();
+						ctx.moveTo(tunnel.path[0].x, tunnel.path[0].y);
+						for (let i = 1; i < tunnel.path.length; i++) {
+							ctx.lineTo(tunnel.path[i].x, tunnel.path[i].y);
+						}
+						ctx.stroke();
+						
+						// Draw border for tunnel corridor
+						ctx.globalAlpha = 0.7;
+						ctx.strokeStyle = '#654321';
+						ctx.lineWidth = tunnelWidth + 4;
+						ctx.beginPath();
+						ctx.moveTo(tunnel.path[0].x, tunnel.path[0].y);
+						for (let i = 1; i < tunnel.path.length; i++) {
+							ctx.lineTo(tunnel.path[i].x, tunnel.path[i].y);
+						}
+						ctx.stroke();
+						
+						// Draw inner tunnel path (darker)
+						ctx.globalAlpha = 0.8;
+						ctx.strokeStyle = '#1a1a1a';
+						ctx.lineWidth = tunnelWidth * 0.7;
+						ctx.beginPath();
+						ctx.moveTo(tunnel.path[0].x, tunnel.path[0].y);
+						for (let i = 1; i < tunnel.path.length; i++) {
+							ctx.lineTo(tunnel.path[i].x, tunnel.path[i].y);
+						}
+						ctx.stroke();
+						
+						ctx.restore();
 					});
 				}
 				
@@ -5994,7 +6162,41 @@ export default class DndCampaignHubPlugin extends Plugin {
 				
 				// Draw marker drag ruler
 				if (markerDragOrigin && draggingMarkerIndex >= 0) {
-					const currentPos = config.markers[draggingMarkerIndex].position;
+					const draggedMarker = config.markers[draggingMarkerIndex];
+					const currentPos = draggedMarker.position;
+					
+					// Draw tunnel preview if marker is actively burrowing
+					if (draggedMarker.elevation?.isBurrowing && draggedMarker.elevation?.leaveTunnel && config.tunnels) {
+						const activeTunnel = config.tunnels.find((t: any) => 
+							t.creatorMarkerId === draggedMarker.id && t.active
+						);
+						if (activeTunnel && activeTunnel.path.length > 0) {
+							const CREATURE_SIZE_SQUARES: Record<string, number> = {
+								'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+							};
+							const mDef = draggedMarker.markerId ? this.markerLibrary.getMarker(draggedMarker.markerId) : null;
+							const squares = mDef?.creatureSize ? CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1 : 1;
+							const tunnelWidth = (squares * config.gridSize) / 2;
+							
+							ctx.save();
+							ctx.globalAlpha = 0.6;
+							ctx.strokeStyle = '#8B4513';
+							ctx.lineWidth = tunnelWidth + 4;
+							ctx.lineCap = 'round';
+							ctx.lineJoin = 'round';
+							ctx.setLineDash([10, 5]);
+							
+							// Draw preview line from last path point to current position
+							const lastPoint = activeTunnel.path[activeTunnel.path.length - 1];
+							ctx.beginPath();
+							ctx.moveTo(lastPoint.x, lastPoint.y);
+							ctx.lineTo(currentPos.x, currentPos.y);
+							ctx.stroke();
+							
+							ctx.restore();
+						}
+					}
+					
 					ctx.strokeStyle = '#ffff00';
 					ctx.lineWidth = 4;
 					ctx.setLineDash([8, 4]);
@@ -6260,7 +6462,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 				// Apply transparency if not on active layer
 				const itemLayer = marker.layer || 'Player';
 				const isActiveLayer = itemLayer === config.activeLayer;
-				ctx.globalAlpha = isActiveLayer ? 1.0 : 0.3;
+				
+				// Special transparency for burrowed tokens (underground)
+				if (marker.elevation && marker.elevation.isBurrowing) {
+					ctx.globalAlpha = 0.5; // Burrowed tokens are semi-transparent
+				}
+				// Special transparency for Elevated/Subterranean layers
+				else if (itemLayer === 'Elevated' || itemLayer === 'Subterranean') {
+					ctx.globalAlpha = 0.6; // Semi-transparent even when active
+				} else {
+					ctx.globalAlpha = isActiveLayer ? 1.0 : 0.3;
+				}
 				
 				let markerDef: MarkerDefinition | null | undefined = null;
 				let position = marker.position;
@@ -6288,8 +6500,47 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 				
 				const radius = getMarkerRadius(markerDef);
+				const elevation = marker.elevation;
 				
 				ctx.save();
+				
+				// Draw drop shadow for flying tokens
+				if (elevation && elevation.height && elevation.height > 0) {
+					const shadowOffset = Math.min(10, elevation.height / 5);
+					const shadowBlur = Math.min(15, elevation.height / 3);
+					
+					ctx.save();
+					ctx.globalAlpha = 0.4;
+					ctx.fillStyle = '#000000';
+					ctx.shadowColor = '#000000';
+					ctx.shadowBlur = shadowBlur;
+					ctx.shadowOffsetX = shadowOffset;
+					ctx.shadowOffsetY = shadowOffset;
+					ctx.beginPath();
+					ctx.arc(position.x, position.y, radius * 0.8, 0, Math.PI * 2);
+					ctx.fill();
+					ctx.restore();
+					
+					// Reset to main alpha
+					if (itemLayer === 'Elevated') {
+						ctx.globalAlpha = 0.6;
+					} else {
+						ctx.globalAlpha = isActiveLayer ? 1.0 : 0.3;
+					}
+				}
+				
+				// Add colored glow for elevated/subterranean
+				if (itemLayer === 'Elevated' || itemLayer === 'Subterranean') {
+					ctx.save();
+					ctx.shadowColor = itemLayer === 'Elevated' ? '#4DA6FF' : '#8B4513';
+					ctx.shadowBlur = 10;
+					ctx.beginPath();
+					ctx.arc(position.x, position.y, radius, 0, Math.PI * 2);
+					ctx.strokeStyle = itemLayer === 'Elevated' ? '#4DA6FF' : '#8B4513';
+					ctx.lineWidth = 3;
+					ctx.stroke();
+					ctx.restore();
+				}
 				
 				// Clip to circle
 				ctx.beginPath();
@@ -6340,6 +6591,113 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 				
 				ctx.restore();
+				
+				// Draw elevation badge
+				if (elevation && (elevation.height || elevation.depth)) {
+					ctx.save();
+					ctx.globalAlpha = 1.0;
+					
+					const badgeSize = Math.max(16, radius * 0.5);
+					const badgeX = position.x + radius - badgeSize / 2;
+					const badgeY = position.y - radius + badgeSize / 2;
+					
+					// Badge background
+					ctx.fillStyle = elevation.height ? '#4DA6FF' : '#8B4513';
+					ctx.beginPath();
+					ctx.arc(badgeX, badgeY, badgeSize / 2, 0, Math.PI * 2);
+					ctx.fill();
+					
+					// Badge border
+					ctx.strokeStyle = '#ffffff';
+					ctx.lineWidth = 2;
+					ctx.stroke();
+					
+					// Badge text
+					const elevationValue = elevation.height || elevation.depth || 0;
+					const elevationIcon = elevation.height ? '↑' : '↓';
+					ctx.fillStyle = '#ffffff';
+					ctx.font = `bold ${Math.max(10, badgeSize * 0.6)}px sans-serif`;
+					ctx.textAlign = 'center';
+					ctx.textBaseline = 'middle';
+					ctx.fillText(elevationIcon, badgeX, badgeY - 1);
+					
+					// Show feet value if there's room
+					if (radius > 25) {
+						ctx.font = `${Math.max(8, badgeSize * 0.4)}px sans-serif`;
+						ctx.fillText(`${elevationValue}`, badgeX, badgeY + badgeSize / 2 + 6);
+					}
+					
+					ctx.restore();
+				}
+				
+				// Draw tunnel mode badge
+				if (marker.tunnelState) {
+					ctx.save();
+					ctx.globalAlpha = 1.0;
+					
+					const badgeSize = Math.max(16, radius * 0.5);
+					const badgeX = position.x - radius + badgeSize / 2;  // Left side
+					const badgeY = position.y - radius + badgeSize / 2;
+					
+					// Badge background (orange/amber for visibility)
+					ctx.fillStyle = '#FF8C00';
+					ctx.beginPath();
+					ctx.arc(badgeX, badgeY, badgeSize / 2, 0, Math.PI * 2);
+					ctx.fill();
+					
+					// Badge border
+					ctx.strokeStyle = '#ffffff';
+					ctx.lineWidth = 2;
+					ctx.stroke();
+					
+					// Badge icon (flashlight/tunnel icon)
+					ctx.fillStyle = '#ffffff';
+					ctx.font = `bold ${Math.max(10, badgeSize * 0.6)}px sans-serif`;
+					ctx.textAlign = 'center';
+					ctx.textBaseline = 'middle';
+					ctx.fillText('🔦', badgeX, badgeY);
+					
+					ctx.restore();
+					
+					// Draw highlighted tunnel path
+					const tunnel = config.tunnels?.find((t: any) => t.id === marker.tunnelState.tunnelId);
+					if (tunnel && tunnel.path.length > 1) {
+						ctx.save();
+						ctx.globalAlpha = 0.8;
+						
+						const CREATURE_SIZE_SQUARES: Record<string, number> = {
+							'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+						};
+						const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
+						const tunnelWidth = (squares * config.gridSize) / 2;
+						
+						// Draw path up to current position in bright color
+						ctx.strokeStyle = '#FFD700';  // Gold
+						ctx.lineWidth = tunnelWidth + 2;
+						ctx.lineCap = 'round';
+						ctx.lineJoin = 'round';
+						ctx.beginPath();
+						ctx.moveTo(tunnel.path[0].x, tunnel.path[0].y);
+						for (let i = 1; i <= marker.tunnelState.pathIndex && i < tunnel.path.length; i++) {
+							ctx.lineTo(tunnel.path[i].x, tunnel.path[i].y);
+						}
+						ctx.stroke();
+						
+						// Draw remaining path in dimmer color
+						if (marker.tunnelState.pathIndex < tunnel.path.length - 1) {
+							ctx.strokeStyle = '#666666';
+							ctx.lineWidth = tunnelWidth;
+							ctx.beginPath();
+							ctx.moveTo(tunnel.path[marker.tunnelState.pathIndex].x, tunnel.path[marker.tunnelState.pathIndex].y);
+							for (let i = marker.tunnelState.pathIndex + 1; i < tunnel.path.length; i++) {
+								ctx.lineTo(tunnel.path[i].x, tunnel.path[i].y);
+							}
+							ctx.stroke();
+						}
+						
+						ctx.restore();
+					}
+				}
 				
 				// Reset globalAlpha
 				ctx.globalAlpha = 1.0;
@@ -7655,10 +8013,79 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const draggedMarker = config.markers[draggingMarkerIndex];
 					const prevX = draggedMarker.position.x;
 					const prevY = draggedMarker.position.y;
-					draggedMarker.position = {
-						x: mapPos.x + dragOffsetX,
-						y: mapPos.y + dragOffsetY
-					};
+					
+					// Check if marker is in a tunnel (traversing)
+					if (draggedMarker.tunnelState && config.tunnels) {
+						const tunnel = config.tunnels.find((t: any) => t.id === draggedMarker.tunnelState.tunnelId);
+						if (tunnel && tunnel.path && tunnel.path.length > 0) {
+							// Constrain movement to tunnel path
+							// Find closest point on the tunnel path to the desired position
+							const desiredPos = {
+								x: mapPos.x + dragOffsetX,
+								y: mapPos.y + dragOffsetY
+							};
+							
+							let closestIndex = draggedMarker.tunnelState.pathIndex;
+							let closestDistance = Infinity;
+							
+							// Check a range of path points near current position
+							const searchRange = 3; // Check 3 points before and after current position
+							const startIdx = Math.max(0, draggedMarker.tunnelState.pathIndex - searchRange);
+							const endIdx = Math.min(tunnel.path.length - 1, draggedMarker.tunnelState.pathIndex + searchRange);
+							
+							for (let i = startIdx; i <= endIdx; i++) {
+								const pathPoint = tunnel.path[i];
+								const dx = desiredPos.x - pathPoint.x;
+								const dy = desiredPos.y - pathPoint.y;
+								const dist = Math.sqrt(dx * dx + dy * dy);
+								
+								if (dist < closestDistance) {
+									closestDistance = dist;
+									closestIndex = i;
+								}
+							}
+							
+							// Update pathIndex and snap to that point
+							draggedMarker.tunnelState.pathIndex = closestIndex;
+							draggedMarker.position = {
+								x: tunnel.path[closestIndex].x,
+								y: tunnel.path[closestIndex].y
+							};
+						} else {
+							// Tunnel not found, allow free movement
+							draggedMarker.position = {
+								x: mapPos.x + dragOffsetX,
+								y: mapPos.y + dragOffsetY
+							};
+						}
+					} else {
+						// Normal free movement
+						draggedMarker.position = {
+							x: mapPos.x + dragOffsetX,
+							y: mapPos.y + dragOffsetY
+						};
+					}
+					
+					// Track tunnel path if marker is actively burrowing (creating a tunnel)
+					if (draggedMarker.elevation?.isBurrowing && draggedMarker.elevation?.leaveTunnel && config.tunnels) {
+						const activeTunnel = config.tunnels.find((t: any) => 
+							t.creatorMarkerId === draggedMarker.id && t.active
+						);
+						if (activeTunnel) {
+							const lastPoint = activeTunnel.path[activeTunnel.path.length - 1];
+							const dx = draggedMarker.position.x - lastPoint.x;
+							const dy = draggedMarker.position.y - lastPoint.y;
+							const distance = Math.sqrt(dx * dx + dy * dy);
+							// Add path point every 10 pixels of movement to avoid too many points
+							if (distance > 10) {
+								activeTunnel.path.push({ 
+									x: draggedMarker.position.x, 
+									y: draggedMarker.position.y 
+								});
+							}
+						}
+					}
+					
 					// Move anchored AoE effects with the marker
 					const dxAoe = draggedMarker.position.x - prevX;
 					const dyAoe = draggedMarker.position.y - prevY;
@@ -7893,6 +8320,24 @@ export default class DndCampaignHubPlugin extends Plugin {
 					// Drop marker: snap creature types to grid
 					const m = config.markers[draggingMarkerIndex];
 					const mDef = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
+					
+					// Finalize tunnel path if marker was actively burrowing
+					if (m.elevation?.isBurrowing && m.elevation?.leaveTunnel && config.tunnels) {
+						const activeTunnel = config.tunnels.find((t: any) => 
+							t.creatorMarkerId === m.id && t.active
+						);
+						if (activeTunnel && activeTunnel.path.length > 0) {
+							const lastPoint = activeTunnel.path[activeTunnel.path.length - 1];
+							const dx = m.position.x - lastPoint.x;
+							const dy = m.position.y - lastPoint.y;
+							const distance = Math.sqrt(dx * dx + dy * dy);
+							// Add final position if different from last recorded point
+							if (distance > 5) {
+								activeTunnel.path.push({ x: m.position.x, y: m.position.y });
+							}
+						}
+					}
+					
 					if (mDef && ['player', 'npc', 'creature'].includes(mDef.type) && config.gridSize) {
 						const ox = config.gridOffsetX || 0;
 						const oy = config.gridOffsetY || 0;
@@ -7907,7 +8352,22 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const snapDy = (oy + row * gs + halfToken) - m.position.y;
 						m.position.x = ox + col * gs + halfToken;
 						m.position.y = oy + row * gs + halfToken;
+						
+						// Update tunnel path with snapped position
 						if (snapDx !== 0 || snapDy !== 0) {
+							if (m.elevation?.isBurrowing && m.elevation?.leaveTunnel && config.tunnels) {
+								const activeTunnel = config.tunnels.find((t: any) => 
+									t.creatorMarkerId === m.id && t.active
+								);
+								if (activeTunnel && activeTunnel.path.length > 0) {
+									// Update last point to snapped position
+									activeTunnel.path[activeTunnel.path.length - 1] = { 
+										x: m.position.x, 
+										y: m.position.y 
+									};
+								}
+							}
+							
 							config.aoeEffects.forEach((aoe: any) => {
 								if (aoe.anchorMarkerId === m.id) {
 									aoe.origin.x += snapDx;
@@ -7923,6 +8383,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
+					// Sync to player views (includes tunnel path updates)
+					if ((viewport as any)._syncPlayerView) {
+						(viewport as any)._syncPlayerView();
+					}
 				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
 					// Drop light: save position
 					draggingLightIndex = -1;
@@ -8042,6 +8506,53 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Keyboard shortcuts for player-view rotation
 			viewport.addEventListener('keydown', (e: KeyboardEvent) => {
+				// Tunnel traversal with arrow keys
+				if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+					const selectedMarkerIdx = config.markers.findIndex((m: any) => m.tunnelState);
+					if (selectedMarkerIdx >= 0) {
+						const marker = config.markers[selectedMarkerIdx];
+						const tunnel = config.tunnels?.find((t: any) => t.id === marker.tunnelState.tunnelId);
+						
+						if (tunnel && tunnel.path.length > 0) {
+							e.preventDefault();
+							saveToHistory();
+							
+							let newIndex = marker.tunnelState.pathIndex;
+							
+							// Arrow keys move forward/backward along path
+							if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+								// Move forward in tunnel
+								newIndex = Math.min(tunnel.path.length - 1, newIndex + 1);
+							} else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+								// Move backward in tunnel
+								newIndex = Math.max(0, newIndex - 1);
+							}
+							
+							// Update position and path index
+							if (newIndex !== marker.tunnelState.pathIndex) {
+								marker.tunnelState.pathIndex = newIndex;
+								const newPos = tunnel.path[newIndex];
+								marker.position.x = newPos.x;
+								marker.position.y = newPos.y;
+								
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								
+								// Show progress indicator
+								const progress = Math.round((newIndex / (tunnel.path.length - 1)) * 100);
+								new Notice(`Tunnel progress: ${progress}%`, 1000);
+							} else if (newIndex === tunnel.path.length - 1 && (e.key === 'ArrowUp' || e.key === 'ArrowRight')) {
+								// Reached end of tunnel
+								new Notice('Reached tunnel exit - right-click to exit tunnel');
+							} else if (newIndex === 0 && (e.key === 'ArrowDown' || e.key === 'ArrowLeft')) {
+								// Reached start of tunnel
+								new Notice('Reached tunnel entrance - right-click to exit tunnel');
+							}
+						}
+					}
+				}
+				
 				// Walls tool: Enter to finish, Escape to cancel
 				if (activeTool === 'walls') {
 					if (e.key === 'Enter' && wallPoints.length >= 2) {
@@ -8187,6 +8698,46 @@ export default class DndCampaignHubPlugin extends Plugin {
 					return;
 				}
 				const mapPos = screenToMap(e.clientX, e.clientY);
+				
+				// Helper functions for tunnel detection
+				const isNearTunnelEntrance = (position: { x: number; y: number }, gridSize: number): { tunnel: any; distance: number } | null => {
+					if (!config.tunnels || config.tunnels.length === 0) return null;
+					
+					const threshold = gridSize * 1.5; // Proximity threshold
+					let nearest: { tunnel: any; distance: number } | null = null;
+					
+					for (const tunnel of config.tunnels) {
+						const entrance = tunnel.entrancePosition;
+						const dist = Math.sqrt(Math.pow(position.x - entrance.x, 2) + Math.pow(position.y - entrance.y, 2));
+						if (dist <= threshold) {
+							if (!nearest || dist < nearest.distance) {
+								nearest = { tunnel, distance: dist };
+							}
+						}
+					}
+					return nearest;
+				};
+				
+				const isNearTunnelExit = (position: { x: number; y: number }, gridSize: number): { tunnel: any; distance: number } | null => {
+					if (!config.tunnels || config.tunnels.length === 0) return null;
+					
+					const threshold = gridSize * 1.5; // Proximity threshold
+					let nearest: { tunnel: any; distance: number } | null = null;
+					
+					for (const tunnel of config.tunnels) {
+						if (tunnel.path.length > 0) {
+							const exit = tunnel.path[tunnel.path.length - 1];
+							const dist = Math.sqrt(Math.pow(position.x - exit.x, 2) + Math.pow(position.y - exit.y, 2));
+							if (dist <= threshold) {
+								if (!nearest || dist < nearest.distance) {
+									nearest = { tunnel, distance: dist };
+								}
+							}
+						}
+					}
+					return nearest;
+				};
+				
 				for (let i = config.markers.length - 1; i >= 0; i--) {
 					const m = config.markers[i];
 					const mDef = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
@@ -8207,13 +8758,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 						layerHeader.textContent = 'Move to Layer:';
 						
 						// Layer options
-						const layers: Layer[] = ['Player', 'DM', 'Background'];
+						const layers: Layer[] = ['Player', 'Elevated', 'Subterranean', 'DM', 'Background'];
 						const currentLayer = m.layer || 'Player';
 						layers.forEach(layer => {
 							const option = contextMenu.createDiv({ 
 								cls: 'dnd-map-context-menu-item' + (layer === currentLayer ? ' active' : '')
 							});
-							const layerIcons: Record<Layer, string> = { 'Player': '👥', 'DM': '🎲', 'Background': '🗺️' };
+							const layerIcons: Record<Layer, string> = { 
+								'Player': '👥', 
+								'Elevated': '🦅',
+								'Subterranean': '🕳️',
+								'DM': '🎲', 
+								'Background': '🗺️'
+							};
 							option.innerHTML = `<span class="layer-icon">${layerIcons[layer]}</span> ${layer}`;
 							option.addEventListener('click', () => {
 								m.layer = layer;
@@ -8226,6 +8783,36 @@ export default class DndCampaignHubPlugin extends Plugin {
 						
 						// Separator
 						contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+						
+						// Show to Players toggle (for non-player tokens)
+						if (mDef && mDef.type !== 'player') {
+							const visibilityRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+							visibilityRow.style.cursor = 'pointer';
+							const visibilityLabel = visibilityRow.createEl('span', { 
+								cls: 'dnd-map-context-aoe-label', 
+								text: 'Show to Players:' 
+							});
+							const visibilityToggle = visibilityRow.createEl('input', {
+								type: 'checkbox',
+								cls: 'dnd-map-visibility-checkbox'
+							});
+							visibilityToggle.checked = m.visibleToPlayers || false;
+							visibilityToggle.addEventListener('change', (e) => {
+								e.stopPropagation();
+								saveToHistory();
+								m.visibleToPlayers = visibilityToggle.checked;
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								new Notice(m.visibleToPlayers ? 'Token visible to players' : 'Token hidden from players');
+							});
+							visibilityRow.addEventListener('click', (e) => {
+								if (e.target !== visibilityToggle) {
+									visibilityToggle.checked = !visibilityToggle.checked;
+									visibilityToggle.dispatchEvent(new Event('change'));
+								}
+							});
+						}
 						
 						// AoE compact picker for player/creature/npc tokens
 						if (mDef && ['player', 'npc', 'creature'].includes(mDef.type)) {
@@ -8373,6 +8960,271 @@ export default class DndCampaignHubPlugin extends Plugin {
 									darkInput.blur();
 								}
 							});
+							
+							// Elevation controls (height and depth)
+							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+							const elevationHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+							elevationHeader.innerHTML = '↕️ Elevation';
+							
+							console.log('[Elevation Debug] Context menu opened. Marker:', m.id, 'Elevation:', JSON.stringify(m.elevation, null, 2), 'mDef:', mDef?.name);
+							
+							// Helper function to update token layer based on elevation
+							const updateTokenLayer = (marker: any) => {
+								const elevation = marker.elevation;
+								
+								if (!elevation || (!elevation.height && !elevation.depth)) {
+									marker.layer = 'Player';
+								} else if (elevation.depth && elevation.depth > 0) {
+									if (elevation.isBurrowing) {
+										marker.layer = 'DM';  // Hidden from players
+									} else {
+										marker.layer = 'Subterranean';  // Visible but marked
+									}
+								} else if (elevation.height && elevation.height > 0) {
+									marker.layer = 'Elevated';  // Visible with indicator
+								}
+							};
+							
+							// Height input (flying)
+							const heightRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+							heightRow.createEl('span', { cls: 'dnd-map-context-aoe-label', text: 'Height:' });
+							const heightInput = heightRow.createEl('input', {
+								cls: 'dnd-map-darkvision-input',
+								attr: { 
+									type: 'number', 
+									min: '0', 
+									max: '500',
+									step: '5',
+									placeholder: '0',
+									value: m.elevation?.height || ''
+								}
+							});
+							heightRow.createEl('span', { text: 'ft' });
+							
+							heightInput.addEventListener('change', () => {
+								saveToHistory();
+								const value = parseInt(heightInput.value) || 0;
+								if (!m.elevation) m.elevation = {};
+								
+								if (value > 0) {
+									m.elevation.height = value;
+									// Clear depth when setting height
+									delete m.elevation.depth;
+									delete m.elevation.isBurrowing;
+									depthInput.value = '';
+								} else {
+									delete m.elevation.height;
+								}
+								
+								// Auto-update layer based on elevation
+								updateTokenLayer(m);
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								new Notice(value > 0 ? `Token flying at ${value} ft` : 'Token returned to ground');
+							});
+							
+							heightInput.addEventListener('click', (e) => e.stopPropagation());
+							heightInput.addEventListener('keydown', (e) => {
+								if (e.key === 'Enter') {
+									heightInput.blur();
+								}
+							});
+							
+							// Depth input (burrowing)
+							const depthRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+							depthRow.createEl('span', { cls: 'dnd-map-context-aoe-label', text: 'Depth:' });
+							const depthInput = depthRow.createEl('input', {
+								cls: 'dnd-map-darkvision-input',
+								attr: { 
+									type: 'number', 
+									min: '0', 
+									max: '500',
+									step: '5',
+									placeholder: '0',
+									value: m.elevation?.depth || ''
+								}
+							});
+							depthRow.createEl('span', { text: 'ft' });
+							
+							depthInput.addEventListener('change', () => {
+								saveToHistory();
+								const value = parseInt(depthInput.value) || 0;
+								if (!m.elevation) m.elevation = {};
+								
+								if (value > 0) {
+									m.elevation.depth = value;
+									m.elevation.isBurrowing = true; // Automatically burrow when depth is set
+								m.elevation.leaveTunnel = true; // Enable tunnel path tracking during movement
+								
+								// Clear height when setting depth
+								delete m.elevation.height;
+								heightInput.value = '';
+								
+								// Automatically create tunnel entrance
+								if (!config.tunnels) config.tunnels = [];
+								console.log('[Tunnel Debug] Creating tunnel. Current tunnels:', config.tunnels.length, 'Marker:', m.id);
+								
+								// Check if tunnel already exists for this marker
+								let tunnel = config.tunnels.find((t: any) => t.creatorMarkerId === m.id && t.active);
+								if (!tunnel) {
+									// Create new tunnel with entrance at current position
+									tunnel = {
+										id: `tunnel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+										creatorMarkerId: m.id,
+										entrancePosition: { x: m.position.x, y: m.position.y },
+										path: [{ x: m.position.x, y: m.position.y }],
+										creatureSize: mDef.creatureSize || 'medium',
+										depth: value,
+										createdAt: Date.now(),
+										visible: true,
+										active: true
+									};
+									config.tunnels.push(tunnel);
+									console.log('[Tunnel Debug] Created NEW tunnel with entrance at', tunnel.entrancePosition, JSON.stringify(tunnel, null, 2));
+								}
+							} else {
+								// Depth set to 0 - surface automatically and mark exit
+								delete m.elevation.depth;
+								delete m.elevation.isBurrowing;
+								delete m.elevation.leaveTunnel;
+								
+								// Mark exit position and deactivate tunnel
+								if (config.tunnels) {
+									config.tunnels.forEach((t: any) => {
+										if (t.creatorMarkerId === m.id && t.active) {
+											// Add current position as exit if not already in path
+											const lastPos = t.path[t.path.length - 1];
+											if (!lastPos || lastPos.x !== m.position.x || lastPos.y !== m.position.y) {
+												t.path.push({ x: m.position.x, y: m.position.y });
+											}
+											t.active = false;
+											console.log('[Tunnel Debug] Tunnel exit marked at', { x: m.position.x, y: m.position.y }, 'Path length:', t.path.length);
+										}
+									});
+								}
+							}
+							
+							// Auto-update layer based on elevation
+							updateTokenLayer(m);
+							redrawAnnotations();
+							this.saveMapAnnotations(config, el);
+							if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+							new Notice(value > 0 ? `Token burrowed ${value} ft underground` : 'Token surfaced');
+						});
+							
+							depthInput.addEventListener('click', (e) => e.stopPropagation());
+							depthInput.addEventListener('keydown', (e) => {
+								if (e.key === 'Enter') {
+									depthInput.blur();
+								}
+							});
+							
+							// Tunnel Traversal section (for following existing tunnels)
+							const nearEntrance = isNearTunnelEntrance(m.position, config.gridSize);
+							const nearExit = isNearTunnelExit(m.position, config.gridSize);
+							const isInTunnel = m.tunnelState !== undefined;
+							const isNearTunnelAccess = nearEntrance || nearExit;
+							
+							// Only show tunnel traversal options if near a tunnel or in a tunnel
+							if (isNearTunnelAccess || isInTunnel) {
+								contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+								const tunnelTraverseHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+								tunnelTraverseHeader.innerHTML = '🔦 Tunnel Navigation';
+								
+								const tunnelActionsRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+								
+								if (!isInTunnel && isNearTunnelAccess) {
+									// Show "Enter Tunnel" button
+									const enterBtn = tunnelActionsRow.createEl('button', {
+										cls: 'dnd-map-burrow-action-btn',
+										text: '🚪 Enter Tunnel'
+									});
+									
+									enterBtn.addEventListener('click', () => {
+										saveToHistory();
+										const nearestTunnel = nearEntrance || nearExit;
+										if (nearestTunnel) {
+											// Set tunnel state
+											m.tunnelState = {
+												tunnelId: nearestTunnel.tunnel.id,
+												pathIndex: nearEntrance ? 0 : nearestTunnel.tunnel.path.length - 1,
+												enteredAt: Date.now()
+											};
+											
+											// Snap token to tunnel entrance/exit
+											const snapPoint = nearEntrance 
+												? nearestTunnel.tunnel.entrancePosition 
+												: nearestTunnel.tunnel.path[nearestTunnel.tunnel.path.length - 1];
+											m.position.x = snapPoint.x;
+											m.position.y = snapPoint.y;
+											
+											// Set depth to match tunnel depth (inherit from tunnel creator)
+											if (!m.elevation) m.elevation = {};
+											// Mark that this depth was set by tunnel (so we can clear it on exit)
+											m.elevation._tunnelDepth = nearestTunnel.tunnel.depth || 10; // Default 10ft if not specified
+											m.elevation.depth = m.elevation._tunnelDepth;
+											
+											// Move to Subterranean layer (visible but marked as underground)
+											m.layer = 'Subterranean';
+											
+											redrawAnnotations();
+											this.saveMapAnnotations(config, el);
+											if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+											document.body.removeChild(contextMenu);
+											new Notice('Entered tunnel - use arrow keys to navigate');
+										}
+									});
+								}
+								
+								if (isInTunnel) {
+									// Check if token is at entrance or exit of the tunnel
+									const tunnel = config.tunnels?.find((t: any) => t.id === m.tunnelState.tunnelId);
+									const isAtEntranceOrExit = tunnel && (
+										m.tunnelState.pathIndex === 0 || 
+										m.tunnelState.pathIndex === tunnel.path.length - 1
+									);
+									
+									if (isAtEntranceOrExit) {
+										// Show "Exit Tunnel" button
+										const exitBtn = tunnelActionsRow.createEl('button', {
+											cls: 'dnd-map-burrow-action-btn active',
+											text: '🚪 Exit Tunnel'
+										});
+										
+										exitBtn.addEventListener('click', () => {
+											saveToHistory();
+											delete m.tunnelState;
+											
+											// Clear tunnel-assigned depth (but keep manually set depth)
+											if (m.elevation && m.elevation._tunnelDepth) {
+												delete m.elevation.depth;
+												delete m.elevation._tunnelDepth;
+												// If no other elevation properties, remove elevation object
+												if (!m.elevation.height && !m.elevation.isBurrowing) {
+													delete m.elevation;
+												}
+											}
+											
+											m.layer = 'Player';
+											
+											redrawAnnotations();
+											this.saveMapAnnotations(config, el);
+											if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+											document.body.removeChild(contextMenu);
+											new Notice('Exited tunnel');
+										});
+									} else {
+										// Show disabled message
+										const statusText = tunnelActionsRow.createEl('span', {
+											cls: 'dnd-map-context-aoe-label',
+											text: 'Move to entrance/exit to leave tunnel'
+										});
+										statusText.style.fontStyle = 'italic';
+										statusText.style.color = '#888';
+									}
+								}
+							}
 							
 							// Token Auras section
 							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
@@ -9608,6 +10460,7 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 				markers: config.markers || [],
 				drawings: config.drawings || [],
 				aoeEffects: config.aoeEffects || [],
+				tunnels: config.tunnels || [],
 				poiReferences: config.poiReferences || [],
 				fogOfWar: config.fogOfWar || { enabled: false, regions: [] },
 				walls: config.walls || [],
@@ -26264,10 +27117,22 @@ class PlayerMapView extends ItemView {
       this.drawGrid(ctx, config);
     }
 
-    // Filter to Player layer only
-    const playerMarkers = (config.markers || []).filter((m: any) => (m.layer || 'Player') === 'Player');
-    const playerDrawings = (config.drawings || []).filter((d: any) => (d.layer || 'Player') === 'Player');
-    const playerHighlights = (config.highlights || []).filter((h: any) => (h.layer || 'Player') === 'Player');
+    // Filter to Player, Elevated, and Subterranean layers (exclude DM and Background)
+    // Player tokens are always visible regardless of layer
+    const visibleLayers = ['Player', 'Elevated', 'Subterranean'];
+    const playerMarkers = (config.markers || []).filter((m: any) => {
+      const markerLayer = m.layer || 'Player';
+      // Always show player-type tokens, even if on DM layer (for tunneling)
+      if (m.markerId) {
+        const markerDef = this.plugin.markerLibrary.getMarker(m.markerId);
+        if (markerDef && markerDef.type === 'player') {
+          return true; // Always show player tokens
+        }
+      }
+      return visibleLayers.includes(markerLayer);
+    });
+    const playerDrawings = (config.drawings || []).filter((d: any) => visibleLayers.includes(d.layer || 'Player'));
+    const playerHighlights = (config.highlights || []).filter((h: any) => visibleLayers.includes(h.layer || 'Player'));
     const playerPoiRefs = (config.poiReferences || []).filter((p: any) => (p.layer || 'DM') === 'Player');
 
     // Draw highlights
@@ -26295,8 +27160,459 @@ class PlayerMapView extends ItemView {
       }
     });
 
+    // Draw tunnel entrances and exits (only visible if within player vision range)
+    console.log('[Tunnel Debug Player Render] config.tunnels:', config.tunnels ? config.tunnels.length : 'undefined');
+    if (config.tunnels && config.tunnels.length > 0 && playerTokens.length > 0) {
+      const CREATURE_SIZE_SQUARES: Record<string, number> = {
+        'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+      };
+      
+      // Calculate pixels per foot for vision range calculations
+      const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+      
+      // Helper function to calculate vision range for a player token
+      const getVisionRange = (marker: any): number => {
+        let visionRange = 0;
+        
+        // Check darkvision
+        if (marker.darkvision && marker.darkvision > 0) {
+          visionRange = Math.max(visionRange, marker.darkvision);
+        }
+        
+        // Check attached light source
+        if (marker.light && marker.light.bright !== undefined) {
+          const totalLightRange = (marker.light.bright || 0) + (marker.light.dim || 0);
+          visionRange = Math.max(visionRange, totalLightRange);
+        }
+        
+        const pixelRange = visionRange * pixelsPerFoot;
+        console.log('[Tunnel Vision Debug ENTRANCE] Marker vision:', {
+          id: marker.id,
+          darkvision: marker.darkvision,
+          lightBright: marker.light?.bright,
+          lightDim: marker.light?.dim,
+          visionRangeFeet: visionRange,
+          visionRangePx: pixelRange
+        });
+        
+        return pixelRange;
+      };
+      
+      // Helper function to check if a point is visible to any player
+      const isPointVisibleToAnyPlayer = (point: { x: number; y: number }): boolean => {
+        return playerTokens.some((playerMarker: any) => {
+          const visionRangePx = getVisionRange(playerMarker);
+          if (visionRangePx === 0) return false;
+          
+          const dx = point.x - playerMarker.position.x;
+          const dy = point.y - playerMarker.position.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          return distance <= visionRangePx;
+        });
+      };
+      
+      config.tunnels.forEach((tunnel: any) => {
+        console.log('[Tunnel Debug Player Render] Rendering tunnel:', tunnel.id, 'visible:', tunnel.visible, 'active:', tunnel.active, 'entrance:', tunnel.entrancePosition);
+        if (!tunnel.visible) return;
+        
+        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
+        const radius = (squares * config.gridSize) / 2.5;
+        
+        // Only draw entrance if within vision range of any player
+        if (isPointVisibleToAnyPlayer(tunnel.entrancePosition)) {
+          // Draw entrance
+          const entrance = tunnel.entrancePosition;
+          ctx.save();
+          ctx.globalAlpha = 0.7;
+          
+          // Draw dark circle for tunnel entrance
+          ctx.fillStyle = '#1a1a1a';
+          ctx.beginPath();
+          ctx.arc(entrance.x, entrance.y, radius, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Draw rocky border
+          ctx.strokeStyle = '#654321';
+          ctx.lineWidth = Math.max(3, radius * 0.15);
+          ctx.stroke();
+          
+          // Add inner shadow effect
+          const gradient = ctx.createRadialGradient(entrance.x, entrance.y, radius * 0.3, entrance.x, entrance.y, radius);
+          gradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
+          gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+          ctx.fillStyle = gradient;
+          ctx.fill();
+          
+          // Add tunnel entrance icon
+          ctx.globalAlpha = 0.8;
+          ctx.fillStyle = '#8B4513';
+          ctx.font = `${Math.max(12, radius * 0.8)}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('🕳️', entrance.x, entrance.y);
+          
+          ctx.restore();
+        }
+        
+        // Draw exit if tunnel is inactive (completed), has a different exit position, and is within vision range
+        if (!tunnel.active && tunnel.path && tunnel.path.length > 1) {
+          const exit = tunnel.path[tunnel.path.length - 1];
+          // Only draw exit if it's different from entrance and within vision range
+          if ((Math.abs(exit.x - tunnel.entrancePosition.x) > 5 || Math.abs(exit.y - tunnel.entrancePosition.y) > 5) &&
+              isPointVisibleToAnyPlayer(exit)) {
+            ctx.save();
+            ctx.globalAlpha = 0.7;
+            
+            // Draw dark circle for tunnel exit
+            ctx.fillStyle = '#1a1a1a';
+            ctx.beginPath();
+            ctx.arc(exit.x, exit.y, radius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw rocky border
+            ctx.strokeStyle = '#654321';
+            ctx.lineWidth = Math.max(3, radius * 0.15);
+            ctx.stroke();
+            
+            // Add inner shadow effect
+            const exitGradient = ctx.createRadialGradient(exit.x, exit.y, radius * 0.3, exit.x, exit.y, radius);
+            exitGradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
+            exitGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = exitGradient;
+            ctx.fill();
+            
+            // Add tunnel exit icon
+            ctx.globalAlpha = 0.8;
+            ctx.fillStyle = '#8B4513';
+            ctx.font = `${Math.max(12, radius * 0.8)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🕳️', exit.x, exit.y);
+            
+            console.log('[Tunnel Debug Player Render] Drew exit at:', exit);
+            ctx.restore();
+          }
+        }
+      });
+    }
+
+    // Draw tunnel paths if a player token is in any tunnel or created it
+    // Check if any player token is in a tunnel or is the creator
+    if (config.tunnels && config.tunnels.length > 0 && playerTokens.length > 0) {
+      const CREATURE_SIZE_SQUARES: Record<string, number> = {
+        'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+      };
+      
+      // Calculate pixels per foot for vision range calculations
+      const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+      
+      // Helper function to calculate vision range for a player token
+      const getVisionRange = (marker: any): number => {
+        let visionRange = 0;
+        
+        // Check darkvision
+        if (marker.darkvision && marker.darkvision > 0) {
+          visionRange = Math.max(visionRange, marker.darkvision);
+        }
+        
+        // Check attached light source
+        if (marker.light && marker.light.bright !== undefined) {
+          const totalLightRange = (marker.light.bright || 0) + (marker.light.dim || 0);
+          visionRange = Math.max(visionRange, totalLightRange);
+        }
+        
+        const pixelRange = visionRange * pixelsPerFoot;
+        console.log('[Tunnel Vision Debug PATH] Marker vision:', {
+          id: marker.id,
+          darkvision: marker.darkvision,
+          lightBright: marker.light?.bright,
+          lightDim: marker.light?.dim,
+          visionRangeFeet: visionRange,
+          visionRangePx: pixelRange
+        });
+        
+        return pixelRange;
+      };
+      
+      // Helper function to check if a point is within vision range and line of sight
+      const isPointVisible = (point: { x: number; y: number }, playerMarker: any, tunnel: any): boolean => {
+        const visionRangePx = getVisionRange(playerMarker);
+        if (visionRangePx === 0) return false; // No vision = can't see
+        
+        const dx = point.x - playerMarker.position.x;
+        const dy = point.y - playerMarker.position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        return distance <= visionRangePx;
+      };
+      
+      // Helper function to find visible segments of a tunnel path from a player's position
+      const getVisiblePathSegments = (tunnel: any, playerMarker: any): Array<Array<{x: number, y: number}>> => {
+        if (!tunnel.path || tunnel.path.length < 2) return [];
+        if (!playerMarker.position) return [];
+        
+        const segments: Array<Array<{x: number, y: number}>> = [];
+        let currentSegment: Array<{x: number, y: number}> | null = null;
+        
+        // Track cumulative distance along tunnel from player position
+        let pathDistances: number[] = [0]; // Distance from entrance to each path point
+        for (let i = 1; i < tunnel.path.length; i++) {
+          const dx = tunnel.path[i].x - tunnel.path[i - 1].x;
+          const dy = tunnel.path[i].y - tunnel.path[i - 1].y;
+          const segmentDist = Math.sqrt(dx * dx + dy * dy);
+          pathDistances.push((pathDistances[i - 1] ?? 0) + segmentDist);
+        }
+        
+        // Find player's closest point on the tunnel path
+        let closestPointIndex = 0;
+        let closestDistance = Infinity;
+        
+        for (let i = 0; i < tunnel.path.length; i++) {
+          const dx = tunnel.path[i].x - playerMarker.position.x;
+          const dy = tunnel.path[i].y - playerMarker.position.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < closestDistance) {
+            closestDistance = dist;
+            closestPointIndex = i;
+          }
+        }
+        
+        // From closest point, extend vision in both directions along tunnel path
+        // considering corners and vision range
+        const visionRangePx = getVisionRange(playerMarker);
+        if (visionRangePx === 0) return [];
+        
+        // Go forward from closest point
+        let forwardSegment: Array<{x: number, y: number}> = [tunnel.path[closestPointIndex]];
+        let forwardDistance = 0;
+        let lastDirection: { dx: number, dy: number } | null = null;
+        
+        for (let i = closestPointIndex + 1; i < tunnel.path.length; i++) {
+          const dx = tunnel.path[i].x - tunnel.path[i - 1].x;
+          const dy = tunnel.path[i].y - tunnel.path[i - 1].y;
+          const segmentDist = Math.sqrt(dx * dx + dy * dy);
+          
+          console.log('[Tunnel Forward Loop]', {
+            iteration: i - closestPointIndex,
+            pointIndex: i,
+            segmentDist: segmentDist.toFixed(2),
+            hasLastDirection: !!lastDirection,
+            forwardDistanceSoFar: forwardDistance.toFixed(2),
+            visionRange: visionRangePx.toFixed(2)
+          });
+          
+          // Check for corner (significant direction change) - check ALL segments
+          if (lastDirection && segmentDist > 1) {
+            const prevDx = lastDirection!.dx;
+            const prevDy = lastDirection!.dy;
+            const prevLen = Math.sqrt(prevDx * prevDx + prevDy * prevDy);
+            const currLen = Math.sqrt(dx * dx + dy * dy);
+            
+            if (prevLen > 0 && currLen > 0) {
+              const dotProduct = (prevDx * dx + prevDy * dy) / (prevLen * currLen);
+              const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
+              
+              console.log('[Tunnel Corner Check FORWARD]', {
+                pointIndex: i,
+                angle: (angle * 180 / Math.PI).toFixed(1) + '°',
+                threshold: '20°',
+                blocked: angle > Math.PI / 9
+              });
+              
+              // If corner angle > 20 degrees, can't see past it
+              if (angle > Math.PI / 9) {
+                console.log('[Tunnel Corner BLOCKED]', 'Vision stopped at corner');
+                break;
+              }
+            }
+          }
+          
+          forwardDistance += segmentDist;
+          if (forwardDistance > visionRangePx) {
+            console.log('[Tunnel Vision RANGE]', 'Stopped - vision range exceeded');
+            break;
+          }
+          
+          forwardSegment.push(tunnel.path[i]);
+          lastDirection = { dx, dy };
+        }
+        
+        // Go backward from closest point
+        let backwardSegment: Array<{x: number, y: number}> = [];
+        let backwardDistance = 0;
+        lastDirection = null;
+        
+        for (let i = closestPointIndex - 1; i >= 0; i--) {
+          const dx = tunnel.path[i + 1].x - tunnel.path[i].x;
+          const dy = tunnel.path[i + 1].y - tunnel.path[i].y;
+          const segmentDist = Math.sqrt(dx * dx + dy * dy);
+          
+          // Check for corner (significant direction change) - check ALL segments
+          if (lastDirection && segmentDist > 1) {
+            const prevDx = lastDirection!.dx;
+            const prevDy = lastDirection!.dy;
+            const prevLen = Math.sqrt(prevDx * prevDx + prevDy * prevDy);
+            const currLen = Math.sqrt(dx * dx + dy * dy);
+            
+            if (prevLen > 0 && currLen > 0) {
+              const dotProduct = (prevDx * dx + prevDy * dy) / (prevLen * currLen);
+              const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
+              
+              console.log('[Tunnel Corner Check BACKWARD]', {
+                pointIndex: i,
+                angle: (angle * 180 / Math.PI).toFixed(1) + '°',
+                threshold: '20°',
+                blocked: angle > Math.PI / 9
+              });
+              
+              // If corner angle > 20 degrees, can't see past it
+              if (angle > Math.PI / 9) {
+                break;
+              }
+            }
+          }
+          
+          backwardDistance += segmentDist;
+          if (backwardDistance > visionRangePx) break;
+          
+          backwardSegment.unshift(tunnel.path[i]);
+          lastDirection = { dx: -dx, dy: -dy };
+        }
+        
+        // Combine segments
+        const fullSegment = [...backwardSegment, ...forwardSegment];
+        if (fullSegment.length >= 2) {
+          segments.push(fullSegment);
+        }
+        
+        // Debug: log the actual segment points to verify corner detection
+        console.log('[Tunnel Vision Debug SEGMENTS]', {
+          backwardCount: backwardSegment.length,
+          forwardCount: forwardSegment.length,
+          totalCount: fullSegment.length,
+          firstPoint: fullSegment[0],
+          lastPoint: fullSegment[fullSegment.length - 1],
+          tunnelTotalPoints: tunnel.path.length
+        });
+        
+        return segments;
+      };
+      
+      // Find tunnels that should be visible to players
+      const visibleTunnelSegments = new Map<string, Array<Array<{x: number, y: number}>>>();
+      
+      // Build a map of tunnel ID -> player marker for tunnels that need visibility calculation
+      // This ensures we only calculate ONCE per tunnel, using the first player's vision
+      const tunnelPlayerMap = new Map<string, any>();
+      
+      config.tunnels.forEach((tunnel: any) => {
+        // Find the first player token that's in this tunnel or created it
+        const playerInTunnel = playerTokens.find((playerMarker: any) => {
+          const isInTunnel = playerMarker.tunnelState?.tunnelId === tunnel.id;
+          const isCreator = tunnel.creatorMarkerId === playerMarker.id;
+          return isInTunnel || isCreator;
+        });
+        
+        if (playerInTunnel) {
+          tunnelPlayerMap.set(tunnel.id, playerInTunnel);
+        }
+      });
+      
+      // Now calculate segments ONCE per tunnel
+      tunnelPlayerMap.forEach((playerMarker: any, tunnelId: string) => {
+        const tunnel = config.tunnels.find((t: any) => t.id === tunnelId);
+        if (!tunnel) return;
+        
+        const segments = getVisiblePathSegments(tunnel, playerMarker);
+        console.log('[Tunnel Vision Debug] Calculated segments for tunnel:', {
+          tunnelId: tunnel.id,
+          playerMarkerId: playerMarker.id,
+          segmentCount: segments.length,
+          totalSegmentPoints: segments.reduce((sum, seg) => sum + seg.length, 0)
+        });
+        
+        if (segments.length > 0) {
+          visibleTunnelSegments.set(tunnel.id, segments);
+        }
+      });
+      
+      // Draw paths for visible tunnel segments
+      config.tunnels.forEach((tunnel: any) => {
+        const segments = visibleTunnelSegments.get(tunnel.id);
+        if (!segments || segments.length === 0) return;
+        
+        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
+        const tunnelWidth = (squares * config.gridSize) / 2;
+        
+        // Draw each visible segment
+        segments.forEach((segment: Array<{x: number, y: number}>, segIdx: number) => {
+          if (segment.length < 2 || !segment[0]) return;
+          
+          console.log('[Tunnel Debug DRAW]', {
+            tunnelId: tunnel.id,
+            segmentIndex: segIdx,
+            segmentPointCount: segment.length,
+            firstPoint: segment[0],
+            lastPoint: segment[segment.length - 1]
+          });
+          
+          ctx.save();
+          ctx.globalAlpha = 0.3;
+          ctx.strokeStyle = '#2a2a2a';
+          ctx.lineWidth = tunnelWidth;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          
+          // Draw tunnel path
+          ctx.beginPath();
+          ctx.moveTo(segment[0].x, segment[0].y);
+          for (let i = 1; i < segment.length; i++) {
+            const point = segment[i];
+            if (point) ctx.lineTo(point.x, point.y);
+          }
+          ctx.stroke();
+          
+          // Draw border
+          ctx.globalAlpha = 0.5;
+          ctx.strokeStyle = '#654321';
+          ctx.lineWidth = tunnelWidth + 4;
+          ctx.beginPath();
+          ctx.moveTo(segment[0].x, segment[0].y);
+          for (let i = 1; i < segment.length; i++) {
+            const point = segment[i];
+            if (point) ctx.lineTo(point.x, point.y);
+          }
+          ctx.stroke();
+          
+          // Draw inner path
+          ctx.globalAlpha = 0.6;
+          ctx.strokeStyle = '#1a1a1a';
+          ctx.lineWidth = tunnelWidth * 0.7;
+          ctx.beginPath();
+          ctx.moveTo(segment[0].x, segment[0].y);
+          for (let i = 1; i < segment.length; i++) {
+            const point = segment[i];
+            if (point) ctx.lineTo(point.x, point.y);
+          }
+          ctx.stroke();
+          
+          ctx.restore();
+        });
+        
+        console.log('[Tunnel Debug Player Render] Drew tunnel path with vision restrictions, tunnel:', tunnel.id, 'segments:', segments.length);
+      });
+    }
+
     // Draw non-player markers (these will be obscured by fog)
-    otherMarkers.forEach((m: any) => this.drawMarker(ctx, m));
+    // Filter out burrowed tokens unless they're marked as visible to players
+    otherMarkers.forEach((m: any) => {
+      // Hide burrowed tokens unless explicitly marked visible to players
+      if (m.elevation?.isBurrowing && !m.visibleToPlayers) {
+        return; // Skip rendering this token
+      }
+      this.drawMarker(ctx, m);
+    });
 
     // Draw drag ruler (distance indicator) if a marker is being moved
     if (config.dragRuler) {
@@ -26827,8 +28143,56 @@ class PlayerMapView extends ItemView {
     }
 
     const radius = this.getMarkerRadius(markerDef);
+    const elevation = marker.elevation;
+    const itemLayer = marker.layer || 'Player';
 
     ctx.save();
+    
+    // Apply transparency for burrowed tokens (underground)
+    if (elevation && elevation.isBurrowing) {
+      ctx.globalAlpha = 0.5; // Burrowed tokens are semi-transparent in player view
+    }
+    // Apply transparency for Elevated/Subterranean layers
+    else if (itemLayer === 'Elevated' || itemLayer === 'Subterranean') {
+      ctx.globalAlpha = 0.6;
+    }
+    
+    // Draw drop shadow for flying tokens
+    if (elevation && elevation.height && elevation.height > 0) {
+      const shadowOffset = Math.min(10, elevation.height / 5);
+      const shadowBlur = Math.min(15, elevation.height / 3);
+      
+      ctx.save();
+      ctx.globalAlpha = 0.4;
+      ctx.fillStyle = '#000000';
+      ctx.shadowColor = '#000000';
+      ctx.shadowBlur = shadowBlur;
+      ctx.shadowOffsetX = shadowOffset;
+      ctx.shadowOffsetY = shadowOffset;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, radius * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      
+      // Reset to main alpha
+      if (itemLayer === 'Elevated') {
+        ctx.globalAlpha = 0.6;
+      }
+    }
+    
+    // Add colored glow for elevated/subterranean
+    if (itemLayer === 'Elevated' || itemLayer === 'Subterranean') {
+      ctx.save();
+      ctx.shadowColor = itemLayer === 'Elevated' ? '#4DA6FF' : '#8B4513';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = itemLayer === 'Elevated' ? '#4DA6FF' : '#8B4513';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.restore();
+    }
+    
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
     ctx.closePath();
@@ -26871,6 +28235,156 @@ class PlayerMapView extends ItemView {
     }
 
     ctx.restore();
+    
+    // Draw elevation badge
+    if (elevation && (elevation.height || elevation.depth)) {
+      ctx.save();
+      ctx.globalAlpha = 1.0;
+      
+      const badgeSize = Math.max(16, radius * 0.5);
+      const badgeX = pos.x + radius - badgeSize / 2;
+      const badgeY = pos.y - radius + badgeSize / 2;
+      
+      // Badge background
+      ctx.fillStyle = elevation.height ? '#4DA6FF' : '#8B4513';
+      ctx.beginPath();
+      ctx.arc(badgeX, badgeY, badgeSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Badge border
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Badge text
+      const elevationValue = elevation.height || elevation.depth || 0;
+      const elevationIcon = elevation.height ? '↑' : '↓';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `bold ${Math.max(10, badgeSize * 0.6)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(elevationIcon, badgeX, badgeY - 1);
+      
+      // Show feet value if there's room
+      if (radius > 25) {
+        ctx.font = `${Math.max(8, badgeSize * 0.4)}px sans-serif`;
+        ctx.fillText(`${elevationValue}`, badgeX, badgeY + badgeSize / 2 + 6);
+      }
+      
+      ctx.restore();
+    }
+    
+    // Draw tunnel mode badge
+    if (marker.tunnelState) {
+      ctx.save();
+      ctx.globalAlpha = 1.0;
+      
+      const badgeSize = Math.max(16, radius * 0.5);
+      const badgeX = pos.x - radius + badgeSize / 2;  // Left side
+      const badgeY = pos.y - radius + badgeSize / 2;
+      
+      // Badge background (orange/amber for visibility)
+      ctx.fillStyle = '#FF8C00';
+      ctx.beginPath();
+      ctx.arc(badgeX, badgeY, badgeSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Badge border
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Badge icon (flashlight/tunnel icon)
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `bold ${Math.max(10, badgeSize * 0.6)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🔦', badgeX, badgeY);
+      
+      ctx.restore();
+      
+      // Draw highlighted tunnel path for this player's own token
+      const tunnel = config.tunnels?.find((t: any) => t.id === marker.tunnelState.tunnelId);
+      if (tunnel && tunnel.path.length > 1) {
+        ctx.save();
+        ctx.globalAlpha = 0.8;
+        
+        const CREATURE_SIZE_SQUARES: Record<string, number> = {
+          'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+        };
+        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
+        const tunnelWidth = (squares * config.gridSize) / 2;
+        
+        // Draw path up to current position in bright color
+        ctx.strokeStyle = '#FFD700';  // Gold
+        ctx.lineWidth = tunnelWidth + 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(tunnel.path[0].x, tunnel.path[0].y);
+        for (let i = 1; i <= marker.tunnelState.pathIndex && i < tunnel.path.length; i++) {
+          ctx.lineTo(tunnel.path[i].x, tunnel.path[i].y);
+        }
+        ctx.stroke();
+        
+        // Draw remaining path in dimmer color (ONLY within vision range and line-of-sight)
+        if (marker.tunnelState.pathIndex < tunnel.path.length - 1) {
+          // Calculate vision range for this marker
+          const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+          let visionRange = 0;
+          if (marker.darkvision && marker.darkvision > 0) {
+            visionRange = Math.max(visionRange, marker.darkvision);
+          }
+          if (marker.light && marker.light.bright !== undefined) {
+            const totalLightRange = (marker.light.bright || 0) + (marker.light.dim || 0);
+            visionRange = Math.max(visionRange, totalLightRange);
+          }
+          const visionRangePx = visionRange * pixelsPerFoot;
+          
+          // Only draw forward path segments within vision and before corners
+          if (visionRangePx > 0) {
+            ctx.strokeStyle = '#666666';
+            ctx.lineWidth = tunnelWidth;
+            ctx.beginPath();
+            ctx.moveTo(tunnel.path[marker.tunnelState.pathIndex].x, tunnel.path[marker.tunnelState.pathIndex].y);
+            
+            let forwardDistance = 0;
+            let lastDirection: { dx: number, dy: number } | null = null;
+            let drewAnySegment = false;
+            
+            for (let i = marker.tunnelState.pathIndex + 1; i < tunnel.path.length; i++) {
+              const dx = tunnel.path[i].x - tunnel.path[i - 1].x;
+              const dy = tunnel.path[i].y - tunnel.path[i - 1].y;
+              const segmentDist = Math.sqrt(dx * dx + dy * dy);
+              
+              // Check for corner
+              if (lastDirection && segmentDist > 1) {
+                const prevLen = Math.sqrt(lastDirection.dx * lastDirection.dx + lastDirection.dy * lastDirection.dy);
+                const currLen = segmentDist;
+                if (prevLen > 0 && currLen > 0) {
+                  const dotProduct = (lastDirection.dx * dx + lastDirection.dy * dy) / (prevLen * currLen);
+                  const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
+                  if (angle > Math.PI / 9) break; // 20° threshold
+                }
+              }
+              
+              forwardDistance += segmentDist;
+              if (forwardDistance > visionRangePx) break;
+              
+              ctx.lineTo(tunnel.path[i].x, tunnel.path[i].y);
+              lastDirection = { dx, dy };
+              drewAnySegment = true;
+            }
+            
+            if (drewAnySegment) {
+              ctx.stroke();
+            }
+          }
+        }
+        
+        ctx.restore();
+      }
+    }
   }
 
   private getMarkerRadius(markerDef: any): number {
