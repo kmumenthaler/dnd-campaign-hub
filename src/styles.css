@@ -459,6 +459,102 @@
 .dnd-difficulty-deadly { background-color: #ff0000; }
 .dnd-difficulty-tpk { background-color: #880000; }
 
+/* ============================================================================
+   DND-ENCOUNTER CODEBLOCK
+   ============================================================================ */
+
+.dnd-encounter-block {
+  background: var(--background-secondary);
+  border-radius: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--background-modifier-border);
+  margin: 8px 0;
+}
+
+.dnd-encounter-block-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.dnd-encounter-block-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-normal);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.dnd-encounter-block-name:hover {
+  color: var(--text-accent);
+  text-decoration: underline;
+}
+
+.dnd-encounter-block-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.dnd-encounter-stat {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dnd-encounter-block-creatures {
+  margin-bottom: 10px;
+  padding: 8px;
+  background: var(--background-primary);
+  border-radius: 4px;
+}
+
+.dnd-encounter-creature-list {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.dnd-encounter-block-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dnd-encounter-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.dnd-encounter-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.dnd-encounter-btn.mod-cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+}
+
+.dnd-encounter-btn.mod-cta:hover {
+  filter: brightness(1.1);
+}
+
+.dnd-encounter-block-error {
+  padding: 12px;
+  background: rgba(255, 0, 0, 0.1);
+  border: 1px solid rgba(255, 0, 0, 0.3);
+  border-radius: 6px;
+  color: var(--text-error);
+  font-size: 13px;
+}
+
 /* Session Prep Dashboard - Compact & Collapsible Design */
 .session-prep-dashboard {
   width: 100% !important;

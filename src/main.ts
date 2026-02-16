@@ -2593,6 +2593,11 @@ export default class DndCampaignHubPlugin extends Plugin {
       this.renderMapView(source, el, ctx);
     });
 
+    // Register markdown code block processor for rendering encounter cards
+    this.registerMarkdownCodeBlockProcessor('dnd-encounter', async (source, el, ctx) => {
+      await this.renderEncounterView(source, el, ctx);
+    });
+
     console.log("D&D Campaign Hub: Plugin loaded");
 
     // Check for version updates
@@ -8342,6 +8347,183 @@ export default class DndCampaignHubPlugin extends Plugin {
 			el.createEl('div', { 
 				text: `⚠️ Error rendering map: ${error instanceof Error ? error.message : String(error)}`,
 				cls: 'dnd-map-error'
+			});
+		}
+	}
+
+	/**
+	 * Render encounter view from dnd-encounter code block
+	 */
+	async renderEncounterView(source: string, el: HTMLElement, ctx: any) {
+		try {
+			// Parse source - either a wikilink to encounter file, or empty to use current file
+			const trimmedSource = source.trim();
+			let encounterFile: TFile | null = null;
+			
+			if (trimmedSource) {
+				// Source contains a path to encounter file
+				// Handle wikilink format: [[path/to/encounter]] or plain path
+				let filePath = trimmedSource;
+				const wikiMatch = trimmedSource.match(/^\[\[(.+?)\]\]$/);
+if (wikiMatch && wikiMatch[1]) {
+			filePath = wikiMatch[1];
+		}
+		
+		// Add .md extension if not present
+		if (!filePath.endsWith('.md')) {
+			filePath += '.md';
+				}
+				
+				// Find the file
+				encounterFile = this.app.vault.getAbstractFileByPath(filePath) as TFile;
+				if (!encounterFile) {
+					// Try to resolve as wikilink
+					const resolved = this.app.metadataCache.getFirstLinkpathDest(filePath.replace('.md', ''), ctx.sourcePath);
+					if (resolved instanceof TFile) {
+						encounterFile = resolved;
+					}
+				}
+			} else {
+				// Use current file
+				encounterFile = this.app.vault.getAbstractFileByPath(ctx.sourcePath) as TFile;
+			}
+			
+			if (!encounterFile) {
+				el.createEl('div', { 
+					text: '⚠️ Encounter file not found',
+					cls: 'dnd-encounter-block-error'
+				});
+				return;
+			}
+			
+			// Get frontmatter
+			const cache = this.app.metadataCache.getFileCache(encounterFile);
+			const fm = cache?.frontmatter;
+			
+			if (!fm || fm.type !== 'encounter') {
+				el.createEl('div', { 
+					text: '⚠️ Not a valid encounter note',
+					cls: 'dnd-encounter-block-error'
+				});
+				return;
+			}
+			
+			// Create container
+			const container = el.createDiv({ cls: 'dnd-encounter-block' });
+			
+			// Header with name and link
+			const header = container.createDiv({ cls: 'dnd-encounter-block-header' });
+			const nameLink = header.createEl('a', { 
+				text: `⚔️ ${fm.name || encounterFile.basename}`,
+				cls: 'dnd-encounter-block-name'
+			});
+			nameLink.addEventListener('click', (e) => {
+				e.preventDefault();
+				this.app.workspace.openLinkText(encounterFile!.path, ctx.sourcePath);
+			});
+			
+			// Difficulty badge
+			const diff = fm.difficulty;
+			if (diff) {
+				const badge = header.createEl('span', { 
+					text: diff.rating,
+					cls: 'dnd-difficulty-badge'
+				});
+				badge.style.backgroundColor = diff.color || '#888888';
+			}
+			
+			// Stats row
+			if (diff) {
+				const statsRow = container.createDiv({ cls: 'dnd-encounter-block-stats' });
+				
+				// Party info
+				statsRow.createEl('span', { 
+					text: `👥 ${diff.party_count} PCs (Lvl ~${Math.round(diff.party_avg_level || 0)})`,
+					cls: 'dnd-encounter-stat'
+				});
+				
+				// Enemy info
+				statsRow.createEl('span', { 
+					text: `👹 ${diff.enemy_count} enemies`,
+					cls: 'dnd-encounter-stat'
+				});
+				
+				// Rounds estimate
+				statsRow.createEl('span', { 
+					text: `⏱️ ~${diff.rounds_to_defeat} rounds`,
+					cls: 'dnd-encounter-stat'
+				});
+			}
+			
+			// Creature summary (collapsed by default)
+			const creatures = fm.creatures || [];
+			if (creatures.length > 0) {
+				const creatureSection = container.createDiv({ cls: 'dnd-encounter-block-creatures' });
+				const creatureList = creatures.map((c: any) => 
+					`${c.count || 1}× ${c.name}${c.cr ? ` (CR ${c.cr})` : ''}`
+				).join(', ');
+				creatureSection.createEl('span', { 
+					text: creatureList,
+					cls: 'dnd-encounter-creature-list'
+				});
+			}
+			
+			// Action buttons
+			const buttonRow = container.createDiv({ cls: 'dnd-encounter-block-actions' });
+			
+			// Load in Initiative Tracker button
+			const loadBtn = buttonRow.createEl('button', { 
+				text: '⚔️ Load in Tracker',
+				cls: 'dnd-encounter-btn mod-cta'
+			});
+			loadBtn.addEventListener('click', async () => {
+				const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+				if (!initiativeTracker) {
+					new Notice("Initiative Tracker plugin not found");
+					return;
+				}
+				
+				const encounterName = fm.name || encounterFile!.basename;
+				const encounter = initiativeTracker.data?.encounters?.[encounterName];
+				if (!encounter) {
+					new Notice(`Encounter "${encounterName}" not found in Initiative Tracker. Try re-saving.`);
+					return;
+				}
+				
+				try {
+					if (initiativeTracker.tracker?.new) {
+						initiativeTracker.tracker.new(initiativeTracker, encounter);
+						new Notice(`✅ Loaded: ${encounterName}`);
+					}
+          (this.app as any).commands?.executeCommandById("initiative-tracker:open-tracker");				
+        } catch (e) {
+					new Notice(`⚠️ Could not load encounter: ${(e as Error).message}`);
+				}
+			});
+			
+			// Edit button
+			const editBtn = buttonRow.createEl('button', { 
+				text: '✏️ Edit',
+				cls: 'dnd-encounter-btn'
+			});
+			editBtn.addEventListener('click', () => {
+				this.editEncounter(encounterFile!.path);
+			});
+			
+			// Open note button
+			const openBtn = buttonRow.createEl('button', { 
+				text: '📄 Open',
+				cls: 'dnd-encounter-btn'
+			});
+			openBtn.addEventListener('click', () => {
+				this.app.workspace.openLinkText(encounterFile!.path, ctx.sourcePath);
+			});
+			
+		} catch (error) {
+			console.error('Error rendering encounter block:', error);
+			el.createEl('div', { 
+				text: `⚠️ Error: ${(error as Error).message}`,
+				cls: 'dnd-encounter-block-error'
 			});
 		}
 	}
