@@ -182,11 +182,11 @@ export const DND_TRAVEL_PACE_PRESETS: Omit<TravelPace, 'id' | 'enabled' | 'visib
  * Point of Interest Types for Hexcrawl Maps
  */
 export const POI_TYPES: Array<{ value: PoiType; label: string; icon: string; color: string; description: string }> = [
-  { value: 'settlement', label: 'Settlement', icon: '🏰', color: '#3b82f6', description: 'Towns, cities, villages, outposts' },
+  { value: 'settlement', label: 'Settlement', icon: '�️', color: '#3b82f6', description: 'Towns, cities, villages, outposts' },
   { value: 'dungeon', label: 'Dungeon', icon: '⚔️', color: '#ef4444', description: 'Dungeons, ruins, lairs' },
   { value: 'landmark', label: 'Landmark', icon: '⛰️', color: '#10b981', description: 'Natural features and notable locations' },
-  { value: 'danger', label: 'Danger', icon: '☠️', color: '#dc2626', description: 'Threats and hazards' },
-  { value: 'quest', label: 'Quest', icon: '📜', color: '#8b5cf6', description: 'Story-driven locations' },
-  { value: 'custom', label: 'Custom', icon: '⚙️', color: '#6b7280', description: 'Custom point of interest' },
+  { value: 'danger', label: 'Danger', icon: '⚠️', color: '#dc2626', description: 'Threats and hazards' },
+  { value: 'quest', label: 'Quest', icon: '⭐', color: '#8b5cf6', description: 'Story-driven locations' },
+  { value: 'custom', label: 'Custom', icon: '⬤', color: '#6b7280', description: 'Custom point of interest' },
 ];
 

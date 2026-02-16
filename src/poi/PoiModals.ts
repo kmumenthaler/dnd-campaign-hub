@@ -9,7 +9,7 @@ export class PoiEditModal extends Modal {
 	private filePath: string;
 	private name: string = '';
 	private poiType: PoiType = 'settlement';
-	private icon: string = '🏰';
+	private icon: string = '🏛️';
 	private region: string = '';
 	private tags: string = '';
 	private discovered: boolean = false;
@@ -68,10 +68,10 @@ export class PoiEditModal extends Modal {
 				.onChange(value => this.name = value)
 			);
 
-		// Type
+		// Type (icon is automatically set based on type)
 		new Setting(contentEl)
 			.setName('Type')
-			.setDesc('Category of this point of interest')
+			.setDesc('Category of this point of interest (icon will be set automatically)')
 			.addDropdown(dropdown => {
 				POI_TYPES.forEach(type => {
 					dropdown.addOption(type.value, `${type.icon} ${type.label}`);
@@ -86,16 +86,6 @@ export class PoiEditModal extends Modal {
 					}
 				});
 			});
-
-		// Icon
-		new Setting(contentEl)
-			.setName('Icon')
-			.setDesc('Emoji icon for this location')
-			.addText(text => text
-				.setPlaceholder('🏰')
-				.setValue(this.icon)
-				.onChange(value => this.icon = value || '📍')
-			);
 
 		// Region
 		new Setting(contentEl)
@@ -417,7 +407,7 @@ export class PoiCreationModal extends Modal {
 
 	private name: string = '';
 	private poiType: PoiType = 'settlement';
-	private icon: string = '🏰';
+	private icon: string = '�️';
 	private region: string = '';
 	private tags: string = '';
 
@@ -452,10 +442,10 @@ export class PoiCreationModal extends Modal {
 				.onChange(value => this.name = value)
 			);
 
-		// Type
+		// Type (icon is automatically set based on type)
 		new Setting(contentEl)
 			.setName('Type')
-			.setDesc('Category of this point of interest')
+			.setDesc('Category of this point of interest (icon will be set automatically)')
 			.addDropdown(dropdown => {
 				POI_TYPES.forEach(type => {
 					dropdown.addOption(type.value, `${type.icon} ${type.label}`);
@@ -470,16 +460,6 @@ export class PoiCreationModal extends Modal {
 					}
 				});
 			});
-
-		// Icon (manual override)
-		new Setting(contentEl)
-			.setName('Icon')
-			.setDesc('Emoji icon for this location')
-			.addText(text => text
-				.setPlaceholder('🏰')
-				.setValue(this.icon)
-				.onChange(value => this.icon = value || '📍')
-			);
 
 		// Region
 		new Setting(contentEl)

@@ -2869,6 +2869,14 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "update-poi-icons",
+      name: "🔄 Update PoI Icons",
+      callback: async () => {
+        await this.updatePoiIcons();
+      },
+    });
+
+    this.addCommand({
       id: "create-adventure",
       name: "Create New Adventure",
       callback: () => this.createAdventure(),
@@ -3234,6 +3242,75 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async migrateTemplates() {
 		// Show migration modal
 		new MigrationModal(this.app, this).open();
+	}
+
+	/**
+	 * Update all existing PoI icons based on their type
+	 */
+	async updatePoiIcons() {
+		const { POI_TYPES } = await import('./map/types');
+		
+		try {
+			const allFiles = this.app.vault.getMarkdownFiles();
+			const poiFiles = allFiles.filter(file => file.path.includes('/locations/'));
+			
+			let updated = 0;
+			let skipped = 0;
+			
+			for (const file of poiFiles) {
+				const cache = this.app.metadataCache.getFileCache(file);
+				const fm = cache?.frontmatter;
+				
+				if (fm?.type !== 'point-of-interest') {
+					continue;
+				}
+				
+				// Get the correct icon for this PoI type
+				const poiType = fm['poi-type'] || 'custom';
+				const typeDefinition = POI_TYPES.find(t => t.value === poiType);
+				
+				if (!typeDefinition) {
+					console.warn(`Unknown PoI type: ${poiType} for ${file.path}`);
+					skipped++;
+					continue;
+				}
+				
+				const correctIcon = typeDefinition.icon;
+				const currentIcon = fm.icon || '📍';
+				
+				// Skip if already correct
+				if (currentIcon === correctIcon) {
+					skipped++;
+					continue;
+				}
+				
+				// Update the file
+				let content = await this.app.vault.read(file);
+				
+				// Update frontmatter icon
+				content = content.replace(
+					/^icon:\s*.+$/m,
+					`icon: ${correctIcon}`
+				);
+				
+				// Update heading icon (first heading after frontmatter)
+				const headingRegex = /^(---\n[\s\S]*?\n---\n\n)# (.+?) (.+)$/m;
+				const headingMatch = content.match(headingRegex);
+				if (headingMatch) {
+					content = content.replace(headingRegex, `$1# ${correctIcon} $3`);
+				}
+				
+				await this.app.vault.modify(file, content);
+				updated++;
+				console.log(`Updated PoI icon: ${file.basename} -> ${correctIcon}`);
+			}
+			
+			new Notice(`✅ Updated ${updated} PoI icons (${skipped} already correct)`);
+			
+		} catch (error) {
+			console.error('Error updating PoI icons:', error);
+			new Notice('❌ Failed to update PoI icons');
+		}
 	}
 
 	/**
@@ -26670,10 +26747,21 @@ class PlayerMapView extends ItemView {
       console.error('Error loading PoI icon:', error);
     }
     
-    // Draw icon
-    ctx.font = '24px sans-serif';
+    // Draw background circle for visibility
+    const iconRadius = 18;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, iconRadius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Draw icon (larger and more visible)
+    ctx.font = 'bold 28px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#000000';
     ctx.fillText(icon, centerX, centerY);
     
     // Reset globalAlpha
