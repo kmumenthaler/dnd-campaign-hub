@@ -555,6 +555,172 @@
   font-size: 13px;
 }
 
+/* ==================== Party Block Styles ==================== */
+.dnd-party-block {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 8px 0;
+  font-family: var(--font-interface);
+}
+
+.dnd-party-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--background-modifier-border);
+}
+
+.dnd-party-block-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.dnd-party-block-refresh-btn {
+  padding: 6px 12px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: filter 0.2s;
+}
+
+.dnd-party-block-refresh-btn:hover {
+  filter: brightness(1.1);
+}
+
+.dnd-party-members-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.dnd-party-member-card {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 12px;
+  transition: box-shadow 0.2s;
+}
+
+.dnd-party-member-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.dnd-party-member-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.dnd-party-member-level {
+  padding: 2px 8px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dnd-party-member-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dnd-party-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.dnd-party-stat-label {
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 25px;
+}
+
+.dnd-party-stat-value {
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.dnd-party-stat-hp {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.dnd-party-hp-bar-container {
+  width: 100%;
+  height: 16px;
+  background: var(--background-modifier-border);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.dnd-party-hp-bar {
+  height: 100%;
+  background: var(--interactive-success);
+  transition: width 0.3s ease, background-color 0.3s ease;
+  border-radius: 4px;
+}
+
+.dnd-party-hp-bar.dnd-party-hp-low {
+  background: #f39c12; /* Orange for 25-50% HP */
+}
+
+.dnd-party-hp-bar.dnd-party-hp-critical {
+  background: #e74c3c; /* Red for <25% HP */
+}
+
+.dnd-party-member-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.dnd-party-action-btn {
+  flex: 1;
+  padding: 4px 8px;
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 0.2s;
+}
+
+.dnd-party-action-btn:hover {
+  background: var(--interactive-hover);
+}
+
+.dnd-party-block-error {
+  padding: 12px;
+  background: rgba(255, 0, 0, 0.1);
+  border: 1px solid rgba(255, 0, 0, 0.3);
+  border-radius: 6px;
+  color: var(--text-error);
+  font-size: 13px;
+}
+
 /* Session Prep Dashboard - Compact & Collapsible Design */
 .session-prep-dashboard {
   width: 100% !important;

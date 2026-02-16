@@ -2598,6 +2598,11 @@ export default class DndCampaignHubPlugin extends Plugin {
       await this.renderEncounterView(source, el, ctx);
     });
 
+    // Register markdown code block processor for rendering party stats
+    this.registerMarkdownCodeBlockProcessor('dnd-party', async (source, el, ctx) => {
+      await this.renderPartyView(source, el, ctx);
+    });
+
     console.log("D&D Campaign Hub: Plugin loaded");
 
     // Check for version updates
@@ -8524,6 +8529,255 @@ if (wikiMatch && wikiMatch[1]) {
 			el.createEl('div', { 
 				text: `⚠️ Error: ${(error as Error).message}`,
 				cls: 'dnd-encounter-block-error'
+			});
+		}
+	}
+
+	/**
+	 * Render party view from dnd-party code block
+	 */
+	async renderPartyView(source: string, el: HTMLElement, ctx: any) {
+		try {
+			// Get party members from Initiative Tracker plugin
+			const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+			if (!initiativeTracker) {
+				el.createEl('div', { 
+					text: '⚠️ Initiative Tracker plugin not found',
+					cls: 'dnd-party-block-error'
+				});
+				return;
+			}
+
+			const allParties = initiativeTracker.data?.parties || [];
+			if (allParties.length === 0) {
+				el.createEl('div', { 
+					text: '⚠️ No parties found in Initiative Tracker',
+					cls: 'dnd-party-block-error'
+				});
+				return;
+			}
+
+			// Parse source for party selection (optional)
+			const trimmedSource = source.trim();
+			let requestedPartyId: string | null = null;
+			if (trimmedSource) {
+				try {
+					const config = JSON.parse(trimmedSource);
+					requestedPartyId = config.partyId || config.party;
+				} catch {
+				// If not JSON, check for YAML-style "party: PartyName" format
+				if (trimmedSource.startsWith('party:')) {
+					requestedPartyId = trimmedSource.substring(6).trim();
+				} else if (trimmedSource.startsWith('partyId:')) {
+					requestedPartyId = trimmedSource.substring(8).trim();
+				} else {
+					// Plain party name
+					requestedPartyId = trimmedSource;
+				}
+			}
+		}
+
+		// Resolve party using campaign context
+		let party = null;
+		
+		if (requestedPartyId) {
+			// Find party by ID or name
+			party = allParties.find((p: any) => 
+				p.id === requestedPartyId || p.name === requestedPartyId
+			);
+			
+			if (!party) {
+				// Party not found - show helpful error with available parties
+				const errorDiv = el.createDiv({ cls: 'dnd-party-block-error' });
+				errorDiv.createEl('div', { text: `⚠️ Party "${requestedPartyId}" not found` });
+				errorDiv.createEl('div', { 
+					text: 'Available parties:', 
+					cls: 'dnd-party-error-hint' 
+				});
+				const partyList = errorDiv.createEl('ul', { cls: 'dnd-party-list' });
+				allParties.forEach((p: any) => {
+					partyList.createEl('li', { text: `• ${p.name}` });
+				});
+				return;
+			}
+		} else {
+			// No party specified - resolve from campaign context
+			// Detect campaign from the note's folder path
+			let campaignName = "";
+			if (ctx.sourcePath) {
+				// Parse path to find campaign folder under ttrpgs/
+				// Example: "ttrpgs/Frozen Sick (SOLINA)/Sessions/note.md" -> "Frozen Sick (SOLINA)"
+				const pathParts = ctx.sourcePath.split('/');
+				const ttrpgsIndex = pathParts.indexOf('ttrpgs');
+				if (ttrpgsIndex >= 0 && ttrpgsIndex < pathParts.length - 1) {
+					campaignName = pathParts[ttrpgsIndex + 1];
+					console.log(`[Party View] Detected campaign from path: "${campaignName}"`);
+				}
+			}
+
+			// Try to find party matching campaign
+			if (campaignName) {
+				const partyName = `${campaignName} Party`;
+				party = allParties.find((p: any) => p.name === partyName);
+				
+				if (!party) {
+					console.log(`[Party View] Expected party "${partyName}" not found. Available:`, allParties.map((p: any) => p.name));
+				} else {
+					console.log(`[Party View] Found party: "${party.name}"`);
+				}
+			}
+
+			// Fallback to default party or first available
+			if (!party) {
+				if (initiativeTracker.data?.defaultParty) {
+					party = allParties.find((p: any) => p.id === initiativeTracker.data.defaultParty);
+				}
+				if (!party) {
+					party = allParties[0];
+				}
+			}
+		}
+
+		if (!party) {
+				el.createEl('div', { 
+					text: '⚠️ No party found',
+					cls: 'dnd-party-block-error'
+				});
+				return;
+			}
+
+			// Get party members
+			const members = [];
+			if (party.players) {
+				for (const playerName of party.players) {
+					const player = initiativeTracker.data?.players?.find((p: any) => p.name === playerName);
+					if (player) {
+						members.push({
+							name: player.display || player.name || "Unknown",
+							level: player.level || 1,
+							hp: player.currentHP ?? player.hp ?? player.currentMaxHP ?? 20,
+							maxHp: player.currentMaxHP ?? player.hp ?? 20,
+							ac: player.currentAC ?? player.ac ?? 14
+						});
+					}
+				}
+			}
+
+			if (members.length === 0) {
+				el.createEl('div', { 
+					text: '⚠️ No party members found',
+					cls: 'dnd-party-block-error'
+				});
+				return;
+			}
+
+			// Create container
+			const container = el.createDiv({ cls: 'dnd-party-block' });
+
+			// Header
+			const header = container.createDiv({ cls: 'dnd-party-block-header' });
+			header.createEl('span', { 
+				text: `🎭 ${party.name || "Party"}`,
+				cls: 'dnd-party-block-title'
+			});
+
+			// Refresh button
+			const refreshBtn = header.createEl('button', { 
+				text: '🔄',
+				cls: 'dnd-party-block-refresh-btn',
+				attr: { 'aria-label': 'Refresh party data' }
+			});
+			refreshBtn.addEventListener('click', async () => {
+				// Re-render the party view
+				el.empty();
+				await this.renderPartyView(source, el, ctx);
+			});
+
+			// Party stats summary
+			const avgLevel = Math.round(members.reduce((sum, m) => sum + m.level, 0) / members.length);
+			const totalHp = members.reduce((sum, m) => sum + m.hp, 0);
+			const avgAc = Math.round(members.reduce((sum, m) => sum + m.ac, 0) / members.length);
+
+			const statsRow = container.createDiv({ cls: 'dnd-party-block-stats' });
+			statsRow.createEl('span', { 
+				text: `👥 ${members.length} members`,
+				cls: 'dnd-party-stat'
+			});
+			statsRow.createEl('span', { 
+				text: `📊 Avg Level ${avgLevel}`,
+				cls: 'dnd-party-stat'
+			});
+			statsRow.createEl('span', { 
+				text: `❤️ Total HP ${totalHp}`,
+				cls: 'dnd-party-stat'
+			});
+			statsRow.createEl('span', { 
+				text: `🛡️ Avg AC ${avgAc}`,
+				cls: 'dnd-party-stat'
+			});
+
+			// Party members grid
+			const membersGrid = container.createDiv({ cls: 'dnd-party-members-grid' });
+
+			for (const member of members) {
+				const card = membersGrid.createDiv({ cls: 'dnd-party-member-card' });
+
+				// Member name
+				card.createEl('div', { 
+					text: member.name,
+					cls: 'dnd-party-member-name'
+				});
+
+				// Level display
+				card.createEl('div', { 
+					text: `Level ${member.level}`,
+					cls: 'dnd-party-member-level'
+				});
+
+				// Stats
+				const statsDiv = card.createDiv({ cls: 'dnd-party-member-stats' });
+
+				// HP with bar
+				const hpStat = statsDiv.createDiv({ cls: 'dnd-party-stat dnd-party-stat-hp' });
+				hpStat.createEl('span', { 
+					text: 'HP',
+					cls: 'dnd-party-stat-label'
+				});
+				hpStat.createEl('span', { 
+					text: `${member.hp}/${member.maxHp}`,
+					cls: 'dnd-party-stat-value'
+				});
+
+				// HP bar
+				const hpBarContainer = card.createDiv({ cls: 'dnd-party-hp-bar-container' });
+				const hpBar = hpBarContainer.createDiv({ cls: 'dnd-party-hp-bar' });
+				const hpPercent = (member.hp / member.maxHp) * 100;
+				hpBar.style.width = `${hpPercent}%`;
+				
+				// Color code HP bar
+				if (hpPercent <= 25) {
+					hpBar.addClass('dnd-party-hp-critical');
+				} else if (hpPercent <= 50) {
+					hpBar.addClass('dnd-party-hp-low');
+				}
+
+				// AC
+				const acStat = statsDiv.createDiv({ cls: 'dnd-party-stat' });
+				acStat.createEl('span', { 
+					text: 'AC',
+					cls: 'dnd-party-stat-label'
+				});
+				acStat.createEl('span', { 
+					text: `${member.ac}`,
+					cls: 'dnd-party-stat-value'
+				});
+			}
+
+		} catch (error) {
+			console.error('Error rendering party block:', error);
+			el.createEl('div', { 
+				text: `⚠️ Error: ${(error as Error).message}`,
+				cls: 'dnd-party-block-error'
 			});
 		}
 	}
