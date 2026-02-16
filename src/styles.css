@@ -555,6 +555,122 @@
   font-size: 13px;
 }
 
+/* PoI Block Styles */
+.dnd-poi-block {
+  background: var(--background-secondary);
+  border-radius: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--background-modifier-border);
+  margin: 8px 0;
+}
+
+.dnd-poi-block-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.dnd-poi-block-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-normal);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.dnd-poi-block-name:hover {
+  color: var(--text-accent);
+  text-decoration: underline;
+}
+
+.dnd-poi-type-badge {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+  text-transform: capitalize;
+}
+
+.dnd-poi-block-info {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.dnd-poi-info-item {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  background: var(--background-primary);
+  border-radius: 4px;
+}
+
+.dnd-poi-info-item.dnd-poi-quest {
+  color: var(--text-accent);
+  font-weight: 500;
+}
+
+.dnd-poi-info-item.dnd-poi-danger {
+  color: var(--text-error);
+  font-weight: 500;
+}
+
+.dnd-poi-block-description {
+  margin-bottom: 10px;
+  padding: 8px;
+  background: var(--background-primary);
+  border-radius: 4px;
+}
+
+.dnd-poi-block-description p {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.dnd-poi-block-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dnd-poi-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.dnd-poi-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.dnd-poi-btn.mod-cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+}
+
+.dnd-poi-btn.mod-cta:hover {
+  filter: brightness(1.1);
+}
+
+.dnd-poi-block-error {
+  padding: 12px;
+  background: rgba(255, 0, 0, 0.1);
+  border: 1px solid rgba(255, 0, 0, 0.3);
+  border-radius: 6px;
+  color: var(--text-error);
+  font-size: 13px;
+}
+
 /* ==================== Party Block Styles ==================== */
 /* Ultra-compact party view */
 .dnd-party-block {
@@ -4674,4 +4790,190 @@
 .dnd-pace-add-custom button {
   padding: 10px 20px;
   font-size: 14px;
+}
+/* ==================== Point of Interest Modals ==================== */
+
+.poi-picker-modal,
+.poi-creation-modal {
+  width: 600px;
+  max-width: 90vw;
+  max-height: 80vh;
+}
+
+.poi-search-container {
+  margin: 16px 0;
+}
+
+.poi-search-input {
+  width: 100%;
+  padding: 10px;
+  font-size: 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.poi-list-container {
+  max-height: 400px;
+  overflow-y: auto;
+  margin: 16px 0;
+  padding: 8px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+
+.poi-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 8px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.poi-card:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+  transform: translateX(4px);
+}
+
+.poi-card-icon {
+  font-size: 28px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background-secondary);
+  border-radius: 8px;
+}
+
+.poi-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.poi-card-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.poi-card-type {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.poi-empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.poi-create-container {
+  margin: 16px 0;
+  text-align: center;
+  padding-top: 16px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.poi-create-container button {
+  padding: 10px 20px;
+  font-size: 14px;
+}
+/* Multi-select PoI Picker */
+.poi-picker-campaign-info {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  font-style: italic;
+}
+
+.poi-picker-no-pois {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.poi-picker-list {
+  max-height: 450px;
+  overflow-y: auto;
+  margin: 16px 0;
+  padding: 8px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+
+.poi-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 8px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.poi-picker-item:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+
+.poi-picker-item-selected {
+  background: var(--background-modifier-success);
+  border-color: var(--interactive-accent);
+}
+
+.poi-picker-checkbox {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.poi-picker-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  cursor: pointer;
+}
+
+.poi-picker-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.poi-picker-type {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.poi-picker-order-badge {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 24px;
+  text-align: center;
 }

@@ -2603,6 +2603,11 @@ export default class DndCampaignHubPlugin extends Plugin {
       await this.renderPartyView(source, el, ctx);
     });
 
+    // Register markdown code block processor for rendering PoI cards
+    this.registerMarkdownCodeBlockProcessor('dnd-poi', async (source, el, ctx) => {
+      await this.renderPoiView(source, el, ctx);
+    });
+
     console.log("D&D Campaign Hub: Plugin loaded");
 
     // Check for version updates
@@ -2788,6 +2793,79 @@ export default class DndCampaignHubPlugin extends Plugin {
       id: "create-faction",
       name: "Create New Faction",
       callback: () => this.createFaction(),
+    });
+
+    this.addCommand({
+      id: "edit-poi",
+      name: "Edit Point of Interest",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "point-of-interest") {
+            // Open edit modal
+            import('./poi/PoiModals').then(({ PoiEditModal }) => {
+              new PoiEditModal(this.app, file.path).open();
+            });
+          } else {
+            new Notice("This is not a PoI note");
+          }
+        } else {
+          new Notice("Please open a PoI note first");
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "delete-poi",
+      name: "Delete Point of Interest",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "point-of-interest") {
+            const poiName = cache.frontmatter.name || file.basename;
+            const confirmed = await this.confirmDelete(file.name);
+            if (confirmed) {
+              // Remove all references to this PoI from maps
+              // This would require iterating through all map annotations
+              // For now, just delete the note and references will be broken
+              
+              // Delete from vault
+              await this.app.vault.delete(file);
+              console.log(`Deleted PoI file: ${file.path}`);
+              
+              new Notice(`✓ Point of Interest "${poiName}" deleted`);
+            }
+          } else {
+            new Notice("This is not a PoI note");
+          }
+        } else {
+          new Notice("Please open a PoI note first");
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "insert-poi-codeblock",
+      name: "📍 Insert PoI Code Block",
+      editorCallback: (editor, view) => {
+        // Detect campaign from current file path
+        let campaignName = "";
+        const file = view.file;
+        if (file) {
+          const pathParts = file.path.split('/');
+          const ttrpgsIndex = pathParts.indexOf('ttrpgs');
+          if (ttrpgsIndex >= 0 && ttrpgsIndex < pathParts.length - 1) {
+            campaignName = pathParts[ttrpgsIndex + 1] || "";
+          }
+        }
+        
+        // Open multi-select modal
+        import('./poi/PoiModals').then(({ PoiPickerMultiModal }) => {
+          new PoiPickerMultiModal(this.app, editor, campaignName).open();
+        });
+      },
     });
 
     this.addCommand({
@@ -4158,6 +4236,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			config.markers = savedData.markers || [];
 			config.drawings = savedData.drawings || [];
 			config.aoeEffects = savedData.aoeEffects || [];
+			config.poiReferences = savedData.poiReferences || [];
 			
 			// Load fog of war data
 			config.fogOfWar = savedData.fogOfWar || { enabled: true, regions: [] };
@@ -4192,6 +4271,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 					config.travelPaces.find((p: any) => p.name === 'Walking (Normal)')?.milesPerDay || 24
 				);
 			}
+			
+			// Store the source note path for campaign detection
+			const notePath = ctx?.sourcePath || '';
 			
 			// Validate imageFile (must come from JSON or code block)
 			if (!config.imageFile) {
@@ -4232,7 +4314,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' = 'pan';
+    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | 'poi' = 'pan';
 		let selectedColor = '#ff0000';
       // GM player-view rect drag state
       let gmDragStart: { x: number; y: number } | null = null;
@@ -4302,6 +4384,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 			} as const;
 			type WallType = keyof typeof WALL_TYPES;
 			let selectedWallType: WallType = 'wall';
+			
+			// Helper function to calculate bounding size of rotated rectangle
+			const getRotatedRectBoundingSize = (rect: any): { w: number; h: number } => {
+				const deg = (rect.rotation || 0);
+				const t = (deg * Math.PI) / 180;
+				const ca = Math.abs(Math.cos(t));
+				const sa = Math.abs(Math.sin(t));
+				const w = ca * rect.w + sa * rect.h;
+				const h = sa * rect.w + ca * rect.h;
+				return { w, h };
+			};
 			// Dynamic Lighting sources state
 			let selectedLightSource: LightSourceType = 'torch';
 			if (!config.lightSources) config.lightSources = [];
@@ -4512,7 +4605,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const selectBtn = createToolBtn(commonToolGroup, '👆', 'Select');
 		const highlightIcon = config.gridType === 'square' ? '⬜' : '⬡';
 		const highlightBtn = createToolBtn(commonToolGroup, highlightIcon, 'Highlight');
-		const markerBtn = createToolBtn(commonToolGroup, '📍', 'Marker');
+		const poiBtn = createToolBtn(commonToolGroup, '📍', 'Point of Interest');
+		const markerBtn = createToolBtn(commonToolGroup, '🎯', 'Marker');
 		const drawBtn = createToolBtn(commonToolGroup, '✏', 'Draw');
 		const rulerBtn = createToolBtn(commonToolGroup, '📏', 'Ruler');
 		const aoeBtn = createToolBtn(commonToolGroup, '💥', 'AoE');
@@ -4790,6 +4884,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			
 			calibrateBtn.toggleClass('hidden', shouldHideGridTools);
 			moveGridBtn.toggleClass('hidden', shouldHideGridTools);
+			
+			// PoI button only visible for hexcrawl maps
+			poiBtn.toggleClass('hidden', !isHexcrawl);
 			
 			// If calibration was active and annotations appeared (non-hexcrawl), cancel it
 			if (shouldHideGridTools && isCalibrating) {
@@ -5154,7 +5251,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let startX = 0;
 		let startY = 0;
 		// Middle mouse button temporary pan state
-		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | null = null;
+		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | 'poi' | null = null;
 		let isTemporaryPan = false;
 		let gridCanvas: HTMLCanvasElement | null = null;
 		let annotationCanvas: HTMLCanvasElement | null = null;
@@ -5321,6 +5418,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (config.highlights) {
 					config.highlights.forEach((highlight: any) => {
 						drawHighlight(ctx, highlight);
+					});
+				}
+
+				// Draw PoI icons
+				if (config.poiReferences) {
+					config.poiReferences.forEach((poiRef: any) => {
+						drawPoiIcon(ctx, poiRef);
 					});
 				}
 
@@ -5988,6 +6092,65 @@ export default class DndCampaignHubPlugin extends Plugin {
 				ctx.globalAlpha = 1.0;
 			};
 
+			// Function to draw a PoI icon on a hex
+			const drawPoiIcon = async (ctx: CanvasRenderingContext2D, poiRef: any) => {
+				// Apply transparency based on layer
+				const itemLayer = poiRef.layer || 'DM';
+				const isActiveLayer = itemLayer === config.activeLayer;
+				ctx.globalAlpha = isActiveLayer ? 0.8 : 0.2;
+				
+				const ox = config.gridOffsetX || 0;
+				const oy = config.gridOffsetY || 0;
+				
+				// Get hex size (pace-specific if applicable)
+				let effectiveSize = config.gridSize;
+				if (config.travelPaces && poiRef.paceId) {
+					const pace = config.travelPaces.find((p: any) => p.id === poiRef.paceId);
+					const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || pace;
+					if (pace && basePace) {
+						effectiveSize = this.mapManager.calculateHexSizeForPace(basePace.milesPerDay, config.gridSize, pace.milesPerDay);
+					}
+				}
+				
+				// Calculate hex center
+				let centerX, centerY;
+				if (config.gridType === 'hex-horizontal') {
+					const horiz = effectiveSize;
+					const size = (2/3) * horiz;
+					const vert = Math.sqrt(3) * size;
+					const colOffsetY = (poiRef.col & 1) ? vert / 2 : 0;
+					centerX = poiRef.col * horiz + ox;
+					centerY = poiRef.row * vert + colOffsetY + oy;
+				} else {
+					const vert = effectiveSize;
+					const size = (2/3) * vert;
+					const horiz = Math.sqrt(3) * size;
+					const rowOffsetX = (poiRef.row & 1) ? horiz / 2 : 0;
+					centerX = poiRef.col * horiz + rowOffsetX + ox;
+					centerY = poiRef.row * vert + oy;
+				}
+				
+				// Load icon from PoI file
+				let icon = '📍'; // Default icon
+				try {
+					const fileCache = this.app.metadataCache.getCache(poiRef.poiFile);
+					if (fileCache?.frontmatter?.icon) {
+						icon = fileCache.frontmatter.icon;
+					}
+				} catch (error) {
+					console.error('Error loading PoI icon:', error);
+				}
+				
+				// Draw icon
+				ctx.font = '24px sans-serif';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.fillText(icon, centerX, centerY);
+				
+				// Reset globalAlpha
+				ctx.globalAlpha = 1.0;
+			};
+
 			// Helper: get marker pixel radius for a given marker definition
 			const getMarkerRadius = (markerDef: MarkerDefinition): number => {
 				if (['player', 'npc', 'creature'].includes(markerDef.type) && markerDef.creatureSize && config.gridSize) {
@@ -6437,7 +6600,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-        [panBtn, selectBtn, highlightBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, aoeBtn, viewBtn, fogBtn, wallsBtn, lightsBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
+				[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, aoeBtn, viewBtn, fogBtn, wallsBtn, lightsBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
 				
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
@@ -6521,10 +6684,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'crosshair';
 					viewport.focus();
 					new Notice('Lights Mode: Click to place light source, use picker to select type', 4000);
+				} else if (tool === 'poi') {
+					poiBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
 				}
-				
+			
 				// Clear ruler when switching tools
-				if (tool !== 'ruler' && annotationCanvas) {
+				if (tool !== 'ruler' && tool !== 'poi' && annotationCanvas) {
 					rulerStart = null;
 					rulerEnd = null;
 					rulerComplete = false;
@@ -6544,6 +6710,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 			highlightBtn.addEventListener('click', () => {
 				console.log('Highlight button clicked');
 				setActiveTool('highlight');
+			});
+			poiBtn.addEventListener('click', () => {
+				console.log('PoI button clicked');
+				setActiveTool('poi');
 			});
 			markerBtn.addEventListener('click', async () => {
 				console.log('Marker button clicked');
@@ -6670,16 +6840,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 
       // Helper: get axis-aligned bounding box size of a rotated rect (image-space)
       // Used to compute scale that fits the rotated rectangle into the player viewport
-      const getRotatedRectBoundingSize = (rect: any): { w: number; h: number } => {
-        const deg = (rect.rotation || 0);
-        const t = (deg * Math.PI) / 180;
-        const ca = Math.abs(Math.cos(t));
-        const sa = Math.abs(Math.sin(t));
-        const w = ca * rect.w + sa * rect.h;
-        const h = sa * rect.w + ca * rect.h;
-        return { w, h };
-      };
-
 			// Tool-aware mouse handlers
 			viewport.addEventListener('mousedown', (e: MouseEvent) => {
 				// Ignore clicks on UI panels (toolbar, layer menu, player view button, controls)
@@ -6775,6 +6935,24 @@ export default class DndCampaignHubPlugin extends Plugin {
 					startY = e.clientY;
 					viewport.style.cursor = 'grabbing';
 				} else if (activeTool === 'select') {
+					// Check if clicking on a PoI icon (hexcrawl maps)
+					if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.poiReferences && config.poiReferences.length > 0) {
+						const hex = pixelToHex(mapPos.x, mapPos.y);
+						const currentPaceId = config.travelPaces ? config.activePaceId : undefined;
+						
+						// Find PoI at this hex
+						const poiRef = config.poiReferences.find((ref: any) => 
+							ref.col === hex.col && ref.row === hex.row && 
+							(ref.paceId === currentPaceId || !currentPaceId)
+						);
+						
+						if (poiRef) {
+							// Open PoI note in new tab
+							this.app.workspace.openLinkText(poiRef.poiFile, '', true);
+							return; // Don't check for markers/lights/walls
+						}
+					}
+					
 					// Check if clicking on a marker for drag
 					let foundMarker = false;
 					for (let i = config.markers.length - 1; i >= 0; i--) {
@@ -6874,6 +7052,79 @@ export default class DndCampaignHubPlugin extends Plugin {
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
 					updateGridToolsVisibility();
+				} else if (activeTool === 'poi') {
+					// Assign PoI to clicked hex
+					const hex = pixelToHex(mapPos.x, mapPos.y);
+					const currentPaceId = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces ? config.activePaceId : undefined;
+					
+					// Extract campaign folder (prioritize note path, fallback to map path)
+					let campaignFolder = null;
+					
+					// Try to extract from note path first
+					if (notePath) {
+						const notePathParts = notePath.split('/');
+						const ttrpgsIdx = notePathParts.indexOf('ttrpgs');
+						if (ttrpgsIdx !== -1 && ttrpgsIdx + 1 < notePathParts.length) {
+							campaignFolder = `ttrpgs/${notePathParts[ttrpgsIdx + 1]}`;
+						}
+					}
+					
+					// Fallback to map image path
+					if (!campaignFolder && config.imageFile) {
+						const mapPathParts = config.imageFile.split('/');
+						const ttrpgsIdx = mapPathParts.indexOf('ttrpgs');
+						if (ttrpgsIdx !== -1 && ttrpgsIdx + 1 < mapPathParts.length) {
+							campaignFolder = `ttrpgs/${mapPathParts[ttrpgsIdx + 1]}`;
+						}
+					}
+					
+					if (!campaignFolder) {
+						new Notice('⚠️ Unable to determine campaign folder. Note or map must be in ttrpgs/[campaign-name]/ structure.');
+						return;
+					}
+					
+					// Open PoI picker modal
+					import('./poi/PoiModals').then(({ PoiPickerModal }) => {
+						new PoiPickerModal(
+							this.app,
+							campaignFolder,
+							hex,
+							currentPaceId,
+							(poiFile: string) => {
+								// Add PoI reference to map
+								if (!config.poiReferences) {
+									config.poiReferences = [];
+								}
+								
+								// Check if PoI already assigned to this hex
+								const existingIndex = config.poiReferences.findIndex(
+									(ref: any) => ref.col === hex.col && ref.row === hex.row && ref.paceId === currentPaceId
+								);
+								
+								if (existingIndex >= 0) {
+									// Update existing reference
+									config.poiReferences[existingIndex].poiFile = poiFile;
+									config.poiReferences[existingIndex].addedAt = Date.now();
+								} else {
+									// Add new reference
+									config.poiReferences.push({
+										id: `poi_ref_${Date.now()}`,
+										poiFile,
+										col: hex.col,
+										row: hex.row,
+										paceId: currentPaceId,
+										layer: config.activeLayer || 'DM',
+										addedAt: Date.now()
+									});
+								}
+								
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								new Notice('Point of Interest assigned to hex');
+							}
+						).open();
+					});
+					
 				} else if (activeTool === 'draw') {
 					console.log('Draw tool: starting path');
 					isDrawing = true;
@@ -7007,6 +7258,27 @@ export default class DndCampaignHubPlugin extends Plugin {
 							config.highlights.splice(highlightIndex, 1);
 							console.log('Removed highlight at', hex);
 							removed = true;
+						}
+					}
+					
+					// Try to erase a PoI reference at the clicked hex
+					if (!removed && (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.poiReferences && config.poiReferences.length > 0) {
+						const hex = pixelToHex(mapPos.x, mapPos.y);
+						const currentPaceId = config.travelPaces ? config.activePaceId : undefined;
+						const poiIndex = config.poiReferences.findIndex(
+							(ref: any) => ref.col === hex.col && ref.row === hex.row && 
+							(ref.paceId === currentPaceId || !currentPaceId)
+						);
+						if (poiIndex >= 0) {
+							saveToHistory();
+							const poiName = config.poiReferences[poiIndex].poiFile.split('/').pop()?.replace('.md', '') || 'PoI';
+							config.poiReferences.splice(poiIndex, 1);
+							console.log('Removed PoI reference at', hex);
+							redrawAnnotations();
+							this.saveMapAnnotations(config, el);
+							updateGridToolsVisibility();
+							new Notice(`📍 Removed "${poiName}" from this hex`);
+							return; // Skip generic notice
 						}
 					}
 					
@@ -8487,7 +8759,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Travel Pace Controls (for hexcrawl maps) - positioned over map on right side
 			if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
-			const paceControls = viewport.createDiv({ cls: 'dnd-map-pace-controls' });
+				const paceControls = viewport.createDiv({ cls: 'dnd-map-pace-controls' });
 				const paceHeader = paceControls.createDiv({ cls: 'dnd-map-pace-header' });
 				
 				const paceToggle = paceHeader.createEl('span', { 
@@ -8809,6 +9081,209 @@ if (wikiMatch && wikiMatch[1]) {
 	}
 
 	/**
+	 * Render PoI view from dnd-poi code block
+	 */
+	async renderPoiView(source: string, el: HTMLElement, ctx: any) {
+		try {
+			// Parse source to extract PoI names (support multiple)
+			const lines = source.trim().split('\n');
+			const poiNames: string[] = [];
+			
+			for (const line of lines) {
+				// Support "name: PoI Name" format
+				const nameMatch = line.match(/^name:\s*["']?(.+?)["']?$/);
+				if (nameMatch && nameMatch[1]) {
+					poiNames.push(nameMatch[1].trim());
+					continue;
+				}
+				
+				// Support "- PoI Name" list format
+				const listMatch = line.match(/^-\s+["']?(.+?)["']?$/);
+				if (listMatch && listMatch[1]) {
+					poiNames.push(listMatch[1].trim());
+				}
+			}
+			
+			if (poiNames.length === 0) {
+				el.createEl('div', { 
+					text: '⚠️ No PoI names specified. Use:\nname: "PoI Name"\nor\n- PoI Name',
+					cls: 'dnd-poi-block-error'
+				});
+				return;
+			}
+			
+			// Search for all PoI files
+			const allFiles = this.app.vault.getMarkdownFiles();
+			const poiFiles: TFile[] = [];
+			const notFoundNames: string[] = [];
+			
+			for (const poiName of poiNames) {
+				let found = false;
+				for (const file of allFiles) {
+					if (file.path.includes('/locations/')) {
+						const cache = this.app.metadataCache.getFileCache(file);
+						const fm = cache?.frontmatter;
+						
+						if (fm?.type === 'point-of-interest' && fm.name === poiName) {
+							poiFiles.push(file);
+							found = true;
+							break;
+						}
+					}
+				}
+				if (!found) {
+					notFoundNames.push(poiName);
+				}
+			}
+			
+			// Show errors for not found PoIs
+			if (notFoundNames.length > 0) {
+				const errorDiv = el.createEl('div', { 
+					text: `⚠️ PoI not found: ${notFoundNames.join(', ')}`,
+					cls: 'dnd-poi-block-error'
+				});
+				errorDiv.style.marginBottom = '8px';
+			}
+			
+			if (poiFiles.length === 0) {
+				return; // All not found, error already shown
+			}
+			
+			// Render each PoI
+			for (const poiFile of poiFiles) {
+				// Get frontmatter and content
+				const cache = this.app.metadataCache.getFileCache(poiFile);
+				const fm = cache?.frontmatter;
+				
+				if (!fm || fm.type !== 'point-of-interest') {
+					el.createEl('div', { 
+						text: `⚠️ ${poiFile.basename} is not a valid PoI note`,
+						cls: 'dnd-poi-block-error'
+					});
+					continue;
+				}
+				
+				// Create container
+				const container = el.createDiv({ cls: 'dnd-poi-block' });
+				
+				// Header with icon, name, and type
+				const header = container.createDiv({ cls: 'dnd-poi-block-header' });
+				
+				// Icon and name as clickable link
+				const nameLink = header.createEl('a', { 
+					text: `${fm.icon || '📍'} ${fm.name || poiFile.basename}`,
+					cls: 'dnd-poi-block-name'
+				});
+				nameLink.addEventListener('click', (e) => {
+					e.preventDefault();
+					this.app.workspace.openLinkText(poiFile.path, ctx.sourcePath, true);
+				});
+				
+				// Type badge
+				const poiType = fm['poi-type'];
+				if (poiType) {
+					const typeColors: Record<string, string> = {
+						'settlement': '#4a9eff',
+						'dungeon': '#8b0000',
+						'landmark': '#2e7d32',
+						'danger': '#d32f2f',
+						'quest': '#f57c00',
+						'custom': '#757575'
+					};
+					const badge = header.createEl('span', { 
+						text: poiType,
+						cls: 'dnd-poi-type-badge'
+					});
+					badge.style.backgroundColor = typeColors[poiType] || '#888888';
+				}
+				
+				// Info row with region and status
+				const infoRow = container.createDiv({ cls: 'dnd-poi-block-info' });
+				
+				if (fm.region) {
+					infoRow.createEl('span', { 
+						text: `📍 ${fm.region}`,
+						cls: 'dnd-poi-info-item'
+					});
+				}
+				
+				// Status indicator
+				const visited = fm.visited || false;
+				const discovered = fm.discovered || false;
+				let statusText = 'Undiscovered';
+				let statusIcon = '❓';
+				
+				if (visited) {
+					statusText = 'Visited';
+					statusIcon = '✅';
+				} else if (discovered) {
+					statusText = 'Discovered';
+					statusIcon = '👁️';
+				}
+				
+				infoRow.createEl('span', { 
+					text: `${statusIcon} ${statusText}`,
+					cls: 'dnd-poi-info-item'
+				});
+				
+				// Quest indicator
+				if (fm['quest-related']) {
+					infoRow.createEl('span', { 
+						text: '📜 Quest',
+						cls: 'dnd-poi-info-item dnd-poi-quest'
+					});
+				}
+				
+				// Danger level
+				if (fm['danger-level']) {
+					infoRow.createEl('span', { 
+						text: `☠️ ${fm['danger-level']}`,
+						cls: 'dnd-poi-info-item dnd-poi-danger'
+					});
+				}
+				
+				// Description excerpt (first paragraph)
+				const content = await this.app.vault.read(poiFile);
+				const contentMatch = content.match(/## Description\s*\n\s*([^\n]+)/);
+				if (contentMatch && contentMatch[1]) {
+					const description = container.createDiv({ cls: 'dnd-poi-block-description' });
+					description.createEl('p', { text: contentMatch[1] });
+				}
+				
+				// Action buttons
+				const buttonRow = container.createDiv({ cls: 'dnd-poi-block-actions' });
+				
+				// Open button
+				const openBtn = buttonRow.createEl('button', { 
+					text: '📄 Open',
+					cls: 'dnd-poi-btn mod-cta'
+				});
+				openBtn.addEventListener('click', () => {
+					this.app.workspace.openLinkText(poiFile.path, ctx.sourcePath, true);
+				});
+				
+				// Edit button
+				const editBtn = buttonRow.createEl('button', { 
+					text: '✏️ Edit',
+					cls: 'dnd-poi-btn'
+				});
+				editBtn.addEventListener('click', () => {
+					import('./poi/PoiModals').then(({ PoiEditModal }) => {
+						new PoiEditModal(this.app, poiFile.path).open();
+					});
+				});
+			}
+			
+		} catch (error) {
+			console.error('Error rendering PoI block:', error);
+			el.createEl('div', { 
+				text: `⚠️ Error: ${(error as Error).message}`,
+				cls: 'dnd-poi-block-error'
+			});
+		}
+	}
+
+	/**
 	 * Render party view from dnd-party code block
 	 */
 	async renderPartyView(source: string, el: HTMLElement, ctx: any) {
@@ -9056,6 +9531,7 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 				markers: config.markers || [],
 				drawings: config.drawings || [],
 				aoeEffects: config.aoeEffects || [],
+				poiReferences: config.poiReferences || [],
 				fogOfWar: config.fogOfWar || { enabled: false, regions: [] },
 				walls: config.walls || [],
 				lightSources: config.lightSources || [],
@@ -25715,9 +26191,13 @@ class PlayerMapView extends ItemView {
     const playerMarkers = (config.markers || []).filter((m: any) => (m.layer || 'Player') === 'Player');
     const playerDrawings = (config.drawings || []).filter((d: any) => (d.layer || 'Player') === 'Player');
     const playerHighlights = (config.highlights || []).filter((h: any) => (h.layer || 'Player') === 'Player');
+    const playerPoiRefs = (config.poiReferences || []).filter((p: any) => (p.layer || 'DM') === 'Player');
 
     // Draw highlights
     playerHighlights.forEach((h: any) => this.drawHighlight(ctx, h));
+
+    // Draw PoI icons (player layer only)
+    playerPoiRefs.forEach((p: any) => this.drawPoiIcon(ctx, p, config));
 
     // Draw drawings
     playerDrawings.forEach((d: any) => this.drawDrawing(ctx, d));
@@ -26143,6 +26623,61 @@ class PlayerMapView extends ItemView {
         config.gridSize
       );
     }
+  }
+
+  private drawPoiIcon(ctx: CanvasRenderingContext2D, poiRef: any, config: any) {
+    ctx.globalAlpha = 0.9; // Slightly transparent for player view
+    
+    const ox = config.gridOffsetX || 0;
+    const oy = config.gridOffsetY || 0;
+    
+    // Get hex size (pace-specific if applicable)
+    let effectiveSize = config.gridSize;
+    if (config.travelPaces && poiRef.paceId) {
+      const pace = config.travelPaces.find((p: any) => p.id === poiRef.paceId);
+      const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || pace;
+      if (pace && basePace) {
+        effectiveSize = this.plugin.mapManager.calculateHexSizeForPace(basePace.milesPerDay, config.gridSize, pace.milesPerDay);
+      }
+    }
+    
+    // Calculate hex center
+    let centerX, centerY;
+    if (config.gridType === 'hex-horizontal') {
+      const horiz = effectiveSize;
+      const size = (2/3) * horiz;
+      const vert = Math.sqrt(3) * size;
+      const colOffsetY = (poiRef.col & 1) ? vert / 2 : 0;
+      centerX = poiRef.col * horiz + ox;
+      centerY = poiRef.row * vert + colOffsetY + oy;
+    } else {
+      const vert = effectiveSize;
+      const size = (2/3) * vert;
+      const horiz = Math.sqrt(3) * size;
+      const rowOffsetX = (poiRef.row & 1) ? horiz / 2 : 0;
+      centerX = poiRef.col * horiz + rowOffsetX + ox;
+      centerY = poiRef.row * vert + oy;
+    }
+    
+    // Load icon from PoI file
+    let icon = '📍'; // Default icon
+    try {
+      const fileCache = this.plugin.app.metadataCache.getCache(poiRef.poiFile);
+      if (fileCache?.frontmatter?.icon) {
+        icon = fileCache.frontmatter.icon;
+      }
+    } catch (error) {
+      console.error('Error loading PoI icon:', error);
+    }
+    
+    // Draw icon
+    ctx.font = '24px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(icon, centerX, centerY);
+    
+    // Reset globalAlpha
+    ctx.globalAlpha = 1.0;
   }
 
   private drawFilledHexFlat(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number) {

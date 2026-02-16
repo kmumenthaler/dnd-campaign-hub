@@ -2056,3 +2056,117 @@ What happened during the session.
 ## Next Session Prep
 - 
 `;
+
+export const POI_TEMPLATE = `---
+type: point-of-interest
+template_version: 1.0.0
+name: 
+poi-type: settlement
+icon: 🏰
+tags: []
+campaign: 
+region: 
+discovered: false
+visited: false
+quest-related: false
+danger-level: 
+---
+
+# <% tp.frontmatter.icon %> <% tp.frontmatter.name %>
+
+\`\`\`dataviewjs
+// Action buttons for PoI management
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
+
+// Edit PoI button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit PoI",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-poi");
+});
+
+// Delete PoI button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete PoI",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px; background-color: var(--background-modifier-error); color: var(--text-error);" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-poi");
+});
+\`\`\`
+
+> [!info] Quick Info
+> **Type:** <% tp.frontmatter["poi-type"] %>  
+> **Region:** <% tp.frontmatter.region || "Unknown" %>  
+> **Status:** <% tp.frontmatter.discovered ? (tp.frontmatter.visited ? "Visited" : "Discovered") : "Undiscovered" %>
+
+## Description
+
+*What the players see when they arrive at this location.*
+
+
+
+## Features
+
+*Notable features, buildings, or characteristics.*
+
+- 
+
+
+## GM Notes
+
+*Secret information, plot hooks, and encounter details.*
+
+
+
+## NPCs
+
+*Important characters at this location.*
+
+
+
+## Quests & Hooks
+
+*Active quests, rumors, and adventure hooks.*
+
+
+
+## Resources & Services
+
+*Available goods, services, or resources.*
+
+
+
+## Dangers & Challenges
+
+*Threats, hazards, or obstacles.*
+
+
+
+## History & Lore
+
+*Background information and historical context.*
+
+
+
+## Connections
+
+*Links to other locations, factions, or plot threads.*
+
+**Related Locations:** 
+
+**Factions:** 
+
+**Ongoing Plots:** 
+
+
+## Session Notes
+
+*Track what happened when players visited.*
+
+
+`;

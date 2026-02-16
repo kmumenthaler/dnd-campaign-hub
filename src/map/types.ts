@@ -2,9 +2,21 @@
  * Map Manager Type Definitions
  */
 
-export type MapTool = 'pan' | 'select' | 'draw' | 'ruler';
+export type MapTool = 'pan' | 'select' | 'draw' | 'ruler' | 'poi';
 
 export type TravelCategory = 'land' | 'water' | 'air' | 'magic' | 'custom';
+
+export type PoiType = 'settlement' | 'dungeon' | 'landmark' | 'danger' | 'quest' | 'custom';
+
+export interface PoiReference {
+  id: string; // Unique reference ID
+  poiFile: string; // Path to PoI note in vault
+  col: number; // Hex column coordinate
+  row: number; // Hex row coordinate
+  paceId?: string; // Optional: for multi-pace maps
+  layer: 'DM' | 'Player'; // Visibility layer
+  addedAt: number; // Timestamp
+}
 
 export interface TravelPace {
   id: string;
@@ -42,6 +54,7 @@ export interface MapData {
   highlights?: HexHighlight[];
   drawings?: Drawing[];
   markers?: Marker[];
+  poiReferences?: PoiReference[]; // Points of Interest on hexcrawl maps
   rulerCalibration?: number; // pixels per unit (for ruler accuracy)
   travelPaces?: TravelPace[]; // Available travel paces for hexcrawl maps
   activePaceId?: string; // Currently active pace (synced to player view)
@@ -164,3 +177,16 @@ export const DND_TRAVEL_PACE_PRESETS: Omit<TravelPace, 'id' | 'enabled' | 'visib
   { name: 'Dragon (Adult)', category: 'air', milesPerDay: 80, color: '#B22222', icon: '🐉', isCustom: false },
   { name: 'Dragon (Ancient)', category: 'air', milesPerDay: 80, color: '#8B0000', icon: '🐉', isCustom: false },
 ];
+
+/**
+ * Point of Interest Types for Hexcrawl Maps
+ */
+export const POI_TYPES: Array<{ value: PoiType; label: string; icon: string; color: string; description: string }> = [
+  { value: 'settlement', label: 'Settlement', icon: '🏰', color: '#3b82f6', description: 'Towns, cities, villages, outposts' },
+  { value: 'dungeon', label: 'Dungeon', icon: '⚔️', color: '#ef4444', description: 'Dungeons, ruins, lairs' },
+  { value: 'landmark', label: 'Landmark', icon: '⛰️', color: '#10b981', description: 'Natural features and notable locations' },
+  { value: 'danger', label: 'Danger', icon: '☠️', color: '#dc2626', description: 'Threats and hazards' },
+  { value: 'quest', label: 'Quest', icon: '📜', color: '#8b5cf6', description: 'Story-driven locations' },
+  { value: 'custom', label: 'Custom', icon: '⚙️', color: '#6b7280', description: 'Custom point of interest' },
+];
+
