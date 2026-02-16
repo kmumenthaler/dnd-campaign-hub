@@ -4173,6 +4173,26 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Load active layer (defaults to Player)
 			config.activeLayer = savedData.activeLayer || 'Player';
 			
+			// Load or initialize travel paces for hexcrawl maps
+			if (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') {
+				console.log('[PACE LOAD] Loading travel paces for hex map');
+				console.log('[PACE LOAD] savedData.travelPaces exists:', !!savedData.travelPaces);
+				if (savedData.travelPaces) {
+					console.log('[PACE LOAD] Using saved paces. Count:', savedData.travelPaces.length);
+					console.log('[PACE LOAD] Enabled paces:', savedData.travelPaces.filter((p: any) => p.enabled).map((p: any) => p.name));
+				}
+				config.travelPaces = savedData.travelPaces || this.mapManager.initializeDefaultTravelPaces();
+				if (!savedData.travelPaces) {
+					console.log('[PACE LOAD] Initialized default paces. Count:', config.travelPaces.length);
+					console.log('[PACE LOAD] Default enabled paces:', config.travelPaces.filter((p: any) => p.enabled).map((p: any) => p.name));
+				}
+				config.activePaceId = savedData.activePaceId || config.travelPaces.find((p: any) => p.enabled)?.id;
+				config.baseCalibration = savedData.baseCalibration || this.mapManager.calculateBaseCalibration(
+					config.gridSize,
+					config.travelPaces.find((p: any) => p.name === 'Walking (Normal)')?.milesPerDay || 24
+				);
+			}
+			
 			// Validate imageFile (must come from JSON or code block)
 			if (!config.imageFile) {
 				el.createEl('div', { 
@@ -4762,17 +4782,24 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Helper: show/hide grid tools (calibrate, move-grid) based on whether annotations exist
 		const updateGridToolsVisibility = () => {
 			const hasAnnotations = (config.highlights?.length > 0) || (config.markers?.length > 0) || (config.drawings?.length > 0) || (config.aoeEffects?.length > 0);
-			calibrateBtn.toggleClass('hidden', hasAnnotations);
-			moveGridBtn.toggleClass('hidden', hasAnnotations);
-			// If calibration was active and annotations appeared, cancel it
-			if (hasAnnotations && isCalibrating) {
+			const isHexcrawl = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical');
+			
+			// For hexcrawl maps, highlights are stored as col/row so grid can still be moved
+			// For non-hexcrawl, hide tools once annotations exist to prevent misalignment
+			const shouldHideGridTools = hasAnnotations && !isHexcrawl;
+			
+			calibrateBtn.toggleClass('hidden', shouldHideGridTools);
+			moveGridBtn.toggleClass('hidden', shouldHideGridTools);
+			
+			// If calibration was active and annotations appeared (non-hexcrawl), cancel it
+			if (shouldHideGridTools && isCalibrating) {
 				isCalibrating = false;
 				calibrationPoint1 = null;
 				calibrationPoint2 = null;
 				calibrateBtn.removeClass('active');
 			}
-			// If move-grid tool was active and annotations appeared, switch to pan
-			if (hasAnnotations && activeTool === 'move-grid') {
+			// If move-grid tool was active and annotations appeared (non-hexcrawl), switch to pan
+			if (shouldHideGridTools && activeTool === 'move-grid') {
 				setActiveTool('pan');
 			}
 		};
@@ -4834,9 +4861,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 				gridSliderLabel.textContent = `${Math.round(val * 10) / 10}px`;
 				input.replaceWith(gridSliderLabel);
 				// Redraw grid
-				if (gridCanvas) gridCanvas.remove();
-				if (config.gridType && config.gridType !== 'none') {
-					gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX, config.gridOffsetY);
+				if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
+					// For hexcrawl with paces, redraw all overlays
+					redrawGridOverlays();
+				} else {
+					// For standard grids, use single overlay
+					if (gridCanvas) gridCanvas.remove();
+					if (config.gridType && config.gridType !== 'none') {
+						gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX, config.gridOffsetY);
+					}
 				}
 				redrawAnnotations();
 				this.saveMapAnnotations(config, el);
@@ -4870,9 +4903,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 			config.gridSize = newSize;
 			gridSliderLabel.textContent = `${Math.round(newSize * 10) / 10}px`;
 			// Redraw grid live
-			if (gridCanvas) gridCanvas.remove();
-			if (config.gridType && config.gridType !== 'none') {
-				gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX, config.gridOffsetY);
+			if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
+				// For hexcrawl with paces, redraw all overlays
+				redrawGridOverlays();
+			} else {
+				// For standard grids, use single overlay
+				if (gridCanvas) gridCanvas.remove();
+				if (config.gridType && config.gridType !== 'none') {
+					gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX, config.gridOffsetY);
+				}
 			}
 			redrawAnnotations();
 			// Debounced save
@@ -5071,6 +5110,9 @@ export default class DndCampaignHubPlugin extends Plugin {
             gridOffsetY: config.gridOffsetY || 0,
             scale: config.scale,
             name: config.name,
+            travelPaces: config.travelPaces,
+            activePaceId: config.activePaceId,
+            baseCalibration: config.baseCalibration,
             dragRuler: dragRuler,
             measureRuler: measureRuler
           };
@@ -5171,12 +5213,31 @@ export default class DndCampaignHubPlugin extends Plugin {
 			return Math.sqrt(dx * dx + dy * dy);
 		};
 
+			// Helper: Get effective grid size (for hexcrawl with paces, use active pace size)
+			const getEffectiveGridSize = () => {
+				// For hexcrawl maps with travel paces, use active pace hex size
+				if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces && config.activePaceId) {
+					const activePace = config.travelPaces.find((p: any) => p.id === config.activePaceId);
+					const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || activePace;
+					if (activePace && basePace) {
+						return this.mapManager.calculateHexSizeForPace(
+							basePace.milesPerDay,
+							config.gridSize,
+							activePace.milesPerDay
+						);
+					}
+				}
+				return config.gridSize;
+			};
+
 			// Function to get cell coordinates from pixel position (accounts for grid offset)
 			const pixelToHex = (x: number, y: number) => {
 				const ox = config.gridOffsetX || 0;
 				const oy = config.gridOffsetY || 0;
+				const effectiveSize = getEffectiveGridSize();
+				
 				if (config.gridType === 'hex-horizontal') {
-					const horiz = config.gridSize;
+					const horiz = effectiveSize;
 					const size = (2/3) * horiz;
 					const vert = Math.sqrt(3) * size;
 					
@@ -5184,7 +5245,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const row = Math.round(((y - oy) - ((col & 1) ? vert / 2 : 0)) / vert);
 					return { col, row };
 				} else if (config.gridType === 'hex-vertical') {
-					const vert = config.gridSize;
+					const vert = effectiveSize;
 					const size = (2/3) * vert;
 					const horiz = Math.sqrt(3) * size;
 					
@@ -5192,11 +5253,58 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const col = Math.round(((x - ox) - ((row & 1) ? horiz / 2 : 0)) / horiz);
 					return { col, row };
 				} else if (config.gridType === 'square') {
-					const col = Math.floor((x - ox) / config.gridSize);
-					const row = Math.floor((y - oy) / config.gridSize);
+					const col = Math.floor((x - ox) / effectiveSize);
+					const row = Math.floor((y - oy) / effectiveSize);
 					return { col, row };
 				}
 				return { col: 0, row: 0 };
+			};
+
+			// Function to redraw grid overlays for travel paces (hexcrawl only)
+			const redrawGridOverlays = () => {
+				// Remove all existing grid overlays
+				const existingOverlays = mapWrapper.querySelectorAll('.dnd-map-grid-overlay');
+				existingOverlays.forEach(overlay => overlay.remove());
+				gridCanvas = null;
+				
+				// Only draw pace-based overlays for hexcrawl maps with travel paces
+				if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
+					const visiblePaces = config.travelPaces.filter((p: any) => p.enabled && p.visible);
+					const activePace = config.travelPaces.find((p: any) => p.id === config.activePaceId);
+					
+					// Calculate base pace for calibration (usually Walking Normal)
+					const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || activePace;
+					if (!basePace) return;
+					
+					// Draw each visible pace overlay
+					visiblePaces.forEach((pace: any) => {
+						const hexSize = this.mapManager.calculateHexSizeForPace(
+							basePace.milesPerDay,
+							config.gridSize,
+							pace.milesPerDay
+						);
+						
+						const isActive = pace.id === config.activePaceId;
+						const overlay = this.drawPaceGridOverlay(
+							mapWrapper,
+							img,
+							config,
+							pace,
+							hexSize,
+							isActive,
+							config.gridOffsetX || 0,
+							config.gridOffsetY || 0
+						);
+						
+						// Store first overlay as gridCanvas for legacy compatibility
+						if (!gridCanvas) {
+							gridCanvas = overlay;
+						}
+					});
+				} else if (config.gridType && config.gridType !== 'none') {
+					// Regular grid (non-hexcrawl or square grid)
+					gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0);
+				}
 			};
 
 			// Function to redraw annotations
@@ -5828,7 +5936,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 				const oy = config.gridOffsetY || 0;
 				
 				if (config.gridType === 'hex-horizontal') {
-					const horiz = config.gridSize;
+					// For hexcrawl with paces, use pace-specific hex size
+					let effectiveSize = config.gridSize;
+					if (config.travelPaces && highlight.paceId) {
+						const pace = config.travelPaces.find((p: any) => p.id === highlight.paceId);
+						const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || pace;
+						if (pace && basePace) {
+							effectiveSize = this.mapManager.calculateHexSizeForPace(basePace.milesPerDay, config.gridSize, pace.milesPerDay);
+						}
+					}
+					const horiz = effectiveSize;
 					const size = (2/3) * horiz;
 					const vert = Math.sqrt(3) * size;
 					const colOffsetY = (highlight.col & 1) ? vert / 2 : 0;
@@ -5836,7 +5953,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const centerY = highlight.row * vert + colOffsetY + oy;
 					this.drawFilledHexFlat(ctx, centerX, centerY, size);
 				} else if (config.gridType === 'hex-vertical') {
-					const vert = config.gridSize;
+					// For hexcrawl with paces, use pace-specific hex size
+					let effectiveSize = config.gridSize;
+					if (config.travelPaces && highlight.paceId) {
+						const pace = config.travelPaces.find((p: any) => p.id === highlight.paceId);
+						const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || pace;
+						if (pace && basePace) {
+							effectiveSize = this.mapManager.calculateHexSizeForPace(basePace.milesPerDay, config.gridSize, pace.milesPerDay);
+						}
+					}
+					const vert = effectiveSize;
 					const size = (2/3) * vert;
 					const horiz = Math.sqrt(3) * size;
 					const rowOffsetX = (highlight.row & 1) ? horiz / 2 : 0;
@@ -6456,6 +6582,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('Lights button clicked');
 				setActiveTool('lights');
 			});
+			moveGridBtn.addEventListener('click', () => {
+				console.log('Move Grid button clicked');
+				setActiveTool('move-grid');
+			});
 		viewBtn.addEventListener('click', () => {
 			console.log('Player View button clicked');
 			setActiveTool('player-view');
@@ -6466,7 +6596,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Add grid overlay if grid is enabled
 			img.onload = () => {
 				if (config.gridType && config.gridType !== 'none' && config.gridSize) {
-					gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0);
+					// Use multi-pace overlay system for hexcrawl maps
+					if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
+						redrawGridOverlays();
+					} else {
+						// Standard single grid for non-hexcrawl maps
+						gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0);
+					}
 				}
 				
 				// Create annotation canvas
@@ -6493,8 +6629,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 						redrawAnnotations();
 					}
 					
-					// Update grid overlay display size
-					if (gridCanvas) {
+					// Update grid overlay display size (handle multiple overlays for hexcrawl)
+					if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
+						const gridOverlays = mapWrapper.querySelectorAll('.dnd-map-grid-overlay');
+						gridOverlays.forEach((overlay: any) => {
+							overlay.style.width = `${img.width}px`;
+							overlay.style.height = `${img.height}px`;
+						});
+					} else if (gridCanvas) {
 						gridCanvas.style.width = `${img.width}px`;
 						gridCanvas.style.height = `${img.height}px`;
 					}
@@ -6591,11 +6733,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 							};
 							
 							// Redraw grid with new size
-							if (gridCanvas) {
-								gridCanvas.remove();
-							}
-							if (config.gridType && config.gridType !== 'none' && config.gridSize) {
-								gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0);
+							if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
+								// For hexcrawl with paces, redraw all overlays
+								redrawGridOverlays();
+							} else {
+								// For standard grids, use single overlay
+								if (gridCanvas) {
+									gridCanvas.remove();
+								}
+								if (config.gridType && config.gridType !== 'none' && config.gridSize) {
+									gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0);
+								}
 							}
 							
 							// Save configuration to JSON file
@@ -6701,20 +6849,27 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (activeTool === 'highlight') {
 					// Toggle grid highlight on clicked tile
 					const hex = pixelToHex(mapPos.x, mapPos.y);
+					// For hexcrawl with paces, check if highlight exists for this pace
+					const currentPaceId = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces ? config.activePaceId : undefined;
 					const existingIndex = config.highlights.findIndex(
-						(h: any) => h.col === hex.col && h.row === hex.row
+						(h: any) => h.col === hex.col && h.row === hex.row && h.paceId === currentPaceId
 					);
 					saveToHistory();
 					if (existingIndex >= 0) {
 						config.highlights.splice(existingIndex, 1);
 					} else {
-						config.highlights.push({
+						const highlight: any = {
 							id: `highlight_${Date.now()}`,
 							col: hex.col,
 							row: hex.row,
 							color: selectedColor,
 							layer: config.activeLayer || 'Player'
-						});
+						};
+						// For hexcrawl with paces, store which pace this highlight is for
+						if (currentPaceId) {
+							highlight.paceId = currentPaceId;
+						}
+						config.highlights.push(highlight);
 					}
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
@@ -6841,16 +6996,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 					
 					// Try to erase a highlight at the clicked hex
 					if (!removed) {
-					const hex = pixelToHex(mapPos.x, mapPos.y);
-					const highlightIndex = config.highlights.findIndex(
-						(h: any) => h.col === hex.col && h.row === hex.row
-					);
-					if (highlightIndex >= 0) {
-						saveToHistory();
-						config.highlights.splice(highlightIndex, 1);
-						console.log('Removed highlight at', hex);
-						removed = true;
-					}
+						const hex = pixelToHex(mapPos.x, mapPos.y);
+						// For hexcrawl with paces, only erase highlight for current pace
+						const currentPaceId = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces ? config.activePaceId : undefined;
+						const highlightIndex = config.highlights.findIndex(
+							(h: any) => h.col === hex.col && h.row === hex.row && h.paceId === currentPaceId
+						);
+						if (highlightIndex >= 0) {
+							saveToHistory();
+							config.highlights.splice(highlightIndex, 1);
+							console.log('Removed highlight at', hex);
+							removed = true;
+						}
 					}
 					
 					// Try to erase a drawing near the click point
@@ -7133,9 +7290,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 					startX = e.clientX;
 					startY = e.clientY;
 					// Redraw grid with new offset
-					if (gridCanvas) gridCanvas.remove();
-					if (config.gridType && config.gridType !== 'none' && config.gridSize) {
-						gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX, config.gridOffsetY);
+					if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
+						// For hexcrawl with paces, redraw all overlays
+						redrawGridOverlays();
+					} else {
+						// For standard grids, use single overlay
+						if (gridCanvas) gridCanvas.remove();
+						if (config.gridType && config.gridType !== 'none' && config.gridSize) {
+							gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX, config.gridOffsetY);
+						}
 					}
 					redrawAnnotations();
 				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
@@ -8322,6 +8485,118 @@ export default class DndCampaignHubPlugin extends Plugin {
 				});
 			}
 
+			// Travel Pace Controls (for hexcrawl maps) - positioned over map on right side
+			if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
+			const paceControls = viewport.createDiv({ cls: 'dnd-map-pace-controls' });
+				const paceHeader = paceControls.createDiv({ cls: 'dnd-map-pace-header' });
+				
+				const paceToggle = paceHeader.createEl('span', { 
+					text: '▼', 
+					cls: 'dnd-map-pace-toggle' 
+				});
+				
+				const paceTitle = paceHeader.createEl('span', { 
+					text: '🗺️', 
+					cls: 'dnd-map-pace-title' 
+				});
+				
+				const managePacesBtn = paceHeader.createEl('button', {
+					text: '⚙️',
+					cls: 'dnd-map-pace-manage-btn',
+					attr: { 'aria-label': 'Manage Travel Paces' }
+				});
+				
+				managePacesBtn.addEventListener('click', (e) => {
+					e.stopPropagation(); // Prevent header click from toggling
+					new TravelPaceManagerModal(this.app, this, config, () => {
+						console.log('Pace manager callback triggered. Enabled paces:', 
+							config.travelPaces.filter((p: any) => p.enabled).map((p: any) => p.name));
+						// Refresh the pace controls after changes
+						paceContent.empty();
+						paceContent.appendChild(paceList);
+						renderPaceList();
+						// Redraw grid overlays
+						redrawGridOverlays();
+						this.saveMapAnnotations(config, el);
+					}).open();
+				});
+				
+				// Content wrapper for collapse animation
+				const paceContent = paceControls.createDiv({ cls: 'dnd-map-pace-content' });
+				const paceList = paceContent.createDiv({ cls: 'dnd-map-pace-list' });
+				
+				const renderPaceList = () => {
+					paceList.empty();
+					const enabledPaces = config.travelPaces.filter((p: any) => p.enabled);
+					
+					if (enabledPaces.length === 0) {
+						paceList.createEl('div', { 
+							text: 'No paces enabled', 
+							cls: 'dnd-map-pace-empty' 
+						});
+						return;
+					}
+					
+					enabledPaces.forEach((pace: any) => {
+						const paceItem = paceList.createDiv({ 
+							cls: 'dnd-map-pace-item' + (pace.id === config.activePaceId ? ' active' : '')
+						});
+						
+						const paceInfo = paceItem.createDiv({ cls: 'dnd-map-pace-info' });
+						
+						const visibilityBtn = paceInfo.createEl('button', {
+							text: pace.visible ? '👁️' : '👁️‍🗨️',
+							cls: 'dnd-map-pace-visibility-btn',
+							attr: { 'aria-label': pace.visible ? 'Hide overlay' : 'Show overlay' }
+						});
+						
+						visibilityBtn.style.opacity = pace.visible ? '1' : '0.3';
+						
+						visibilityBtn.addEventListener('click', (e) => {
+							e.stopPropagation();
+							pace.visible = !pace.visible;
+							visibilityBtn.textContent = pace.visible ? '👁️' : '👁️‍🗨️';
+							visibilityBtn.style.opacity = pace.visible ? '1' : '0.3';
+							redrawGridOverlays();
+							this.saveMapAnnotations(config, el);
+						});
+						
+						const colorIndicator = paceInfo.createEl('span', { cls: 'dnd-map-pace-color' });
+						colorIndicator.style.backgroundColor = pace.color;
+						
+						const paceName = paceInfo.createEl('span', { 
+							text: `${pace.icon || ''} ${pace.name}`,
+							cls: 'dnd-map-pace-name'
+						});
+						
+						const paceDistance = paceInfo.createEl('span', {
+							text: `${pace.milesPerDay} mi/day`,
+							cls: 'dnd-map-pace-distance'
+						});
+						
+						paceItem.addEventListener('click', () => {
+							config.activePaceId = pace.id;
+							renderPaceList();
+							// Redraw grid overlays to update active/inactive visual state
+							redrawGridOverlays();
+							redrawAnnotations();
+							// Sync to player view
+							if ((viewport as any)._syncPlayerView) {
+								(viewport as any)._syncPlayerView();
+							}
+							this.saveMapAnnotations(config, el);
+						});
+					});
+				};
+				
+				renderPaceList();
+				
+				// Collapsible functionality
+				paceHeader.addEventListener('click', () => {
+					paceControls.toggleClass('collapsed', !paceControls.hasClass('collapsed'));
+				});
+			}
+
 			// Clear drawings button
 			const clearBtn = controls.createEl('button', {
 				text: '🗑️ Clear Drawings',
@@ -8772,6 +9047,10 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 				scale: config.scale || { value: 5, unit: 'feet' },
 				// Layer settings
 				activeLayer: config.activeLayer || 'Player',
+				// Travel paces (for hexcrawl maps) - always save if present
+				travelPaces: config.travelPaces,
+				activePaceId: config.activePaceId,
+				baseCalibration: config.baseCalibration,
 				// Annotations
 				highlights: config.highlights || [],
 				markers: config.markers || [],
@@ -8797,6 +9076,12 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 			console.log('Drawings count:', mapData.drawings.length);
 			console.log('Walls count:', mapData.walls.length);
 			console.log('Light sources count:', mapData.lightSources.length);
+			if (mapData.travelPaces) {
+				console.log('[PACE SAVE] Saving travel paces. Count:', mapData.travelPaces.length);
+				console.log('[PACE SAVE] Enabled paces being saved:', mapData.travelPaces.filter((p: any) => p.enabled).map((p: any) => p.name));
+			} else {
+				console.log('[PACE SAVE] No travel paces to save');
+			}
 			
 			// Save to dedicated file using adapter for config directory files
 			const annotationPath = this.getMapAnnotationPath(config.mapId);
@@ -8850,7 +9135,7 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 		} catch (error) {
 			console.error('Error loading map annotations:', error);
 			return {};
-		}
+ 		}
 	}
 
 	/**
@@ -9035,6 +9320,102 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 		ctx.closePath();
 		ctx.fill();
 		ctx.stroke();
+	}
+
+	/**
+	 * Draw a travel pace-specific grid overlay for hexcrawl maps
+	 * Each pace renders hexagons at its own scale relative to the base calibration
+	 */
+	drawPaceGridOverlay(
+		container: HTMLElement,
+		img: HTMLImageElement,
+		config: any,
+		pace: any,
+		hexSize: number,
+		isActive: boolean,
+		offsetX: number = 0,
+		offsetY: number = 0
+	): HTMLCanvasElement {
+		// Create canvas for this pace's grid overlay
+		const canvas = document.createElement('canvas');
+		canvas.classList.add('dnd-map-grid-overlay');
+		canvas.dataset.paceId = pace.id;
+		canvas.width = img.naturalWidth;
+		canvas.height = img.naturalHeight;
+		canvas.style.position = 'absolute';
+		canvas.style.top = '0';
+		canvas.style.left = '0';
+		canvas.style.width = `${img.width}px`;
+		canvas.style.height = `${img.height}px`;
+		canvas.style.pointerEvents = 'none';
+		canvas.style.zIndex = isActive ? '10' : '5';
+
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return canvas;
+
+		// Parse pace color and apply with appropriate alpha
+		const color = pace.color || '#000000';
+		const alpha = isActive ? 0.6 : 0.3;
+		const lineWidth = isActive ? 3 : 2;
+		
+		// Convert hex color to rgba
+		const r = parseInt(color.slice(1, 3), 16);
+		const g = parseInt(color.slice(3, 5), 16);
+		const b = parseInt(color.slice(5, 7), 16);
+		
+		ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+		ctx.lineWidth = lineWidth;
+		
+		// Use dashed line for non-active paces
+		if (!isActive) {
+			ctx.setLineDash([8, 8]);
+		}
+
+		if (config.gridType === 'hex-horizontal') {
+			// Flat-top hex grid with custom size for this pace
+			const horiz = hexSize;
+			const size = (2/3) * horiz;
+			const vert = Math.sqrt(3) * size;
+			
+			const startCol = Math.floor(-offsetX / horiz) - 2;
+			const endCol = Math.ceil((canvas.width - offsetX) / horiz) + 2;
+			const startRow = Math.floor(-offsetY / vert) - 2;
+			const endRow = Math.ceil((canvas.height - offsetY) / vert) + 2;
+			
+			for (let row = startRow; row < endRow; row++) {
+				for (let col = startCol; col < endCol; col++) {
+					const colOffsetY = (col & 1) ? vert / 2 : 0;
+					const centerX = col * horiz + offsetX;
+					const centerY = row * vert + colOffsetY + offsetY;
+					
+					this.drawHexFlat(ctx, centerX, centerY, size);
+				}
+			}
+		} else if (config.gridType === 'hex-vertical') {
+			// Pointy-top hex grid with custom size for this pace
+			const vert = hexSize;
+			const size = (2/3) * vert;
+			const horiz = Math.sqrt(3) * size;
+			
+			const startCol = Math.floor(-offsetX / horiz) - 2;
+			const endCol = Math.ceil((canvas.width - offsetX) / horiz) + 2;
+			const startRow = Math.floor(-offsetY / vert) - 2;
+			const endRow = Math.ceil((canvas.height - offsetY) / vert) + 2;
+			
+			for (let row = startRow; row < endRow; row++) {
+				for (let col = startCol; col < endCol; col++) {
+					const rowOffsetX = (row & 1) ? horiz / 2 : 0;
+					const centerX = col * horiz + rowOffsetX + offsetX;
+					const centerY = row * vert + offsetY;
+					
+					this.drawHexPointy(ctx, centerX, centerY, size);
+				}
+			}
+		}
+
+		// Append canvas to container
+		container.appendChild(canvas);
+		return canvas;
 	}
 
 	async createFaction() {
@@ -10018,6 +10399,286 @@ class PurgeConfirmModal extends Modal {
     });
 
     input.focus();
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+class TravelPaceManagerModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  config: any;
+  onUpdate: () => void;
+
+  constructor(app: App, plugin: DndCampaignHubPlugin, config: any, onUpdate: () => void) {
+    super(app);
+    this.plugin = plugin;
+    this.config = config;
+    this.onUpdate = onUpdate;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('dnd-pace-manager-modal');
+
+    contentEl.createEl('h2', { text: '🗺️ Manage Travel Paces' });
+
+    const description = contentEl.createEl('p', { 
+      cls: 'setting-item-description',
+      text: 'Enable or disable travel paces, adjust settings, and create custom paces for your hexcrawl map.'
+    });
+
+    // Category tabs
+    const tabContainer = contentEl.createDiv({ cls: 'dnd-pace-tabs' });
+    const categories: Array<{key: string, label: string, icon: string}> = [
+      { key: 'all', label: 'All', icon: '📋' },
+      { key: 'land', label: 'Land', icon: '🏞️' },
+      { key: 'water', label: 'Water', icon: '🌊' },
+      { key: 'air', label: 'Air', icon: '☁️' },
+      { key: 'magic', label: 'Magic', icon: '✨' },
+      { key: 'custom', label: 'Custom', icon: '⚙️' }
+    ];
+
+    let activeCategory = 'all';
+
+    const paceListContainer = contentEl.createDiv({ cls: 'dnd-pace-manager-list' });
+
+    const renderPaceList = () => {
+      paceListContainer.empty();
+
+      const filteredPaces = this.config.travelPaces.filter((p: any) => 
+        activeCategory === 'all' || p.category === activeCategory
+      );
+
+      if (filteredPaces.length === 0) {
+        paceListContainer.createEl('div', { 
+          text: 'No paces in this category', 
+          cls: 'dnd-pace-empty' 
+        });
+        return;
+      }
+
+      filteredPaces.forEach((pace: any, index: number) => {
+        const paceItem = paceListContainer.createDiv({ cls: 'dnd-pace-manager-item' });
+
+        const leftSection = paceItem.createDiv({ cls: 'dnd-pace-manager-left' });
+
+        const checkbox = leftSection.createEl('input', { type: 'checkbox' });
+        checkbox.checked = pace.enabled;
+        checkbox.addEventListener('change', () => {
+          pace.enabled = checkbox.checked;
+          console.log(`Pace '${pace.name}' enabled set to: ${pace.enabled}`);
+          if (!pace.enabled && this.config.activePaceId === pace.id) {
+            // If disabling the active pace, switch to first enabled pace
+            const firstEnabled = this.config.travelPaces.find((p: any) => p.enabled);
+            if (firstEnabled) {
+              this.config.activePaceId = firstEnabled.id;
+            }
+          }
+        });
+
+        const colorPicker = leftSection.createEl('input', { 
+          type: 'color',
+          attr: { value: pace.color }
+        });
+        colorPicker.value = pace.color;
+        colorPicker.addEventListener('change', () => {
+          pace.color = colorPicker.value;
+        });
+
+        const paceInfo = leftSection.createDiv({ cls: 'dnd-pace-manager-info' });
+        const paceName = paceInfo.createEl('strong', { text: `${pace.icon || ''} ${pace.name}` });
+        const paceDetails = paceInfo.createEl('span', { 
+          text: `${pace.milesPerDay} mi/day • ${pace.category}`,
+          cls: 'dnd-pace-details'
+        });
+
+        const rightSection = paceItem.createDiv({ cls: 'dnd-pace-manager-right' });
+
+        if (pace.isCustom) {
+          const deleteBtn = rightSection.createEl('button', {
+            text: '🗑️',
+            cls: 'dnd-pace-delete-btn',
+            attr: { 'aria-label': 'Delete pace' }
+          });
+
+          deleteBtn.addEventListener('click', () => {
+            const paceIndex = this.config.travelPaces.indexOf(pace);
+            if (paceIndex > -1) {
+              this.config.travelPaces.splice(paceIndex, 1);
+              if (this.config.activePaceId === pace.id) {
+                const firstEnabled = this.config.travelPaces.find((p: any) => p.enabled);
+                if (firstEnabled) {
+                  this.config.activePaceId = firstEnabled.id;
+                }
+              }
+              renderPaceList();
+            }
+          });
+        }
+      });
+    };
+
+    categories.forEach(cat => {
+      const tab = tabContainer.createEl('button', {
+        text: `${cat.icon} ${cat.label}`,
+        cls: 'dnd-pace-tab' + (activeCategory === cat.key ? ' active' : '')
+      });
+
+      tab.addEventListener('click', () => {
+        activeCategory = cat.key;
+        tabContainer.querySelectorAll('.dnd-pace-tab').forEach(t => t.removeClass('active'));
+        tab.addClass('active');
+        renderPaceList();
+      });
+    });
+
+    renderPaceList();
+
+    // Add custom pace button
+    const addCustomContainer = contentEl.createDiv({ cls: 'dnd-pace-add-custom' });
+    const addCustomBtn = addCustomContainer.createEl('button', {
+      text: '➕ Add Custom Pace',
+      cls: 'mod-cta'
+    });
+
+    addCustomBtn.addEventListener('click', () => {
+      new CustomPaceCreationModal(this.app, this.plugin, (customPace: any) => {
+        this.config.travelPaces.push(customPace);
+        activeCategory = 'custom';
+        tabContainer.querySelectorAll('.dnd-pace-tab').forEach(t => t.removeClass('active'));
+        const customTab = tabContainer.querySelectorAll('.dnd-pace-tab')[5];
+        if (customTab) customTab.addClass('active'); // Select custom tab
+        renderPaceList();
+      }).open();
+    });
+
+    // Buttons
+    const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+    
+    const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+    cancelBtn.addEventListener('click', () => this.close());
+
+    const saveBtn = buttonContainer.createEl('button', { text: 'Save' });
+    saveBtn.addClass('mod-cta');
+    saveBtn.addEventListener('click', () => {
+      console.log('Pace manager Save clicked. Enabled paces:', 
+        this.config.travelPaces.filter((p: any) => p.enabled).map((p: any) => p.name));
+      this.onUpdate();
+      this.close();
+    });
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+class CustomPaceCreationModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  onCreate: (pace: any) => void;
+  name: string = '';
+  category: string = 'custom';
+  milesPerDay: number = 24;
+  color: string = '#FF6B6B';
+  icon: string = '🎯';
+
+  constructor(app: App, plugin: DndCampaignHubPlugin, onCreate: (pace: any) => void) {
+    super(app);
+    this.plugin = plugin;
+    this.onCreate = onCreate;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl('h2', { text: '➕ Create Custom Pace' });
+
+    new Setting(contentEl)
+      .setName('Pace Name')
+      .setDesc('Name of this travel method')
+      .addText(text => {
+        text.setPlaceholder('e.g., Teleportation Circle')
+          .setValue(this.name)
+          .onChange(value => this.name = value);
+      });
+
+    new Setting(contentEl)
+      .setName('Category')
+      .setDesc('Type of travel')
+      .addDropdown(dropdown => {
+        dropdown
+          .addOption('land', '🏞️ Land')
+          .addOption('water', '🌊 Water')
+          .addOption('air', '☁️ Air')
+          .addOption('magic', '✨ Magic')
+          .addOption('custom', '⚙️ Custom')
+          .setValue(this.category)
+          .onChange(value => this.category = value);
+      });
+
+    new Setting(contentEl)
+      .setName('Miles per Day')
+      .setDesc('Travel distance covered per day')
+      .addText(text => {
+        text.setPlaceholder('24')
+          .setValue(String(this.milesPerDay))
+          .onChange(value => {
+            const parsed = parseInt(value);
+            if (!isNaN(parsed) && parsed > 0) {
+              this.milesPerDay = parsed;
+            }
+          });
+        text.inputEl.type = 'number';
+        text.inputEl.min = '1';
+      });
+
+    new Setting(contentEl)
+      .setName('Color')
+      .setDesc('Hex grid overlay color')
+      .addColorPicker(color => {
+        color.setValue(this.color)
+          .onChange(value => this.color = value);
+      });
+
+    new Setting(contentEl)
+      .setName('Icon')
+      .setDesc('Emoji or icon for this pace')
+      .addText(text => {
+        text.setPlaceholder('🎯')
+          .setValue(this.icon)
+          .onChange(value => this.icon = value);
+      });
+
+    const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+
+    const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+    cancelBtn.addEventListener('click', () => this.close());
+
+    const createBtn = buttonContainer.createEl('button', { text: 'Create' });
+    createBtn.addClass('mod-cta');
+    createBtn.addEventListener('click', () => {
+      if (!this.name.trim()) {
+        new Notice('Please enter a pace name');
+        return;
+      }
+
+      const customPace = this.plugin.mapManager.createCustomPace(
+        this.name,
+        this.category as any,
+        this.milesPerDay,
+        this.color,
+        this.icon
+      );
+
+      this.onCreate(customPace);
+      this.close();
+    });
   }
 
   onClose() {
@@ -25156,40 +25817,67 @@ class PlayerMapView extends ItemView {
         ctx.lineTo(w, y);
         ctx.stroke();
       }
-    } else if (config.gridType === 'hex-horizontal') {
-      const horiz = config.gridSize;
-      const size = (2 / 3) * horiz;
-      const vert = Math.sqrt(3) * size;
-
-      const startCol = Math.floor(-offsetX / horiz) - 2;
-      const endCol = Math.ceil((w - offsetX) / horiz) + 2;
-      const startRow = Math.floor(-offsetY / vert) - 2;
-      const endRow = Math.ceil((h - offsetY) / vert) + 2;
-
-      for (let row = startRow; row < endRow; row++) {
-        for (let col = startCol; col < endCol; col++) {
-          const colOffsetY = (col & 1) ? vert / 2 : 0;
-          const centerX = col * horiz + offsetX;
-          const centerY = row * vert + colOffsetY + offsetY;
-          this.drawHexFlatOutline(ctx, centerX, centerY, size);
+    } else if (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') {
+      // For hexcrawl maps with travel paces, use the active pace's hex size
+      let gridSize = config.gridSize;
+      
+      if (config.travelPaces && config.activePaceId && config.baseCalibration) {
+        const activePace = config.travelPaces.find((p: any) => p.id === config.activePaceId);
+        const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || activePace;
+        
+        if (activePace && basePace) {
+          // Calculate hex size for the active pace
+          gridSize = this.plugin.mapManager.calculateHexSizeForPace(
+            basePace.milesPerDay,
+            config.gridSize,
+            activePace.milesPerDay
+          );
+          
+          // Use active pace color
+          const color = activePace.color || '#000000';
+          const r = parseInt(color.slice(1, 3), 16);
+          const g = parseInt(color.slice(3, 5), 16);
+          const b = parseInt(color.slice(5, 7), 16);
+          ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.6)`;
+          ctx.lineWidth = 3;
         }
       }
-    } else if (config.gridType === 'hex-vertical') {
-      const vert = config.gridSize;
-      const size = (2 / 3) * vert;
-      const horiz = Math.sqrt(3) * size;
+      
+      if (config.gridType === 'hex-horizontal') {
+        const horiz = gridSize;
+        const size = (2 / 3) * horiz;
+        const vert = Math.sqrt(3) * size;
 
-      const startCol = Math.floor(-offsetX / horiz) - 2;
-      const endCol = Math.ceil((w - offsetX) / horiz) + 2;
-      const startRow = Math.floor(-offsetY / vert) - 2;
-      const endRow = Math.ceil((h - offsetY) / vert) + 2;
+        const startCol = Math.floor(-offsetX / horiz) - 2;
+        const endCol = Math.ceil((w - offsetX) / horiz) + 2;
+        const startRow = Math.floor(-offsetY / vert) - 2;
+        const endRow = Math.ceil((h - offsetY) / vert) + 2;
 
-      for (let row = startRow; row < endRow; row++) {
-        for (let col = startCol; col < endCol; col++) {
-          const rowOffsetX = (row & 1) ? horiz / 2 : 0;
-          const centerX = col * horiz + rowOffsetX + offsetX;
-          const centerY = row * vert + offsetY;
-          this.drawHexPointyOutline(ctx, centerX, centerY, size);
+        for (let row = startRow; row < endRow; row++) {
+          for (let col = startCol; col < endCol; col++) {
+            const colOffsetY = (col & 1) ? vert / 2 : 0;
+            const centerX = col * horiz + offsetX;
+            const centerY = row * vert + colOffsetY + offsetY;
+            this.drawHexFlatOutline(ctx, centerX, centerY, size);
+          }
+        }
+      } else if (config.gridType === 'hex-vertical') {
+        const vert = gridSize;
+        const size = (2 / 3) * vert;
+        const horiz = Math.sqrt(3) * size;
+
+        const startCol = Math.floor(-offsetX / horiz) - 2;
+        const endCol = Math.ceil((w - offsetX) / horiz) + 2;
+        const startRow = Math.floor(-offsetY / vert) - 2;
+        const endRow = Math.ceil((h - offsetY) / vert) + 2;
+
+        for (let row = startRow; row < endRow; row++) {
+          for (let col = startCol; col < endCol; col++) {
+            const rowOffsetX = (row & 1) ? horiz / 2 : 0;
+            const centerX = col * horiz + rowOffsetX + offsetX;
+            const centerY = row * vert + offsetY;
+            this.drawHexPointyOutline(ctx, centerX, centerY, size);
+          }
         }
       }
     }
@@ -25408,7 +26096,16 @@ class PlayerMapView extends ItemView {
     const oy = config.gridOffsetY || 0;
 
     if (config.gridType === 'hex-horizontal') {
-      const horiz = config.gridSize;
+      // For hexcrawl with paces, use pace-specific hex size
+      let effectiveSize = config.gridSize;
+      if (config.travelPaces && highlight.paceId) {
+        const pace = config.travelPaces.find((p: any) => p.id === highlight.paceId);
+        const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || pace;
+        if (pace && basePace) {
+          effectiveSize = this.plugin.mapManager.calculateHexSizeForPace(basePace.milesPerDay, config.gridSize, pace.milesPerDay);
+        }
+      }
+      const horiz = effectiveSize;
       const size = (2 / 3) * horiz;
       const vert = Math.sqrt(3) * size;
       const colOffsetY = (highlight.col & 1) ? vert / 2 : 0;
@@ -25416,7 +26113,16 @@ class PlayerMapView extends ItemView {
       const centerY = highlight.row * vert + colOffsetY + oy;
       this.drawFilledHexFlat(ctx, centerX, centerY, size);
     } else if (config.gridType === 'hex-vertical') {
-      const vert = config.gridSize;
+      // For hexcrawl with paces, use pace-specific hex size
+      let effectiveSize = config.gridSize;
+      if (config.travelPaces && highlight.paceId) {
+        const pace = config.travelPaces.find((p: any) => p.id === highlight.paceId);
+        const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || pace;
+        if (pace && basePace) {
+          effectiveSize = this.plugin.mapManager.calculateHexSizeForPace(basePace.milesPerDay, config.gridSize, pace.milesPerDay);
+        }
+      }
+      const vert = effectiveSize;
       const size = (2 / 3) * vert;
       const horiz = Math.sqrt(3) * size;
       const rowOffsetX = (highlight.row & 1) ? horiz / 2 : 0;
