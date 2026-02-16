@@ -8671,203 +8671,77 @@ if (wikiMatch && wikiMatch[1]) {
 				return;
 			}
 
-			// Create container
-			const container = el.createDiv({ cls: 'dnd-party-block' });
+// Create ultra-compact container
+		const container = el.createDiv({ cls: 'dnd-party-block' });
 
-			// Header
-			const header = container.createDiv({ cls: 'dnd-party-block-header' });
-			header.createEl('span', { 
-				text: `🎭 ${party.name || "Party"}`,
-				cls: 'dnd-party-block-title'
-			});
+		// Minimal header
+		const header = container.createDiv({ cls: 'dnd-party-header' });
+		header.createEl('span', { 
+			text: `${party.name || "Party"} (${members.length})`,
+			cls: 'dnd-party-title'
+		});
+		const refreshBtn = header.createEl('button', { 
+			text: '⟳',
+			cls: 'dnd-party-refresh',
+			attr: { 'aria-label': 'Refresh' }
+		});
+		refreshBtn.addEventListener('click', async () => {
+			el.empty();
+			await this.renderPartyView(source, el, ctx);
+		});
 
-			// Refresh button
-			const refreshBtn = header.createEl('button', { 
-				text: '🔄',
-				cls: 'dnd-party-block-refresh-btn',
-				attr: { 'aria-label': 'Refresh party data' }
-			});
-			refreshBtn.addEventListener('click', async () => {
-				// Re-render the party view
-				el.empty();
-				await this.renderPartyView(source, el, ctx);
-			});
+		// Member rows with HP bars
+		const membersList = container.createDiv({ cls: 'dnd-party-list' });
 
-			// Party stats summary
-			const avgLevel = Math.round(members.reduce((sum, m) => sum + m.level, 0) / members.length);
-			const totalHp = members.reduce((sum, m) => sum + m.hp, 0);
-			const avgAc = Math.round(members.reduce((sum, m) => sum + m.ac, 0) / members.length);
-
-			const statsRow = container.createDiv({ cls: 'dnd-party-block-stats' });
-			statsRow.createEl('span', { 
-				text: `👥 ${members.length} members`,
-				cls: 'dnd-party-stat'
-			});
-			statsRow.createEl('span', { 
-				text: `📊 Avg Level ${avgLevel}`,
-				cls: 'dnd-party-stat'
-			});
-			statsRow.createEl('span', { 
-				text: `❤️ Total HP ${totalHp}`,
-				cls: 'dnd-party-stat'
-			});
-			statsRow.createEl('span', { 
-				text: `🛡️ Avg AC ${avgAc}`,
-				cls: 'dnd-party-stat'
-			});
-
-			// Party members grid
-			const membersGrid = container.createDiv({ cls: 'dnd-party-members-grid' });
-
-			for (const member of members) {
-				const card = membersGrid.createDiv({ cls: 'dnd-party-member-card' });
-
-				// Member name
-				card.createEl('div', { 
-					text: member.name,
-					cls: 'dnd-party-member-name'
-				});
-
-				// Level display
-				card.createEl('div', { 
-					text: `Level ${member.level}`,
-					cls: 'dnd-party-member-level'
-				});
-
-				// Stats
-				const statsDiv = card.createDiv({ cls: 'dnd-party-member-stats' });
-
-				// HP with bar
-				const hpStat = statsDiv.createDiv({ cls: 'dnd-party-stat dnd-party-stat-hp' });
-				hpStat.createEl('span', { 
-					text: 'HP',
-					cls: 'dnd-party-stat-label'
-				});
-				hpStat.createEl('span', { 
-					text: `${member.hp}/${member.maxHp}`,
-					cls: 'dnd-party-stat-value'
-				});
-
-				// HP bar
-				const hpBarContainer = card.createDiv({ cls: 'dnd-party-hp-bar-container' });
-				const hpBar = hpBarContainer.createDiv({ cls: 'dnd-party-hp-bar' });
-				const hpPercent = (member.hp / member.maxHp) * 100;
-				hpBar.style.width = `${hpPercent}%`;
-				
-				// Color code HP bar
-				if (hpPercent <= 25) {
-					hpBar.addClass('dnd-party-hp-critical');
-				} else if (hpPercent <= 50) {
-					hpBar.addClass('dnd-party-hp-low');
-				}
-
-				// AC
-				const acStat = statsDiv.createDiv({ cls: 'dnd-party-stat' });
-				acStat.createEl('span', { 
-					text: 'AC',
-					cls: 'dnd-party-stat-label'
-				});
-				acStat.createEl('span', { 
-					text: `${member.ac}`,
-					cls: 'dnd-party-stat-value'
-				});
-			}
-
-		} catch (error) {
-			console.error('Error rendering party block:', error);
-			el.createEl('div', { 
-				text: `⚠️ Error: ${(error as Error).message}`,
-				cls: 'dnd-party-block-error'
-			});
-		}
-	}
-
-	/**
-	 * Get the path for the map annotations file
-	 */
-	getMapAnnotationPath(mapId: string): string {
-		return `${this.app.vault.configDir}/plugins/${this.manifest.id}/map-annotations/${mapId}.json`;
-	}
-
-	/**
-	 * Update map configuration in the code block (for grid settings, scale, etc.)
-	 */
-	async updateMapConfig(config: any): Promise<void> {
-		try {
-			const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-			if (!activeView) return;
+		for (const member of members) {
+			const row = membersList.createDiv({ cls: 'dnd-party-member' });
+			const hpPercentage = (member.hp / member.maxHp) * 100;
 			
-			const editor = activeView.editor;
-			if (!editor) return;
+			// Name and Level
+			const nameSection = row.createDiv({ cls: 'pc-name-section' });
+			nameSection.createEl('span', { text: member.name, cls: 'pc-name' });
+			const levelBadge = nameSection.createEl('span', { cls: 'pc-level-badge' });
+			levelBadge.createEl('span', { text: '⚔', cls: 'pc-level-icon' });
+			levelBadge.createEl('span', { text: member.level.toString(), cls: 'pc-level-value' });
 			
-			const content = editor.getValue();
+			// HP Bar with value
+			const hpSection = row.createDiv({ cls: 'pc-hp-section' });
+			const hpLabel = hpSection.createDiv({ cls: 'pc-hp-label' });
+			hpLabel.createEl('span', { text: '❤', cls: 'pc-hp-icon' });
+			hpLabel.createEl('span', { text: `${member.hp}/${member.maxHp}`, cls: 'pc-hp-text' });
 			
-			// Create clean config without annotations
-			const cleanConfig = {
-				mapId: config.mapId,
-				imageFile: config.imageFile,
-				name: config.name,
-				type: config.type,
-				dimensions: config.dimensions,
-				gridType: config.gridType,
-				gridSize: config.gridSize,
-				scale: config.scale
-			};
+			const hpBarContainer = hpSection.createDiv({ cls: 'pc-hp-bar-container' });
+			const hpBar = hpBarContainer.createDiv({ cls: 'pc-hp-bar' });
+			hpBar.style.width = `${Math.max(0, Math.min(100, hpPercentage))}%`;
 			
-			// Find and replace the code block
-			const mapIdPattern = new RegExp('```dnd-map\\s*\\n[^`]*"mapId"\\s*:\\s*"' + config.mapId + '"[^`]*```', 's');
-			const newCodeBlock = '```dnd-map\n' + JSON.stringify(cleanConfig, null, 2) + '\n```';
-			
-			const newContent = content.replace(mapIdPattern, newCodeBlock);
-			
-			if (newContent !== content) {
-				editor.setValue(newContent);
-				console.log('Map config updated in code block');
-			}
-		} catch (error) {
-			console.error('Error updating map config:', error);
-		}
-	}
-
-	/**
-	 * Load map annotations from dedicated file
-	 */
-	async loadMapAnnotations(mapId: string): Promise<any> {
-		try {
-			const annotationPath = this.getMapAnnotationPath(mapId);
-			console.log('Loading annotations from:', annotationPath);
-			
-			// Use adapter.read() for config directory files (not getAbstractFileByPath which only works for vault files)
-			if (await this.app.vault.adapter.exists(annotationPath)) {
-				const content = await this.app.vault.adapter.read(annotationPath);
-				const annotations = JSON.parse(content);
-				console.log('Loaded annotations:', {
-					highlights: annotations.highlights?.length || 0,
-					markers: annotations.markers?.length || 0,
-					drawings: annotations.drawings?.length || 0,
-					walls: annotations.walls?.length || 0,
-					lightSources: annotations.lightSources?.length || 0
-				});
-				return annotations;
+			// HP bar color
+			if (hpPercentage > 66) {
+				hpBar.classList.add('hp-healthy');
+			} else if (hpPercentage > 33) {
+				hpBar.classList.add('hp-wounded');
 			} else {
-				console.log('No annotation file found for mapId:', mapId);
+				hpBar.classList.add('hp-critical');
 			}
-		} catch (error) {
-			console.log('Error loading annotations for map:', mapId, error);
+			
+			// AC Badge
+			const acBadge = row.createDiv({ cls: 'pc-ac-badge' });
+			acBadge.createEl('span', { text: '🛡', cls: 'pc-ac-icon' });
+			acBadge.createEl('span', { text: member.ac.toString(), cls: 'pc-ac-value' });
 		}
-		
-		// Return empty annotations structure
-		return {
-			highlights: [],
-			markers: [],
-			drawings: []
-		};
-	}
 
-	/**
-	 * Save map annotations to dedicated file
-	 */
-	async saveMapAnnotations(config: any, el: HTMLElement) {
+	} catch (error) {
+		console.error('Error rendering party block:', error);
+		el.createEl('div', { 
+			text: `⚠️ Error: ${(error as Error).message}`,
+			cls: 'dnd-party-block-error'
+		});
+	}
+}
+
+/**
+ * Save map annotations to dedicated file
+ */
+async saveMapAnnotations(config: any, el: HTMLElement) {
 		try {
 			console.warn('=== saveMapAnnotations CALLED ===', {
 				mapId: config.mapId,
@@ -8939,6 +8813,43 @@ if (wikiMatch && wikiMatch[1]) {
 			}
 		} catch (error) {
 			console.error('Error saving map annotations:', error);
+		}
+	}
+
+	/**
+	 * Get the file path for map annotations
+	 */
+	getMapAnnotationPath(mapId: string): string {
+		return `${this.app.vault.configDir}/plugins/${this.manifest.id}/map-annotations/${mapId}.json`;
+	}
+
+	/**
+	 * Load map annotations from dedicated file
+	 */
+	async loadMapAnnotations(mapId: string): Promise<any> {
+		try {
+			const annotationPath = this.getMapAnnotationPath(mapId);
+			console.log('Loading annotations from:', annotationPath);
+			
+			// Check if annotation file exists
+			if (await this.app.vault.adapter.exists(annotationPath)) {
+				const data = await this.app.vault.adapter.read(annotationPath);
+				const parsedData = JSON.parse(data);
+				console.log('Loaded map data:', {
+					mapId: parsedData.mapId,
+					name: parsedData.name,
+					highlightsCount: (parsedData.highlights || []).length,
+					markersCount: (parsedData.markers || []).length,
+					drawingsCount: (parsedData.drawings || []).length
+				});
+				return parsedData;
+			} else {
+				console.log('No saved annotations found for mapId:', mapId);
+				return {};
+			}
+		} catch (error) {
+			console.error('Error loading map annotations:', error);
+			return {};
 		}
 	}
 
