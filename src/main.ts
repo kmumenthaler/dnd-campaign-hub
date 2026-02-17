@@ -6946,16 +6946,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 					ctx.fill();
 				}
 				
-				// Draw border if specified (re-draw the arc path since clip consumed it)
-				if (markerDef.borderColor) {
-					ctx.restore();
-					ctx.save();
-					ctx.beginPath();
-					ctx.arc(position.x, position.y, radius, 0, Math.PI * 2);
-					ctx.strokeStyle = markerDef.borderColor;
-					ctx.lineWidth = Math.max(2, radius * 0.1);
-					ctx.stroke();
-				}
+				// Draw border (check marker instance first, then definition, then default to white)
+				// Re-draw the arc path since clip consumed it
+				const borderColor = (marker as any).borderColor || markerDef.borderColor || '#ffffff';
+				ctx.restore();
+				ctx.save();
+				ctx.beginPath();
+				ctx.arc(position.x, position.y, radius, 0, Math.PI * 2);
+				ctx.strokeStyle = borderColor;
+				ctx.lineWidth = Math.max(2, radius * 0.1);
+				ctx.stroke();
 				
 				// Draw icon/label if present
 				if (markerDef.icon) {
@@ -8088,6 +8088,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 						placedAt: Date.now(),
 						layer: config.activeLayer || 'Player'
 					};
+					
+					// Auto-apply darkvision from marker definition if it exists
+					if (mDef && mDef.darkvision && mDef.darkvision > 0) {
+						(markerRef as any).darkvision = mDef.darkvision;
+					}
 					
 					saveToHistory();
 					config.markers.push(markerRef);
@@ -9509,6 +9514,54 @@ export default class DndCampaignHubPlugin extends Plugin {
 								if (e.key === 'Enter') {
 									darkInput.blur();
 								}
+							});
+							
+							// Border Color control
+							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+							const borderHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+							borderHeader.innerHTML = '🎨 Appearance';
+							
+							const borderRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+							borderRow.createEl('span', { cls: 'dnd-map-context-aoe-label', text: 'Border Color:' });
+							
+							const borderColorPicker = borderRow.createEl('input', {
+								cls: 'dnd-map-border-color-picker',
+								attr: {
+									type: 'color',
+									value: (m as any).borderColor || mDef?.borderColor || '#ffffff'
+								}
+							});
+							borderColorPicker.style.width = '60px';
+							borderColorPicker.style.height = '30px';
+							borderColorPicker.style.border = 'none';
+							borderColorPicker.style.cursor = 'pointer';
+							
+							borderColorPicker.addEventListener('change', () => {
+								saveToHistory();
+								(m as any).borderColor = borderColorPicker.value;
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								new Notice('Border color updated');
+							});
+							
+							borderColorPicker.addEventListener('click', (e) => e.stopPropagation());
+							
+							const borderResetBtn = borderRow.createEl('button', {
+								cls: 'dnd-map-context-reset-btn',
+								text: 'Reset'
+							});
+							borderResetBtn.style.marginLeft = '8px';
+							borderResetBtn.style.padding = '4px 8px';
+							borderResetBtn.style.fontSize = '11px';
+							borderResetBtn.addEventListener('click', () => {
+								saveToHistory();
+								delete (m as any).borderColor;
+								borderColorPicker.value = mDef?.borderColor || '#ffffff';
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								new Notice('Border color reset to default');
 							});
 							
 							// Elevation controls (height and depth)
@@ -29460,16 +29513,15 @@ class PlayerMapView extends ItemView {
       ctx.fill();
     }
 
-    // Draw border
-    if (markerDef.borderColor) {
-      ctx.restore();
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-      ctx.strokeStyle = markerDef.borderColor;
-      ctx.lineWidth = Math.max(2, radius * 0.1);
-      ctx.stroke();
-    }
+    // Draw border (check marker instance first, then definition, then default to white)
+    const borderColor = (marker as any).borderColor || markerDef.borderColor || '#ffffff';
+    ctx.restore();
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = Math.max(2, radius * 0.1);
+    ctx.stroke();
 
     // Draw icon
     if (markerDef.icon) {

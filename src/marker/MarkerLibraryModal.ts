@@ -54,16 +54,17 @@ export class MarkerLibraryModal extends Modal {
 	private previewEl!: HTMLElement;
 	private creatureSizeSettingEl!: HTMLElement;
 	private pixelSizeSettingEl!: HTMLElement;
+	private darkvisionSettingEl!: HTMLElement;
 
 	// Form values
 	private name: string = '';
 	private type: MarkerType = 'creature';
 	private icon: string = '';
 	private backgroundColor: string = '#ff0000';
-	private borderColor: string = '';
 	private imageFile: string = '';
 	private creatureSize: CreatureSize = 'medium';
 	private pixelSize: number = 40;
+	private darkvision: number = 0;
 
 	constructor(
 		app: App,
@@ -81,10 +82,10 @@ export class MarkerLibraryModal extends Modal {
 			this.type = marker.type || 'other';
 			this.icon = marker.icon;
 			this.backgroundColor = marker.backgroundColor;
-			this.borderColor = marker.borderColor || '';
 			this.imageFile = marker.imageFile || '';
 			this.creatureSize = marker.creatureSize || 'medium';
 			this.pixelSize = marker.pixelSize || 40;
+			this.darkvision = marker.darkvision || 0;
 		}
 	}
 
@@ -148,6 +149,20 @@ export class MarkerLibraryModal extends Modal {
 				})
 			);
 		this.creatureSizeSettingEl = creatureSizeSetting.settingEl;
+
+		// Darkvision (shown for player/npc/creature)
+		const darkvisionSetting = new Setting(contentEl)
+			.setName('Darkvision')
+			.setDesc('Default darkvision range in feet (0-300)')
+			.addText(text => text
+				.setValue(this.darkvision > 0 ? this.darkvision.toString() : '')
+				.setPlaceholder('0')
+				.onChange(value => {
+					const num = parseInt(value) || 0;
+					this.darkvision = Math.max(0, Math.min(300, num));
+				})
+			);
+		this.darkvisionSettingEl = darkvisionSetting.settingEl;
 
 		// Pixel Size (shown for poi/other)
 		const pixelSizeSetting = new Setting(contentEl)
@@ -268,18 +283,6 @@ export class MarkerLibraryModal extends Modal {
 				})
 			);
 
-		// Border Color
-		new Setting(contentEl)
-			.setName('Border Color')
-			.setDesc('Leave default for white border')
-			.addColorPicker(color => color
-				.setValue(this.borderColor || '#ffffff')
-				.onChange(value => {
-					this.borderColor = value;
-					this.updatePreview();
-				})
-			);
-
 		this.toggleSizeControls();
 
 		// Buttons
@@ -293,6 +296,7 @@ export class MarkerLibraryModal extends Modal {
 	private toggleSizeControls() {
 		const isCreature = ['player', 'npc', 'creature'].includes(this.type);
 		this.creatureSizeSettingEl.style.display = isCreature ? '' : 'none';
+		this.darkvisionSettingEl.style.display = isCreature ? '' : 'none';
 		this.pixelSizeSettingEl.style.display = isCreature ? 'none' : '';
 	}
 
@@ -332,10 +336,6 @@ export class MarkerLibraryModal extends Modal {
 			el.style.backgroundColor = this.backgroundColor;
 		}
 
-		if (this.borderColor) {
-			el.style.border = `3px solid ${this.borderColor}`;
-		}
-
 		if (this.icon) {
 			const iconEl = el.createSpan();
 			iconEl.textContent = this.icon;
@@ -357,7 +357,6 @@ export class MarkerLibraryModal extends Modal {
 			type: this.type,
 			icon: this.icon,
 			backgroundColor: this.backgroundColor,
-			borderColor: this.borderColor || undefined,
 			imageFile: this.imageFile || undefined,
 			createdAt: this.marker?.createdAt || now,
 			updatedAt: now
@@ -365,6 +364,9 @@ export class MarkerLibraryModal extends Modal {
 
 		if (['player', 'npc', 'creature'].includes(this.type)) {
 			def.creatureSize = this.creatureSize;
+			if (this.darkvision > 0) {
+				def.darkvision = this.darkvision;
+			}
 		} else {
 			def.pixelSize = this.pixelSize;
 		}

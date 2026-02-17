@@ -56,6 +56,8 @@ export interface MarkerDefinition {
 	creatureSize?: CreatureSize;
 	// For poi/other: size is in pixels
 	pixelSize?: number;
+	// Darkvision range in feet (for player/npc/creature tokens)
+	darkvision?: number;
 	createdAt: number;
 	updatedAt: number;
 }

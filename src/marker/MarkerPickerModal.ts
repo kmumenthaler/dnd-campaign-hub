@@ -8,6 +8,16 @@ const SIZE_LABELS: Record<CreatureSize, string> = {
 	large: 'Large', huge: 'Huge', gargantuan: 'Gargantuan'
 };
 
+const TYPE_LABELS: Record<string, string> = {
+	player: '🛡️ Player Characters',
+	npc: '👤 NPCs',
+	creature: '🐉 Creatures',
+	poi: '📍 Points of Interest',
+	other: '📦 Other'
+};
+
+const TYPE_ORDER: string[] = ['player', 'npc', 'creature', 'poi', 'other'];
+
 export class MarkerPickerModal extends Modal {
 	private markerLibrary: MarkerLibrary;
 	private onSelect: (markerId: string) => void;
@@ -36,10 +46,24 @@ export class MarkerPickerModal extends Modal {
 				cls: 'marker-picker-empty'
 			});
 		} else {
-			const markerGrid = contentEl.createDiv({ cls: 'marker-picker-grid' });
+			// Search filter
+			const searchContainer = contentEl.createDiv();
+			searchContainer.style.marginBottom = '12px';
+			const searchInput = searchContainer.createEl('input', { 
+				type: 'text', 
+				placeholder: 'Search markers...' 
+			});
+			searchInput.style.width = '100%';
+			searchInput.style.padding = '8px';
+			searchInput.style.borderRadius = '4px';
+			searchInput.style.border = '1px solid var(--background-modifier-border)';
+			searchInput.style.fontSize = '14px';
 
-			for (const marker of markers) {
-				const card = markerGrid.createDiv({ cls: 'marker-picker-item' });
+			const categoriesContainer = contentEl.createDiv({ cls: 'marker-categories-container' });
+
+			// Helper to create a marker card
+			const createMarkerCard = (marker: MarkerDefinition, container: HTMLElement) => {
+				const card = container.createDiv({ cls: 'marker-picker-item' });
 				card.style.position = 'relative';
 
 				// Calculate display size for preview
@@ -139,7 +163,120 @@ export class MarkerPickerModal extends Modal {
 					this.onSelect(marker.id);
 					this.close();
 				});
-			}
+			};
+
+			const renderMarkers = (filter: string) => {
+				categoriesContainer.empty();
+				
+				// Filter markers based on search text
+				const filteredMarkers = filter
+					? markers.filter(m => 
+						m.name.toLowerCase().includes(filter.toLowerCase()) ||
+						m.type.toLowerCase().includes(filter.toLowerCase()) ||
+						(m.creatureSize && SIZE_LABELS[m.creatureSize].toLowerCase().includes(filter.toLowerCase()))
+					)
+					: markers;
+
+				if (filteredMarkers.length === 0) {
+					categoriesContainer.createEl('p', { 
+						text: 'No markers found.',
+						cls: 'marker-picker-empty'
+					});
+					return;
+				}
+
+				// Group markers by type
+				const markersByType: Record<string, MarkerDefinition[]> = {};
+				for (const marker of filteredMarkers) {
+					if (!markersByType[marker.type]) {
+						markersByType[marker.type] = [];
+					}
+					markersByType[marker.type].push(marker);
+				}
+
+				// Render each type category
+				for (const type of TYPE_ORDER) {
+					const typeMarkers = markersByType[type];
+					if (!typeMarkers || typeMarkers.length === 0) continue;
+
+					// Category wrapper
+					const categorySection = categoriesContainer.createDiv({ cls: 'marker-category-section' });
+
+					// Category header (collapsible) - full width horizontal bar
+					const categoryHeader = categorySection.createDiv({ cls: 'marker-category-header' });
+					categoryHeader.style.display = 'flex';
+					categoryHeader.style.alignItems = 'center';
+					categoryHeader.style.justifyContent = 'space-between';
+					categoryHeader.style.padding = '12px 16px';
+					categoryHeader.style.marginTop = '4px';
+					categoryHeader.style.marginBottom = '0';
+					categoryHeader.style.cursor = 'pointer';
+					categoryHeader.style.fontWeight = '600';
+					categoryHeader.style.fontSize = '14px';
+					categoryHeader.style.backgroundColor = 'var(--background-secondary)';
+					categoryHeader.style.borderRadius = '6px';
+					categoryHeader.style.userSelect = 'none';
+					categoryHeader.style.transition = 'background-color 0.15s ease';
+
+					const headerLeft = categoryHeader.createDiv();
+					headerLeft.style.display = 'flex';
+					headerLeft.style.alignItems = 'center';
+					headerLeft.style.gap = '8px';
+
+					const toggleIcon = headerLeft.createSpan({ text: '▼' });
+					toggleIcon.style.fontSize = '10px';
+					toggleIcon.style.transition = 'transform 0.2s ease';
+					toggleIcon.style.display = 'inline-block';
+
+					headerLeft.createSpan({ text: TYPE_LABELS[type] });
+
+					const countBadge = categoryHeader.createSpan({ text: `${typeMarkers.length}` });
+					countBadge.style.fontSize = '12px';
+					countBadge.style.padding = '2px 8px';
+					countBadge.style.borderRadius = '10px';
+					countBadge.style.backgroundColor = 'var(--background-modifier-border)';
+					countBadge.style.fontWeight = '500';
+
+					// Category content container
+					const categoryContent = categorySection.createDiv({ cls: 'marker-category-content' });
+					categoryContent.style.display = 'grid';
+					categoryContent.style.gridTemplateColumns = 'repeat(auto-fill, minmax(120px, 1fr))';
+					categoryContent.style.gap = '10px';
+					categoryContent.style.padding = '12px 8px';
+
+					// Render markers in this category
+					for (const marker of typeMarkers) {
+						createMarkerCard(marker, categoryContent);
+					}
+
+					// Hover effect on header
+					categoryHeader.addEventListener('mouseenter', () => {
+						categoryHeader.style.backgroundColor = 'var(--background-modifier-hover)';
+					});
+					categoryHeader.addEventListener('mouseleave', () => {
+						categoryHeader.style.backgroundColor = 'var(--background-secondary)';
+					});
+
+					// Toggle collapse on click
+					let collapsed = false;
+					categoryHeader.addEventListener('click', () => {
+						collapsed = !collapsed;
+						if (collapsed) {
+							categoryContent.style.display = 'none';
+							toggleIcon.style.transform = 'rotate(-90deg)';
+						} else {
+							categoryContent.style.display = 'grid';
+							toggleIcon.style.transform = 'rotate(0deg)';
+						}
+					});
+				}
+			};
+
+			// Initial render and search listener
+			renderMarkers('');
+			searchInput.addEventListener('input', () => renderMarkers(searchInput.value));
+			// Focus the search input after a small delay to ensure modal is ready
+			setTimeout(() => searchInput.focus(), 100);
 		}
 
 		// Buttons
