@@ -99,6 +99,32 @@ export const DEFAULT_MUSIC_SETTINGS: MusicSettings = {
   ambientVolume: 50
 };
 
+/**
+ * Scene music configuration – stored as JSON inside a
+ * ```dnd-music``` code block within a scene note.
+ */
+export interface SceneMusicConfig {
+  /** Playlist ID for the primary layer (null = no primary music) */
+  primaryPlaylistId: string | null;
+  /** Specific track path to start on within the primary playlist (null = first / shuffle) */
+  primaryTrackPath: string | null;
+  /** Playlist ID for the ambient layer (null = no ambient music) */
+  ambientPlaylistId: string | null;
+  /** Specific track path to start on within the ambient playlist (null = first / shuffle) */
+  ambientTrackPath: string | null;
+  /** Whether to auto-play when the codeblock's play button is clicked */
+  autoPlay: boolean;
+}
+
+/** Default (empty) scene music configuration */
+export const DEFAULT_SCENE_MUSIC_CONFIG: SceneMusicConfig = {
+  primaryPlaylistId: null,
+  primaryTrackPath: null,
+  ambientPlaylistId: null,
+  ambientTrackPath: null,
+  autoPlay: true,
+};
+
 /** Default sound effect presets for new installs */
 export const DEFAULT_SOUNDBOARD_ICONS: Record<string, string> = {
   'Sword Clash': '⚔️',

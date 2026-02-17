@@ -5,7 +5,7 @@
  */
 import { App, TFile } from 'obsidian';
 import { AudioLayer } from './AudioLayer';
-import type { Track, Playlist, SoundEffect, MusicPlayerState, MusicSettings } from './types';
+import type { Track, Playlist, SoundEffect, MusicPlayerState, MusicSettings, SceneMusicConfig } from './types';
 
 export class MusicPlayer {
   app: App;
@@ -199,5 +199,42 @@ export class MusicPlayer {
     if (!this.settings.autoPlayOnSceneChange) return;
     const mood = this.settings.sceneTypeMoodMap[sceneType] || 'ambient';
     this.playMood(mood);
+  }
+
+  /**
+   * Load (and optionally auto-play) music from a SceneMusicConfig.
+   * Called by the dnd-music code-block renderer or the dashboard detector.
+   */
+  loadSceneMusic(config: SceneMusicConfig, autoPlay = false) {
+    // ── Primary layer ──
+    if (config.primaryPlaylistId) {
+      const pl = this.settings.playlists.find(p => p.id === config.primaryPlaylistId);
+      if (pl) {
+        this.primary.loadPlaylist(pl);
+        // Jump to specific track if configured
+        if (config.primaryTrackPath) {
+          const idx = pl.trackPaths.indexOf(config.primaryTrackPath);
+          if (idx !== -1) {
+            this.primary.state.currentTrackIndex = idx;
+          }
+        }
+        if (autoPlay) this.primary.play();
+      }
+    }
+
+    // ── Ambient layer ──
+    if (config.ambientPlaylistId) {
+      const pl = this.settings.playlists.find(p => p.id === config.ambientPlaylistId);
+      if (pl) {
+        this.ambient.loadPlaylist(pl);
+        if (config.ambientTrackPath) {
+          const idx = pl.trackPaths.indexOf(config.ambientTrackPath);
+          if (idx !== -1) {
+            this.ambient.state.currentTrackIndex = idx;
+          }
+        }
+        if (autoPlay) this.ambient.play();
+      }
+    }
   }
 }

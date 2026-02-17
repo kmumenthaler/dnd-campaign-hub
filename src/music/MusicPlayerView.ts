@@ -29,12 +29,12 @@ export function renderMusicPlayer(
 
   // ── Primary Layer ───────────────────────────────────────
   const primaryCleanup = renderLayerControls(
-    section, musicPlayer.primary, settings, '🎵 Primary', musicPlayer
+    section, musicPlayer.primary, settings, '🎵 Primary', musicPlayer, false
   );
 
   // ── Ambient Layer ───────────────────────────────────────
   const ambientCleanup = renderLayerControls(
-    section, musicPlayer.ambient, settings, '🌊 Ambient', musicPlayer
+    section, musicPlayer.ambient, settings, '🌊 Ambient', musicPlayer, true
   );
 
   // ── Stop All button ─────────────────────────────────────
@@ -61,7 +61,8 @@ function renderLayerControls(
   layer: AudioLayer,
   settings: MusicSettings,
   label: string,
-  musicPlayer: MusicPlayer
+  musicPlayer: MusicPlayer,
+  isAmbient: boolean = false
 ): () => void {
   const layerSection = container.createEl('div', { cls: 'music-layer-section' });
 
@@ -125,12 +126,15 @@ function renderLayerControls(
   });
 
   // ── Playlist Selector ──────────────────────────────────
-  if (settings.playlists.length > 0) {
+  const availablePlaylists = isAmbient
+    ? settings.playlists.filter(p => p.mood === 'ambient')
+    : settings.playlists;
+  if (availablePlaylists.length > 0) {
     const playlistRow = layerSection.createEl('div', { cls: 'music-playlist-row' });
     playlistRow.createEl('span', { text: 'Playlist:', cls: 'music-playlist-label' });
     const playlistSelect = playlistRow.createEl('select', { cls: 'music-playlist-select' });
     playlistSelect.createEl('option', { text: '— Select —', value: '' });
-    for (const pl of settings.playlists) {
+    for (const pl of availablePlaylists) {
       const opt = playlistSelect.createEl('option', { text: `${pl.name} (${pl.mood})`, value: pl.id });
       if (pl.id === layer.state.currentPlaylistId) opt.selected = true;
     }

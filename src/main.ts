@@ -1,4 +1,4 @@
-import { App, AbstractInputSuggest, ItemView, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TextComponent, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
+import { App, AbstractInputSuggest, Editor, ItemView, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TextComponent, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
 import {
   WORLD_TEMPLATE,
   SESSION_GM_TEMPLATE,
@@ -26,9 +26,10 @@ import { MarkerReference, MarkerDefinition, CREATURE_SIZE_SQUARES, CreatureSize,
 import { MigrationManager, MigrationModal, TEMPLATE_VERSIONS } from "./migration";
 import { MusicPlayer } from "./music/MusicPlayer";
 import { MusicSettingsModal } from "./music/MusicSettingsModal";
-import type { MusicSettings } from "./music/types";
+import type { MusicSettings, SceneMusicConfig } from "./music/types";
 import { DEFAULT_MUSIC_SETTINGS, AUDIO_EXTENSIONS } from "./music/types";
 import { renderMusicPlayer, renderSoundboard } from "./music/MusicPlayerView";
+import { SceneMusicModal, renderSceneMusicBlock, buildSceneMusicCodeblock } from "./music/SceneMusicBlock";
 
 interface TabletopCalibration {
   monitorDiagonalInch: number;  // e.g. 27
@@ -2631,6 +2632,11 @@ export default class DndCampaignHubPlugin extends Plugin {
       await this.renderPoiView(source, el, ctx);
     });
 
+    // Register markdown code block processor for scene music cards
+    this.registerMarkdownCodeBlockProcessor('dnd-music', (source, el, ctx) => {
+      renderSceneMusicBlock(source, el, ctx, this.musicPlayer, this.settings.musicSettings);
+    });
+
     console.log("D&D Campaign Hub: Plugin loaded");
 
     // Check for version updates
@@ -3251,6 +3257,23 @@ export default class DndCampaignHubPlugin extends Plugin {
       name: "Stop All Music",
       callback: () => {
         this.musicPlayer.stopAll();
+      },
+    });
+
+    this.addCommand({
+      id: "insert-scene-music",
+      name: "🎵 Insert Scene Music Block",
+      editorCallback: (editor: Editor) => {
+        new SceneMusicModal(
+          this.app,
+          this.settings.musicSettings,
+          null,
+          (config) => {
+            const codeblock = buildSceneMusicCodeblock(config);
+            editor.replaceSelection(codeblock + '\n');
+            new Notice('Scene music block inserted');
+          }
+        ).open();
       },
     });
 
@@ -15279,6 +15302,9 @@ class SessionRunDashboardView extends ItemView {
 
     // Soundboard section
     renderSoundboard(controlPanel, this.app, this.plugin.musicPlayer, this.plugin.settings.musicSettings);
+
+    // Scene music detection – scan active scene for dnd-music codeblock
+    await this.renderSceneMusicDetector(controlPanel);
     
     // Quick notes section
     await this.renderQuickNotes(controlPanel);
@@ -15568,6 +15594,86 @@ class SessionRunDashboardView extends ItemView {
       this.saveQuickNotes();
       new Notice("Quick notes saved to session!");
     });
+  }
+
+  /**
+   * Scan all open markdown files for a dnd-music codeblock and show
+   * a compact Scene Music card in the dashboard with a Load & Play button.
+   */
+  async renderSceneMusicDetector(container: HTMLElement) {
+    // Look through all open leaves for a scene note containing a dnd-music block
+    const configs: Array<{ config: SceneMusicConfig; sceneName: string }> = [];
+
+    for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+      const file = (leaf.view as any).file as TFile | undefined;
+      if (!file) continue;
+
+      const content = await this.app.vault.read(file);
+      const match = content.match(/```dnd-music\s*\n([\s\S]*?)```/);
+      if (match && match[1]) {
+        try {
+          const config: SceneMusicConfig = JSON.parse(match[1].trim());
+          configs.push({ config, sceneName: file.basename });
+        } catch { /* ignore invalid JSON */ }
+      }
+    }
+
+    if (configs.length === 0) return;
+
+    const section = container.createEl('div', { cls: 'dashboard-section scene-music-detector' });
+    section.createEl('h3', { text: '🎬 Scene Music' });
+
+    for (const { config, sceneName } of configs) {
+      const card = section.createEl('div', { cls: 'scene-music-detect-card' });
+
+      card.createEl('strong', { text: sceneName, cls: 'scene-music-detect-name' });
+
+      const details = card.createEl('div', { cls: 'scene-music-detect-details' });
+
+      // Primary info
+      if (config.primaryPlaylistId) {
+        const pl = this.plugin.settings.musicSettings.playlists.find(
+          (p: any) => p.id === config.primaryPlaylistId
+        );
+        details.createEl('span', {
+          text: `🎵 ${pl ? pl.name : '(unknown)'}`,
+          cls: 'scene-music-detect-tag',
+        });
+      }
+
+      // Ambient info
+      if (config.ambientPlaylistId) {
+        const pl = this.plugin.settings.musicSettings.playlists.find(
+          (p: any) => p.id === config.ambientPlaylistId
+        );
+        details.createEl('span', {
+          text: `🌊 ${pl ? pl.name : '(unknown)'}`,
+          cls: 'scene-music-detect-tag',
+        });
+      }
+
+      let isLoaded = false;
+      const playBtn = card.createEl('button', {
+        text: '▶ Load & Play',
+        cls: 'mod-cta scene-music-detect-play',
+      });
+      playBtn.addEventListener('click', () => {
+        if (!isLoaded) {
+          this.plugin.musicPlayer.loadSceneMusic(config, config.autoPlay);
+          isLoaded = true;
+          playBtn.textContent = '⏹ Stop';
+          playBtn.classList.remove('mod-cta');
+          playBtn.classList.add('mod-warning');
+          new Notice(`🎵 Loaded scene music for "${sceneName}"`);
+        } else {
+          this.plugin.musicPlayer.stopAll();
+          isLoaded = false;
+          playBtn.textContent = '▶ Load & Play';
+          playBtn.classList.add('mod-cta');
+          playBtn.classList.remove('mod-warning');
+        }
+      });
+    }
   }
 
   async renderSRDQuickSearch(container: HTMLElement) {
