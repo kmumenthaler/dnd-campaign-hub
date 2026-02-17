@@ -24,6 +24,11 @@ import { MapCreationModal } from "./map/MapCreationModal";
 import { MarkerLibrary } from "./marker/MarkerLibrary";
 import { MarkerReference, MarkerDefinition, CREATURE_SIZE_SQUARES, CreatureSize, Layer } from "./marker/MarkerTypes";
 import { MigrationManager, MigrationModal, TEMPLATE_VERSIONS } from "./migration";
+import { MusicPlayer } from "./music/MusicPlayer";
+import { MusicSettingsModal } from "./music/MusicSettingsModal";
+import type { MusicSettings } from "./music/types";
+import { DEFAULT_MUSIC_SETTINGS, AUDIO_EXTENSIONS } from "./music/types";
+import { renderMusicPlayer, renderSoundboard } from "./music/MusicPlayerView";
 
 interface TabletopCalibration {
   monitorDiagonalInch: number;  // e.g. 27
@@ -35,12 +40,14 @@ interface DndCampaignHubSettings {
   currentCampaign: string;
   pluginVersion: string;
   tabletopCalibration: TabletopCalibration | null;
+  musicSettings: MusicSettings;
 }
 
 const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   currentCampaign: "ttrpgs/Frozen Sick (SOLINA)",
   pluginVersion: "0.0.0",
   tabletopCalibration: null,
+  musicSettings: { ...DEFAULT_MUSIC_SETTINGS },
 };
 
 class CalibrationModal extends Modal {
@@ -2554,6 +2561,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   encounterBuilder!: EncounterBuilder;
   mapManager!: MapManager;
   markerLibrary!: MarkerLibrary;
+  musicPlayer!: MusicPlayer;
   _playerMapViews: Set<PlayerMapView> = new Set();
 
   async onload() {
@@ -2599,6 +2607,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     // Initialize the migration manager (after marker library)
     this.migrationManager = new MigrationManager(this.app, this.markerLibrary);
+
+    // Initialize the music player
+    this.musicPlayer = new MusicPlayer(this.app, this.settings.musicSettings);
 
     // Register markdown code block processor for rendering maps
     this.registerMarkdownCodeBlockProcessor('dnd-map', (source, el, ctx) => {
@@ -3209,6 +3220,53 @@ export default class DndCampaignHubPlugin extends Plugin {
       },
     });
 
+    // ─── Music Player Commands ──────────────────────────────
+
+    this.addCommand({
+      id: "toggle-music-playback",
+      name: "Toggle Music Play / Pause",
+      callback: () => {
+        this.musicPlayer.togglePlayPause();
+      },
+    });
+
+    this.addCommand({
+      id: "next-track",
+      name: "Next Track",
+      callback: () => {
+        this.musicPlayer.next();
+      },
+    });
+
+    this.addCommand({
+      id: "previous-track",
+      name: "Previous Track",
+      callback: () => {
+        this.musicPlayer.previous();
+      },
+    });
+
+    this.addCommand({
+      id: "stop-music",
+      name: "Stop All Music",
+      callback: () => {
+        this.musicPlayer.stopAll();
+      },
+    });
+
+    this.addCommand({
+      id: "open-music-settings",
+      name: "Open Music Settings",
+      callback: () => {
+        new MusicSettingsModal(this.app, this.settings.musicSettings, async (updated: MusicSettings) => {
+          this.settings.musicSettings = updated;
+          this.musicPlayer.reloadSettings(updated);
+          await this.saveSettings();
+          new Notice("Music settings saved");
+        }).open();
+      },
+    });
+
     this.addCommand({
       id: "purge-vault",
       name: "Purge D&D Campaign Hub Data",
@@ -3220,8 +3278,21 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
   }
 
+  onunload() {
+    this.musicPlayer?.destroy();
+  }
+
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const saved = await this.loadData();
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+		// Deep-merge musicSettings so new default fields are present for existing users
+		if (saved?.musicSettings) {
+			this.settings.musicSettings = Object.assign(
+				{},
+				DEFAULT_MUSIC_SETTINGS,
+				saved.musicSettings
+			);
+		}
 	}
 
 	async saveSettings() {
@@ -14925,6 +14996,7 @@ class SessionRunDashboardView extends ItemView {
   quickNotesContent: string = "";
   autoSaveInterval: number | null = null;
   timerUpdateInterval: number | null = null;
+  musicCleanup: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -15183,6 +15255,30 @@ class SessionRunDashboardView extends ItemView {
     
     // Dice roller section
     this.renderDiceRoller(controlPanel);
+
+    // Music player section
+    if (this.musicCleanup) {
+      this.musicCleanup();
+      this.musicCleanup = null;
+    }
+    this.musicCleanup = renderMusicPlayer(
+      controlPanel,
+      this.app,
+      this.plugin.musicPlayer,
+      this.plugin.settings.musicSettings,
+      () => {
+        new MusicSettingsModal(this.app, this.plugin.settings.musicSettings, async (updated: MusicSettings) => {
+          this.plugin.settings.musicSettings = updated;
+          this.plugin.musicPlayer.reloadSettings(updated);
+          await this.plugin.saveSettings();
+          new Notice("Music settings saved");
+          this.render();
+        }).open();
+      }
+    );
+
+    // Soundboard section
+    renderSoundboard(controlPanel, this.app, this.plugin.musicPlayer, this.plugin.settings.musicSettings);
     
     // Quick notes section
     await this.renderQuickNotes(controlPanel);
