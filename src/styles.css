@@ -3847,8 +3847,7 @@
 .dnd-map-player-view-btn {
   position: absolute;
   top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 10px;
   background: linear-gradient(135deg, rgba(30, 27, 75, 0.95), rgba(25, 20, 55, 0.95));
   backdrop-filter: blur(12px);
   color: white;
@@ -3873,11 +3872,11 @@
   border-color: rgba(124, 58, 237, 0.8);
   box-shadow: 0 6px 20px rgba(124, 58, 237, 0.4),
               0 2px 8px rgba(0, 0, 0, 0.3);
-  transform: translate(-50%, -1px);
+  transform: translateY(-1px);
 }
 
 .dnd-map-player-view-btn:active {
-  transform: translateX(-50%);
+  transform: none;
 }
 
 /* Stack second button (View Region) below first button to avoid overlap */
@@ -4528,7 +4527,7 @@
 /* Travel Pace Controls - Floating panel on right side */
 .dnd-map-pace-controls {
   position: absolute;
-  top: 10px;
+  top: 60px;
   right: 10px;
   background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(10px);
