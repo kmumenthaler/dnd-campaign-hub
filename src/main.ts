@@ -28188,13 +28188,23 @@ class PlayerMapView extends ItemView {
       };
       
       // Helper function to check if a point is within vision range and line of sight
-      const isPointVisible = (point: { x: number; y: number }, playerMarker: any, tunnel: any): boolean => {
+      // Uses 3D distance when elevation data is available (D&D 5e RAW: elevation counts toward distance)
+      const isPointVisible = (point: { x: number; y: number; elevation?: any }, playerMarker: any, tunnel: any): boolean => {
         const visionRangePx = getVisionRange(playerMarker);
         if (visionRangePx === 0) return false; // No vision = can't see
         
         const dx = point.x - playerMarker.position.x;
         const dy = point.y - playerMarker.position.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+        const horizontalDistSq = dx * dx + dy * dy;
+        
+        // Calculate vertical distance in pixels if elevation data exists
+        const pointElev = point.elevation ? ((point.elevation.height || 0) - (point.elevation.depth || 0)) : 0;
+        const playerElev = playerMarker.elevation ? ((playerMarker.elevation.height || 0) - (playerMarker.elevation.depth || 0)) : 0;
+        const verticalFeet = Math.abs(pointElev - playerElev);
+        const verticalPx = verticalFeet * pixelsPerFoot;
+        
+        // 3D distance (Pythagorean: horizontal² + vertical² = total²)
+        const distance = Math.sqrt(horizontalDistSq + verticalPx * verticalPx);
         
         return distance <= visionRangePx;
       };
@@ -28472,12 +28482,20 @@ class PlayerMapView extends ItemView {
                 console.log('[Burrowed Token Visibility] Player vision range:', visionRangePx);
                 
                 if (visionRangePx > 0) {
-                  // Calculate direct distance
+                  // Calculate 3D distance (accounting for elevation/depth differences)
                   const directDx = m.position.x - playerMarker.position.x;
                   const directDy = m.position.y - playerMarker.position.y;
-                  const directDistance = Math.sqrt(directDx * directDx + directDy * directDy);
+                  const horizontalDistSq = directDx * directDx + directDy * directDy;
                   
-                  // Check if within vision range
+                  // Include elevation difference in distance calculation
+                  const mElev = (m.elevation?.height || 0) - (m.elevation?.depth || 0);
+                  const pElev = (playerMarker.elevation?.height || 0) - (playerMarker.elevation?.depth || 0);
+                  const verticalFeet = Math.abs(mElev - pElev);
+                  const verticalPx = verticalFeet * pixelsPerFootForVision;
+                  
+                  const directDistance = Math.sqrt(horizontalDistSq + verticalPx * verticalPx);
+                  
+                  // Check if within vision range (3D distance)
                   if (directDistance <= visionRangePx) {
                     // Use raycasting to check if tunnel walls block line of sight
                     let isBlocked = false;
@@ -28647,15 +28665,23 @@ class PlayerMapView extends ItemView {
                   }
                 }
               } else if (playerMarker.elevation?.isBurrowing) {
-                // Player is burrowing (not in explicit tunnel) - use simple distance
+                // Player is burrowing (not in explicit tunnel) - use 3D distance
                 const visionRangePx = getVisionRange(playerMarker);
                 
                 if (visionRangePx > 0) {
                   const dx = m.position.x - playerMarker.position.x;
                   const dy = m.position.y - playerMarker.position.y;
-                  const distance = Math.sqrt(dx * dx + dy * dy);
+                  const horizontalDistSq = dx * dx + dy * dy;
                   
-                  console.log('[Burrowed Token Visibility] Position-based distance check:', {
+                  // Include elevation difference in distance calculation
+                  const mElev = (m.elevation?.height || 0) - (m.elevation?.depth || 0);
+                  const pElev = (playerMarker.elevation?.height || 0) - (playerMarker.elevation?.depth || 0);
+                  const verticalFeet = Math.abs(mElev - pElev);
+                  const verticalPx = verticalFeet * pixelsPerFootForVision;
+                  
+                  const distance = Math.sqrt(horizontalDistSq + verticalPx * verticalPx);
+                  
+                  console.log('[Burrowed Token Visibility] Position-based 3D distance check:', {
                     distance: distance.toFixed(2),
                     visionRange: visionRangePx.toFixed(2),
                     visible: distance <= visionRangePx
@@ -28684,6 +28710,56 @@ class PlayerMapView extends ItemView {
         // Always skip rendering burrowed tokens here - they'll be drawn on top of fog later if visible
         return;
       }
+      // 3D elevation-aware visibility check for surface tokens (D&D 5e RAW)
+      // A token flying at 80ft directly above a player with 60ft darkvision should NOT be visible
+      // because the true 3D distance (80ft) exceeds the vision range (60ft)
+      if (m.elevation && (m.elevation.height > 0 || m.elevation.depth > 0) && playerTokens.length > 0) {
+        const tokenElev = (m.elevation.height || 0) - (m.elevation.depth || 0);
+        const pixelsPerFootLocal = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+        
+        let visibleToAnyPlayer = false;
+        for (const playerMarker of playerTokens) {
+          // Get this player's max vision range in feet
+          let playerVisionFeet = 0;
+          if (playerMarker.darkvision && playerMarker.darkvision > 0) {
+            playerVisionFeet = Math.max(playerVisionFeet, playerMarker.darkvision);
+          }
+          if (playerMarker.light) {
+            const totalLight = (playerMarker.light.bright || 0) + (playerMarker.light.dim || 0);
+            playerVisionFeet = Math.max(playerVisionFeet, totalLight);
+          }
+          
+          if (playerVisionFeet <= 0) continue;
+          
+          const playerElev = playerMarker.elevation ? ((playerMarker.elevation.height || 0) - (playerMarker.elevation.depth || 0)) : 0;
+          const verticalFeet = Math.abs(tokenElev - playerElev);
+          
+          // If vertical distance alone exceeds vision range, this player can't see it
+          if (verticalFeet > playerVisionFeet) continue;
+          
+          // Calculate 3D distance in feet
+          const dx = m.position.x - playerMarker.position.x;
+          const dy = m.position.y - playerMarker.position.y;
+          const horizontalPx = Math.sqrt(dx * dx + dy * dy);
+          const horizontalFeet = horizontalPx / pixelsPerFootLocal;
+          const totalDistFeet = Math.sqrt(horizontalFeet * horizontalFeet + verticalFeet * verticalFeet);
+          
+          if (totalDistFeet <= playerVisionFeet) {
+            visibleToAnyPlayer = true;
+            break;
+          }
+        }
+        
+        if (!visibleToAnyPlayer) {
+          console.log('[3D Vision] Token hidden due to elevation - 3D distance exceeds vision range:', {
+            tokenId: m.id,
+            tokenElevation: tokenElev,
+            position: m.position
+          });
+          return; // Skip rendering this token
+        }
+      }
+      
       this.drawMarker(ctx, m);
     });
 
