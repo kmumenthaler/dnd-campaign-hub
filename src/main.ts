@@ -5348,6 +5348,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 						// Ensure section is expanded when switching to Background layer
 						visionSectionHeader.removeClass('collapsed');
 						visionContent.removeClass('collapsed');
+						// Show individual vision tool buttons
+						fogBtn.removeClass('hidden');
+						wallsBtn.removeClass('hidden');
+						lightsBtn.removeClass('hidden');
 					}
 					// Show/hide Tunnels section based on layer (only available on Subterranean)
 					if (layer !== 'Subterranean') {
