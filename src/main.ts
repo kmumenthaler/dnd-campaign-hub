@@ -5380,6 +5380,87 @@ export default class DndCampaignHubPlugin extends Plugin {
 			return { x, y };
 		};
 
+		// Helper function to generate tunnel walls from path
+		const generateTunnelWalls = (
+			path: Array<{x: number, y: number}>,
+			tunnelWidth: number
+		): Array<{start: {x: number, y: number}, end: {x: number, y: number}}> => {
+			if (!path || path.length < 2) return [];
+			
+			const walls: Array<{start: {x: number, y: number}, end: {x: number, y: number}}> = [];
+			const halfWidth = tunnelWidth / 2;
+			
+			// Generate parallel walls along each segment of the path
+			for (let i = 0; i < path.length - 1; i++) {
+				const p1 = path[i];
+				const p2 = path[i + 1];
+				if (!p1 || !p2) continue;
+				
+				// Calculate perpendicular vector for this segment
+				const dx = p2.x - p1.x;
+				const dy = p2.y - p1.y;
+				const len = Math.sqrt(dx * dx + dy * dy);
+				
+				if (len === 0) continue;
+				
+				// Normalized perpendicular vector (rotated 90 degrees)
+				const perpX = -dy / len;
+				const perpY = dx / len;
+				
+				// Calculate wall endpoints for this segment
+				const leftStart = { x: p1.x + perpX * halfWidth, y: p1.y + perpY * halfWidth };
+				const leftEnd = { x: p2.x + perpX * halfWidth, y: p2.y + perpY * halfWidth };
+				const rightStart = { x: p1.x - perpX * halfWidth, y: p1.y - perpY * halfWidth };
+				const rightEnd = { x: p2.x - perpX * halfWidth, y: p2.y - perpY * halfWidth };
+				
+				// Add left wall segment
+				walls.push({ start: leftStart, end: leftEnd });
+				
+				// Add right wall segment
+				walls.push({ start: rightStart, end: rightEnd });
+			}
+			
+			// Add end caps to close the tunnel at entrance and exit
+			if (path.length >= 2) {
+				// Entrance cap
+				const firstSegment = path[1];
+				const firstPoint = path[0];
+				if (firstSegment && firstPoint) {
+					const dx = firstSegment.x - firstPoint.x;
+					const dy = firstSegment.y - firstPoint.y;
+					const len = Math.sqrt(dx * dx + dy * dy);
+					if (len > 0) {
+						const perpX = -dy / len;
+						const perpY = dx / len;
+						walls.push({
+							start: { x: firstPoint.x + perpX * halfWidth, y: firstPoint.y + perpY * halfWidth },
+							end: { x: firstPoint.x - perpX * halfWidth, y: firstPoint.y - perpY * halfWidth }
+						});
+					}
+				}
+				
+				// Exit cap
+				const lastIdx = path.length - 1;
+				const lastPoint = path[lastIdx];
+				const secondLastPoint = path[lastIdx - 1];
+				if (lastPoint && secondLastPoint) {
+					const dx = lastPoint.x - secondLastPoint.x;
+					const dy = lastPoint.y - secondLastPoint.y;
+					const len = Math.sqrt(dx * dx + dy * dy);
+					if (len > 0) {
+						const perpX = -dy / len;
+						const perpY = dx / len;
+						walls.push({
+							start: { x: lastPoint.x + perpX * halfWidth, y: lastPoint.y + perpY * halfWidth },
+							end: { x: lastPoint.x - perpX * halfWidth, y: lastPoint.y - perpY * halfWidth }
+						});
+					}
+				}
+			}
+			
+			return walls;
+		};
+
 		// Helper function to calculate distance from point to line segment
 		const distanceToLineSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
 			const A = px - x1;
@@ -5697,11 +5778,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 					config.tunnels.forEach((tunnel: any) => {
 						if (!tunnel.path || tunnel.path.length < 2) return;
 						
-						const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
-						const tunnelWidth = (squares * config.gridSize) / 2; // Tunnel width matches creature
-						
-						ctx.save();
-						ctx.globalAlpha = 0.5;
+					// Use stored tunnel width, or calculate as (size + 0.5) * gridSize
+					const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
+					const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
 						ctx.strokeStyle = '#2a2a2a';
 						ctx.lineWidth = tunnelWidth;
 						ctx.lineCap = 'round';
@@ -8028,10 +8107,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 							let closestIndex = draggedMarker.tunnelState.pathIndex;
 							let closestDistance = Infinity;
 							
-							// Check a range of path points near current position
-							const searchRange = 3; // Check 3 points before and after current position
-							const startIdx = Math.max(0, draggedMarker.tunnelState.pathIndex - searchRange);
-							const endIdx = Math.min(tunnel.path.length - 1, draggedMarker.tunnelState.pathIndex + searchRange);
+							// Search entire tunnel path since grid-snapped points may be far apart
+							const startIdx = 0;
+							const endIdx = tunnel.path.length - 1;
 							
 							for (let i = startIdx; i <= endIdx; i++) {
 								const pathPoint = tunnel.path[i];
@@ -8051,6 +8129,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 								x: tunnel.path[closestIndex].x,
 								y: tunnel.path[closestIndex].y
 							};
+							// Update elevation to match tunnel path at this point
+							const pathElevation = tunnel.path[closestIndex].elevation;
+							if (pathElevation !== undefined) {
+								if (!draggedMarker.elevation) draggedMarker.elevation = {};
+								draggedMarker.elevation.depth = pathElevation;
+							}
 						} else {
 							// Tunnel not found, allow free movement
 							draggedMarker.position = {
@@ -8071,24 +8155,78 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const activeTunnel = config.tunnels.find((t: any) => 
 							t.creatorMarkerId === draggedMarker.id && t.active
 						);
-						if (activeTunnel) {
+						if (activeTunnel && activeTunnel.path.length > 0) {
+							// Snap path points to grid tile centers (every tile the token walks on)
+							const gridSize = config.gridSize || 70;
+							const ox = config.gridOffsetX || 0;
+							const oy = config.gridOffsetY || 0;
+							
+							// Get creature size for proper grid snapping
+							const markerDef = draggedMarker.markerId ? this.markerLibrary.getMarker(draggedMarker.markerId) : null;
+							const CREATURE_SIZE_SQUARES: Record<string, number> = {
+								'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+							};
+							const sizeInSquares = markerDef?.creatureSize ? CREATURE_SIZE_SQUARES[markerDef.creatureSize] || 1 : 1;
+							
+							// Snap to grid tile center (every tile the token walks on)
+							const halfToken = (sizeInSquares * gridSize) / 2;
+							const col = Math.round((draggedMarker.position.x - ox - halfToken) / gridSize);
+							const row = Math.round((draggedMarker.position.y - oy - halfToken) / gridSize);
+							const snappedX = ox + col * gridSize + halfToken;
+							const snappedY = oy + row * gridSize + halfToken;
+							
 							const lastPoint = activeTunnel.path[activeTunnel.path.length - 1];
-							const dx = draggedMarker.position.x - lastPoint.x;
-							const dy = draggedMarker.position.y - lastPoint.y;
-							const distance = Math.sqrt(dx * dx + dy * dy);
-							// Add path point every 10 pixels of movement to avoid too many points
-							if (distance > 10) {
+							
+							// Only add if we moved to a different grid cell
+							if (snappedX !== lastPoint.x || snappedY !== lastPoint.y) {
+								let shouldAdd = true;
+								
+								// Check for zig-zag (direction reversal)
+								if (activeTunnel.path.length >= 2) {
+									const prevPoint = activeTunnel.path[activeTunnel.path.length - 2];
+									const prevDx = lastPoint.x - prevPoint.x;
+									const prevDy = lastPoint.y - prevPoint.y;
+									const newDx = snappedX - lastPoint.x;
+									const newDy = snappedY - lastPoint.y;
+									
+									// Dot product < 0 means moving backwards (angle > 90°)
+									const dotProduct = prevDx * newDx + prevDy * newDy;
+									if (dotProduct < 0) {
+										// Moving backwards - update last point instead
+										lastPoint.x = snappedX;
+										lastPoint.y = snappedY;
+										lastPoint.elevation = draggedMarker.elevation?.depth;
+										shouldAdd = false;
+										
+										// Regenerate tunnel walls after updating last point
+										if (activeTunnel.path.length >= 2) {
+										const tunnelWidth = activeTunnel.tunnelWidth || (sizeInSquares + 0.5) * gridSize;
+										activeTunnel.walls = generateTunnelWalls(activeTunnel.path, tunnelWidth);
+									}
+								}
+							}
+							
+							if (shouldAdd) {
 								activeTunnel.path.push({ 
-									x: draggedMarker.position.x, 
-									y: draggedMarker.position.y 
+									x: snappedX, 
+									y: snappedY,
+									elevation: draggedMarker.elevation?.depth
 								});
+							}
+							
+							// Regenerate tunnel walls after path update
+							if (activeTunnel.path.length >= 2) {
+								const tunnelWidth = activeTunnel.tunnelWidth || (sizeInSquares + 0.5) * gridSize;
+								activeTunnel.walls = generateTunnelWalls(activeTunnel.path, tunnelWidth);
+								console.log('[Tunnel Debug] Regenerated tunnel walls, count:', activeTunnel.walls.length);
 							}
 						}
 					}
-					
-					// Move anchored AoE effects with the marker
-					const dxAoe = draggedMarker.position.x - prevX;
-					const dyAoe = draggedMarker.position.y - prevY;
+				}
+				
+				// Move anchored AoE effects with the marker
+				const dxAoe = draggedMarker.position.x - prevX;
+				const dyAoe = draggedMarker.position.y - prevY;
 					if (dxAoe !== 0 || dyAoe !== 0) {
 						config.aoeEffects.forEach((aoe: any) => {
 							if (aoe.anchorMarkerId === draggedMarker.id) {
@@ -8321,53 +8459,22 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const m = config.markers[draggingMarkerIndex];
 					const mDef = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
 					
-					// Finalize tunnel path if marker was actively burrowing
-					if (m.elevation?.isBurrowing && m.elevation?.leaveTunnel && config.tunnels) {
-						const activeTunnel = config.tunnels.find((t: any) => 
-							t.creatorMarkerId === m.id && t.active
-						);
-						if (activeTunnel && activeTunnel.path.length > 0) {
-							const lastPoint = activeTunnel.path[activeTunnel.path.length - 1];
-							const dx = m.position.x - lastPoint.x;
-							const dy = m.position.y - lastPoint.y;
-							const distance = Math.sqrt(dx * dx + dy * dy);
-							// Add final position if different from last recorded point
-							if (distance > 5) {
-								activeTunnel.path.push({ x: m.position.x, y: m.position.y });
-							}
-						}
-					}
-					
+					// First snap the token to grid (if applicable)
 					if (mDef && ['player', 'npc', 'creature'].includes(mDef.type) && config.gridSize) {
 						const ox = config.gridOffsetX || 0;
 						const oy = config.gridOffsetY || 0;
 						const gs = config.gridSize;
 						const squares = CREATURE_SIZE_SQUARES[mDef.creatureSize || 'medium'] || 1;
-						// Round to nearest grid cell so the token snaps where it has most coverage
 						const halfToken = (squares * gs) / 2;
 						const col = Math.round((m.position.x - ox - halfToken) / gs);
 						const row = Math.round((m.position.y - oy - halfToken) / gs);
-							// Snap delta for anchored AoE effects
 						const snapDx = (ox + col * gs + halfToken) - m.position.x;
 						const snapDy = (oy + row * gs + halfToken) - m.position.y;
 						m.position.x = ox + col * gs + halfToken;
 						m.position.y = oy + row * gs + halfToken;
 						
-						// Update tunnel path with snapped position
+						// Update anchored AoE effects with snap delta
 						if (snapDx !== 0 || snapDy !== 0) {
-							if (m.elevation?.isBurrowing && m.elevation?.leaveTunnel && config.tunnels) {
-								const activeTunnel = config.tunnels.find((t: any) => 
-									t.creatorMarkerId === m.id && t.active
-								);
-								if (activeTunnel && activeTunnel.path.length > 0) {
-									// Update last point to snapped position
-									activeTunnel.path[activeTunnel.path.length - 1] = { 
-										x: m.position.x, 
-										y: m.position.y 
-									};
-								}
-							}
-							
 							config.aoeEffects.forEach((aoe: any) => {
 								if (aoe.anchorMarkerId === m.id) {
 									aoe.origin.x += snapDx;
@@ -8376,6 +8483,60 @@ export default class DndCampaignHubPlugin extends Plugin {
 									aoe.end.y += snapDy;
 								}
 							});
+						}
+					}
+					
+					// THEN finalize tunnel path AFTER token is snapped
+					if (m.elevation?.isBurrowing && m.elevation?.leaveTunnel && config.tunnels) {
+						const activeTunnel = config.tunnels.find((t: any) => 
+							t.creatorMarkerId === m.id && t.active
+						);
+						if (activeTunnel && activeTunnel.path.length > 0) {
+							// Snap final position to grid tile center (same logic as during movement)
+							const gridSize = config.gridSize || 70;
+							const ox = config.gridOffsetX || 0;
+							const oy = config.gridOffsetY || 0;
+							const CREATURE_SIZE_SQUARES: Record<string, number> = {
+								'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+							};
+							const sizeInSquares = mDef?.creatureSize ? CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1 : 1;
+							const halfToken = (sizeInSquares * gridSize) / 2;
+							const col = Math.round((m.position.x - ox - halfToken) / gridSize);
+							const row = Math.round((m.position.y - oy - halfToken) / gridSize);
+							const snappedX = ox + col * gridSize + halfToken;
+							const snappedY = oy + row * gridSize + halfToken;
+							
+							const lastPoint = activeTunnel.path[activeTunnel.path.length - 1];
+							
+							// Check if adding this point would create a zig-zag (direction reversal)
+							if (snappedX !== lastPoint.x || snappedY !== lastPoint.y) {
+								let shouldAdd = true;
+								
+								if (activeTunnel.path.length >= 2) {
+									const prevPoint = activeTunnel.path[activeTunnel.path.length - 2];
+									// Calculate previous direction
+									const prevDx = lastPoint.x - prevPoint.x;
+									const prevDy = lastPoint.y - prevPoint.y;
+									// Calculate new direction
+									const newDx = snappedX - lastPoint.x;
+									const newDy = snappedY - lastPoint.y;
+									
+									// Check for direction reversal (moving backwards)
+									// Dot product < 0 means angle > 90°, which is moving backwards
+									const dotProduct = prevDx * newDx + prevDy * newDy;
+									if (dotProduct < 0) {
+										// This would create a zig-zag - update last point instead of adding
+										lastPoint.x = snappedX;
+										lastPoint.y = snappedY;
+										lastPoint.elevation = m.elevation?.depth;
+										shouldAdd = false;
+									}
+								}
+								
+								if (shouldAdd) {
+									activeTunnel.path.push({ x: snappedX, y: snappedY, elevation: m.elevation?.depth });
+								}
+							}
 						}
 					}
 					draggingMarkerIndex = -1;
@@ -8534,12 +8695,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 								const newPos = tunnel.path[newIndex];
 								marker.position.x = newPos.x;
 								marker.position.y = newPos.y;
-								
-								redrawAnnotations();
-								this.saveMapAnnotations(config, el);
-								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-								
-								// Show progress indicator
+								// Update elevation to match tunnel path at this point
+								if (newPos.elevation !== undefined) {
+									if (!marker.elevation) marker.elevation = {};
+									marker.elevation.depth = newPos.elevation;
+								}
 								const progress = Math.round((newIndex / (tunnel.path.length - 1)) * 100);
 								new Notice(`Tunnel progress: ${progress}%`, 1000);
 							} else if (newIndex === tunnel.path.length - 1 && (e.key === 'ArrowUp' || e.key === 'ArrowRight')) {
@@ -9068,20 +9228,43 @@ export default class DndCampaignHubPlugin extends Plugin {
 								// Check if tunnel already exists for this marker
 								let tunnel = config.tunnels.find((t: any) => t.creatorMarkerId === m.id && t.active);
 								if (!tunnel) {
-									// Create new tunnel with entrance at current position
+									// Snap entrance to grid tile center (same as token placement)
+									const gridSize = config.gridSize || 70;
+									const ox = config.gridOffsetX || 0;
+									const oy = config.gridOffsetY || 0;
+									
+									// Calculate tunnel width based on creature size (slightly larger than token)
+									const CREATURE_SIZE_SQUARES: Record<string, number> = {
+										'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+									};
+									const creatureSize = mDef.creatureSize || 'medium';
+									const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
+									// Tunnel width = creature size + 0.5 grid squares (slightly larger)
+									const tunnelWidth = (sizeInSquares + 0.5) * gridSize;
+									
+									// Snap to grid tile center (same as token snapping)
+									const halfToken = (sizeInSquares * gridSize) / 2;
+									const col = Math.round((m.position.x - ox - halfToken) / gridSize);
+									const row = Math.round((m.position.y - oy - halfToken) / gridSize);
+									const snappedX = ox + col * gridSize + halfToken;
+									const snappedY = oy + row * gridSize + halfToken;
+									
+									// Create new tunnel with entrance at snapped position
 									tunnel = {
 										id: `tunnel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
 										creatorMarkerId: m.id,
-										entrancePosition: { x: m.position.x, y: m.position.y },
-										path: [{ x: m.position.x, y: m.position.y }],
-										creatureSize: mDef.creatureSize || 'medium',
+										entrancePosition: { x: snappedX, y: snappedY },
+										path: [{ x: snappedX, y: snappedY, elevation: value }],
+										creatureSize: creatureSize,
 										depth: value,
 										createdAt: Date.now(),
 										visible: true,
-										active: true
+										active: true,
+										tunnelWidth: tunnelWidth,
+										walls: [] // Will be generated when path has multiple points
 									};
 									config.tunnels.push(tunnel);
-									console.log('[Tunnel Debug] Created NEW tunnel with entrance at', tunnel.entrancePosition, JSON.stringify(tunnel, null, 2));
+									console.log('[Tunnel Debug] Created NEW tunnel with entrance at', tunnel.entrancePosition, 'width:', tunnelWidth, JSON.stringify(tunnel, null, 2));
 								}
 							} else {
 								// Depth set to 0 - surface automatically and mark exit
@@ -9091,15 +9274,29 @@ export default class DndCampaignHubPlugin extends Plugin {
 								
 								// Mark exit position and deactivate tunnel
 								if (config.tunnels) {
+									// Snap exit to grid tile center
+									const gridSize = config.gridSize || 70;
+									const ox = config.gridOffsetX || 0;
+									const oy = config.gridOffsetY || 0;
+									const CREATURE_SIZE_SQUARES: Record<string, number> = {
+										'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+									};
+									const sizeInSquares = mDef?.creatureSize ? CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1 : 1;
+									const halfToken = (sizeInSquares * gridSize) / 2;
+									const col = Math.round((m.position.x - ox - halfToken) / gridSize);
+									const row = Math.round((m.position.y - oy - halfToken) / gridSize);
+									const snappedX = ox + col * gridSize + halfToken;
+									const snappedY = oy + row * gridSize + halfToken;
+									
 									config.tunnels.forEach((t: any) => {
 										if (t.creatorMarkerId === m.id && t.active) {
 											// Add current position as exit if not already in path
 											const lastPos = t.path[t.path.length - 1];
-											if (!lastPos || lastPos.x !== m.position.x || lastPos.y !== m.position.y) {
-												t.path.push({ x: m.position.x, y: m.position.y });
+											if (!lastPos || lastPos.x !== snappedX || lastPos.y !== snappedY) {
+												t.path.push({ x: snappedX, y: snappedY, elevation: 0 }); // Exit is at surface
 											}
 											t.active = false;
-											console.log('[Tunnel Debug] Tunnel exit marked at', { x: m.position.x, y: m.position.y }, 'Path length:', t.path.length);
+											console.log('[Tunnel Debug] Tunnel exit marked at', { x: snappedX, y: snappedY }, 'Path length:', t.path.length);
 										}
 									});
 								}
@@ -9145,6 +9342,21 @@ export default class DndCampaignHubPlugin extends Plugin {
 										saveToHistory();
 										const nearestTunnel = nearEntrance || nearExit;
 										if (nearestTunnel) {
+											// Check if token is small enough to enter tunnel
+											const CREATURE_SIZE_SQUARES: Record<string, number> = {
+												'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+											};
+											const tokenSize = CREATURE_SIZE_SQUARES[mDef.creatureSize || 'medium'] || 1;
+											const tunnelCreatureSize = nearestTunnel.tunnel.creatureSize || 'medium';
+											const tunnelSize = CREATURE_SIZE_SQUARES[tunnelCreatureSize] || 1;
+											
+											// Token must be <= tunnel creator size to enter
+											if (tokenSize > tunnelSize) {
+												new Notice(`This tunnel is too small! Created by ${tunnelCreatureSize} creature, token is ${mDef.creatureSize || 'medium'}`);
+												document.body.removeChild(contextMenu);
+												return;
+											}
+											
 											// Set tunnel state
 											m.tunnelState = {
 												tunnelId: nearestTunnel.tunnel.id,
@@ -27399,156 +27611,80 @@ class PlayerMapView extends ItemView {
         return distance <= visionRangePx;
       };
       
-      // Helper function to find visible segments of a tunnel path from a player's position
+      // Helper function to find visible segments of a tunnel path from a player's position using raycasting
       const getVisiblePathSegments = (tunnel: any, playerMarker: any): Array<Array<{x: number, y: number}>> => {
         if (!tunnel.path || tunnel.path.length < 2) return [];
         if (!playerMarker.position) return [];
-        
-        const segments: Array<Array<{x: number, y: number}>> = [];
-        let currentSegment: Array<{x: number, y: number}> | null = null;
-        
-        // Track cumulative distance along tunnel from player position
-        let pathDistances: number[] = [0]; // Distance from entrance to each path point
-        for (let i = 1; i < tunnel.path.length; i++) {
-          const dx = tunnel.path[i].x - tunnel.path[i - 1].x;
-          const dy = tunnel.path[i].y - tunnel.path[i - 1].y;
-          const segmentDist = Math.sqrt(dx * dx + dy * dy);
-          pathDistances.push((pathDistances[i - 1] ?? 0) + segmentDist);
+        if (!tunnel.walls || tunnel.walls.length === 0) {
+          console.log('[Tunnel Vision] No tunnel walls generated yet, skipping visibility');
+          return [];
         }
         
-        // Find player's closest point on the tunnel path
-        let closestPointIndex = 0;
-        let closestDistance = Infinity;
-        
-        for (let i = 0; i < tunnel.path.length; i++) {
-          const dx = tunnel.path[i].x - playerMarker.position.x;
-          const dy = tunnel.path[i].y - playerMarker.position.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < closestDistance) {
-            closestDistance = dist;
-            closestPointIndex = i;
-          }
-        }
-        
-        // From closest point, extend vision in both directions along tunnel path
-        // considering corners and vision range
         const visionRangePx = getVisionRange(playerMarker);
         if (visionRangePx === 0) return [];
         
-        // Go forward from closest point
-        let forwardSegment: Array<{x: number, y: number}> = [tunnel.path[closestPointIndex]];
-        let forwardDistance = 0;
-        let lastDirection: { dx: number, dy: number } | null = null;
+        // Use raycasting to determine which parts of the tunnel path are visible
+        // Compute visibility polygon using tunnel walls as obstacles
+        const visibilityPolygon = this.computeVisibilityPolygon(
+          playerMarker.position.x,
+          playerMarker.position.y,
+          visionRangePx,
+          tunnel.walls
+        );
         
-        for (let i = closestPointIndex + 1; i < tunnel.path.length; i++) {
-          const dx = tunnel.path[i].x - tunnel.path[i - 1].x;
-          const dy = tunnel.path[i].y - tunnel.path[i - 1].y;
-          const segmentDist = Math.sqrt(dx * dx + dy * dy);
+        if (visibilityPolygon.length < 3) {
+          console.log('[Tunnel Vision] Failed to compute visibility polygon');
+          return [];
+        }
+        
+        // Now determine which path segments are visible by checking if path points are inside visibility polygon
+        const visibleSegments: Array<Array<{x: number, y: number}>> = [];
+        let currentSegment: Array<{x: number, y: number}> | null = null;
+        
+        for (let i = 0; i < tunnel.path.length; i++) {
+          const pathPoint = tunnel.path[i];
+          if (!pathPoint) continue;
           
-          console.log('[Tunnel Forward Loop]', {
-            iteration: i - closestPointIndex,
-            pointIndex: i,
-            segmentDist: segmentDist.toFixed(2),
-            hasLastDirection: !!lastDirection,
-            forwardDistanceSoFar: forwardDistance.toFixed(2),
-            visionRange: visionRangePx.toFixed(2)
-          });
+          const isVisible = this.pointInPolygon(pathPoint.x, pathPoint.y, visibilityPolygon);
           
-          // Check for corner (significant direction change) - check ALL segments
-          if (lastDirection && segmentDist > 1) {
-            const prevDx = lastDirection!.dx;
-            const prevDy = lastDirection!.dy;
-            const prevLen = Math.sqrt(prevDx * prevDx + prevDy * prevDy);
-            const currLen = Math.sqrt(dx * dx + dy * dy);
-            
-            if (prevLen > 0 && currLen > 0) {
-              const dotProduct = (prevDx * dx + prevDy * dy) / (prevLen * currLen);
-              const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
-              
-              console.log('[Tunnel Corner Check FORWARD]', {
-                pointIndex: i,
-                angle: (angle * 180 / Math.PI).toFixed(1) + '°',
-                threshold: '20°',
-                blocked: angle > Math.PI / 9
-              });
-              
-              // If corner angle > 20 degrees, can't see past it
-              if (angle > Math.PI / 9) {
-                console.log('[Tunnel Corner BLOCKED]', 'Vision stopped at corner');
-                break;
+          if (isVisible) {
+            if (!currentSegment) {
+              currentSegment = [];
+              // If not the first point, include the previous point for continuity
+              if (i > 0 && tunnel.path[i - 1]) {
+                currentSegment.push(tunnel.path[i - 1]);
               }
             }
-          }
-          
-          forwardDistance += segmentDist;
-          if (forwardDistance > visionRangePx) {
-            console.log('[Tunnel Vision RANGE]', 'Stopped - vision range exceeded');
-            break;
-          }
-          
-          forwardSegment.push(tunnel.path[i]);
-          lastDirection = { dx, dy };
-        }
-        
-        // Go backward from closest point
-        let backwardSegment: Array<{x: number, y: number}> = [];
-        let backwardDistance = 0;
-        lastDirection = null;
-        
-        for (let i = closestPointIndex - 1; i >= 0; i--) {
-          const dx = tunnel.path[i + 1].x - tunnel.path[i].x;
-          const dy = tunnel.path[i + 1].y - tunnel.path[i].y;
-          const segmentDist = Math.sqrt(dx * dx + dy * dy);
-          
-          // Check for corner (significant direction change) - check ALL segments
-          if (lastDirection && segmentDist > 1) {
-            const prevDx = lastDirection!.dx;
-            const prevDy = lastDirection!.dy;
-            const prevLen = Math.sqrt(prevDx * prevDx + prevDy * prevDy);
-            const currLen = Math.sqrt(dx * dx + dy * dy);
-            
-            if (prevLen > 0 && currLen > 0) {
-              const dotProduct = (prevDx * dx + prevDy * dy) / (prevLen * currLen);
-              const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
-              
-              console.log('[Tunnel Corner Check BACKWARD]', {
-                pointIndex: i,
-                angle: (angle * 180 / Math.PI).toFixed(1) + '°',
-                threshold: '20°',
-                blocked: angle > Math.PI / 9
-              });
-              
-              // If corner angle > 20 degrees, can't see past it
-              if (angle > Math.PI / 9) {
-                break;
-              }
+            currentSegment.push(pathPoint);
+          } else {
+            // Point not visible - end current segment
+            if (currentSegment && currentSegment.length >= 2) {
+              // Include this point for continuity (edge of visibility)
+              currentSegment.push(pathPoint);
+              visibleSegments.push(currentSegment);
+              currentSegment = null;
+            } else {
+              currentSegment = null;
             }
           }
-          
-          backwardDistance += segmentDist;
-          if (backwardDistance > visionRangePx) break;
-          
-          backwardSegment.unshift(tunnel.path[i]);
-          lastDirection = { dx: -dx, dy: -dy };
         }
         
-        // Combine segments
-        const fullSegment = [...backwardSegment, ...forwardSegment];
-        if (fullSegment.length >= 2) {
-          segments.push(fullSegment);
+        // Add final segment if exists
+        if (currentSegment && currentSegment.length >= 2) {
+          visibleSegments.push(currentSegment);
         }
         
-        // Debug: log the actual segment points to verify corner detection
-        console.log('[Tunnel Vision Debug SEGMENTS]', {
-          backwardCount: backwardSegment.length,
-          forwardCount: forwardSegment.length,
-          totalCount: fullSegment.length,
-          firstPoint: fullSegment[0],
-          lastPoint: fullSegment[fullSegment.length - 1],
-          tunnelTotalPoints: tunnel.path.length
+        console.log('[Tunnel Vision Debug RAYCASTING]', {
+          tunnelId: tunnel.id,
+          playerPos: { x: playerMarker.position.x.toFixed(1), y: playerMarker.position.y.toFixed(1) },
+          visionRange: visionRangePx.toFixed(1),
+          wallCount: tunnel.walls.length,
+          pathPointCount: tunnel.path.length,
+          visibleSegmentCount: visibleSegments.length,
+          totalVisiblePoints: visibleSegments.reduce((sum, seg) => sum + seg.length, 0)
         });
         
-        return segments;
+        return visibleSegments;
       };
       
       // Find tunnels that should be visible to players
@@ -27595,7 +27731,7 @@ class PlayerMapView extends ItemView {
         if (!segments || segments.length === 0) return;
         
         const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
-        const tunnelWidth = (squares * config.gridSize) / 2;
+        const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
         
         // Draw each visible segment
         segments.forEach((segment: Array<{x: number, y: number}>, segIdx: number) => {
@@ -27673,10 +27809,12 @@ class PlayerMapView extends ItemView {
     });
     
     otherMarkers.forEach((m: any) => {
-      // Check if burrowed token should be visible
-      if (m.elevation?.isBurrowing && !m.visibleToPlayers) {
+      // Check if burrowed token OR token in tunnel should be visible
+      // Tokens can be in tunnels either by burrowing (isBurrowing=true) or by entering (tunnelState set)
+      if ((m.elevation?.isBurrowing || m.tunnelState) && !m.visibleToPlayers) {
         console.log('[Burrowed Token Visibility] Checking token:', {
           id: m.id,
+          isBurrowing: !!m.elevation?.isBurrowing,
           hasTunnelState: !!m.tunnelState,
           tunnelId: m.tunnelState?.tunnelId,
           pathIndex: m.tunnelState?.pathIndex,
@@ -27741,65 +27879,52 @@ class PlayerMapView extends ItemView {
               });
               
               if (playerMarker.tunnelState?.tunnelId === m.tunnelState.tunnelId) {
-                // Both tokens are in the same tunnel - check vision
+                // Both tokens are in the same tunnel - use raycasting with tunnel walls
                 const visionRangePx = getVisionRange(playerMarker);
                 console.log('[Burrowed Token Visibility] Player vision range:', visionRangePx);
                 
                 if (visionRangePx > 0) {
-                  // Calculate distance along tunnel path between tokens
-                  const playerPathIdx = playerMarker.tunnelState.pathIndex || 0;
-                  const burrowedPathIdx = m.tunnelState.pathIndex || 0;
+                  // Calculate direct distance
+                  const directDx = m.position.x - playerMarker.position.x;
+                  const directDy = m.position.y - playerMarker.position.y;
+                  const directDistance = Math.sqrt(directDx * directDx + directDy * directDy);
                   
-                  console.log('[Burrowed Token Visibility] Path indices:', {
-                    playerPathIdx,
-                    burrowedPathIdx,
-                    tunnelPathLength: tunnel.path.length
-                  });
-                  
-                  // Calculate cumulative distance along path between the two tokens
-                  let pathDistance = 0;
-                  let startIdx = Math.min(playerPathIdx, burrowedPathIdx);
-                  let endIdx = Math.max(playerPathIdx, burrowedPathIdx);
-                  let cornerBlocked = false;
-                  let lastDirection: { dx: number, dy: number } | null = null;
-                  
-                  for (let i = startIdx; i < endIdx; i++) {
-                    if (i + 1 < tunnel.path.length) {
-                      const dx = tunnel.path[i + 1].x - tunnel.path[i].x;
-                      const dy = tunnel.path[i + 1].y - tunnel.path[i].y;
-                      const segmentDist = Math.sqrt(dx * dx + dy * dy);
-                      
-                      // Check for corner blocking vision
-                      if (lastDirection && segmentDist > 1) {
-                        const prevLen = Math.sqrt(lastDirection.dx * lastDirection.dx + lastDirection.dy * lastDirection.dy);
-                        const currLen = segmentDist;
-                        if (prevLen > 0 && currLen > 0) {
-                          const dotProduct = (lastDirection.dx * dx + lastDirection.dy * dy) / (prevLen * currLen);
-                          const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
-                          if (angle > Math.PI / 9) { // 20° threshold
-                            cornerBlocked = true;
-                            break;
-                          }
-                        }
-                      }
-                      
-                      pathDistance += segmentDist;
-                      lastDirection = { dx, dy };
+                  // Check if within vision range
+                  if (directDistance <= visionRangePx) {
+                    // Use raycasting to check if tunnel walls block line of sight
+                    let isBlocked = false;
+                    
+                    if (tunnel.walls && tunnel.walls.length > 0) {
+                      // Check if any tunnel wall intersects the line of sight
+                      // EXCLUDE end caps (last 2 walls) when checking sight between tokens in same tunnel
+                      // End caps are at entrance/exit and shouldn't block intra-tunnel vision
+                      const sideWalls = tunnel.walls.length > 2 ? tunnel.walls.slice(0, -2) : tunnel.walls;
+                      isBlocked = !this.hasLineOfSight(
+                        playerMarker.position.x,
+                        playerMarker.position.y,
+                        m.position.x,
+                        m.position.y,
+                        sideWalls
+                      );
                     }
-                  }
-                  
-                  console.log('[Burrowed Token Visibility] Distance check:', {
-                    pathDistance: pathDistance.toFixed(2),
-                    visionRange: visionRangePx.toFixed(2),
-                    cornerBlocked,
-                    visible: !cornerBlocked && pathDistance <= visionRangePx
-                  });
-                  
-                  // Token is visible if within vision range and no corner blocking
-                  if (!cornerBlocked && pathDistance <= visionRangePx) {
-                    visibleToPlayerInTunnel = true;
-                    console.log('[Burrowed Token Visibility] TOKEN SHOULD BE VISIBLE!');
-                    break;
+                    
+                    console.log('[Burrowed Token Visibility] Raycasting check:', {
+                      directDistance: directDistance.toFixed(2),
+                      visionRange: visionRangePx.toFixed(2),
+                      hasWalls: tunnel.walls && tunnel.walls.length > 0,
+                      totalWallCount: tunnel.walls?.length || 0,
+                      sideWallCount: tunnel.walls && tunnel.walls.length > 2 ? tunnel.walls.length - 2 : tunnel.walls?.length || 0,
+                      wallsBlockSight: isBlocked,
+                      visible: !isBlocked,
+                      playerPos: { x: playerMarker.position.x, y: playerMarker.position.y },
+                      tokenPos: { x: m.position.x, y: m.position.y }
+                    });
+                    
+                    if (!isBlocked) {
+                      visibleToPlayerInTunnel = true;
+                      console.log('[Burrowed Token Visibility] TOKEN VISIBLE (same tunnel, raycasting line of sight)!');
+                      break;
+                    }
                   }
                 }
               }
@@ -27833,23 +27958,19 @@ class PlayerMapView extends ItemView {
                   if (visionRangePx > 0) {
                     const playerPathIdx = playerMarker.tunnelState.pathIndex || 0;
                     
-                    // First, check simple direct distance - if very close, they can see each other regardless of path
+                    // Calculate direct distance for logging, but DO NOT use it to bypass corner checks
                     const directDx = m.position.x - playerMarker.position.x;
                     const directDy = m.position.y - playerMarker.position.y;
                     const directDistance = Math.sqrt(directDx * directDx + directDy * directDy);
                     
-                    console.log('[Burrowed Token Visibility] Direct distance check:', {
+                    console.log('[Burrowed Token Visibility] Direct distance (for reference only):', {
                       directDistance: directDistance.toFixed(2),
-                      visionRange: visionRangePx.toFixed(2),
-                      closeEnough: directDistance <= visionRangePx
+                      visionRange: visionRangePx.toFixed(2)
                     });
                     
-                    // If they're within vision range by direct distance, the player sees them
-                    if (directDistance <= visionRangePx) {
-                      visibleToPlayerInTunnel = true;
-                      console.log('[Burrowed Token Visibility] TOKEN VISIBLE (direct distance in tunnel)!');
-                      break;
-                    }
+                    // NOTE: We do NOT use direct distance to determine visibility in tunnels
+                    // because there may be corners between the player and the burrowed token.
+                    // Instead, we always use path-based distance with corner detection.
                     
                     // For the burrowing token that owns/created this tunnel, it's at the dig head (end of path)
                     // Check if the burrowing token is close to the last point of the tunnel
@@ -27885,69 +28006,55 @@ class PlayerMapView extends ItemView {
                       tunnelLength: tunnel.path.length
                     });
                     
-                    // If player is ahead of or at the burrowing token's position, they can see it
-                    // (player has passed where the burrower is)
-                    if (playerPathIdx >= burrowingPathIdx) {
-                      // Player is at or past the burrowing token - direct line of sight
-                      const dx = m.position.x - playerMarker.position.x;
-                      const dy = m.position.y - playerMarker.position.y;
-                      const directDistance = Math.sqrt(dx * dx + dy * dy);
-                      
-                      console.log('[Burrowed Token Visibility] Player at/past burrower, direct distance:', {
-                        directDistance: directDistance.toFixed(2),
-                        visionRange: visionRangePx.toFixed(2),
-                        visible: directDistance <= visionRangePx
-                      });
-                      
-                      if (directDistance <= visionRangePx) {
-                        visibleToPlayerInTunnel = true;
-                        console.log('[Burrowed Token Visibility] TOKEN VISIBLE (player at/past burrower)!');
-                        break;
-                      }
-                    } else {
-                      // Player is behind the burrowing token - check path distance with corners
-                      let pathDistance = 0;
-                      let cornerBlocked = false;
-                      let lastDirection: { dx: number, dy: number } | null = null;
-                      
-                      for (let i = playerPathIdx; i < burrowingPathIdx; i++) {
-                        if (i + 1 < tunnel.path.length) {
-                          const dx = tunnel.path[i + 1].x - tunnel.path[i].x;
-                          const dy = tunnel.path[i + 1].y - tunnel.path[i].y;
-                          const segmentDist = Math.sqrt(dx * dx + dy * dy);
-                          
-                          // Check for corner blocking vision (20° threshold)
-                          if (lastDirection && segmentDist > 1) {
-                            const prevLen = Math.sqrt(lastDirection.dx * lastDirection.dx + lastDirection.dy * lastDirection.dy);
-                            const currLen = segmentDist;
-                            if (prevLen > 0 && currLen > 0) {
-                              const dotProduct = (lastDirection.dx * dx + lastDirection.dy * dy) / (prevLen * currLen);
-                              const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
-                              if (angle > Math.PI / 9) { // 20° threshold
-                                cornerBlocked = true;
-                                console.log('[Burrowed Token Visibility] Corner blocked at index:', i, 'angle:', (angle * 180 / Math.PI).toFixed(1) + '°');
-                                break;
-                              }
+                    // Check path distance between player and burrower with corner detection
+                    // This works for both cases: player ahead of or behind the burrowing token
+                    let pathDistance = 0;
+                    let cornerBlocked = false;
+                    let lastDirection: { dx: number, dy: number } | null = null;
+                    
+                    const startIdx = Math.min(playerPathIdx, burrowingPathIdx);
+                    const endIdx = Math.max(playerPathIdx, burrowingPathIdx);
+                    
+                    for (let i = startIdx; i < endIdx; i++) {
+                      if (i + 1 < tunnel.path.length) {
+                        const dx = tunnel.path[i + 1].x - tunnel.path[i].x;
+                        const dy = tunnel.path[i + 1].y - tunnel.path[i].y;
+                        const segmentDist = Math.sqrt(dx * dx + dy * dy);
+                        
+                        // Check for corner blocking vision (45° threshold)
+                        if (lastDirection && segmentDist > 1) {
+                          const prevLen = Math.sqrt(lastDirection.dx * lastDirection.dx + lastDirection.dy * lastDirection.dy);
+                          const currLen = segmentDist;
+                          if (prevLen > 0 && currLen > 0) {
+                            const dotProduct = (lastDirection.dx * dx + lastDirection.dy * dy) / (prevLen * currLen);
+                            const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
+                            if (angle > Math.PI / 4) { // 45° threshold
+                              cornerBlocked = true;
+                              console.log('[Burrowed Token Visibility] Corner blocked at index:', i, 'angle:', (angle * 180 / Math.PI).toFixed(1) + '°');
+                              break;
                             }
                           }
-                          
-                          pathDistance += segmentDist;
-                          lastDirection = { dx, dy };
                         }
+                        
+                        pathDistance += segmentDist;
+                        lastDirection = { dx, dy };
                       }
-                      
-                      console.log('[Burrowed Token Visibility] Tunnel path distance check:', {
-                        pathDistance: pathDistance.toFixed(2),
-                        visionRange: visionRangePx.toFixed(2),
-                        cornerBlocked,
-                        visible: !cornerBlocked && pathDistance <= visionRangePx
-                      });
-                      
-                      if (!cornerBlocked && pathDistance <= visionRangePx) {
-                        visibleToPlayerInTunnel = true;
-                        console.log('[Burrowed Token Visibility] TOKEN VISIBLE (tunnel path-based)!');
-                        break;
-                      }
+                    }
+                    
+                    console.log('[Burrowed Token Visibility] Path distance check:', {
+                      pathDistance: pathDistance.toFixed(2),
+                      visionRange: visionRangePx.toFixed(2),
+                      cornerBlocked,
+                      directDistance: directDistance.toFixed(2),
+                      visible: !cornerBlocked && directDistance <= visionRangePx
+                    });
+                    
+                    // If no corner blocks vision, use DIRECT distance for visibility
+                    // (path distance is only used for corner detection, not range)
+                    if (!cornerBlocked && directDistance <= visionRangePx) {
+                      visibleToPlayerInTunnel = true;
+                      console.log('[Burrowed Token Visibility] TOKEN VISIBLE (direct line of sight, no corner)!');
+                      break;
                     }
                   }
                 }
@@ -27983,10 +28090,8 @@ class PlayerMapView extends ItemView {
           willRender: visibleToPlayerInTunnel
         });
         
-        // Flag burrowed tokens that are visible - they'll be redrawn on top of fog later
-        if (visibleToPlayerInTunnel) {
-          m._visibleToTunnelPlayer = true;
-        }
+        // Update visibility flag for burrowed tokens - MUST set to false if not visible
+        m._visibleToTunnelPlayer = visibleToPlayerInTunnel;
         
         // Always skip rendering burrowed tokens here - they'll be drawn on top of fog later if visible
         return;
@@ -28025,17 +28130,9 @@ class PlayerMapView extends ItemView {
         
         if (playersInThisTunnel.length === 0) continue;
         
-        // Determine tunnel width based on owner creature size
-        let tunnelWidth = config.gridSize * 0.8;
-        if (tunnel.ownerMarkerId) {
-          const ownerMarkerInst = config.markers?.find((m: any) => m.id === tunnel.ownerMarkerId);
-          if (ownerMarkerInst?.markerId) {
-            const ownerDef = this.plugin.markerLibrary.getMarker(ownerMarkerInst.markerId) as any;
-            if (ownerDef?.size) {
-              tunnelWidth = config.gridSize * (CREATURE_SIZE_SQUARES[ownerDef.size] || 1) * 0.8;
-            }
-          }
-        }
+        // Use stored tunnel width or calculate based on creature size
+        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
+        const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
         
         for (const playerMarker of playersInThisTunnel) {
           const pathIdx = playerMarker.tunnelState?.pathIndex || 0;
@@ -28079,7 +28176,7 @@ class PlayerMapView extends ItemView {
                   const prevLen = Math.sqrt(lastDir.dx*lastDir.dx + lastDir.dy*lastDir.dy);
                   const dot = (lastDir.dx*dx + lastDir.dy*dy) / (prevLen * segDist);
                   const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
-                  if (angle > Math.PI / 9) break; // Corner blocks
+                  if (angle > Math.PI / 4) break; // Corner blocks (45°)
                 }
                 backwardDist += segDist;
                 lastDir = { dx, dy };
@@ -28100,7 +28197,7 @@ class PlayerMapView extends ItemView {
               const prevLen = Math.sqrt(lastDir.dx*lastDir.dx + lastDir.dy*lastDir.dy);
               const dot = (lastDir.dx*dx + lastDir.dy*dy) / (prevLen * segDist);
               const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
-              if (angle > Math.PI / 9) break; // Corner blocks
+              if (angle > Math.PI / 4) break; // Corner blocks (45°)
             }
             forwardDist += segDist;
             lastDir = { dx, dy };
@@ -28164,8 +28261,9 @@ class PlayerMapView extends ItemView {
 
     // Draw visible burrowed tokens on top of fog (they were marked visible earlier)
     // These are creature/NPC tokens that were determined visible to tunnel players
+    // Includes both burrowing tokens (isBurrowing) and tokens that entered tunnels (tunnelState)
     otherMarkers.forEach((m: any) => {
-      if (m.elevation?.isBurrowing && m._visibleToTunnelPlayer) {
+      if ((m.elevation?.isBurrowing || m.tunnelState) && m._visibleToTunnelPlayer) {
         ctx.save();
         ctx.globalAlpha = 0.5; // Semi-transparent to show underground
         this.drawMarker(ctx, m);
@@ -28856,7 +28954,7 @@ class PlayerMapView extends ItemView {
           'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
         };
         const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
-        const tunnelWidth = (squares * config.gridSize) / 2;
+        const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
         
         // Draw path up to current position in subtle earth tone color
         ctx.strokeStyle = '#8B7355';  // Muted brown/tan
@@ -28907,7 +29005,7 @@ class PlayerMapView extends ItemView {
                 if (prevLen > 0 && currLen > 0) {
                   const dotProduct = (lastDirection.dx * dx + lastDirection.dy * dy) / (prevLen * currLen);
                   const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
-                  if (angle > Math.PI / 9) break; // 20° threshold
+                  if (angle > Math.PI / 4) break; // 45° threshold
                 }
               }
               
@@ -29201,12 +29299,18 @@ class PlayerMapView extends ItemView {
     }
     
     // Darkvision reveals fog but shows grayscale
-    // Collect markers with darkvision (only player tokens)
+    // Collect markers with darkvision (only player tokens NOT in tunnels)
     const darkvisionMarkers: any[] = [];
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
         // Only player tokens should reveal fog with darkvision
+        // Skip players who are in tunnels - they don't reveal above-ground fog
         if (marker.markerId && marker.darkvision && marker.darkvision > 0) {
+          // Skip tunnel players - they don't reveal surface fog
+          if (marker.tunnelState) {
+            console.log('[PV] Skipping tunnel player from darkvision fog reveal:', { id: marker.id, tunnelId: marker.tunnelState.tunnelId });
+            return;
+          }
           const markerDef = this.plugin.markerLibrary.getMarker(marker.markerId);
           if (markerDef && markerDef.type === 'player') {
             console.log('[PV] Adding darkvision marker:', { x: marker.position.x.toFixed(1), y: marker.position.y.toFixed(1), range: marker.darkvision, name: markerDef.name });
@@ -29457,6 +29561,90 @@ class PlayerMapView extends ItemView {
     }
     
     return true;
+  }
+
+  /**
+   * Generate wall segments for a tunnel from its path
+   * Creates parallel walls on both sides of the path
+   */
+  private generateTunnelWalls(
+    path: Array<{x: number, y: number}>,
+    tunnelWidth: number
+  ): Array<{start: {x: number, y: number}, end: {x: number, y: number}}> {
+    if (!path || path.length < 2) return [];
+    
+    const walls: Array<{start: {x: number, y: number}, end: {x: number, y: number}}> = [];
+    const halfWidth = tunnelWidth / 2;
+    
+    // Generate parallel walls along each segment of the path
+    for (let i = 0; i < path.length - 1; i++) {
+      const p1 = path[i];
+      const p2 = path[i + 1];
+      if (!p1 || !p2) continue;
+      
+      // Calculate perpendicular vector for this segment
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      
+      if (len === 0) continue;
+      
+      // Normalized perpendicular vector (rotated 90 degrees)
+      const perpX = -dy / len;
+      const perpY = dx / len;
+      
+      // Calculate wall endpoints for this segment
+      const leftStart = { x: p1.x + perpX * halfWidth, y: p1.y + perpY * halfWidth };
+      const leftEnd = { x: p2.x + perpX * halfWidth, y: p2.y + perpY * halfWidth };
+      const rightStart = { x: p1.x - perpX * halfWidth, y: p1.y - perpY * halfWidth };
+      const rightEnd = { x: p2.x - perpX * halfWidth, y: p2.y - perpY * halfWidth };
+      
+      // Add left wall segment
+      walls.push({ start: leftStart, end: leftEnd });
+      
+      // Add right wall segment
+      walls.push({ start: rightStart, end: rightEnd });
+    }
+    
+    // Add end caps to close the tunnel at entrance and exit
+    if (path.length >= 2) {
+      // Entrance cap
+      const firstSegment = path[1];
+      const firstPoint = path[0];
+      if (firstSegment && firstPoint) {
+        const dx = firstSegment.x - firstPoint.x;
+        const dy = firstSegment.y - firstPoint.y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 0) {
+          const perpX = -dy / len;
+          const perpY = dx / len;
+          walls.push({
+            start: { x: firstPoint.x + perpX * halfWidth, y: firstPoint.y + perpY * halfWidth },
+            end: { x: firstPoint.x - perpX * halfWidth, y: firstPoint.y - perpY * halfWidth }
+          });
+        }
+      }
+      
+      // Exit cap
+      const lastIdx = path.length - 1;
+      const lastPoint = path[lastIdx];
+      const secondLastPoint = path[lastIdx - 1];
+      if (lastPoint && secondLastPoint) {
+        const dx = lastPoint.x - secondLastPoint.x;
+        const dy = lastPoint.y - secondLastPoint.y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 0) {
+          const perpX = -dy / len;
+          const perpY = dx / len;
+          walls.push({
+            start: { x: lastPoint.x + perpX * halfWidth, y: lastPoint.y + perpY * halfWidth },
+            end: { x: lastPoint.x - perpX * halfWidth, y: lastPoint.y - perpY * halfWidth }
+          });
+        }
+      }
+    }
+    
+    return walls;
   }
 
   private computeVisibilityPolygon(

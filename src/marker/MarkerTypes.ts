@@ -100,7 +100,7 @@ export interface TunnelSegment {
 	id: string;                        // Unique tunnel ID
 	creatorMarkerId: string;           // ID of the marker that created this tunnel
 	entrancePosition: { x: number; y: number }; // Where the creature first burrowed
-	path: { x: number; y: number }[];  // Positions traveled while burrowed
+	path: { x: number; y: number; elevation?: number }[];  // Positions traveled while burrowed (elevation in feet)
 	creatureSize: CreatureSize;        // Determines tunnel width/visibility
 	depth: number;                     // Depth in feet (inherited by tokens entering tunnel)
 	createdAt: number;                 // Timestamp
