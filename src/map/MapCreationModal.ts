@@ -1,4 +1,4 @@
-import { App, Modal, Setting, TFile, Notice } from 'obsidian';
+import { App, Modal, Setting, TFile, TFolder, Notice } from 'obsidian';
 import { MapManager } from './MapManager';
 import { MAP_PRESETS, MAP_MEDIA_EXTENSIONS, isVideoExtension } from './types';
 import type DndCampaignHubPlugin from '../main';
@@ -586,11 +586,14 @@ export class MapCreationModal extends Modal {
 }
 
 /**
- * Simple modal for selecting an image file
+ * Modal for selecting an image file with search and upload support
  */
 class ImageSelectorModal extends Modal {
   private files: TFile[];
   private onSelect: (file: TFile) => void;
+  private listContainer: HTMLElement | null = null;
+  private searchQuery: string = '';
+  private resultCountEl: HTMLElement | null = null;
 
   constructor(app: App, files: TFile[], onSelect: (file: TFile) => void) {
     super(app);
@@ -601,34 +604,163 @@ class ImageSelectorModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
+    contentEl.addClass('image-selector-modal');
 
     contentEl.createEl('h2', { text: 'Select Map Image' });
 
-    const listContainer = contentEl.createDiv({ cls: 'image-file-list' });
-    listContainer.style.maxHeight = '400px';
-    listContainer.style.overflowY = 'auto';
+    // Search bar
+    const searchContainer = contentEl.createDiv({ cls: 'image-selector-search' });
+    const searchInput = searchContainer.createEl('input', {
+      cls: 'image-selector-search-input',
+      attr: {
+        type: 'text',
+        placeholder: '🔍 Search by file name or path...',
+        spellcheck: 'false'
+      }
+    });
+    this.resultCountEl = searchContainer.createDiv({ cls: 'image-selector-result-count' });
 
-    this.files.forEach(file => {
-      const item = listContainer.createDiv({ cls: 'image-file-item' });
-      item.style.padding = '8px 12px';
-      item.style.cursor = 'pointer';
-      item.style.borderBottom = '1px solid var(--background-modifier-border)';
-      
-      item.createSpan({ text: `📄 ${file.path}` });
-      
+    // Action bar with upload button
+    const actionBar = contentEl.createDiv({ cls: 'image-selector-actions' });
+    const uploadBtn = actionBar.createEl('button', {
+      cls: 'image-selector-upload-btn',
+      attr: { title: 'Upload an image from your computer' }
+    });
+    uploadBtn.innerHTML = '📁 Upload from Computer';
+    uploadBtn.addEventListener('click', () => this.uploadFromExplorer());
+
+    // File list
+    this.listContainer = contentEl.createDiv({ cls: 'image-file-list' });
+
+    // Render initial list
+    this.renderFileList(this.files);
+
+    // Wire up search
+    searchInput.addEventListener('input', () => {
+      this.searchQuery = searchInput.value.trim().toLowerCase();
+      this.filterAndRender();
+    });
+
+    // Focus search input after modal opens
+    setTimeout(() => searchInput.focus(), 50);
+  }
+
+  private filterAndRender() {
+    if (!this.searchQuery) {
+      this.renderFileList(this.files);
+      return;
+    }
+
+    const terms = this.searchQuery.split(/\s+/);
+    const filtered = this.files.filter(file => {
+      const haystack = file.path.toLowerCase();
+      return terms.every(term => haystack.includes(term));
+    });
+
+    this.renderFileList(filtered);
+  }
+
+  private renderFileList(files: TFile[]) {
+    if (!this.listContainer) return;
+    this.listContainer.empty();
+
+    // Update result count
+    if (this.resultCountEl) {
+      if (this.searchQuery) {
+        this.resultCountEl.setText(`${files.length} of ${this.files.length} files`);
+        this.resultCountEl.style.display = 'block';
+      } else {
+        this.resultCountEl.setText(`${files.length} files`);
+        this.resultCountEl.style.display = 'block';
+      }
+    }
+
+    if (files.length === 0) {
+      const empty = this.listContainer.createDiv({ cls: 'image-file-list-empty' });
+      empty.setText(this.searchQuery ? 'No files match your search' : 'No image files found in vault');
+      return;
+    }
+
+    files.forEach(file => {
+      const item = this.listContainer!.createDiv({ cls: 'image-file-item' });
+
+      // Icon based on file type
+      const ext = file.extension.toLowerCase();
+      const isVideo = ['mp4', 'webm'].includes(ext);
+      const icon = item.createSpan({ cls: 'image-file-icon' });
+      icon.setText(isVideo ? '🎬' : '🖼️');
+
+      const info = item.createDiv({ cls: 'image-file-info' });
+      info.createDiv({ cls: 'image-file-name', text: file.name });
+      info.createDiv({ cls: 'image-file-path', text: file.parent?.path || '/' });
+
       item.onClickEvent(() => {
         this.onSelect(file);
         this.close();
       });
-
-      item.addEventListener('mouseenter', () => {
-        item.style.backgroundColor = 'var(--background-modifier-hover)';
-      });
-
-      item.addEventListener('mouseleave', () => {
-        item.style.backgroundColor = 'transparent';
-      });
     });
+  }
+
+  /**
+   * Open a system file dialog to upload an image into the vault
+   */
+  private async uploadFromExplorer() {
+    // Create a hidden file input
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = MAP_MEDIA_EXTENSIONS.map(ext => `.${ext}`).join(',');
+    input.style.display = 'none';
+    document.body.appendChild(input);
+
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      document.body.removeChild(input);
+      if (!file) return;
+
+      try {
+        // Read the file as an ArrayBuffer
+        const buffer = await file.arrayBuffer();
+
+        // Determine destination folder — use attachments folder or vault root
+        let destFolder = '';
+        // Try to use the configured attachment folder
+        const attachmentSetting = (this.app.vault as any).getConfig?.('attachmentFolderPath');
+        if (attachmentSetting && attachmentSetting !== '/' && attachmentSetting !== '.') {
+          destFolder = attachmentSetting;
+          // Ensure the folder exists
+          if (!(await this.app.vault.adapter.exists(destFolder))) {
+            await this.app.vault.createFolder(destFolder);
+          }
+        }
+
+        // Build a safe path, deduplicating if needed
+        let destPath = destFolder ? `${destFolder}/${file.name}` : file.name;
+        let counter = 1;
+        const baseName = file.name.replace(/\.[^.]+$/, '');
+        const ext = file.name.replace(/^.*\./, '.');
+        while (await this.app.vault.adapter.exists(destPath)) {
+          destPath = destFolder
+            ? `${destFolder}/${baseName} (${counter})${ext}`
+            : `${baseName} (${counter})${ext}`;
+          counter++;
+        }
+
+        // Write the file into the vault
+        const created = await this.app.vault.createBinary(destPath, buffer);
+
+        new Notice(`✅ Uploaded "${file.name}" to ${destPath}`);
+
+        // Add to our file list, select it, and close
+        this.files.unshift(created);
+        this.onSelect(created);
+        this.close();
+      } catch (err) {
+        console.error('Failed to upload file:', err);
+        new Notice('❌ Failed to upload file');
+      }
+    });
+
+    input.click();
   }
 
   onClose() {

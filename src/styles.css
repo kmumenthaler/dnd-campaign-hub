@@ -3052,23 +3052,86 @@
   max-width: 700px;
 }
 
+/* Search bar */
+.image-selector-search {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.image-selector-search-input {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.image-selector-search-input:focus {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15);
+}
+
+.image-selector-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.image-selector-result-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 4px;
+  padding-right: 4px;
+}
+
+/* Action bar (upload button) */
+.image-selector-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.image-selector-upload-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.image-selector-upload-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* File list */
 .image-file-list {
   max-height: 400px;
   overflow-y: auto;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
-  padding: 8px;
-  margin: 15px 0;
+  border-radius: 8px;
+  padding: 4px;
 }
 
 .image-file-item {
-  padding: 10px 12px;
+  padding: 8px 12px;
   background-color: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
-  margin-bottom: 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  margin-bottom: 2px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -3081,24 +3144,33 @@
 .image-file-item:hover {
   background-color: var(--background-modifier-hover);
   border-color: var(--interactive-accent);
-  transform: translateX(4px);
 }
 
 .image-file-icon {
   font-size: 18px;
-  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.image-file-info {
+  flex: 1;
+  min-width: 0;
 }
 
 .image-file-name {
   font-size: 13px;
+  font-weight: 500;
   color: var(--text-normal);
-  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .image-file-path {
   font-size: 11px;
   color: var(--text-muted);
-  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .image-file-list-empty {
