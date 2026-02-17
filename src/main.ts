@@ -9536,6 +9536,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 						
 						// Add to body and remove on outside click
 						document.body.appendChild(contextMenu);
+
+						// Center on viewport after appending (so we know menu dimensions)
+						const menuRect = contextMenu.getBoundingClientRect();
+						const viewportWidth = window.innerWidth;
+						const viewportHeight = window.innerHeight;
+						const centerLeft = Math.max(10, (viewportWidth - menuRect.width) / 2);
+						const centerTop = Math.max(10, (viewportHeight - menuRect.height) / 2);
+						contextMenu.style.left = `${centerLeft}px`;
+						contextMenu.style.top = `${centerTop}px`;
+
 						const removeMenu = (event: MouseEvent) => {
 							if (!contextMenu.contains(event.target as Node)) {
 								document.body.removeChild(contextMenu);
@@ -9721,6 +9731,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 							
 							// Add to body and remove on outside click
 							document.body.appendChild(contextMenu);
+
+							// Center on viewport after appending (so we know menu dimensions)
+							const menuRect = contextMenu.getBoundingClientRect();
+							const viewportWidth = window.innerWidth;
+							const viewportHeight = window.innerHeight;
+							const centerLeft = Math.max(10, (viewportWidth - menuRect.width) / 2);
+							const centerTop = Math.max(10, (viewportHeight - menuRect.height) / 2);
+							contextMenu.style.left = `${centerLeft}px`;
+							contextMenu.style.top = `${centerTop}px`;
+
 							const removeMenu = (event: MouseEvent) => {
 								if (!contextMenu.contains(event.target as Node)) {
 									document.body.removeChild(contextMenu);
@@ -9836,6 +9856,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 							
 							// Add to body and remove on outside click
 							document.body.appendChild(contextMenu);
+
+							// Center on viewport after appending (so we know menu dimensions)
+							const menuRect = contextMenu.getBoundingClientRect();
+							const viewportWidth = window.innerWidth;
+							const viewportHeight = window.innerHeight;
+							const centerLeft = Math.max(10, (viewportWidth - menuRect.width) / 2);
+							const centerTop = Math.max(10, (viewportHeight - menuRect.height) / 2);
+							contextMenu.style.left = `${centerLeft}px`;
+							contextMenu.style.top = `${centerTop}px`;
+
 							const removeMenu = (event: MouseEvent) => {
 								if (!contextMenu.contains(event.target as Node)) {
 									document.body.removeChild(contextMenu);

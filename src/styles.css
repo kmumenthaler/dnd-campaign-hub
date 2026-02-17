@@ -4084,6 +4084,9 @@
   border: 1px solid rgba(124, 58, 237, 0.4);
   z-index: 10000;
   min-width: 180px;
+  max-height: calc(100vh - 20px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .dnd-map-context-menu-header {
