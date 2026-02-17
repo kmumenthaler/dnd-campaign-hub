@@ -4562,6 +4562,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let wallPoints: { x: number; y: number }[] = [];
 			let wallPreviewPos: { x: number; y: number } | null = null;
 			if (!config.walls) config.walls = [];
+			// Vision token selection state (for player view)
+			// null = show all player tokens' vision (current default behavior)
+			// string = marker id - show only that specific token's vision
+			let selectedVisionTokenId: string | null = null;
 			// Wall drag state
 			let draggingWallIndex = -1; // Index of wall being dragged (-1 = none)
 			let wallDragOffsetStartX = 0;
@@ -4849,11 +4853,130 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const fogBtn = createToolBtn(visionContent, '🌫️', 'Fog');
 		const wallsBtn = createToolBtn(visionContent, '🧱', 'Walls');
 		const lightsBtn = createToolBtn(visionContent, '💡', 'Lights');
-		
+
 		// Toggle vision section visibility based on layer
 		visionSectionHeader.toggleClass('hidden', config.activeLayer !== 'Background');
 		visionContent.toggleClass('hidden', config.activeLayer !== 'Background');
-		
+
+		// === TOKEN VISION TOGGLE (always visible, all layers) ===
+		const tokenVisionSectionHeader = toolbarContent.createDiv({ cls: 'dnd-map-section-header' });
+		tokenVisionSectionHeader.createEl('span', { text: 'Token Vision', cls: 'dnd-map-section-title' });
+		tokenVisionSectionHeader.createEl('span', { text: '▼', cls: 'dnd-map-section-toggle' });
+		const tokenVisionContent = toolbarContent.createDiv({ cls: 'dnd-map-section-content' });
+
+		// Token Vision Selector - custom dropdown to pick which token's vision to show in Player View
+		const visionSelectorRow = tokenVisionContent.createDiv({ cls: 'dnd-map-vision-selector' });
+		visionSelectorRow.createEl('span', { text: 'View as:', cls: 'dnd-map-vision-label' });
+		const visionDropdown = visionSelectorRow.createDiv({ cls: 'dnd-map-vision-dropdown' });
+		const visionSelected = visionDropdown.createDiv({ cls: 'dnd-map-vision-selected' });
+		visionSelected.setAttribute('title', 'Select which token\'s vision to show in Player View');
+		const visionMenu = visionDropdown.createDiv({ cls: 'dnd-map-vision-menu' });
+
+		// Toggle menu open/close
+		visionSelected.addEventListener('click', (e) => {
+			e.stopPropagation();
+			visionMenu.toggleClass('open', !visionMenu.hasClass('open'));
+		});
+		// Close on outside click
+		document.addEventListener('click', () => {
+			visionMenu.removeClass('open');
+		});
+
+		// Helper to build an option item (used for both "All Players" and token entries)
+		const buildVisionOption = (
+			container: HTMLElement,
+			icon: string,
+			name: string,
+			value: string,
+			borderColor?: string
+		) => {
+			const item = container.createDiv({ cls: 'dnd-map-vision-item' });
+			item.createEl('span', { text: icon, cls: 'dnd-map-vision-item-icon' });
+			item.createEl('span', { text: name, cls: 'dnd-map-vision-item-name' });
+			if (borderColor) {
+				const dot = item.createEl('span', { cls: 'dnd-map-vision-color-dot' });
+				dot.style.backgroundColor = borderColor;
+			}
+			item.dataset.value = value;
+			if ((value === '' && selectedVisionTokenId === null) || value === selectedVisionTokenId) {
+				item.addClass('active');
+			}
+			item.addEventListener('click', (e) => {
+				e.stopPropagation();
+				selectedVisionTokenId = value === '' ? null : value;
+				visionMenu.removeClass('open');
+				refreshVisionSelector();
+				if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+				new Notice(selectedVisionTokenId ? `Vision: ${icon} ${name}` : 'Vision: All Players');
+			});
+			return item;
+		};
+
+		// Function to refresh the vision selector options based on current markers
+		const refreshVisionSelector = () => {
+			visionMenu.empty();
+
+			// Collect tokens
+			const visionTokens = (config.markers || []).filter((m: any) => {
+				const markerDef = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
+				if (!markerDef) return false;
+				return ['player', 'npc', 'creature'].includes(markerDef.type);
+			});
+
+			// Count name occurrences to detect duplicates
+			const nameCounts = new Map<string, number>();
+			visionTokens.forEach((m: any) => {
+				const markerDef = this.markerLibrary.getMarker(m.markerId);
+				const name = markerDef?.name || m.id;
+				nameCounts.set(name, (nameCounts.get(name) || 0) + 1);
+			});
+
+			// "All Players" option
+			buildVisionOption(visionMenu, '👥', 'All Players', '');
+
+			// Token options
+			visionTokens.forEach((m: any) => {
+				const markerDef = this.markerLibrary.getMarker(m.markerId);
+				const icon = markerDef?.type === 'player' ? '👤' : markerDef?.type === 'creature' ? '👹' : '🧑';
+				const name = markerDef?.name || m.id;
+				const isDupe = (nameCounts.get(name) || 0) > 1;
+				const borderColor = isDupe ? (m.borderColor || markerDef?.borderColor || '#ffffff') : undefined;
+				buildVisionOption(visionMenu, icon, name, m.id, borderColor);
+			});
+
+			// Update selected display
+			visionSelected.empty();
+			if (selectedVisionTokenId === null) {
+				visionSelected.createEl('span', { text: '👥', cls: 'dnd-map-vision-item-icon' });
+				visionSelected.createEl('span', { text: 'All Players', cls: 'dnd-map-vision-item-name' });
+			} else {
+				const selMarker = visionTokens.find((m: any) => m.id === selectedVisionTokenId);
+				if (selMarker) {
+					const selDef = this.markerLibrary.getMarker(selMarker.markerId);
+					const selIcon = selDef?.type === 'player' ? '👤' : selDef?.type === 'creature' ? '👹' : '🧑';
+					const selName = selDef?.name || selMarker.id;
+					const isDupe = (nameCounts.get(selName) || 0) > 1;
+					visionSelected.createEl('span', { text: selIcon, cls: 'dnd-map-vision-item-icon' });
+					visionSelected.createEl('span', { text: selName, cls: 'dnd-map-vision-item-name' });
+					if (isDupe) {
+						const selColor = selMarker.borderColor || selDef?.borderColor || '#ffffff';
+						const dot = visionSelected.createEl('span', { cls: 'dnd-map-vision-color-dot' });
+						dot.style.backgroundColor = selColor;
+					}
+				} else {
+					// Selected token was removed, reset
+					selectedVisionTokenId = null;
+					visionSelected.createEl('span', { text: '👥', cls: 'dnd-map-vision-item-icon' });
+					visionSelected.createEl('span', { text: 'All Players', cls: 'dnd-map-vision-item-name' });
+				}
+			}
+			// Add dropdown arrow
+			visionSelected.createEl('span', { text: '▾', cls: 'dnd-map-vision-arrow' });
+		};
+
+		// Initial population
+		refreshVisionSelector();
+
 		// === TUNNELS SECTION (expandable) ===
 		const tunnelsSectionHeader = toolbarContent.createDiv({ cls: 'dnd-map-section-header' });
 		tunnelsSectionHeader.createEl('span', { text: 'Tunnels', cls: 'dnd-map-section-title' });
@@ -5297,6 +5420,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 			visionSectionHeader.toggleClass('collapsed', !isCollapsed);
 			visionContent.toggleClass('collapsed', !isCollapsed);
 		});
+
+		tokenVisionSectionHeader.addEventListener('click', () => {
+			const isCollapsed = tokenVisionSectionHeader.hasClass('collapsed');
+			tokenVisionSectionHeader.toggleClass('collapsed', !isCollapsed);
+			tokenVisionContent.toggleClass('collapsed', !isCollapsed);
+		});
 		
 		setupSectionHeader.addEventListener('click', () => {
 			const isCollapsed = setupSectionHeader.hasClass('collapsed');
@@ -5500,7 +5629,8 @@ export default class DndCampaignHubPlugin extends Plugin {
             baseCalibration: config.baseCalibration,
             dragRuler: dragRuler,
             measureRuler: measureRuler,
-            targetDistRuler: targetDistRuler
+            targetDistRuler: targetDistRuler,
+            selectedVisionTokenId: selectedVisionTokenId
           };
           const mapId = config.mapId || resourcePath;
           console.log('[GM] Syncing player views for mapId:', mapId);
@@ -8105,6 +8235,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 					this.saveMapAnnotations(config, el);
 					updateGridToolsVisibility();
+					refreshVisionSelector();
 					new Notice('Marker placed');
 				} else if (activeTool === 'aoe') {
 					if (!aoeOrigin) {
@@ -8268,6 +8399,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								config.markers.splice(i, 1);
 								console.log('Removed marker');
 								removed = true;
+								refreshVisionSelector();
 								break;
 							}
 						}
@@ -9466,6 +9598,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								redrawAnnotations();
 								this.saveMapAnnotations(config, el);
 								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								refreshVisionSelector();
 								document.body.removeChild(contextMenu);
 								new Notice('Light removed from token');
 							});
@@ -9489,6 +9622,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 									redrawAnnotations();
 									this.saveMapAnnotations(config, el);
 									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									refreshVisionSelector();
 									document.body.removeChild(contextMenu);
 									new Notice(`${lightDef.name} attached to token`);
 								});
@@ -9521,6 +9655,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								redrawAnnotations();
 								this.saveMapAnnotations(config, el);
 								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								refreshVisionSelector();
 								new Notice(value > 0 ? `Darkvision set to ${value} ft` : 'Darkvision removed');
 							});
 							
@@ -9988,6 +10123,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							redrawAnnotations();
 							this.saveMapAnnotations(config, el);
 							updateGridToolsVisibility();
+							refreshVisionSelector();
 							document.body.removeChild(contextMenu);
 							new Notice('Marker removed');
 						});
@@ -29839,13 +29975,18 @@ class PlayerMapView extends ItemView {
     
     // Add lights attached to markers (follows marker position)
     // Note: Marker lights don't have an active property - they're always active
-    // SKIP lights from tunnel players - they don't reveal above-ground fog
+    // SKIP lights from tunnel tokens - they don't reveal above-ground fog
+    // In single-token vision mode, only include lights from the selected token
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
         if (marker.light && marker.light.bright !== undefined) {
-          // Skip lights from players in tunnels
+          // Skip lights from tokens in tunnels
           if (marker.tunnelState) {
-            console.log('[PV Fog] Skipping light from tunnel player:', marker.id);
+            console.log('[PV Fog] Skipping light from tunnel token:', marker.id);
+            return;
+          }
+          // In single-token vision mode, only include light from selected token
+          if (config.selectedVisionTokenId && marker.id !== config.selectedVisionTokenId) {
             return;
           }
           allLights.push({
@@ -29860,26 +30001,40 @@ class PlayerMapView extends ItemView {
       });
     }
     
-    // Collect ALL player tokens - they define what's visible to players
-    // Player tokens have vision from EITHER darkvision OR visible light sources
-    // SKIP players who are in tunnels (underground) - they don't reveal above-ground fog
+    // Collect vision tokens - defines what's visible in the player view
+    // If selectedVisionTokenId is set, use ONLY that token (any type: player, creature, NPC)
+    // Otherwise, use all player-type tokens (default combined vision)
+    // SKIP tokens in tunnels (underground) - they don't reveal above-ground fog
     const playerTokens: { x: number; y: number; darkvision: number }[] = [];
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
-        if (marker.markerId) {
-          const markerDef = this.plugin.markerLibrary.getMarker(marker.markerId);
-          if (markerDef && markerDef.type === 'player') {
-            // Skip players who are in tunnels (underground)
-            if (marker.tunnelState) {
-              console.log('[PV Fog] Skipping tunnel player from fog calculation:', marker.id);
-              return;
-            }
-            playerTokens.push({
-              x: marker.position.x,
-              y: marker.position.y,
-              darkvision: marker.darkvision || 0
-            });
-          }
+        if (!marker.markerId) return;
+        
+        // Skip tokens in tunnels (underground)
+        if (marker.tunnelState) {
+          console.log('[PV Fog] Skipping tunnel token from fog calculation:', marker.id);
+          return;
+        }
+        
+        const markerDef = this.plugin.markerLibrary.getMarker(marker.markerId);
+        if (!markerDef) return;
+        
+        // Determine if this token should contribute to vision
+        let includeToken = false;
+        if (config.selectedVisionTokenId) {
+          // Single-token mode: only include the selected token (any type)
+          includeToken = (marker.id === config.selectedVisionTokenId);
+        } else {
+          // Default mode: include all player-type tokens
+          includeToken = (markerDef.type === 'player');
+        }
+        
+        if (includeToken) {
+          playerTokens.push({
+            x: marker.position.x,
+            y: marker.position.y,
+            darkvision: marker.darkvision || 0
+          });
         }
       });
     }
@@ -30047,27 +30202,40 @@ class PlayerMapView extends ItemView {
     }
     
     // Darkvision reveals fog but shows grayscale
-    // Collect markers with darkvision (only player tokens NOT in tunnels)
+    // Collect markers with darkvision for fog reveal
+    // Respects selectedVisionTokenId: single-token mode uses only the selected token (any type)
+    // Default mode uses all player-type tokens
     const darkvisionMarkers: any[] = [];
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
-        // Only player tokens should reveal fog with darkvision
-        // Skip players who are in tunnels - they don't reveal above-ground fog
-        if (marker.markerId && marker.darkvision && marker.darkvision > 0) {
-          // Skip tunnel players - they don't reveal surface fog
-          if (marker.tunnelState) {
-            console.log('[PV] Skipping tunnel player from darkvision fog reveal:', { id: marker.id, tunnelId: marker.tunnelState.tunnelId });
-            return;
-          }
-          const markerDef = this.plugin.markerLibrary.getMarker(marker.markerId);
-          if (markerDef && markerDef.type === 'player') {
-            console.log('[PV] Adding darkvision marker:', { x: marker.position.x.toFixed(1), y: marker.position.y.toFixed(1), range: marker.darkvision, name: markerDef.name });
-            darkvisionMarkers.push({
-              x: marker.position.x,
-              y: marker.position.y,
-              range: marker.darkvision
-            });
-          }
+        if (!marker.markerId || !marker.darkvision || marker.darkvision <= 0) return;
+        
+        // Skip tokens in tunnels - they don't reveal surface fog
+        if (marker.tunnelState) {
+          console.log('[PV] Skipping tunnel token from darkvision fog reveal:', { id: marker.id, tunnelId: marker.tunnelState.tunnelId });
+          return;
+        }
+        
+        const markerDef = this.plugin.markerLibrary.getMarker(marker.markerId);
+        if (!markerDef) return;
+        
+        // Determine if this token should contribute to darkvision
+        let includeToken = false;
+        if (config.selectedVisionTokenId) {
+          // Single-token mode: only include the selected token (any type)
+          includeToken = (marker.id === config.selectedVisionTokenId);
+        } else {
+          // Default mode: include all player-type tokens
+          includeToken = (markerDef.type === 'player');
+        }
+        
+        if (includeToken) {
+          console.log('[PV] Adding darkvision marker:', { id: marker.id, x: marker.position.x.toFixed(1), y: marker.position.y.toFixed(1), range: marker.darkvision, type: markerDef.type });
+          darkvisionMarkers.push({
+            x: marker.position.x,
+            y: marker.position.y,
+            range: marker.darkvision
+          });
         }
       });
     }
