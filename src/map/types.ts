@@ -2,7 +2,7 @@
  * Map Manager Type Definitions
  */
 
-export type MapTool = 'pan' | 'select' | 'draw' | 'ruler' | 'poi';
+export type MapTool = 'pan' | 'select' | 'draw' | 'ruler' | 'target-distance' | 'poi';
 
 export type TravelCategory = 'land' | 'water' | 'air' | 'magic' | 'custom';
 

@@ -4505,7 +4505,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | 'poi' = 'pan';
+    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | 'poi' = 'pan';
 		let selectedColor = '#ff0000';
       // GM player-view rect drag state
       let gmDragStart: { x: number; y: number } | null = null;
@@ -4525,6 +4525,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let rulerStart: { x: number; y: number } | null = null;
 			let rulerEnd: { x: number; y: number } | null = null;
 			let rulerComplete = false; // Track if ruler endpoint was set by click (not just mousemove preview)
+			// Target Distance tool state
+			let targetDistOriginIdx = -1; // Index of origin marker
+			let targetDistTargetIdx = -1; // Index of target marker
+			let targetDistState: 'selecting-origin' | 'selecting-target' | 'showing' = 'selecting-origin';
 			let isDrawing = false;
 			let currentPath: { x: number; y: number }[] = [];
 			// AoE tool state
@@ -4832,6 +4836,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const markerBtn = createToolBtn(commonToolGroup, '🎯', 'Marker');
 		const drawBtn = createToolBtn(commonToolGroup, '✏', 'Draw');
 		const rulerBtn = createToolBtn(commonToolGroup, '📏', 'Ruler');
+		const targetDistBtn = createToolBtn(commonToolGroup, '📐', 'Token Distance');
 		const aoeBtn = createToolBtn(commonToolGroup, '💥', 'AoE');
 		const eraserBtn = createToolBtn(commonToolGroup, '🧹', 'Eraser');
 		
@@ -5436,6 +5441,18 @@ export default class DndCampaignHubPlugin extends Plugin {
               end: { x: rulerEnd.x, y: rulerEnd.y }
             };
           }
+          // Build target distance ruler data if active
+          let targetDistRuler: { origin: { x: number; y: number; elevation: number }; target: { x: number; y: number; elevation: number } } | null = null;
+          if (targetDistOriginIdx >= 0 && targetDistTargetIdx >= 0 && config.markers[targetDistOriginIdx] && config.markers[targetDistTargetIdx]) {
+            const oMarker = config.markers[targetDistOriginIdx];
+            const tMarker = config.markers[targetDistTargetIdx];
+            const oElev = (oMarker.elevation?.height || 0) - (oMarker.elevation?.depth || 0);
+            const tElev = (tMarker.elevation?.height || 0) - (tMarker.elevation?.depth || 0);
+            targetDistRuler = {
+              origin: { x: oMarker.position.x, y: oMarker.position.y, elevation: oElev },
+              target: { x: tMarker.position.x, y: tMarker.position.y, elevation: tElev }
+            };
+          }
           const payload = {
             markers: config.markers,
             drawings: config.drawings,
@@ -5456,7 +5473,8 @@ export default class DndCampaignHubPlugin extends Plugin {
             activePaceId: config.activePaceId,
             baseCalibration: config.baseCalibration,
             dragRuler: dragRuler,
-            measureRuler: measureRuler
+            measureRuler: measureRuler,
+            targetDistRuler: targetDistRuler
           };
           const mapId = config.mapId || resourcePath;
           console.log('[GM] Syncing player views for mapId:', mapId);
@@ -5496,7 +5514,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let startX = 0;
 		let startY = 0;
 		// Middle mouse button temporary pan state
-		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | 'poi' | null = null;
+		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | 'poi' | null = null;
 		let isTemporaryPan = false;
 		let gridCanvas: HTMLCanvasElement | null = null;
 		let annotationCanvas: HTMLCanvasElement | null = null;
@@ -6488,6 +6506,121 @@ export default class DndCampaignHubPlugin extends Plugin {
 					ctx.fillText(text, textX, textY);
 				}
 				
+				// Draw target distance measurement between two tokens
+				if (targetDistOriginIdx >= 0 && config.markers[targetDistOriginIdx]) {
+					const originMarker = config.markers[targetDistOriginIdx];
+					const originPos = originMarker.position;
+					
+					// Draw origin token highlight ring
+					const originDef = originMarker.markerId ? this.markerLibrary.getMarker(originMarker.markerId) : null;
+					const originRadius = originDef ? getMarkerRadius(originDef) : 15;
+					ctx.save();
+					ctx.strokeStyle = '#00ffff';
+					ctx.lineWidth = 3;
+					ctx.setLineDash([6, 3]);
+					ctx.beginPath();
+					ctx.arc(originPos.x, originPos.y, originRadius + 4, 0, Math.PI * 2);
+					ctx.stroke();
+					ctx.setLineDash([]);
+					ctx.restore();
+					
+					if (targetDistTargetIdx >= 0 && config.markers[targetDistTargetIdx]) {
+						const targetMarker = config.markers[targetDistTargetIdx];
+						const targetPos = targetMarker.position;
+						
+						// Draw target token highlight ring
+						const targetDef = targetMarker.markerId ? this.markerLibrary.getMarker(targetMarker.markerId) : null;
+						const targetRadius = targetDef ? getMarkerRadius(targetDef) : 15;
+						ctx.save();
+						ctx.strokeStyle = '#00ffff';
+						ctx.lineWidth = 3;
+						ctx.setLineDash([6, 3]);
+						ctx.beginPath();
+						ctx.arc(targetPos.x, targetPos.y, targetRadius + 4, 0, Math.PI * 2);
+						ctx.stroke();
+						ctx.setLineDash([]);
+						ctx.restore();
+						
+						// Calculate D&D 5e RAW distance (5ft increments) with elevation
+						const dx = targetPos.x - originPos.x;
+						const dy = targetPos.y - originPos.y;
+						const horizontalPixelDist = Math.sqrt(dx * dx + dy * dy);
+						const horizontalGridDist = horizontalPixelDist / config.gridSize;
+						const horizontalFeet = horizontalGridDist * config.scale.value;
+						
+						// Get elevation difference in feet
+						const originElevation = originMarker.elevation;
+						const targetElevation = targetMarker.elevation;
+						const originHeight = (originElevation?.height || 0) - (originElevation?.depth || 0);
+						const targetHeight = (targetElevation?.height || 0) - (targetElevation?.depth || 0);
+						const verticalFeet = Math.abs(targetHeight - originHeight);
+						
+						// 3D distance using Pythagorean theorem, rounded to nearest 5ft (D&D 5e)
+						const totalFeetRaw = Math.sqrt(horizontalFeet * horizontalFeet + verticalFeet * verticalFeet);
+						const totalFeet = Math.max(config.scale.value, Math.round(totalFeetRaw / config.scale.value) * config.scale.value);
+						
+						// Draw measurement line (cyan, dashed)
+						ctx.save();
+						ctx.strokeStyle = '#00ffff';
+						ctx.lineWidth = 4;
+						ctx.setLineDash([10, 5]);
+						ctx.shadowColor = 'rgba(0, 255, 255, 0.5)';
+						ctx.shadowBlur = 6;
+						ctx.beginPath();
+						ctx.moveTo(originPos.x, originPos.y);
+						ctx.lineTo(targetPos.x, targetPos.y);
+						ctx.stroke();
+						ctx.setLineDash([]);
+						ctx.shadowBlur = 0;
+						
+						// Draw arrowhead at target end
+						const angle = Math.atan2(dy, dx);
+						const arrowLen = 12;
+						ctx.fillStyle = '#00ffff';
+						ctx.beginPath();
+						ctx.moveTo(targetPos.x, targetPos.y);
+						ctx.lineTo(targetPos.x - arrowLen * Math.cos(angle - Math.PI / 6), targetPos.y - arrowLen * Math.sin(angle - Math.PI / 6));
+						ctx.lineTo(targetPos.x - arrowLen * Math.cos(angle + Math.PI / 6), targetPos.y - arrowLen * Math.sin(angle + Math.PI / 6));
+						ctx.closePath();
+						ctx.fill();
+						
+						// Draw distance label at midpoint
+						const midX = (originPos.x + targetPos.x) / 2;
+						const midY = (originPos.y + targetPos.y) / 2 - 14;
+						let distText = `${totalFeet} ${config.scale.unit}`;
+						if (verticalFeet > 0) {
+							distText += ` (↕${verticalFeet}ft)`;
+						}
+						
+						// Background pill for readability
+						ctx.font = 'bold 18px sans-serif';
+						ctx.textAlign = 'center';
+						ctx.textBaseline = 'middle';
+						const textWidth = ctx.measureText(distText).width;
+						const pillPadX = 8;
+						const pillPadY = 4;
+						ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+						const pillX = midX - textWidth / 2 - pillPadX;
+						const pillY = midY - 10 - pillPadY;
+						const pillW = textWidth + pillPadX * 2;
+						const pillH = 20 + pillPadY * 2;
+						ctx.beginPath();
+						ctx.roundRect(pillX, pillY, pillW, pillH, 6);
+						ctx.fill();
+						
+						// Text outline (dark) for contrast
+						ctx.strokeStyle = '#003333';
+						ctx.lineWidth = 3;
+						ctx.strokeText(distText, midX, midY);
+						
+						// Text fill (cyan)
+						ctx.fillStyle = '#00ffff';
+						ctx.fillText(distText, midX, midY);
+						
+						ctx.restore();
+					}
+				}
+				
 				// Draw calibration measurement line
 				if (calibrationPoint1) {
 					ctx.strokeStyle = '#ff9900';
@@ -7256,7 +7389,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-				[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, aoeBtn, viewBtn, fogBtn, wallsBtn, lightsBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
+				[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, viewBtn, fogBtn, wallsBtn, lightsBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
 				
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
@@ -7270,6 +7403,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (tool !== 'aoe') {
 					aoeOrigin = null;
 					aoePreviewEnd = null;
+				}
+
+				// Cancel target distance measurement when switching away
+				if (tool !== 'target-distance') {
+					targetDistOriginIdx = -1;
+					targetDistTargetIdx = -1;
+					targetDistState = 'selecting-origin';
 				}
 
 				// Cancel fog placement when switching away
@@ -7316,6 +7456,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (tool === 'ruler') {
 					rulerBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
+				} else if (tool === 'target-distance') {
+					targetDistBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+					new Notice('Token Distance: Click origin token, then target token', 3000);
 				} else if (tool === 'move-grid') {
 					moveGridBtn.addClass('active');
 					viewport.style.cursor = 'move';
@@ -7352,6 +7496,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 					rulerComplete = false;
 					redrawAnnotations();
 				}
+
+				// Clear target distance when switching tools
+				if (tool !== 'target-distance' && annotationCanvas) {
+					if (targetDistOriginIdx >= 0 || targetDistTargetIdx >= 0) {
+						targetDistOriginIdx = -1;
+						targetDistTargetIdx = -1;
+						targetDistState = 'selecting-origin';
+						redrawAnnotations();
+						if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					}
+				}
 			};
 
 			// Wire up tool button handlers
@@ -7387,6 +7542,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 			rulerBtn.addEventListener('click', () => {
 				console.log('Ruler button clicked');
 				setActiveTool('ruler');
+			});
+			targetDistBtn.addEventListener('click', () => {
+				console.log('Target Distance button clicked');
+				setActiveTool('target-distance');
 			});
 			aoeBtn.addEventListener('click', () => {
 				console.log('AoE button clicked');
@@ -7816,6 +7975,64 @@ export default class DndCampaignHubPlugin extends Plugin {
 						redrawAnnotations();
             // Sync cleared ruler to player view
             if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();				
+					}
+        } else if (activeTool === 'target-distance') {
+					// Token-to-token distance measurement tool
+					if (targetDistState === 'selecting-origin') {
+						// Find marker at click position
+						let foundIdx = -1;
+						for (let i = config.markers.length - 1; i >= 0; i--) {
+							const m = config.markers[i];
+							const mDef2 = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
+							const r = mDef2 ? getMarkerRadius(mDef2) : 15;
+							const dist = Math.sqrt(Math.pow(m.position.x - mapPos.x, 2) + Math.pow(m.position.y - mapPos.y, 2));
+							if (dist <= r) {
+								foundIdx = i;
+								break;
+							}
+						}
+						if (foundIdx >= 0) {
+							targetDistOriginIdx = foundIdx;
+							targetDistState = 'selecting-target';
+							new Notice('Now click the target token', 2000);
+							redrawAnnotations();
+						} else {
+							new Notice('Click on a token to set as origin', 2000);
+						}
+					} else if (targetDistState === 'selecting-target') {
+						// Find marker at click position (different from origin)
+						let foundIdx = -1;
+						for (let i = config.markers.length - 1; i >= 0; i--) {
+							if (i === targetDistOriginIdx) continue;
+							const m = config.markers[i];
+							const mDef2 = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
+							const r = mDef2 ? getMarkerRadius(mDef2) : 15;
+							const dist = Math.sqrt(Math.pow(m.position.x - mapPos.x, 2) + Math.pow(m.position.y - mapPos.y, 2));
+							if (dist <= r) {
+								foundIdx = i;
+								break;
+							}
+						}
+						if (foundIdx >= 0) {
+							targetDistTargetIdx = foundIdx;
+							targetDistState = 'showing';
+							redrawAnnotations();
+							if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+						} else {
+							// Clicked empty space — clear measurement
+							targetDistOriginIdx = -1;
+							targetDistTargetIdx = -1;
+							targetDistState = 'selecting-origin';
+							redrawAnnotations();
+							if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+						}
+					} else if (targetDistState === 'showing') {
+						// Third click — clear measurement
+						targetDistOriginIdx = -1;
+						targetDistTargetIdx = -1;
+						targetDistState = 'selecting-origin';
+						redrawAnnotations();
+						if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 					}
         } else if (activeTool === 'marker') {
 					console.log('Marker tool: placing marker');
@@ -28583,6 +28800,11 @@ class PlayerMapView extends ItemView {
     if (config.measureRuler) {
       this.drawMeasureRuler(ctx, config);
     }
+
+    // Draw target distance ruler if active
+    if (config.targetDistRuler) {
+      this.drawTargetDistanceRuler(ctx, config);
+    }
   }
 
   private drawGrid(ctx: CanvasRenderingContext2D, config: any) {
@@ -28747,6 +28969,86 @@ class PlayerMapView extends ItemView {
     // Draw text fill
     ctx.fillStyle = '#ffff00';
     ctx.fillText(text, midX, midY);
+
+    ctx.restore();
+  }
+
+  private drawTargetDistanceRuler(ctx: CanvasRenderingContext2D, config: any) {
+    if (!config.targetDistRuler) return;
+
+    const { origin, target } = config.targetDistRuler;
+    const dx = target.x - origin.x;
+    const dy = target.y - origin.y;
+    const horizontalPixelDist = Math.sqrt(dx * dx + dy * dy);
+
+    const gridSize = config.gridSize || 70;
+    const scaleValue = config.scale?.value || 5;
+    const scaleUnit = config.scale?.unit || 'feet';
+    const horizontalFeet = (horizontalPixelDist / gridSize) * scaleValue;
+
+    // 3D distance with elevation
+    const verticalFeet = Math.abs((target.elevation || 0) - (origin.elevation || 0));
+    const totalFeetRaw = Math.sqrt(horizontalFeet * horizontalFeet + verticalFeet * verticalFeet);
+    const totalFeet = Math.max(scaleValue, Math.round(totalFeetRaw / scaleValue) * scaleValue);
+
+    ctx.save();
+
+    // Draw measurement line (cyan, dashed with glow)
+    ctx.strokeStyle = '#00ffff';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([10, 5]);
+    ctx.shadowColor = 'rgba(0, 255, 255, 0.5)';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(origin.x, origin.y);
+    ctx.lineTo(target.x, target.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.shadowBlur = 0;
+
+    // Draw arrowhead at target
+    const angle = Math.atan2(dy, dx);
+    const arrowLen = 12;
+    ctx.fillStyle = '#00ffff';
+    ctx.beginPath();
+    ctx.moveTo(target.x, target.y);
+    ctx.lineTo(target.x - arrowLen * Math.cos(angle - Math.PI / 6), target.y - arrowLen * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(target.x - arrowLen * Math.cos(angle + Math.PI / 6), target.y - arrowLen * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+
+    // Draw distance label at midpoint
+    const midX = (origin.x + target.x) / 2;
+    const midY = (origin.y + target.y) / 2 - 14;
+    let distText = `${totalFeet} ${scaleUnit}`;
+    if (verticalFeet > 0) {
+      distText += ` (↕${verticalFeet}ft)`;
+    }
+
+    // Background pill for readability
+    ctx.font = 'bold 20px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const textWidth = ctx.measureText(distText).width;
+    const pillPadX = 8;
+    const pillPadY = 4;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    const pillX = midX - textWidth / 2 - pillPadX;
+    const pillY = midY - 10 - pillPadY;
+    const pillW = textWidth + pillPadX * 2;
+    const pillH = 20 + pillPadY * 2;
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pillW, pillH, 6);
+    ctx.fill();
+
+    // Text outline
+    ctx.strokeStyle = '#003333';
+    ctx.lineWidth = 3;
+    ctx.strokeText(distText, midX, midY);
+
+    // Text fill (cyan)
+    ctx.fillStyle = '#00ffff';
+    ctx.fillText(distText, midX, midY);
 
     ctx.restore();
   }
