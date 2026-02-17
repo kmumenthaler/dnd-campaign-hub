@@ -6397,7 +6397,7 @@ export default class DndCampaignHubPlugin extends Plugin {
             ctx.strokeRect(-gmRect.w / 2, -gmRect.h / 2, gmRect.w, gmRect.h);
             
             // Draw rotation indicator arrow (pointing to "up" direction of player view)
-            const arrowLen = Math.min(gmRect.w, gmRect.h) * 0.3;
+            const arrowLen = Math.min(gmRect.w, gmRect.h) * 0.12;
             ctx.strokeStyle = '#00ffff';
             ctx.fillStyle = '#00ffff';
             ctx.lineWidth = 3;
@@ -8347,6 +8347,7 @@ export default class DndCampaignHubPlugin extends Plugin {
               const centerX = existingRect.x + existingRect.w / 2;
               const centerY = existingRect.y + existingRect.h / 2;
               (this as any)._gmRectDragOffsetWorld = { x: mapPos.x - centerX, y: mapPos.y - centerY };
+              try { console.log('[GM] Drag offset calculated', { mousePos: mapPos, rectCenter: { x: centerX, y: centerY }, offset: (this as any)._gmRectDragOffsetWorld, rotation: existingRect.rotation }); } catch (e) { }
             }
           }
 
@@ -8696,14 +8697,16 @@ export default class DndCampaignHubPlugin extends Plugin {
             // Rect center follows mouse minus stored world offset
             const centerX = mapPos.x - off.x;
             const centerY = mapPos.y - off.y;
+            try { console.log('[GM] rect drag', { mousePos: mapPos, offset: off, newCenter: { x: centerX, y: centerY }, existingRect: { x: existingRect.x, y: existingRect.y, w: existingRect.w, h: existingRect.h } }); } catch (e) { }
             rect = {
-              x: Math.max(0, centerX - existingRect.w / 2),
-              y: Math.max(0, centerY - existingRect.h / 2),
+              x: centerX - existingRect.w / 2,
+              y: centerY - existingRect.h / 2,
               w: existingRect.w,
               h: existingRect.h,
               rotation: existingRect.rotation || 0,
               targetScale: existingRect.targetScale // Preserve calibrated scale during drag
             };
+            try { console.log('[GM] new rect created', { rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h }, calculatedCenter: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 } }); } catch (e) { }
           } else {
             // Creating new rect by dragging corners
             const x1 = Math.min(gmDragStart.x, gmDragCurrent.x);
@@ -8711,8 +8714,8 @@ export default class DndCampaignHubPlugin extends Plugin {
             const x2 = Math.max(gmDragStart.x, gmDragCurrent.x);
             const y2 = Math.max(gmDragStart.y, gmDragCurrent.y);
             rect = {
-              x: Math.max(0, Math.round(x1)),
-              y: Math.max(0, Math.round(y1)),
+              x: Math.round(x1),
+              y: Math.round(y1),
               w: Math.max(1, Math.round(x2 - x1)),
               h: Math.max(1, Math.round(y2 - y1)),
               rotation: existingRect?.rotation || 0
@@ -9153,12 +9156,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const oldCenterX = gmRect.x + gmRect.w / 2;
 						const oldCenterY = gmRect.y + gmRect.h / 2;
 						
-						// Update rotation
+						// Update rotation (w/h stay the same, canvas rotation handles visual)
 						gmRect.rotation = ((gmRect.rotation || 0) - 90 + 360) % 360;
 						
-						// Keep center fixed, recalculate top-left
+						// Keep center fixed, recalculate top-left (w/h unchanged)
 						gmRect.x = Math.round(oldCenterX - gmRect.w / 2);
 						gmRect.y = Math.round(oldCenterY - gmRect.h / 2);
+						
+						// Clear drag offset so it gets recalculated on next click
+						(this as any)._gmRectDragOffsetWorld = null;
+						try { console.log('[GM] Rotation CCW, offset cleared', { rotation: gmRect.rotation }); } catch (e) { }
 						
 						redrawAnnotations();
 						
@@ -9203,12 +9210,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const oldCenterX = gmRect.x + gmRect.w / 2;
 						const oldCenterY = gmRect.y + gmRect.h / 2;
 						
-						// Update rotation
+						// Update rotation (w/h stay the same, canvas rotation handles visual)
 						gmRect.rotation = ((gmRect.rotation || 0) + 90) % 360;
 						
-						// Keep center fixed, recalculate top-left
+						// Keep center fixed, recalculate top-left (w/h unchanged)
 						gmRect.x = Math.round(oldCenterX - gmRect.w / 2);
 						gmRect.y = Math.round(oldCenterY - gmRect.h / 2);
+						
+						// Clear drag offset so it gets recalculated on next click
+						(this as any)._gmRectDragOffsetWorld = null;
+						try { console.log('[GM] Rotation CW, offset cleared', { rotation: gmRect.rotation }); } catch (e) { }
 						
 						redrawAnnotations();
 						
