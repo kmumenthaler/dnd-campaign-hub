@@ -5540,7 +5540,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 						gridOffsetY: config.gridOffsetY || 0,
 						scale: config.scale,
 						name: config.name,
-						isVideo: config.isVideo
+						isVideo: config.isVideo,
+						type: config.type
 					},
 					imageResourcePath: resourcePath
 				}
@@ -5624,6 +5625,7 @@ export default class DndCampaignHubPlugin extends Plugin {
             gridOffsetY: config.gridOffsetY || 0,
             scale: config.scale,
             name: config.name,
+            type: config.type,
             travelPaces: config.travelPaces,
             activePaceId: config.activePaceId,
             baseCalibration: config.baseCalibration,
@@ -6883,10 +6885,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Function to draw a PoI icon on a hex
 			const drawPoiIcon = async (ctx: CanvasRenderingContext2D, poiRef: any) => {
-				// Apply transparency based on layer
-				const itemLayer = poiRef.layer || 'DM';
-				const isActiveLayer = itemLayer === config.activeLayer;
-				ctx.globalAlpha = isActiveLayer ? 0.8 : 0.2;
+				// For hexcrawl/exploration maps, PoI icons are GM-only hints at 70% opacity
+				// For other map types, use layer-based transparency
+				const isHexcrawlMap = config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical';
+				let poiAlpha: number;
+				if (isHexcrawlMap) {
+					poiAlpha = 0.7;
+				} else {
+					const itemLayer = poiRef.layer || 'DM';
+					const isActiveLayer = itemLayer === config.activeLayer;
+					poiAlpha = isActiveLayer ? 0.8 : 0.2;
+				}
 				
 				const ox = config.gridOffsetX || 0;
 				const oy = config.gridOffsetY || 0;
@@ -6930,14 +6939,24 @@ export default class DndCampaignHubPlugin extends Plugin {
 					console.error('Error loading PoI icon:', error);
 				}
 				
-				// Draw icon
-				ctx.font = '24px sans-serif';
-				ctx.textAlign = 'center';
-				ctx.textBaseline = 'middle';
-				ctx.fillText(icon, centerX, centerY);
+				// Draw icon onto a temporary canvas first, then composite with alpha
+				// (emoji fillText doesn't always respect globalAlpha in Electron)
+				const tmpSize = 48;
+				const tmpCanvas = document.createElement('canvas');
+				tmpCanvas.width = tmpSize;
+				tmpCanvas.height = tmpSize;
+				const tmpCtx = tmpCanvas.getContext('2d');
+				if (tmpCtx) {
+					tmpCtx.font = '24px sans-serif';
+					tmpCtx.textAlign = 'center';
+					tmpCtx.textBaseline = 'middle';
+					tmpCtx.fillText(icon, tmpSize / 2, tmpSize / 2);
+				}
 				
-				// Reset globalAlpha
-				ctx.globalAlpha = 1.0;
+				ctx.save();
+				ctx.globalAlpha = poiAlpha;
+				ctx.drawImage(tmpCanvas, centerX - tmpSize / 2, centerY - tmpSize / 2);
+				ctx.restore();
 			};
 
 			// Helper: get marker pixel radius for a given marker definition
@@ -28143,8 +28162,11 @@ class PlayerMapView extends ItemView {
     // Draw highlights
     playerHighlights.forEach((h: any) => this.drawHighlight(ctx, h));
 
-    // Draw PoI icons (player layer only)
-    playerPoiRefs.forEach((p: any) => this.drawPoiIcon(ctx, p, config));
+    // Draw PoI icons (player layer only) - hidden entirely for hexcrawl/exploration maps
+    const isHexcrawlMap = config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical';
+    if (!isHexcrawlMap) {
+      playerPoiRefs.forEach((p: any) => this.drawPoiIcon(ctx, p, config));
+    }
 
     // Draw drawings
     playerDrawings.forEach((d: any) => this.drawDrawing(ctx, d));
@@ -29545,6 +29567,9 @@ class PlayerMapView extends ItemView {
   }
 
   private drawPoiIcon(ctx: CanvasRenderingContext2D, poiRef: any, config: any) {
+    // Skip rendering for hexcrawl/exploration maps - PoIs are GM-only hints
+    const isHexcrawlMap = config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical';
+    if (isHexcrawlMap) return;
     ctx.globalAlpha = 0.9; // Slightly transparent for player view
     
     const ox = config.gridOffsetX || 0;
