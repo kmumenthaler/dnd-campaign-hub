@@ -3182,6 +3182,11 @@
   user-select: none;
 }
 
+/* Video element used as animated map background */
+.dnd-map-video {
+  object-fit: contain;
+}
+
 .dnd-map-grid-overlay {
   position: absolute;
   top: 0;
@@ -3927,6 +3932,11 @@
   max-height: 100%;
   object-fit: contain;
   display: block;
+}
+
+/* Video element used as animated player map background */
+.dnd-player-map-video {
+  object-fit: contain;
 }
 
 .dnd-player-map-canvas {

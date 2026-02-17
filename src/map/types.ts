@@ -35,10 +35,40 @@ export interface TravelPace {
   metadata?: Record<string, any>; // catch-all for future features
 }
 
+/**
+ * Supported image extensions for map backgrounds
+ */
+export const MAP_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'apng', 'avif'];
+
+/**
+ * Supported video extensions for animated map backgrounds
+ */
+export const MAP_VIDEO_EXTENSIONS = ['mp4', 'webm'];
+
+/**
+ * All supported media extensions for map backgrounds
+ */
+export const MAP_MEDIA_EXTENSIONS = [...MAP_IMAGE_EXTENSIONS, ...MAP_VIDEO_EXTENSIONS];
+
+/**
+ * Check if a file extension is a video format
+ */
+export function isVideoExtension(ext: string): boolean {
+  return MAP_VIDEO_EXTENSIONS.includes(ext.toLowerCase());
+}
+
+/**
+ * Check if a file extension is a supported map media format
+ */
+export function isMapMediaExtension(ext: string): boolean {
+  return MAP_MEDIA_EXTENSIONS.includes(ext.toLowerCase());
+}
+
 export interface MapData {
   id: string;
   name: string;
-  imageFile: string; // Path to image in vault
+  imageFile: string; // Path to image/video in vault
+  isVideo?: boolean; // True if the map background is a video file (mp4, webm)
   type: 'battlemap' | 'world' | 'regional';
   gridType: 'square' | 'hex-horizontal' | 'hex-vertical' | 'none';
   gridSize: number; // pixels per grid cell

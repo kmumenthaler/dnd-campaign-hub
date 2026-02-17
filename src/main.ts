@@ -2535,6 +2535,18 @@ const SESSION_RUN_VIEW_TYPE = "session-run-dashboard";
 const DM_SCREEN_VIEW_TYPE = "dm-screen";
 const PLAYER_MAP_VIEW_TYPE = "dnd-player-map-view";
 
+/**
+ * A media element (image or video) that exposes image-compatible dimension properties.
+ * For video elements, these are shimmed at runtime via Object.defineProperty.
+ */
+type MapMediaElement = (HTMLImageElement | HTMLVideoElement) & {
+  readonly naturalWidth: number;
+  readonly naturalHeight: number;
+  readonly complete: boolean;
+  readonly width: number;
+  readonly height: number;
+};
+
 export default class DndCampaignHubPlugin extends Plugin {
   settings!: DndCampaignHubSettings;
   SessionCreationModal = SessionCreationModal;
@@ -4303,6 +4315,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			if (savedData.dimensions) config.dimensions = savedData.dimensions;
 			if (savedData.gridOffsetX !== undefined) config.gridOffsetX = savedData.gridOffsetX;
 			if (savedData.gridOffsetY !== undefined) config.gridOffsetY = savedData.gridOffsetY;
+			if (savedData.isVideo !== undefined) config.isVideo = savedData.isVideo;
 			
 			// Ensure grid offset defaults
 			if (config.gridOffsetX === undefined) config.gridOffsetX = 0;
@@ -4370,6 +4383,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 					cls: 'dnd-map-error'
 				});
 				return;
+			}
+
+			// Auto-detect video files from extension if not already set
+			const videoExtensions = ['mp4', 'webm'];
+			if (config.isVideo === undefined) {
+				config.isVideo = videoExtensions.includes(imageFile.extension.toLowerCase());
 			}
 
 			// Create container for the map
@@ -4602,14 +4621,40 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// Get the resource path for the image
 		const resourcePath = this.app.vault.getResourcePath(imageFile);
 		
-		// Create and configure the image element
-		const img = mapWrapper.createEl('img', {
-			cls: 'dnd-map-image',
-			attr: {
-				src: resourcePath,
-				alt: config.name || 'Battle Map'
-			}
-		});
+		// Create the map background element (image or video)
+		let img: MapMediaElement;
+		if (config.isVideo) {
+			const video = mapWrapper.createEl('video', {
+				cls: 'dnd-map-image dnd-map-video',
+				attr: {
+					src: resourcePath,
+					autoplay: '',
+					loop: '',
+					muted: '',
+					playsinline: '',
+				}
+			});
+			video.autoplay = true;
+			video.loop = true;
+			video.muted = true;
+			video.playsInline = true;
+			// Shim image-compatible properties so existing code works transparently
+			Object.defineProperty(video, 'naturalWidth', { get: () => video.videoWidth, configurable: true });
+			Object.defineProperty(video, 'naturalHeight', { get: () => video.videoHeight, configurable: true });
+			Object.defineProperty(video, 'complete', { get: () => video.readyState >= 2, configurable: true });
+			// Shim width/height to return rendered size (HTMLImageElement.width returns clientWidth)
+			Object.defineProperty(video, 'width', { get: () => video.clientWidth || video.videoWidth, configurable: true });
+			Object.defineProperty(video, 'height', { get: () => video.clientHeight || video.videoHeight, configurable: true });
+			img = video as MapMediaElement;
+		} else {
+			img = mapWrapper.createEl('img', {
+				cls: 'dnd-map-image',
+				attr: {
+					src: resourcePath,
+					alt: config.name || 'Battle Map'
+				}
+			});
+		}
 
 		// Add floating toolbar wrapper (holds toolbar + layer menu)
 		const toolbarWrapper = viewport.createDiv({ cls: 'dnd-map-toolbar-wrapper' });
@@ -5233,12 +5278,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 						fogOfWar: config.fogOfWar,
 						walls: config.walls,
 						lightSources: config.lightSources,
+						tunnels: config.tunnels,
+						poiReferences: config.poiReferences,
 						gridType: config.gridType,
 						gridSize: config.gridSize,
 						gridOffsetX: config.gridOffsetX || 0,
 						gridOffsetY: config.gridOffsetY || 0,
 						scale: config.scale,
-						name: config.name
+						name: config.name,
+						isVideo: config.isVideo
 					},
 					imageResourcePath: resourcePath
 				}
@@ -7277,8 +7325,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Hide move-grid if no grid
 			if (!hasGrid) moveGridBtn.addClass('hidden');
 
-			// Add grid overlay if grid is enabled
-			img.onload = () => {
+			// Add grid overlay when media is ready
+			// For images, use 'load'; for videos, use 'loadeddata' (first frame available)
+			const onMediaReady = () => {
 				if (config.gridType && config.gridType !== 'none' && config.gridSize) {
 					// Use multi-pace overlay system for hexcrawl maps
 					if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
@@ -7327,6 +7376,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 				});
 				resizeObserver.observe(img);
 			};
+			// Attach the handler to the appropriate event
+			if (config.isVideo) {
+				img.addEventListener('loadeddata', onMediaReady, { once: true });
+				// If already loaded (e.g., cached), fire immediately
+				if ((img as any).readyState >= 2) onMediaReady();
+			} else {
+				(img as HTMLImageElement).onload = onMediaReady;
+			}
 
 			// Mouse wheel zoom (always active)
 			viewport.addEventListener('wheel', (e: WheelEvent) => {
@@ -10684,6 +10741,7 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 				mapId: config.mapId,
 				name: config.name || '',
 				imageFile: config.imageFile,
+				isVideo: config.isVideo || false,
 				type: config.type || 'battlemap',
 				dimensions: config.dimensions || {},
 				gridType: config.gridType || 'none',
@@ -10792,7 +10850,7 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 	 * 
 	 * gridSize represents the spacing between hex centers (horizontal for flat-top, vertical for pointy-top)
 	 */
-	drawGridOverlay(container: HTMLElement, img: HTMLImageElement, config: any, offsetX: number = 0, offsetY: number = 0): HTMLCanvasElement {
+	drawGridOverlay(container: HTMLElement, img: MapMediaElement, config: any, offsetX: number = 0, offsetY: number = 0): HTMLCanvasElement {
 		// Remove existing canvas if any
 		const existingCanvas = container.querySelector('.dnd-map-grid-overlay');
 		if (existingCanvas) {
@@ -10976,7 +11034,7 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 	 */
 	drawPaceGridOverlay(
 		container: HTMLElement,
-		img: HTMLImageElement,
+		img: MapMediaElement,
 		config: any,
 		pace: any,
 		hexSize: number,
@@ -26572,7 +26630,7 @@ class PlayerMapView extends ItemView {
   private imageResourcePath: string = '';
   private mapId: string = ''; // Unique identifier for the associated GM map
   private canvas: HTMLCanvasElement | null = null;
-  private mapImage: HTMLImageElement | null = null;
+  private mapImage: MapMediaElement | null = null;
   private markerImageCache: Map<string, HTMLImageElement> = new Map();
   // Tabletop mode state
   private tabletopMode: boolean = true;
@@ -26636,9 +26694,16 @@ class PlayerMapView extends ItemView {
   updateMapData(config: any) {
     console.log('[PV] updateMapData called with config:', config);
     this.mapConfig = config;
-    console.log('[PV] mapConfig updated, calling redrawAnnotations');
-    this.redrawAnnotations();
-    console.log('[PV] redrawAnnotations completed');
+    // Use syncCanvasToImage when available — it ensures the canvas is properly
+    // sized before drawing (important for video where media may still be loading).
+    if (this.syncCanvasToImage) {
+      console.log('[PV] mapConfig updated, calling syncCanvasToImage');
+      this.syncCanvasToImage();
+    } else {
+      console.log('[PV] mapConfig updated, calling redrawAnnotations (no sync fn yet)');
+      this.redrawAnnotations();
+    }
+    console.log('[PV] update completed');
   }
 
   /**
@@ -27056,14 +27121,41 @@ class PlayerMapView extends ItemView {
     // Inner sled wraps image + canvas, pans together in tabletop mode
     const sled = mapContainer.createDiv({ cls: 'dnd-player-map-sled' });
 
-    // Image
-    const img = sled.createEl('img', {
-      cls: 'dnd-player-map-image',
-      attr: {
-        src: this.imageResourcePath,
-        alt: this.mapConfig?.name || 'Battle Map'
-      }
-    });
+    // Image or video background
+    const isVideo = this.mapConfig?.isVideo || /\.(mp4|webm)$/i.test(this.imageResourcePath);
+    let img: MapMediaElement;
+    if (isVideo) {
+      const video = sled.createEl('video', {
+        cls: 'dnd-player-map-image dnd-player-map-video',
+        attr: {
+          src: this.imageResourcePath,
+          autoplay: '',
+          loop: '',
+          muted: '',
+          playsinline: '',
+        }
+      });
+      video.autoplay = true;
+      video.loop = true;
+      video.muted = true;
+      video.playsInline = true;
+      // Shim image-compatible properties so existing code works transparently
+      Object.defineProperty(video, 'naturalWidth', { get: () => video.videoWidth, configurable: true });
+      Object.defineProperty(video, 'naturalHeight', { get: () => video.videoHeight, configurable: true });
+      Object.defineProperty(video, 'complete', { get: () => video.readyState >= 2, configurable: true });
+      // Shim width/height to return rendered size (HTMLImageElement.width returns clientWidth)
+      Object.defineProperty(video, 'width', { get: () => video.clientWidth || video.videoWidth, configurable: true });
+      Object.defineProperty(video, 'height', { get: () => video.clientHeight || video.videoHeight, configurable: true });
+      img = video as MapMediaElement;
+    } else {
+      img = sled.createEl('img', {
+        cls: 'dnd-player-map-image',
+        attr: {
+          src: this.imageResourcePath,
+          alt: this.mapConfig?.name || 'Battle Map'
+        }
+      });
+    }
     this.mapImage = img;
 
     // Annotation canvas
@@ -27274,13 +27366,19 @@ class PlayerMapView extends ItemView {
 
     // Player-side calibration removed; calibration should be performed from GM view.
 
-    // Size canvas when image loads
-    img.addEventListener('load', () => {
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      // Defer one frame so image has been laid out, then sync position
+    // Size canvas when media loads
+    const onPlayerMediaReady = () => {
+      canvas.width = (img as any).naturalWidth;
+      canvas.height = (img as any).naturalHeight;
+      // Defer one frame so media has been laid out, then sync position
       requestAnimationFrame(syncCanvasToImage);
-    });
+    };
+    if (isVideo) {
+      img.addEventListener('loadeddata', onPlayerMediaReady, { once: true });
+      if ((img as any).readyState >= 2) onPlayerMediaReady();
+    } else {
+      img.addEventListener('load', onPlayerMediaReady);
+    }
 
     // Handle window resize — defer one frame to ensure layout is settled
     const resizeObserver = new ResizeObserver(() => {
@@ -27454,56 +27552,11 @@ class PlayerMapView extends ItemView {
     // Track players who are in tunnels - used for drawing tunnel above fog
     const tunnelPlayersInMarkers = playerTokens.filter((m: any) => m.tunnelState);
 
-    // Draw tunnel entrances and exits (only visible if within player vision range)
+    // Draw tunnel entrances and exits (always visible on surface - these are physical holes)
     console.log('[Tunnel Debug Player Render] config.tunnels:', config.tunnels ? config.tunnels.length : 'undefined');
-    if (config.tunnels && config.tunnels.length > 0 && playerTokens.length > 0) {
+    if (config.tunnels && config.tunnels.length > 0) {
       const CREATURE_SIZE_SQUARES: Record<string, number> = {
         'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-      };
-      
-      // Calculate pixels per foot for vision range calculations
-      const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
-      
-      // Helper function to calculate vision range for a player token
-      const getVisionRange = (marker: any): number => {
-        let visionRange = 0;
-        
-        // Check darkvision
-        if (marker.darkvision && marker.darkvision > 0) {
-          visionRange = Math.max(visionRange, marker.darkvision);
-        }
-        
-        // Check attached light source
-        if (marker.light && marker.light.bright !== undefined) {
-          const totalLightRange = (marker.light.bright || 0) + (marker.light.dim || 0);
-          visionRange = Math.max(visionRange, totalLightRange);
-        }
-        
-        const pixelRange = visionRange * pixelsPerFoot;
-        console.log('[Tunnel Vision Debug ENTRANCE] Marker vision:', {
-          id: marker.id,
-          darkvision: marker.darkvision,
-          lightBright: marker.light?.bright,
-          lightDim: marker.light?.dim,
-          visionRangeFeet: visionRange,
-          visionRangePx: pixelRange
-        });
-        
-        return pixelRange;
-      };
-      
-      // Helper function to check if a point is visible to any player
-      const isPointVisibleToAnyPlayer = (point: { x: number; y: number }): boolean => {
-        return playerTokens.some((playerMarker: any) => {
-          const visionRangePx = getVisionRange(playerMarker);
-          if (visionRangePx === 0) return false;
-          
-          const dx = point.x - playerMarker.position.x;
-          const dy = point.y - playerMarker.position.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          
-          return distance <= visionRangePx;
-        });
       };
       
       config.tunnels.forEach((tunnel: any) => {
@@ -27513,48 +27566,44 @@ class PlayerMapView extends ItemView {
         const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
         const radius = (squares * config.gridSize) / 2.5;
         
-        // Only draw entrance if within vision range of any player
-        if (isPointVisibleToAnyPlayer(tunnel.entrancePosition)) {
-          // Draw entrance
-          const entrance = tunnel.entrancePosition;
-          ctx.save();
-          ctx.globalAlpha = 0.7;
-          
-          // Draw dark circle for tunnel entrance
-          ctx.fillStyle = '#1a1a1a';
-          ctx.beginPath();
-          ctx.arc(entrance.x, entrance.y, radius, 0, Math.PI * 2);
-          ctx.fill();
-          
-          // Draw rocky border
-          ctx.strokeStyle = '#654321';
-          ctx.lineWidth = Math.max(3, radius * 0.15);
-          ctx.stroke();
-          
-          // Add inner shadow effect
-          const gradient = ctx.createRadialGradient(entrance.x, entrance.y, radius * 0.3, entrance.x, entrance.y, radius);
-          gradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
-          gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-          ctx.fillStyle = gradient;
-          ctx.fill();
-          
-          // Add tunnel entrance icon
-          ctx.globalAlpha = 0.8;
-          ctx.fillStyle = '#8B4513';
-          ctx.font = `${Math.max(12, radius * 0.8)}px sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText('🕳️', entrance.x, entrance.y);
-          
-          ctx.restore();
-        }
+        // Draw entrance (always visible - it's a physical hole on the surface)
+        const entrance = tunnel.entrancePosition;
+        ctx.save();
+        ctx.globalAlpha = 0.7;
         
-        // Draw exit if tunnel is inactive (completed), has a different exit position, and is within vision range
+        // Draw dark circle for tunnel entrance
+        ctx.fillStyle = '#1a1a1a';
+        ctx.beginPath();
+        ctx.arc(entrance.x, entrance.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw rocky border
+        ctx.strokeStyle = '#654321';
+        ctx.lineWidth = Math.max(3, radius * 0.15);
+        ctx.stroke();
+        
+        // Add inner shadow effect
+        const gradient = ctx.createRadialGradient(entrance.x, entrance.y, radius * 0.3, entrance.x, entrance.y, radius);
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        
+        // Add tunnel entrance icon
+        ctx.globalAlpha = 0.8;
+        ctx.fillStyle = '#8B4513';
+        ctx.font = `${Math.max(12, radius * 0.8)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🕳️', entrance.x, entrance.y);
+        
+        ctx.restore();
+        
+        // Draw exit if tunnel is inactive (completed) and has a different exit position
         if (!tunnel.active && tunnel.path && tunnel.path.length > 1) {
           const exit = tunnel.path[tunnel.path.length - 1];
-          // Only draw exit if it's different from entrance and within vision range
-          if ((Math.abs(exit.x - tunnel.entrancePosition.x) > 5 || Math.abs(exit.y - tunnel.entrancePosition.y) > 5) &&
-              isPointVisibleToAnyPlayer(exit)) {
+          // Only draw exit if it's different from entrance
+          if (Math.abs(exit.x - tunnel.entrancePosition.x) > 5 || Math.abs(exit.y - tunnel.entrancePosition.y) > 5) {
             ctx.save();
             ctx.globalAlpha = 0.7;
             

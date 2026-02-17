@@ -1,6 +1,6 @@
 import { App, Modal, Setting, TFile, Notice } from 'obsidian';
 import { MapManager } from './MapManager';
-import { MAP_PRESETS } from './types';
+import { MAP_PRESETS, MAP_MEDIA_EXTENSIONS, isVideoExtension } from './types';
 import type DndCampaignHubPlugin from '../main';
 
 /**
@@ -261,7 +261,7 @@ export class MapCreationModal extends Modal {
 
     new Setting(section)
       .setName('Map image')
-      .setDesc('Choose an image file from your vault (PNG, JPG, WEBP)')
+      .setDesc('Choose an image file from your vault (PNG, JPG, WEBP, GIF, APNG, AVIF, MP4, WebM)')
       .addButton(button => {
         button
           .setButtonText('Choose Image')
@@ -290,7 +290,7 @@ export class MapCreationModal extends Modal {
     // Get all image files from vault
     const imageFiles = this.app.vault.getFiles().filter(file => {
       const ext = file.extension.toLowerCase();
-      return ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'webp';
+      return MAP_MEDIA_EXTENSIONS.includes(ext);
     });
 
     if (imageFiles.length === 0) {
@@ -533,6 +533,7 @@ export class MapCreationModal extends Modal {
         mapId: mapData.id,
         name: mapData.name,
         imageFile: mapData.imageFile,
+        isVideo: mapData.isVideo || false,
         type: mapData.type,
         dimensions: mapData.dimensions,
         gridType: mapData.gridType,

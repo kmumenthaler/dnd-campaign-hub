@@ -1,5 +1,5 @@
 import { App, TFile, Notice } from 'obsidian';
-import { MapData, GridDetection, MAP_PRESETS, TravelPace, DND_TRAVEL_PACE_PRESETS, TravelCategory } from './types';
+import { MapData, GridDetection, MAP_PRESETS, TravelPace, DND_TRAVEL_PACE_PRESETS, TravelCategory, isVideoExtension } from './types';
 
 /**
  * Manages map creation, storage, and retrieval
@@ -27,10 +27,19 @@ export class MapManager {
     try {
       const arrayBuffer = await this.app.vault.readBinary(file);
       const blob = new Blob([arrayBuffer]);
-      const img = await this.loadImage(blob);
 
-      const width = img.width;
-      const height = img.height;
+      let width: number;
+      let height: number;
+
+      if (isVideoExtension(file.extension)) {
+        const video = await this.loadVideo(blob);
+        width = video.videoWidth;
+        height = video.videoHeight;
+      } else {
+        const img = await this.loadImage(blob);
+        width = img.width;
+        height = img.height;
+      }
 
       // Heuristic: common map resolutions
       // Roll20: multiples of 70px
@@ -86,16 +95,35 @@ export class MapManager {
   }
 
   /**
-   * Get image dimensions from file
+   * Load video from blob and get its dimensions
+   */
+  private loadVideo(blob: Blob): Promise<HTMLVideoElement> {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => resolve(video);
+      video.onerror = reject;
+      video.src = URL.createObjectURL(blob);
+    });
+  }
+
+  /**
+   * Get media dimensions from file (supports both images and videos)
    */
   async getImageDimensions(file: TFile): Promise<{ width: number; height: number }> {
     try {
       const arrayBuffer = await this.app.vault.readBinary(file);
       const blob = new Blob([arrayBuffer]);
+
+      if (isVideoExtension(file.extension)) {
+        const video = await this.loadVideo(blob);
+        return { width: video.videoWidth, height: video.videoHeight };
+      }
+
       const img = await this.loadImage(blob);
       return { width: img.width, height: img.height };
     } catch (error) {
-      console.error('Error getting image dimensions:', error);
+      console.error('Error getting media dimensions:', error);
       return { width: 0, height: 0 };
     }
   }
@@ -119,11 +147,13 @@ export class MapManager {
 
     const dimensions = await this.getImageDimensions(file);
     const now = new Date().toISOString();
+    const fileIsVideo = isVideoExtension(file.extension);
 
     const mapData: MapData = {
       id: this.generateMapId(),
       name,
       imageFile,
+      isVideo: fileIsVideo || undefined,
       type,
       gridType,
       gridSize,
