@@ -4854,6 +4854,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 		visionSectionHeader.toggleClass('hidden', config.activeLayer !== 'Background');
 		visionContent.toggleClass('hidden', config.activeLayer !== 'Background');
 		
+		// === TUNNELS SECTION (expandable) ===
+		const tunnelsSectionHeader = toolbarContent.createDiv({ cls: 'dnd-map-section-header' });
+		tunnelsSectionHeader.createEl('span', { text: 'Tunnels', cls: 'dnd-map-section-title' });
+		tunnelsSectionHeader.createEl('span', { text: '▼', cls: 'dnd-map-section-toggle' });
+		const tunnelsContent = toolbarContent.createDiv({ cls: 'dnd-map-section-content' });
+		
+		const clearTunnelsBtn = createToolBtn(tunnelsContent, '🧹', 'Clear Tunnels');
+		
+		// Toggle tunnels section visibility based on layer
+		tunnelsSectionHeader.toggleClass('hidden', config.activeLayer !== 'Subterranean');
+		tunnelsContent.toggleClass('hidden', config.activeLayer !== 'Subterranean');
+		
 		// === SETUP SECTION (expandable) ===
 		const setupSectionHeader = toolbarContent.createDiv({ cls: 'dnd-map-section-header' });
 		setupSectionHeader.createEl('span', { text: 'Setup', cls: 'dnd-map-section-title' });
@@ -4862,7 +4874,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 		
 		const moveGridBtn = createToolBtn(setupContent, '✥', 'Move Grid');
 		const calibrateBtn = createToolBtn(setupContent, '⚙', 'Calibrate');
-		const clearTunnelsBtn = createToolBtn(setupContent, '🧹', 'Clear Tunnels');
 		
 		// === PLAYER VIEW (full-width, prominent) ===
 		const viewGroup = toolbarContent.createDiv({ cls: 'dnd-map-tool-group' });
@@ -5337,6 +5348,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 						// Ensure section is expanded when switching to Background layer
 						visionSectionHeader.removeClass('collapsed');
 						visionContent.removeClass('collapsed');
+					}
+					// Show/hide Tunnels section based on layer (only available on Subterranean)
+					if (layer !== 'Subterranean') {
+						tunnelsSectionHeader.addClass('hidden');
+						tunnelsContent.addClass('hidden');
+					} else {
+						tunnelsSectionHeader.removeClass('hidden');
+						tunnelsContent.removeClass('hidden');
+						// Ensure section is expanded when switching to Subterranean layer
+						tunnelsSectionHeader.removeClass('collapsed');
+						tunnelsContent.removeClass('collapsed');
 					}
 					if (layer !== 'Background' && (activeTool === 'fog' || activeTool === 'walls' || activeTool === 'lights')) {
 						setActiveTool('pan');
