@@ -27122,14 +27122,34 @@ class PlayerMapView extends ItemView {
     const visibleLayers = ['Player', 'Elevated', 'Subterranean'];
     const playerMarkers = (config.markers || []).filter((m: any) => {
       const markerLayer = m.layer || 'Player';
+      const markerDef = m.markerId ? this.plugin.markerLibrary.getMarker(m.markerId) : null;
+      
+      // Debug: log each marker being filtered
+      console.log('[Layer Filter Debug]', {
+        id: m.id,
+        markerId: m.markerId,
+        markerDefName: markerDef?.name,
+        markerDefType: markerDef?.type,
+        layer: markerLayer,
+        hasElevation: !!m.elevation,
+        isBurrowing: m.elevation?.isBurrowing,
+        hasTunnelState: !!m.tunnelState,
+        tunnelId: m.tunnelState?.tunnelId
+      });
+      
       // Always show player-type tokens, even if on DM layer (for tunneling)
-      if (m.markerId) {
-        const markerDef = this.plugin.markerLibrary.getMarker(m.markerId);
-        if (markerDef && markerDef.type === 'player') {
-          return true; // Always show player tokens
-        }
+      if (markerDef && markerDef.type === 'player') {
+        console.log('[Layer Filter] Including player token:', m.id);
+        return true; // Always show player tokens
       }
-      return visibleLayers.includes(markerLayer);
+      // Also show burrowing tokens (they may be visible to players in tunnels)
+      if (m.elevation?.isBurrowing) {
+        console.log('[Layer Filter] Including burrowing token:', m.id);
+        return true;
+      }
+      const included = visibleLayers.includes(markerLayer);
+      console.log('[Layer Filter]', included ? 'Including' : 'EXCLUDING', 'marker:', m.id, 'layer:', markerLayer);
+      return included;
     });
     const playerDrawings = (config.drawings || []).filter((d: any) => visibleLayers.includes(d.layer || 'Player'));
     const playerHighlights = (config.highlights || []).filter((h: any) => visibleLayers.includes(h.layer || 'Player'));
@@ -27159,6 +27179,38 @@ class PlayerMapView extends ItemView {
         otherMarkers.push(m);
       }
     });
+    
+    console.log('[Marker Separation Debug] Separated markers:', {
+      totalPlayerMarkers: playerMarkers.length,
+      playerTokensCount: playerTokens.length,
+      otherMarkersCount: otherMarkers.length,
+      allPlayerMarkers: playerMarkers.map((m: any) => {
+        const markerDef = m.markerId ? this.plugin.markerLibrary.getMarker(m.markerId) : null;
+        return {
+          id: m.id,
+          markerId: m.markerId,
+          markerDefType: markerDef?.type,
+          markerDefName: markerDef?.name,
+          hasBurrowing: !!m.elevation?.isBurrowing,
+          hasTunnelState: !!m.tunnelState
+        };
+      }),
+      playerTokens: playerTokens.map((m: any) => ({
+        id: m.id,
+        markerId: m.markerId,
+        hasBurrowing: !!m.elevation?.isBurrowing,
+        hasTunnelState: !!m.tunnelState
+      })),
+      otherMarkers: otherMarkers.map((m: any) => ({
+        id: m.id,
+        markerId: m.markerId,
+        hasBurrowing: !!m.elevation?.isBurrowing,
+        hasTunnelState: !!m.tunnelState
+      }))
+    });
+
+    // Track players who are in tunnels - used for drawing tunnel above fog
+    const tunnelPlayersInMarkers = playerTokens.filter((m: any) => m.tunnelState);
 
     // Draw tunnel entrances and exits (only visible if within player vision range)
     console.log('[Tunnel Debug Player Render] config.tunnels:', config.tunnels ? config.tunnels.length : 'undefined');
@@ -27604,12 +27656,340 @@ class PlayerMapView extends ItemView {
       });
     }
 
+    // Calculate pixelsPerFoot for vision range calculations
+    const pixelsPerFootForVision = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+
     // Draw non-player markers (these will be obscured by fog)
-    // Filter out burrowed tokens unless they're marked as visible to players
+    // Filter out burrowed tokens unless they're marked as visible to players OR visible to a player in the same tunnel
+    console.log('[Other Markers Debug] Processing otherMarkers:', {
+      count: otherMarkers.length,
+      markers: otherMarkers.map((m: any) => ({
+        id: m.id,
+        hasBurrowing: !!m.elevation?.isBurrowing,
+        visibleToPlayers: m.visibleToPlayers,
+        hasTunnelState: !!m.tunnelState,
+        tunnelId: m.tunnelState?.tunnelId
+      }))
+    });
+    
     otherMarkers.forEach((m: any) => {
-      // Hide burrowed tokens unless explicitly marked visible to players
+      // Check if burrowed token should be visible
       if (m.elevation?.isBurrowing && !m.visibleToPlayers) {
-        return; // Skip rendering this token
+        console.log('[Burrowed Token Visibility] Checking token:', {
+          id: m.id,
+          hasTunnelState: !!m.tunnelState,
+          tunnelId: m.tunnelState?.tunnelId,
+          pathIndex: m.tunnelState?.pathIndex,
+          position: m.position
+        });
+        
+        // Check if any player token that is underground (in tunnel or burrowing) can see this burrowed token
+        let visibleToPlayerInTunnel = false;
+        
+        // Helper to calculate vision range for a player
+        const getVisionRange = (marker: any): number => {
+          let visionRange = 0;
+          if (marker.darkvision && marker.darkvision > 0) {
+            visionRange = Math.max(visionRange, marker.darkvision);
+          }
+          
+          // Check for light as nested object or direct properties
+          let lightBright = 0;
+          let lightDim = 0;
+          if (marker.light) {
+            lightBright = marker.light.bright || 0;
+            lightDim = marker.light.dim || 0;
+          } else if (marker.lightBright !== undefined || marker.lightDim !== undefined) {
+            lightBright = marker.lightBright || 0;
+            lightDim = marker.lightDim || 0;
+          }
+          
+          if (lightBright > 0 || lightDim > 0) {
+            const totalLightRange = lightBright + lightDim;
+            visionRange = Math.max(visionRange, totalLightRange);
+          }
+          
+          const visionRangePx = visionRange * pixelsPerFootForVision;
+          console.log('[Vision Range Calc]:', {
+            markerId: marker.id,
+            darkvision: marker.darkvision,
+            lightBright,
+            lightDim,
+            visionRangeFeet: visionRange,
+            visionRangePx: visionRangePx.toFixed(2),
+            pixelsPerFootForVision
+          });
+          
+          return visionRangePx;
+        };
+        
+        if (playerTokens.length > 0) {
+          // Case 1: Burrowed token is in an explicit tunnel with a player
+          if (m.tunnelState && config.tunnels) {
+            const tunnel = config.tunnels.find((t: any) => t.id === m.tunnelState.tunnelId);
+            
+            console.log('[Burrowed Token Visibility] Token in explicit tunnel:', !!tunnel, 'Player tokens:', playerTokens.length);
+            
+            if (tunnel && tunnel.path) {
+            // Check each player token in the same tunnel
+            for (const playerMarker of playerTokens) {
+              console.log('[Burrowed Token Visibility] Checking player:', {
+                playerId: playerMarker.id,
+                playerTunnelId: playerMarker.tunnelState?.tunnelId,
+                playerPathIdx: playerMarker.tunnelState?.pathIndex,
+                sameTunnel: playerMarker.tunnelState?.tunnelId === m.tunnelState.tunnelId
+              });
+              
+              if (playerMarker.tunnelState?.tunnelId === m.tunnelState.tunnelId) {
+                // Both tokens are in the same tunnel - check vision
+                const visionRangePx = getVisionRange(playerMarker);
+                console.log('[Burrowed Token Visibility] Player vision range:', visionRangePx);
+                
+                if (visionRangePx > 0) {
+                  // Calculate distance along tunnel path between tokens
+                  const playerPathIdx = playerMarker.tunnelState.pathIndex || 0;
+                  const burrowedPathIdx = m.tunnelState.pathIndex || 0;
+                  
+                  console.log('[Burrowed Token Visibility] Path indices:', {
+                    playerPathIdx,
+                    burrowedPathIdx,
+                    tunnelPathLength: tunnel.path.length
+                  });
+                  
+                  // Calculate cumulative distance along path between the two tokens
+                  let pathDistance = 0;
+                  let startIdx = Math.min(playerPathIdx, burrowedPathIdx);
+                  let endIdx = Math.max(playerPathIdx, burrowedPathIdx);
+                  let cornerBlocked = false;
+                  let lastDirection: { dx: number, dy: number } | null = null;
+                  
+                  for (let i = startIdx; i < endIdx; i++) {
+                    if (i + 1 < tunnel.path.length) {
+                      const dx = tunnel.path[i + 1].x - tunnel.path[i].x;
+                      const dy = tunnel.path[i + 1].y - tunnel.path[i].y;
+                      const segmentDist = Math.sqrt(dx * dx + dy * dy);
+                      
+                      // Check for corner blocking vision
+                      if (lastDirection && segmentDist > 1) {
+                        const prevLen = Math.sqrt(lastDirection.dx * lastDirection.dx + lastDirection.dy * lastDirection.dy);
+                        const currLen = segmentDist;
+                        if (prevLen > 0 && currLen > 0) {
+                          const dotProduct = (lastDirection.dx * dx + lastDirection.dy * dy) / (prevLen * currLen);
+                          const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
+                          if (angle > Math.PI / 9) { // 20° threshold
+                            cornerBlocked = true;
+                            break;
+                          }
+                        }
+                      }
+                      
+                      pathDistance += segmentDist;
+                      lastDirection = { dx, dy };
+                    }
+                  }
+                  
+                  console.log('[Burrowed Token Visibility] Distance check:', {
+                    pathDistance: pathDistance.toFixed(2),
+                    visionRange: visionRangePx.toFixed(2),
+                    cornerBlocked,
+                    visible: !cornerBlocked && pathDistance <= visionRangePx
+                  });
+                  
+                  // Token is visible if within vision range and no corner blocking
+                  if (!cornerBlocked && pathDistance <= visionRangePx) {
+                    visibleToPlayerInTunnel = true;
+                    console.log('[Burrowed Token Visibility] TOKEN SHOULD BE VISIBLE!');
+                    break;
+                  }
+                }
+              }
+            }
+          }
+          }
+          
+          // Case 2: Burrowed token is NOT in an explicit tunnel - check tunnel path-based visibility
+          // If a player is in a tunnel, check path distance along that tunnel to the burrowing token
+          if (!visibleToPlayerInTunnel && !m.tunnelState) {
+            console.log('[Burrowed Token Visibility] Token NOT in explicit tunnel - checking tunnel path-based visibility');
+            
+            for (const playerMarker of playerTokens) {
+              // Check if player is in a tunnel
+              const playerTunnelId = playerMarker.tunnelState?.tunnelId;
+              
+              console.log('[Burrowed Token Visibility] Checking player (tunnel-based):', {
+                playerId: playerMarker.id,
+                playerTunnelId,
+                playerPathIdx: playerMarker.tunnelState?.pathIndex,
+                playerBurrowing: playerMarker.elevation?.isBurrowing
+              });
+              
+              if (playerTunnelId && config.tunnels) {
+                // Player is in a tunnel - find the tunnel and check path distance
+                const tunnel = config.tunnels.find((t: any) => t.id === playerTunnelId);
+                
+                if (tunnel && tunnel.path && tunnel.path.length > 0) {
+                  const visionRangePx = getVisionRange(playerMarker);
+                  
+                  if (visionRangePx > 0) {
+                    const playerPathIdx = playerMarker.tunnelState.pathIndex || 0;
+                    
+                    // First, check simple direct distance - if very close, they can see each other regardless of path
+                    const directDx = m.position.x - playerMarker.position.x;
+                    const directDy = m.position.y - playerMarker.position.y;
+                    const directDistance = Math.sqrt(directDx * directDx + directDy * directDy);
+                    
+                    console.log('[Burrowed Token Visibility] Direct distance check:', {
+                      directDistance: directDistance.toFixed(2),
+                      visionRange: visionRangePx.toFixed(2),
+                      closeEnough: directDistance <= visionRangePx
+                    });
+                    
+                    // If they're within vision range by direct distance, the player sees them
+                    if (directDistance <= visionRangePx) {
+                      visibleToPlayerInTunnel = true;
+                      console.log('[Burrowed Token Visibility] TOKEN VISIBLE (direct distance in tunnel)!');
+                      break;
+                    }
+                    
+                    // For the burrowing token that owns/created this tunnel, it's at the dig head (end of path)
+                    // Check if the burrowing token is close to the last point of the tunnel
+                    const lastPathPoint = tunnel.path[tunnel.path.length - 1];
+                    const distToEnd = Math.sqrt(
+                      Math.pow(lastPathPoint.x - m.position.x, 2) + 
+                      Math.pow(lastPathPoint.y - m.position.y, 2)
+                    );
+                    
+                    // If the burrowing token is within 50px of the tunnel end, assume it's the owner at dig head
+                    const isAtDigHead = distToEnd < 50;
+                    const burrowingPathIdx = isAtDigHead ? tunnel.path.length - 1 : (() => {
+                      // Find closest point on tunnel path to the burrowing token
+                      let closestPathIdx = 0;
+                      let closestDist = Infinity;
+                      for (let i = 0; i < tunnel.path.length; i++) {
+                        const dx = tunnel.path[i].x - m.position.x;
+                        const dy = tunnel.path[i].y - m.position.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist < closestDist) {
+                          closestDist = dist;
+                          closestPathIdx = i;
+                        }
+                      }
+                      return closestPathIdx;
+                    })();
+                    
+                    console.log('[Burrowed Token Visibility] Burrowing token path position:', {
+                      isAtDigHead,
+                      distToEnd: distToEnd.toFixed(2),
+                      burrowingPathIdx,
+                      playerPathIdx,
+                      tunnelLength: tunnel.path.length
+                    });
+                    
+                    // If player is ahead of or at the burrowing token's position, they can see it
+                    // (player has passed where the burrower is)
+                    if (playerPathIdx >= burrowingPathIdx) {
+                      // Player is at or past the burrowing token - direct line of sight
+                      const dx = m.position.x - playerMarker.position.x;
+                      const dy = m.position.y - playerMarker.position.y;
+                      const directDistance = Math.sqrt(dx * dx + dy * dy);
+                      
+                      console.log('[Burrowed Token Visibility] Player at/past burrower, direct distance:', {
+                        directDistance: directDistance.toFixed(2),
+                        visionRange: visionRangePx.toFixed(2),
+                        visible: directDistance <= visionRangePx
+                      });
+                      
+                      if (directDistance <= visionRangePx) {
+                        visibleToPlayerInTunnel = true;
+                        console.log('[Burrowed Token Visibility] TOKEN VISIBLE (player at/past burrower)!');
+                        break;
+                      }
+                    } else {
+                      // Player is behind the burrowing token - check path distance with corners
+                      let pathDistance = 0;
+                      let cornerBlocked = false;
+                      let lastDirection: { dx: number, dy: number } | null = null;
+                      
+                      for (let i = playerPathIdx; i < burrowingPathIdx; i++) {
+                        if (i + 1 < tunnel.path.length) {
+                          const dx = tunnel.path[i + 1].x - tunnel.path[i].x;
+                          const dy = tunnel.path[i + 1].y - tunnel.path[i].y;
+                          const segmentDist = Math.sqrt(dx * dx + dy * dy);
+                          
+                          // Check for corner blocking vision (20° threshold)
+                          if (lastDirection && segmentDist > 1) {
+                            const prevLen = Math.sqrt(lastDirection.dx * lastDirection.dx + lastDirection.dy * lastDirection.dy);
+                            const currLen = segmentDist;
+                            if (prevLen > 0 && currLen > 0) {
+                              const dotProduct = (lastDirection.dx * dx + lastDirection.dy * dy) / (prevLen * currLen);
+                              const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
+                              if (angle > Math.PI / 9) { // 20° threshold
+                                cornerBlocked = true;
+                                console.log('[Burrowed Token Visibility] Corner blocked at index:', i, 'angle:', (angle * 180 / Math.PI).toFixed(1) + '°');
+                                break;
+                              }
+                            }
+                          }
+                          
+                          pathDistance += segmentDist;
+                          lastDirection = { dx, dy };
+                        }
+                      }
+                      
+                      console.log('[Burrowed Token Visibility] Tunnel path distance check:', {
+                        pathDistance: pathDistance.toFixed(2),
+                        visionRange: visionRangePx.toFixed(2),
+                        cornerBlocked,
+                        visible: !cornerBlocked && pathDistance <= visionRangePx
+                      });
+                      
+                      if (!cornerBlocked && pathDistance <= visionRangePx) {
+                        visibleToPlayerInTunnel = true;
+                        console.log('[Burrowed Token Visibility] TOKEN VISIBLE (tunnel path-based)!');
+                        break;
+                      }
+                    }
+                  }
+                }
+              } else if (playerMarker.elevation?.isBurrowing) {
+                // Player is burrowing (not in explicit tunnel) - use simple distance
+                const visionRangePx = getVisionRange(playerMarker);
+                
+                if (visionRangePx > 0) {
+                  const dx = m.position.x - playerMarker.position.x;
+                  const dy = m.position.y - playerMarker.position.y;
+                  const distance = Math.sqrt(dx * dx + dy * dy);
+                  
+                  console.log('[Burrowed Token Visibility] Position-based distance check:', {
+                    distance: distance.toFixed(2),
+                    visionRange: visionRangePx.toFixed(2),
+                    visible: distance <= visionRangePx
+                  });
+                  
+                  if (distance <= visionRangePx) {
+                    visibleToPlayerInTunnel = true;
+                    console.log('[Burrowed Token Visibility] TOKEN VISIBLE (position-based)!');
+                    break;
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        console.log('[Burrowed Token Visibility] Final decision:', {
+          tokenId: m.id,
+          visibleToPlayerInTunnel,
+          willRender: visibleToPlayerInTunnel
+        });
+        
+        // Flag burrowed tokens that are visible - they'll be redrawn on top of fog later
+        if (visibleToPlayerInTunnel) {
+          m._visibleToTunnelPlayer = true;
+        }
+        
+        // Always skip rendering burrowed tokens here - they'll be drawn on top of fog later if visible
+        return;
       }
       this.drawMarker(ctx, m);
     });
@@ -27627,8 +28007,171 @@ class PlayerMapView extends ItemView {
       this.drawFogOfWar(ctx, this.canvas!.width, this.canvas!.height, config);
     }
 
+    // Redraw tunnel paths ON TOP of fog for underground players
+    // This allows them to see the tunnel while surface is covered in fog
+    if (config.tunnels && config.tunnels.length > 0 && tunnelPlayersInMarkers.length > 0) {
+      const CREATURE_SIZE_SQUARES: Record<string, number> = {
+        'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+      };
+      const pixelsPerFootTunnel = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+      
+      for (const tunnel of config.tunnels) {
+        if (!tunnel.visible || !tunnel.active || !tunnel.path || tunnel.path.length < 2) continue;
+        
+        // Check if any tunnel player is in this tunnel
+        const playersInThisTunnel = tunnelPlayersInMarkers.filter((p: any) => 
+          p.tunnelState?.tunnelId === tunnel.id
+        );
+        
+        if (playersInThisTunnel.length === 0) continue;
+        
+        // Determine tunnel width based on owner creature size
+        let tunnelWidth = config.gridSize * 0.8;
+        if (tunnel.ownerMarkerId) {
+          const ownerMarkerInst = config.markers?.find((m: any) => m.id === tunnel.ownerMarkerId);
+          if (ownerMarkerInst?.markerId) {
+            const ownerDef = this.plugin.markerLibrary.getMarker(ownerMarkerInst.markerId) as any;
+            if (ownerDef?.size) {
+              tunnelWidth = config.gridSize * (CREATURE_SIZE_SQUARES[ownerDef.size] || 1) * 0.8;
+            }
+          }
+        }
+        
+        for (const playerMarker of playersInThisTunnel) {
+          const pathIdx = playerMarker.tunnelState?.pathIndex || 0;
+          
+          // Calculate vision range
+          let visionRange = 0;
+          if (playerMarker.darkvision && playerMarker.darkvision > 0) {
+            visionRange = Math.max(visionRange, playerMarker.darkvision);
+          }
+          if (playerMarker.lightBright !== undefined) {
+            const totalLight = (playerMarker.lightBright || 0) + (playerMarker.lightDim || 0);
+            visionRange = Math.max(visionRange, totalLight);
+          }
+          const visionRangePx = visionRange * pixelsPerFootTunnel;
+          
+          // Draw the visible portion of tunnel
+          ctx.save();
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          
+          // Draw background (dirt) - more transparent
+          ctx.globalAlpha = 0.4;
+          ctx.strokeStyle = '#3d2817';
+          ctx.lineWidth = tunnelWidth + 8;
+          ctx.beginPath();
+          
+          // Collect points within vision (forward and backward from player position)
+          const visiblePoints: { x: number, y: number }[] = [];
+          
+          // Go backward from player position
+          let backwardDist = 0;
+          let lastDir: { dx: number, dy: number } | null = null;
+          for (let i = pathIdx; i >= 0 && backwardDist < visionRangePx; i--) {
+            if (i < tunnel.path.length) {
+              if (i > 0) {
+                const dx = tunnel.path[i].x - tunnel.path[i-1].x;
+                const dy = tunnel.path[i].y - tunnel.path[i-1].y;
+                const segDist = Math.sqrt(dx*dx + dy*dy);
+                
+                if (lastDir && segDist > 1) {
+                  const prevLen = Math.sqrt(lastDir.dx*lastDir.dx + lastDir.dy*lastDir.dy);
+                  const dot = (lastDir.dx*dx + lastDir.dy*dy) / (prevLen * segDist);
+                  const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+                  if (angle > Math.PI / 9) break; // Corner blocks
+                }
+                backwardDist += segDist;
+                lastDir = { dx, dy };
+              }
+              visiblePoints.unshift(tunnel.path[i]);
+            }
+          }
+          
+          // Go forward from player position
+          let forwardDist = 0;
+          lastDir = null;
+          for (let i = pathIdx + 1; i < tunnel.path.length && forwardDist < visionRangePx; i++) {
+            const dx = tunnel.path[i].x - tunnel.path[i-1].x;
+            const dy = tunnel.path[i].y - tunnel.path[i-1].y;
+            const segDist = Math.sqrt(dx*dx + dy*dy);
+            
+            if (lastDir && segDist > 1) {
+              const prevLen = Math.sqrt(lastDir.dx*lastDir.dx + lastDir.dy*lastDir.dy);
+              const dot = (lastDir.dx*dx + lastDir.dy*dy) / (prevLen * segDist);
+              const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+              if (angle > Math.PI / 9) break; // Corner blocks
+            }
+            forwardDist += segDist;
+            lastDir = { dx, dy };
+            visiblePoints.push(tunnel.path[i]);
+          }
+          
+          // Draw the visible path
+          if (visiblePoints.length >= 2 && visiblePoints[0] && visiblePoints[1]) {
+            ctx.moveTo(visiblePoints[0].x, visiblePoints[0].y);
+            for (let i = 1; i < visiblePoints.length; i++) {
+              const pt = visiblePoints[i];
+              if (pt) ctx.lineTo(pt.x, pt.y);
+            }
+            ctx.stroke();
+            
+            // Draw border
+            ctx.globalAlpha = 0.3;
+            ctx.strokeStyle = '#654321';
+            ctx.lineWidth = tunnelWidth + 4;
+            ctx.beginPath();
+            ctx.moveTo(visiblePoints[0].x, visiblePoints[0].y);
+            for (let i = 1; i < visiblePoints.length; i++) {
+              const pt = visiblePoints[i];
+              if (pt) ctx.lineTo(pt.x, pt.y);
+            }
+            ctx.stroke();
+            
+            // Draw inner path
+            ctx.globalAlpha = 0.4;
+            ctx.strokeStyle = '#1a1a1a';
+            ctx.lineWidth = tunnelWidth * 0.7;
+            ctx.beginPath();
+            ctx.moveTo(visiblePoints[0].x, visiblePoints[0].y);
+            for (let i = 1; i < visiblePoints.length; i++) {
+              const pt = visiblePoints[i];
+              if (pt) ctx.lineTo(pt.x, pt.y);
+            }
+            ctx.stroke();
+          }
+          
+          ctx.restore();
+        }
+      }
+    }
+
     // Draw player tokens on top of fog - they should always be visible
-    playerTokens.forEach((m: any) => this.drawMarker(ctx, m));
+    // Separate tunnel players to draw them on top of tunnel paths
+    const tunnelPlayerTokens = playerTokens.filter((m: any) => m.tunnelState);
+    const surfacePlayerTokens = playerTokens.filter((m: any) => !m.tunnelState);
+    
+    // Draw surface players first
+    surfacePlayerTokens.forEach((m: any) => this.drawMarker(ctx, m));
+    
+    // Draw tunnel players on top (after tunnel paths are rendered)
+    tunnelPlayerTokens.forEach((m: any) => {
+      ctx.save();
+      ctx.globalAlpha = 0.85; // Mostly visible but slightly transparent to show underground
+      this.drawMarker(ctx, m);
+      ctx.restore();
+    });
+
+    // Draw visible burrowed tokens on top of fog (they were marked visible earlier)
+    // These are creature/NPC tokens that were determined visible to tunnel players
+    otherMarkers.forEach((m: any) => {
+      if (m.elevation?.isBurrowing && m._visibleToTunnelPlayer) {
+        ctx.save();
+        ctx.globalAlpha = 0.5; // Semi-transparent to show underground
+        this.drawMarker(ctx, m);
+        ctx.restore();
+      }
+    });
 
     // Draw auras on top of fog (for all player layer markers)
     const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
@@ -28150,7 +28693,7 @@ class PlayerMapView extends ItemView {
     
     // Apply transparency for burrowed tokens (underground)
     if (elevation && elevation.isBurrowing) {
-      ctx.globalAlpha = 0.5; // Burrowed tokens are semi-transparent in player view
+      ctx.globalAlpha = 0.5; // ALL burrowed tokens are semi-transparent
     }
     // Apply transparency for Elevated/Subterranean layers
     else if (itemLayer === 'Elevated' || itemLayer === 'Subterranean') {
@@ -28307,7 +28850,7 @@ class PlayerMapView extends ItemView {
       const tunnel = config.tunnels?.find((t: any) => t.id === marker.tunnelState.tunnelId);
       if (tunnel && tunnel.path.length > 1) {
         ctx.save();
-        ctx.globalAlpha = 0.8;
+        ctx.globalAlpha = 0.25; // More transparent
         
         const CREATURE_SIZE_SQUARES: Record<string, number> = {
           'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
@@ -28315,8 +28858,8 @@ class PlayerMapView extends ItemView {
         const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
         const tunnelWidth = (squares * config.gridSize) / 2;
         
-        // Draw path up to current position in bright color
-        ctx.strokeStyle = '#FFD700';  // Gold
+        // Draw path up to current position in subtle earth tone color
+        ctx.strokeStyle = '#8B7355';  // Muted brown/tan
         ctx.lineWidth = tunnelWidth + 2;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
@@ -28450,9 +28993,15 @@ class PlayerMapView extends ItemView {
     
     // Add lights attached to markers (follows marker position)
     // Note: Marker lights don't have an active property - they're always active
+    // SKIP lights from tunnel players - they don't reveal above-ground fog
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
         if (marker.light && marker.light.bright !== undefined) {
+          // Skip lights from players in tunnels
+          if (marker.tunnelState) {
+            console.log('[PV Fog] Skipping light from tunnel player:', marker.id);
+            return;
+          }
           allLights.push({
             x: marker.position.x,
             y: marker.position.y,
@@ -28467,12 +29016,18 @@ class PlayerMapView extends ItemView {
     
     // Collect ALL player tokens - they define what's visible to players
     // Player tokens have vision from EITHER darkvision OR visible light sources
+    // SKIP players who are in tunnels (underground) - they don't reveal above-ground fog
     const playerTokens: { x: number; y: number; darkvision: number }[] = [];
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
         if (marker.markerId) {
           const markerDef = this.plugin.markerLibrary.getMarker(marker.markerId);
           if (markerDef && markerDef.type === 'player') {
+            // Skip players who are in tunnels (underground)
+            if (marker.tunnelState) {
+              console.log('[PV Fog] Skipping tunnel player from fog calculation:', marker.id);
+              return;
+            }
             playerTokens.push({
               x: marker.position.x,
               y: marker.position.y,
