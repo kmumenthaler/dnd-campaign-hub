@@ -30528,17 +30528,13 @@ class PlayerMapView extends ItemView {
     // Add lights attached to markers (follows marker position)
     // Note: Marker lights don't have an active property - they're always active
     // SKIP lights from tunnel tokens - they don't reveal above-ground fog
-    // In single-token vision mode, only include lights from the selected token
+    // Lights are physical and illuminate the area regardless of whose vision is selected
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
         if (marker.light && marker.light.bright !== undefined) {
           // Skip lights from tokens in tunnels
           if (marker.tunnelState) {
             console.log('[PV Fog] Skipping light from tunnel token:', marker.id);
-            return;
-          }
-          // In single-token vision mode, only include light from selected token
-          if (config.selectedVisionTokenId && marker.id !== config.selectedVisionTokenId) {
             return;
           }
           allLights.push({
