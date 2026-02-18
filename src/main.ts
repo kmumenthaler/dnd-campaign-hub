@@ -28650,10 +28650,10 @@ class PlayerMapView extends ItemView {
         tunnelId: m.tunnelState?.tunnelId
       });
       
-      // Always show player-type tokens, even if on DM layer (for tunneling)
-      if (markerDef && markerDef.type === 'player') {
-        console.log('[Layer Filter] Including player token:', m.id);
-        return true; // Always show player tokens
+      // Always show player-type tokens (or tokens marked visible to players), even if on DM layer (for tunneling)
+      if (markerDef && (markerDef.type === 'player' || m.visibleToPlayers)) {
+        console.log('[Layer Filter] Including player/visible token:', m.id);
+        return true; // Always show player tokens and tokens visible to players
       }
       // Also show burrowing tokens (they may be visible to players in tunnels)
       if (m.elevation?.isBurrowing) {
@@ -28686,7 +28686,7 @@ class PlayerMapView extends ItemView {
     playerMarkers.forEach((m: any) => {
       if (m.markerId) {
         const markerDef = this.plugin.markerLibrary.getMarker(m.markerId);
-        if (markerDef && markerDef.type === 'player') {
+        if (markerDef && (markerDef.type === 'player' || m.visibleToPlayers)) {
           playerTokens.push(m);
         } else {
           otherMarkers.push(m);
@@ -30577,8 +30577,8 @@ class PlayerMapView extends ItemView {
           // Single-token mode: only include the selected token (any type)
           includeToken = (marker.id === config.selectedVisionTokenId);
         } else {
-          // Default mode: include all player-type tokens
-          includeToken = (markerDef.type === 'player');
+          // Default mode: include all player-type tokens and tokens marked visible to players
+          includeToken = (markerDef.type === 'player' || !!marker.visibleToPlayers);
         }
         
         if (includeToken) {
@@ -30777,8 +30777,8 @@ class PlayerMapView extends ItemView {
           // Single-token mode: only include the selected token (any type)
           includeToken = (marker.id === config.selectedVisionTokenId);
         } else {
-          // Default mode: include all player-type tokens
-          includeToken = (markerDef.type === 'player');
+          // Default mode: include all player-type tokens and tokens marked visible to players
+          includeToken = (markerDef.type === 'player' || !!marker.visibleToPlayers);
         }
         
         if (includeToken) {
