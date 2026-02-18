@@ -1,5 +1,5 @@
 import { App, TFile, Notice } from 'obsidian';
-import { MapData, GridDetection, MAP_PRESETS, TravelPace, DND_TRAVEL_PACE_PRESETS, TravelCategory, isVideoExtension } from './types';
+import { MapData, GridDetection, MAP_PRESETS, isVideoExtension } from './types';
 
 /**
  * Manages map creation, storage, and retrieval
@@ -225,85 +225,5 @@ ${JSON.stringify(config, null, 2)}
       console.error('Error parsing map code block:', error);
     }
     return null;
-  }
-
-  /**
-   * Initialize default travel paces for a hexcrawl map
-   * Returns recommended paces based on common D&D travel methods
-   */
-  initializeDefaultTravelPaces(): TravelPace[] {
-    // Select a subset of most commonly used paces
-    const defaultPaceNames = [
-      'Walking (Normal)',
-      'Walking (Fast)', 
-      'Walking (Slow)',
-      'Horse (Riding)',
-      'Sailing Ship',
-      'Griffon'
-    ];
-
-    const paces: TravelPace[] = [];
-    let idCounter = 1;
-
-    for (const preset of DND_TRAVEL_PACE_PRESETS) {
-      const isDefault = defaultPaceNames.includes(preset.name);
-      paces.push({
-        ...preset,
-        id: `pace_${idCounter++}`,
-        enabled: isDefault,
-        visible: isDefault && preset.name === 'Walking (Normal)', // Only normal walking visible by default
-      });
-    }
-
-    return paces;
-  }
-
-  /**
-   * Create a custom travel pace
-   */
-  createCustomPace(
-    name: string,
-    category: TravelCategory,
-    milesPerDay: number,
-    color: string,
-    icon?: string
-  ): TravelPace {
-    return {
-      id: `pace_custom_${Date.now()}`,
-      name,
-      category,
-      milesPerDay,
-      color,
-      icon,
-      enabled: true,
-      visible: true,
-      isCustom: true
-    };
-  }
-
-  /**
-   * Calculate hex size (grid spacing) for a given pace relative to base calibration
-   * @param basePaceMilesPerDay - The miles/day of the base/reference pace
-   * @param baseGridSize - The grid size (pixels) of the base pace
-   * @param targetPaceMilesPerDay - The miles/day of the target pace
-   * @returns The calculated grid size for the target pace
-   */
-  calculateHexSizeForPace(
-    basePaceMilesPerDay: number,
-    baseGridSize: number,
-    targetPaceMilesPerDay: number
-  ): number {
-    // Hex size scales linearly with travel distance
-    // If normal = 24 mi/day at 100px, then fast = 30 mi/day should be 125px
-    return (targetPaceMilesPerDay / basePaceMilesPerDay) * baseGridSize;
-  }
-
-  /**
-   * Calculate base calibration (pixels per mile) from a reference pace
-   */
-  calculateBaseCalibration(gridSize: number, milesPerDay: number): number {
-    // Each hex represents one day of travel at the given pace
-    // So pixels per mile = gridSize / milesPerDay
-    return gridSize / milesPerDay;
   }
 }

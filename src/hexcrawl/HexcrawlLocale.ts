@@ -26,7 +26,6 @@ const EN: LocaleMap = {
   stepChecks:         '🎲 Exploration Checks',
   stepEncounter:      '⚔️ Encounter',
   stepDiscovery:      '🔍 Discovery',
-  stepSurvival:       '❤️ Survival',
   stepSummary:        '📋 Summary',
 
   // ── Procedure modal header / info bar ──────────────────
@@ -66,18 +65,21 @@ const EN: LocaleMap = {
 
   // ── Step 3: Exploration Checks ─────────────────────────
   partyExplChecks:    'Party Exploration Checks',
-  checksHelpText:     'Each player takes an exploration role and makes a skill check. Toggle passed/failed and the survival meter will adjust automatically.',
+  checksHelpText:     'Each player takes an exploration role and makes a skill check. Toggle passed/failed for each role.',
   dcN:                'DC {dc}',
   playerPlaceholder:  'Player',
   pass:               '✅ Pass',
   fail:               '❌ Fail',
   passedN:            '✅ {n} passed',
   failedN:            '❌ {n} failed',
-  survivalMeterPenalty: 'Survival Meter: −{n}',
 
   // ── Step 4: Encounter ──────────────────────────────────
   randomEncounterCheck:  'Random Encounter Check',
-  encounterHelpText:     'Roll a d20. An encounter occurs on an 18+ (adjust based on terrain danger).',
+  encounterHelpText:     'Roll a d20. The encounter DC decreases by 2 for each hex traveled without an encounter, resetting when one triggers.',
+  encounterBaseDC:       'Base DC: {dc} (terrain)',
+  hexesSinceEncounter:   'Hexes since encounter: {n}',
+  effectiveEncounterDC:  '⚔️ Effective DC: {dc}+ ({chance}% chance)',
+  encounterDCLabel:      'Encounter DC: {dc}+',
   rollD20:               '🎲 Roll d20',
   encounterTriggered:    '⚔️ Encounter triggered!',
   noEncounter:           '✅ No encounter.',
@@ -113,16 +115,16 @@ const EN: LocaleMap = {
   disc12: 'A hidden cache of supplies, carefully wrapped in oilcloth',
   discNone: 'Nothing of note',
 
-  // ── Step 6: Survival Meter ─────────────────────────────
-  survivalMeterUpdate:     'Survival Meter Update',
-  failedChecksPenalty:     'Failed checks: −{n}',
-  successfulForage:        ' | Successful forage: +1',
-  additionalAdjustment:    'Additional adjustment:',
-  minus1:                  '−1',
-  plus1:                   '+1',
-  netChange:               'Net change: {change} → Meter will be {projected}/{max}',
-  dangerThresholdWarning:  '⚠️ Survival meter at danger threshold! Consider a survival encounter.',
-  meterDepletedWarning:    '💀 Survival meter depleted! Party gains exhaustion.',
+  // ── RAW Navigation & Foraging ──────────────────────────
+  navSuccess:              '✅ Navigation successful — party stays on course',
+  navFail:                 '❌ Navigation failed — party becomes lost! (DMG p.112)',
+  forageRoll:              '🎲 Roll Forage (1d6 + WIS mod)',
+  wisMod:                  'WIS Modifier:',
+  foodFound:               '🌿 Found {lbs} lbs of food',
+  noFoodFound:             '❌ No food found',
+  checksConsequences:      'Results',
+  navigation:              '🧭 Navigation',
+  foraging:                '🌿 Foraging',
 
   // ── Step 7: Summary ────────────────────────────────────
   hexSummary:           '📋 Hex Summary',
@@ -136,14 +138,17 @@ const EN: LocaleMap = {
   noEncounterSummary:   '✅ No encounter',
   discoveryLine:        '🔍 Discovery: {details}',
   discoveryYesFallback: 'Yes',
-  survivalMeterSummary: '❤️ Survival Meter: {current} → {projected}/{max} ({change})',
+  rationsStatus:        '🍖 Rations Status',
+  foodRations:           'Food: {current} lbs',
+  waterRations:          'Water: {current} gallons',
+  starvationWarning:     '⚠️ Party has gone {days} days without food! (Exhaustion risk)',
+  dehydrationWarning:    '⚠️ Party has gone {days} days without water! (Exhaustion risk)',
   notesHeading:         '📝 Notes',
   notesPlaceholder:     'Any additional notes for this hex...',
   completeEnterHex:     '✅ Complete & Enter Hex',
 
   // ── Notices (procedure complete) ───────────────────────
   exhaustionNotice:       '💀 Party gains 1 level of exhaustion! (Level {level})',
-  thresholdNotice:        '⚠️ Survival meter at danger threshold! Consider a survival encounter.',
 
   // ── HexcrawlView ──────────────────────────────────────
   hexcrawlTabTitle:      '🏕️ Hexcrawl',
@@ -159,10 +164,12 @@ const EN: LocaleMap = {
   travelMod:             'Travel ×{val}',
   rollWeather:           '🎲 Roll Weather',
   weatherNotice:         'Weather: {icon} {name}',
-  survivalMeter:         'Survival Meter',
-  danger:                ' ⚠️ Danger!',
-  resetLabel:            '↻ Reset',
-  meterReset:            'Survival meter reset',
+  rationsLabel:          '🍖 Rations',
+  foodLabel:             'Food',
+  waterLabel:            'Water',
+  partySizeLabel:        'Party Size',
+  lbsUnit:               'lbs',
+  galUnit:               'gal',
   exhaustionLevel:       '⚠️ Exhaustion Level {level}',
   positionDisplay:       '📍 Position: ({col}, {row}) — {icon} {name}',
   explorationRoles:      'Exploration Roles',
@@ -182,10 +189,12 @@ const EN: LocaleMap = {
   settingsTitle:         '🏕️ Hexcrawl Settings',
   enableHexcrawlTravel:  'Enable Hexcrawl Travel',
   enableHexcrawlDesc:    'Activate the wilderness travel tracking system for this map',
-  survivalMeterMax:      'Survival Meter Maximum',
-  survivalMeterMaxDesc:  'Starting value of the survival meter (recommended 6-8)',
-  dangerThreshold:       'Danger Threshold',
-  dangerThresholdDesc:   'When meter reaches this value, survival encounters trigger',
+  initialFood:           'Initial Food (lbs)',
+  initialFoodDesc:       'Starting food supply in pounds for the party',
+  initialWater:          'Initial Water (gal)',
+  initialWaterDesc:      'Starting water supply in gallons for the party',
+  partySize:             'Party Size',
+  partySizeDesc:         'Number of creatures in the party (affects daily consumption)',
   descLanguage:          'Description Language',
   descLanguageDesc:      'Language for auto-generated read-aloud terrain descriptions',
   saveSettings:          'Save Settings',
@@ -228,8 +237,12 @@ const EN: LocaleMap = {
   descSaved:             '📜 Description saved for ({col}, {row})',
   descCleared:           '🗑️ Description cleared for ({col}, {row})',
   enableHexcrawlFirst:   '⚠️ Enable hexcrawl tracking in Hexcrawl Settings first',
+  mustMoveAdjacent:      '⚠️ You can only move to an adjacent hex (one hex at a time).',
   noMovementBudget:      '⚠️ No movement budget remaining today. End the day first.',
   traveledToHex:         'Traveled to hex ({col}, {row})',
+  resetTravel:           '🔄 Reset Travel',
+  resetTravelConfirm:    'This will clear the travel log, visited hexes, day counter, exhaustion and rations. Party position and role assignments are kept.\n\nAre you sure?',
+  resetTravelDone:       'Wilderness travel has been reset',
 
   // ── Terrain data ───────────────────────────────────────
   'terrain.road':        'Road',
@@ -244,6 +257,12 @@ const EN: LocaleMap = {
   'terrain.arctic':      'Arctic',
   'terrain.underdark':   'Underdark',
   'terrain.water':       'Water',
+  'terrain.river':       'River',
+  'terrain.riverside':    'Riverside',
+  'terrain.river-crossing': 'River Crossing',
+  'terrain.inferno-river': 'Inferno River',
+  'terrain.inferno-riverside': 'Inferno Riverside',
+  'terrain.inferno-river-crossing': 'Inferno River Crossing',
   'terrainDesc.road':       'Maintained path or trade route — fast, safe travel',
   'terrainDesc.plains':     'Open grasslands, meadows, and prairies',
   'terrainDesc.coastal':    'Shorelines, beaches, and tidal flats',
@@ -256,6 +275,12 @@ const EN: LocaleMap = {
   'terrainDesc.arctic':     'Frozen tundra, glaciers, and icy wastes',
   'terrainDesc.underdark':  'Subterranean tunnels and caverns',
   'terrainDesc.water':      'Open water — requires a vessel to cross',
+  'terrainDesc.river':      'Flowing river — may require fording, swimming, or a boat',
+  'terrainDesc.riverside':   'Walking along the riverbank — easy travel following the water',
+  'terrainDesc.river-crossing': 'A crossing point — bridge, ford, or ferry over the river',
+  'terrainDesc.inferno-river': 'River of molten lava — impassable without magic or fire immunity',
+  'terrainDesc.inferno-riverside': 'Walking alongside a lava river — intense heat but passable',
+  'terrainDesc.inferno-river-crossing': 'A crossing over the lava flow — enchanted bridge, cooled obsidian path, or similar',
 
   // ── Climate data ───────────────────────────────────────
   'climate.temperate':    'Temperate',
@@ -273,17 +298,13 @@ const EN: LocaleMap = {
 
   // ── Exploration roles ──────────────────────────────────
   'role.navigator':       'Navigator',
-  'role.scout':           'Scout',
   'role.forager':         'Forager',
   'roleSkill.navigator':  'Survival',
-  'roleSkill.scout':      'Perception',
   'roleSkill.forager':    'Survival',
   'roleAbility.navigator':'WIS',
-  'roleAbility.scout':    'WIS',
   'roleAbility.forager':  'WIS',
-  'roleDesc.navigator':   'Avoid getting lost — Survival check to set the course (DMG Ch.5)',
-  'roleDesc.scout':       'Spot threats ahead — passive Perception detects dangers (DMG Ch.5)',
-  'roleDesc.forager':     'Find food & water — Survival check DC varies by terrain (DMG Ch.5)',
+  'roleDesc.navigator':   'Avoid getting lost — Survival check to set the course (DMG p.112)',
+  'roleDesc.forager':     'Find food — Survival check, forage 1d6+WIS mod lbs (DMG p.111)',
 
   // ── Weather data ───────────────────────────────────────
   'weather.clear':        'Clear Skies',
@@ -324,12 +345,21 @@ const EN: LocaleMap = {
   'weatherFx.extreme-cold':  'CON save DC 10/hr or 1 exhaustion. Cold resistance negates',
 
   // ── Pace data ──────────────────────────────────────────
-  'pace.slow':           'Slow Pace',
-  'pace.normal':         'Normal Pace',
-  'pace.fast':           'Fast Pace',
-  'paceDesc.slow':       'Able to use stealth. 18 mi/day (3 hexes)',
-  'paceDesc.normal':     'Standard travel. 24 mi/day (4 hexes)',
-  'paceDesc.fast':       '-5 passive Perception. 30 mi/day (5 hexes)',
+  'pace.slow':           'Slow',
+  'pace.normal':         'Normal',
+  'pace.fast':           'Fast',
+  'paceDesc.slow':       'Able to use stealth. ×0.75 speed',
+  'paceDesc.normal':     'Standard travel. ×1.0 speed',
+  'paceDesc.fast':       '-5 passive Perception. ×1.25 speed',
+
+  // ── Travel method ──────────────────────────────────────
+  travelMethod:          'Travel Method',
+  searchMethods:         'Search travel methods…',
+  effectiveSpeed:        '{hexes} hexes/day effective',
+  'methodCat.land':      'Land',
+  'methodCat.water':     'Water',
+  'methodCat.air':       'Air',
+  'methodCat.magic':     'Magic',
 
   // ── Exhaustion effects ─────────────────────────────────
   'exhaustion.0':        'None',
@@ -357,7 +387,6 @@ const DE: LocaleMap = {
   stepChecks:         '🎲 Erkundungsproben',
   stepEncounter:      '⚔️ Begegnung',
   stepDiscovery:      '🔍 Entdeckung',
-  stepSurvival:       '❤️ Überleben',
   stepSummary:        '📋 Zusammenfassung',
 
   // ── Procedure modal header / info bar ──────────────────
@@ -397,18 +426,21 @@ const DE: LocaleMap = {
 
   // ── Step 3: Exploration Checks ─────────────────────────
   partyExplChecks:    'Erkundungsproben der Gruppe',
-  checksHelpText:     'Jeder Spieler übernimmt eine Erkundungsrolle und legt eine Fertigkeitsprobe ab. Schalte zwischen bestanden/nicht bestanden um — der Überlebenszähler wird automatisch angepasst.',
+  checksHelpText:     'Jeder Spieler übernimmt eine Erkundungsrolle und legt eine Fertigkeitsprobe ab. Schalte zwischen bestanden/nicht bestanden um.',
   dcN:                'SG {dc}',
   playerPlaceholder:  'Spieler',
   pass:               '✅ Bestanden',
   fail:               '❌ Fehlgeschlagen',
   passedN:            '✅ {n} bestanden',
   failedN:            '❌ {n} fehlgeschlagen',
-  survivalMeterPenalty: 'Überlebenszähler: −{n}',
 
   // ── Step 4: Encounter ──────────────────────────────────
   randomEncounterCheck:  'Zufällige Begegnungsprobe',
-  encounterHelpText:     'Wirf einen W20. Eine Begegnung tritt bei 18+ ein (je nach Geländegefahr anpassen).',
+  encounterHelpText:     'Wirf einen W20. Der Begegnungs-SG sinkt um 2 pro Hex ohne Begegnung und wird beim Auslösen zurückgesetzt.',
+  encounterBaseDC:       'Basis-SG: {dc} (Gelände)',
+  hexesSinceEncounter:   'Hexe seit Begegnung: {n}',
+  effectiveEncounterDC:  '⚔️ Effektiver SG: {dc}+ ({chance}% Chance)',
+  encounterDCLabel:      'Begegnungs-SG: {dc}+',
   rollD20:               '🎲 W20 würfeln',
   encounterTriggered:    '⚔️ Begegnung ausgelöst!',
   noEncounter:           '✅ Keine Begegnung.',
@@ -444,16 +476,16 @@ const DE: LocaleMap = {
   disc12: 'Ein verstecktes Vorratslager, sorgfältig in Öltuch eingewickelt',
   discNone: 'Nichts Besonderes',
 
-  // ── Step 6: Survival Meter ─────────────────────────────
-  survivalMeterUpdate:     'Überlebenszähler-Aktualisierung',
-  failedChecksPenalty:     'Fehlgeschlagene Proben: −{n}',
-  successfulForage:        ' | Erfolgreiche Nahrungssuche: +1',
-  additionalAdjustment:    'Zusätzliche Anpassung:',
-  minus1:                  '−1',
-  plus1:                   '+1',
-  netChange:               'Änderung: {change} → Zähler wird {projected}/{max}',
-  dangerThresholdWarning:  '⚠️ Überlebenszähler am Gefahrenschwellenwert! Erwäge eine Überlebensbegegnung.',
-  meterDepletedWarning:    '💀 Überlebenszähler aufgebraucht! Die Gruppe erhält Erschöpfung.',
+  // ── RAW Navigation & Nahrungssuche ───────────────────
+  navSuccess:              '✅ Navigation erfolgreich — Gruppe bleibt auf Kurs',
+  navFail:                 '❌ Navigation fehlgeschlagen — Gruppe verirrt sich! (SL-Handbuch S.112)',
+  forageRoll:              '🎲 Nahrungssuche würfeln (1W6 + WEI-Mod)',
+  wisMod:                  'WEI-Modifikator:',
+  foodFound:               '🌿 {lbs} Pfund Nahrung gefunden',
+  noFoodFound:             '❌ Keine Nahrung gefunden',
+  checksConsequences:      'Ergebnisse',
+  navigation:              '🧭 Navigation',
+  foraging:                '🌿 Nahrungssuche',
 
   // ── Step 7: Summary ────────────────────────────────────
   hexSummary:           '📋 Hex-Zusammenfassung',
@@ -467,14 +499,17 @@ const DE: LocaleMap = {
   noEncounterSummary:   '✅ Keine Begegnung',
   discoveryLine:        '🔍 Entdeckung: {details}',
   discoveryYesFallback: 'Ja',
-  survivalMeterSummary: '❤️ Überlebenszähler: {current} → {projected}/{max} ({change})',
+  rationsStatus:        '🍖 Rationsstatus',
+  foodRations:           'Nahrung: {current} Pfund',
+  waterRations:          'Wasser: {current} Gallonen',
+  starvationWarning:     '⚠️ Gruppe hungert seit {days} Tagen! (Erschöpfungsrisiko)',
+  dehydrationWarning:    '⚠️ Gruppe hat seit {days} Tagen kein Wasser! (Erschöpfungsrisiko)',
   notesHeading:         '📝 Notizen',
   notesPlaceholder:     'Zusätzliche Notizen für dieses Hex…',
   completeEnterHex:     '✅ Abschließen & Hex betreten',
 
   // ── Notices (procedure complete) ───────────────────────
   exhaustionNotice:       '💀 Die Gruppe erhält 1 Stufe Erschöpfung! (Stufe {level})',
-  thresholdNotice:        '⚠️ Überlebenszähler am Gefahrenschwellenwert! Erwäge eine Überlebensbegegnung.',
 
   // ── HexcrawlView ──────────────────────────────────────
   hexcrawlTabTitle:      '🏕️ Hexcrawl',
@@ -490,10 +525,12 @@ const DE: LocaleMap = {
   travelMod:             'Reise ×{val}',
   rollWeather:           '🎲 Wetter würfeln',
   weatherNotice:         'Wetter: {icon} {name}',
-  survivalMeter:         'Überlebenszähler',
-  danger:                ' ⚠️ Gefahr!',
-  resetLabel:            '↻ Zurücksetzen',
-  meterReset:            'Überlebenszähler zurückgesetzt',
+  rationsLabel:          '🍖 Rationen',
+  foodLabel:             'Nahrung',
+  waterLabel:            'Wasser',
+  partySizeLabel:        'Gruppengröße',
+  lbsUnit:               'Pfd',
+  galUnit:               'Gal',
   exhaustionLevel:       '⚠️ Erschöpfungsstufe {level}',
   positionDisplay:       '📍 Position: ({col}, {row}) — {icon} {name}',
   explorationRoles:      'Erkundungsrollen',
@@ -513,10 +550,12 @@ const DE: LocaleMap = {
   settingsTitle:         '🏕️ Hexcrawl-Einstellungen',
   enableHexcrawlTravel:  'Hexcrawl-Reise aktivieren',
   enableHexcrawlDesc:    'Wildnisreise-Tracking für diese Karte aktivieren',
-  survivalMeterMax:      'Überlebenszähler-Maximum',
-  survivalMeterMaxDesc:  'Startwert des Überlebenszählers (empfohlen 6–8)',
-  dangerThreshold:       'Gefahrenschwellenwert',
-  dangerThresholdDesc:   'Wenn der Zähler diesen Wert erreicht, werden Überlebensbegegnungen ausgelöst',
+  initialFood:           'Anfangsnahrung (Pfund)',
+  initialFoodDesc:       'Startvorrat an Nahrung in Pfund für die Gruppe',
+  initialWater:          'Anfangswasser (Gallonen)',
+  initialWaterDesc:      'Startvorrat an Wasser in Gallonen für die Gruppe',
+  partySize:             'Gruppengröße',
+  partySizeDesc:         'Anzahl der Kreaturen in der Gruppe (beeinflusst den täglichen Verbrauch)',
   descLanguage:          'Beschreibungssprache',
   descLanguageDesc:      'Sprache für automatisch generierte Vorlesetexte',
   saveSettings:          'Einstellungen speichern',
@@ -559,8 +598,12 @@ const DE: LocaleMap = {
   descSaved:             '📜 Beschreibung für ({col}, {row}) gespeichert',
   descCleared:           '🗑️ Beschreibung für ({col}, {row}) gelöscht',
   enableHexcrawlFirst:   '⚠️ Aktiviere zuerst das Hexcrawl-Tracking in den Hexcrawl-Einstellungen',
+  mustMoveAdjacent:      '⚠️ Du kannst nur zu einem benachbarten Hex reisen (ein Hex auf einmal).',
   noMovementBudget:      '⚠️ Kein Bewegungsbudget mehr für heute. Beende zuerst den Tag.',
   traveledToHex:         'Zum Hex ({col}, {row}) gereist',
+  resetTravel:           '🔄 Reise zurücksetzen',
+  resetTravelConfirm:    'Dies löscht das Reisetagebuch, besuchte Hexe, Tageszähler, Erschöpfung und Rationen. Gruppenposition und Rollen bleiben erhalten.\n\nBist du sicher?',
+  resetTravelDone:       'Wildnisreise wurde zurückgesetzt',
 
   // ── Terrain data ───────────────────────────────────────
   'terrain.road':        'Straße',
@@ -575,6 +618,12 @@ const DE: LocaleMap = {
   'terrain.arctic':      'Arktis',
   'terrain.underdark':   'Unterreich',
   'terrain.water':       'Wasser',
+  'terrain.river':       'Fluss',
+  'terrain.riverside':    'Flussufer',
+  'terrain.river-crossing': 'Flussüberquerung',
+  'terrain.inferno-river': 'Infernofluss',
+  'terrain.inferno-riverside': 'Infernoflussufer',
+  'terrain.inferno-river-crossing': 'Infernoflussüberquerung',
   'terrainDesc.road':       'Gepflegter Weg oder Handelsroute — schnelles, sicheres Reisen',
   'terrainDesc.plains':     'Offenes Grasland, Wiesen und Prärien',
   'terrainDesc.coastal':    'Küstenstreifen, Strände und Wattflächen',
@@ -587,6 +636,12 @@ const DE: LocaleMap = {
   'terrainDesc.arctic':     'Gefrorene Tundra, Gletscher und Eiswüsten',
   'terrainDesc.underdark':  'Unterirdische Tunnel und Höhlen',
   'terrainDesc.water':      'Offenes Gewässer — erfordert ein Wasserfahrzeug',
+  'terrainDesc.river':      'Fließendes Gewässer — erfordert möglicherweise eine Furt, Schwimmen oder ein Boot',
+  'terrainDesc.riverside':   'Wanderung am Flussufer entlang — leichtes Vorankommen dem Wasser folgend',
+  'terrainDesc.river-crossing': 'Eine Überquerungsstelle — Brücke, Furt oder Fähre über den Fluss',
+  'terrainDesc.inferno-river': 'Fluss aus geschmolzener Lava — unpassierbar ohne Magie oder Feuerimmunität',
+  'terrainDesc.inferno-riverside': 'Wanderung entlang eines Lavaflusses — intensive Hitze, aber passierbar',
+  'terrainDesc.inferno-river-crossing': 'Eine Überquerung des Lavaflusses — verzauberte Brücke, gekühlter Obsidianpfad oder ähnliches',
 
   // ── Climate data ───────────────────────────────────────
   'climate.temperate':    'Gemäßigt',
@@ -604,17 +659,13 @@ const DE: LocaleMap = {
 
   // ── Exploration roles ──────────────────────────────────
   'role.navigator':       'Navigator',
-  'role.scout':           'Späher',
   'role.forager':         'Sammler',
   'roleSkill.navigator':  'Überlebenskunst',
-  'roleSkill.scout':      'Wahrnehmung',
   'roleSkill.forager':    'Überlebenskunst',
   'roleAbility.navigator':'WEI',
-  'roleAbility.scout':    'WEI',
   'roleAbility.forager':  'WEI',
-  'roleDesc.navigator':   'Verhindert, dass die Gruppe sich verirrt — Überlebenskunst-Probe (SL-Handbuch Kap. 5)',
-  'roleDesc.scout':       'Erkennt Gefahren voraus — passive Wahrnehmung entdeckt Bedrohungen (SL-Handbuch Kap. 5)',
-  'roleDesc.forager':     'Findet Nahrung & Wasser — Überlebenskunst-Probe, SG je nach Gelände (SL-Handbuch Kap. 5)',
+  'roleDesc.navigator':   'Verhindert, dass die Gruppe sich verirrt — Überlebenskunst-Probe (SL-Handbuch S.112)',
+  'roleDesc.forager':     'Findet Nahrung — Überlebenskunst-Probe, 1W6+WEI-Mod Pfund Nahrung (SL-Handbuch S.111)',
 
   // ── Weather data ───────────────────────────────────────
   'weather.clear':        'Klarer Himmel',
@@ -655,12 +706,21 @@ const DE: LocaleMap = {
   'weatherFx.extreme-cold':  'KON-Rettungswurf SG 10/Std. oder 1 Erschöpfung. Kälteresistenz verhindert',
 
   // ── Pace data ──────────────────────────────────────────
-  'pace.slow':           'Langsames Tempo',
-  'pace.normal':         'Normales Tempo',
-  'pace.fast':           'Schnelles Tempo',
-  'paceDesc.slow':       'Schleichen möglich. 29 km/Tag (3 Hexfelder)',
-  'paceDesc.normal':     'Standardreise. 38 km/Tag (4 Hexfelder)',
-  'paceDesc.fast':       '−5 passive Wahrnehmung. 48 km/Tag (5 Hexfelder)',
+  'pace.slow':           'Langsam',
+  'pace.normal':         'Normal',
+  'pace.fast':           'Schnell',
+  'paceDesc.slow':       'Schleichen möglich. ×0,75 Geschwindigkeit',
+  'paceDesc.normal':     'Standardreise. ×1,0 Geschwindigkeit',
+  'paceDesc.fast':       '−5 passive Wahrnehmung. ×1,25 Geschwindigkeit',
+
+  // ── Travel method ──────────────────────────────────────
+  travelMethod:          'Reisemethode',
+  searchMethods:         'Reisemethoden durchsuchen…',
+  effectiveSpeed:        '{hexes} Hexfelder/Tag effektiv',
+  'methodCat.land':      'Land',
+  'methodCat.water':     'Wasser',
+  'methodCat.air':       'Luft',
+  'methodCat.magic':     'Magie',
 
   // ── Exhaustion effects ─────────────────────────────────
   'exhaustion.0':        'Keine',

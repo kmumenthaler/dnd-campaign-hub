@@ -97,8 +97,30 @@ export const CLIMATE_TERRAIN_DESCRIPTIONS_DE: Record<DescriptionKey, string[]> =
     'Am Straßenrand steht ein hölzernes Wegkreuz mit verblasster Inschrift. Wildblumen wachsen zwischen den Pflastersteinen, wo der Verkehr sie verschont hat.',
     'Ein Gasthof mit rauchendem Schornstein steht an einer Wegkreuzung. Das Schild knarrt im Wind — „Zum Goldenen Hirsch".',
     'Die Straße führt durch eine Allee alter Linden. Ihre Blüten duften süß, und Bienen summen träge im Schatten der Kronen.',
+  ],  temperate_river: [
+    'Ein sanfter Fluss mäandert durch grüne Wiesen, seine Ufer gesäumt von Weiden, deren Zweige ins Wasser hängen. Forellen blitzen silbern unter der Oberfläche.',
+    'Der Fluss wird hier breiter und flacher — eine natürliche Furt. Glatte Steine schimmern unter dem klaren Wasser, und das gegenüberliegende Ufer ist dicht mit Wildblumen bewachsen.',
   ],
-
+  temperate_riverside: [
+    'Ein ausgetretener Pfad folgt dem Flussufer durch gesprenkelten Schatten. Das sanfte Murmeln der Strömung begleitet jeden Schritt, und Eisvögel huschen zwischen den Weiden.',
+    'Der Weg schmiegt sich ans Flussufer, windet sich zwischen moosbedeckten Felsen und Schilfbeständen. Libellen schweben über den Untiefen, und die Luft riecht nach feuchter Erde und Wildblumen.',
+  ],
+  'temperate_river-crossing': [
+    'Eine stabile Steinbrücke wölbt sich über den Fluss, ihre moosbedeckten Brüstungen glattgeschliffen von Generationen von Reisenden. Darunter wirbelt das Wasser sanft um die Pfeiler.',
+    'Eine hölzerne Fußgängerbrücke überspannt den Fluss, ihre Planken knarzen unter den Füßen. Seilgeländer sind von Pfosten zu Pfosten gespannt, und ein kleiner Schrein eines Reisegottes markiert das nahe Ufer.',
+  ],
+  'temperate_inferno-river': [
+    'Ein Strom aus geschmolzenem Gestein durchschneidet die ansonsten friedliche Landschaft — eine unmögliche Narbe aus glühend orangem Licht. Das Gras verdorrt im Umkreis weniger Meter zu schwarz.',
+    'Lava fließt träge zwischen versengten Ufern und zischt, wo sie auf einen Zufluss normalen Wassers trifft. Dampfsäulen verdecken die andere Seite.',
+  ],
+  'temperate_inferno-riverside': [
+    'Der Pfad folgt dem Lavastrom in vorsichtigem Abstand. Das Gras ist braun versengt, und die Hitze strahlt in Wellen, die die Wiese dahinter wie ein Trugbild schimmern lassen.',
+    'Ein schmaler Weg aus verdichteter Asche verläuft parallel zum Lavafluss. Verkohlte Baumstümpfe säumen die Route, und die Luft ist trocken und beißend trotz der grünen Landschaft dahinter.',
+  ],
+  'temperate_inferno-river-crossing': [
+    'Eine uralte Steinbrücke, ihre Oberfläche glasiert und rissig von der Hitze, überspannt den Lavastrom. Schutzrunen glimmen schwach an ihrem Geländer und halten das Schlimmste des Infernos ab.',
+    'Ein natürlicher Bogen aus erkaltetem Obsidian erstreckt sich über den geschmolzenen Fluss — eine prekäre, aber passierbare Überquerung. Der Stein ist warm unter den Füßen und knarzt bedrohlich.',
+  ],
   // ━━━ ARKTISCH (ARCTIC) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   arctic_plains: [
@@ -184,6 +206,30 @@ export const CLIMATE_TERRAIN_DESCRIPTIONS_DE: Record<DescriptionKey, string[]> =
     'Unter dem Schnee erspürt ihr unebene Pflastersteine — der alte Weg existiert noch, doch er ist fast vollständig begraben.',
     'Alle paar hundert Schritt steht ein steinerner Wegweiser, halb im Schnee versunken. Die Richtungsangaben sind kaum noch zu entziffern.',
     'Schlittenspuren und Hufabdrücke sind die einzigen Hinweise, dass andere vor euch hier waren. Der Wind füllt sie binnen Minuten mit frischem Schnee.',
+  ],
+  arctic_river: [
+    'Der Fluss ist unter einer Schneedecke fest gefroren. Druckrisse ziehen sich über die Oberfläche und ächzen bedrohlich bei jedem Schritt.',
+    'Schmelzwasser sickert unter einer Eiskruste, sichtbar durch durchscheinende Stellen. Die Strömung darunter ist täuschend schnell.',
+  ],
+  arctic_riverside: [
+    'Das gefrorene Flussufer bietet einen flachen, windgepeitschten Pfad durch die Tundra. Tierspuren — Fuchs, Hase, Wolf — kreuzen den Schnee neben dem Eis.',
+    'Ein Weg aus festgetretenem Schnee folgt dem gefrorenen Flusslauf. Eisverkrustete Felsbrocken säumen das Ufer, und die Stille wird nur vom Knarzen des Gletschers flussaufwärts durchbrochen.',
+  ],
+  'arctic_river-crossing': [
+    'Eine Brücke aus Eis und Holz überspannt den gefrorenen Fluss, ihre Oberfläche mit frischem Schnee bestäubt. Führungsseile sind an beiden Ufern in den Boden gerammt.',
+    'Der Fluss ist dick genug gefroren, um ihn zu Fuß zu überqueren. Schlittenkufen haben parallele Spuren ins Eis geritzt, und ein grober Wegweiser aus gestapelten Steinen steht am anderen Ufer.',
+  ],
+  'arctic_inferno-river': [
+    'Ein Lavastrom bahnt sich seinen Weg durch den Permafrost und erzeugt wallende Dampfwolken in der eisigen Luft. Der Kontrast ist surreal — Feuer und Eis im ewigen Krieg.',
+    'Geschmolzenes Gestein fließt dampfend durch ein Tal aus Eis. Der Schnee weicht von seinen Ufern zurück in einem perfekten Gradienten von schwarzem Obsidian zu weißem Pulver.',
+  ],
+  'arctic_inferno-riverside': [
+    'Der Pfad folgt einem Streifen nackten, warmen Bodens zwischen dem Lavafluss und dem Schneefeld. Dampf steigt in Vorhängen auf, und der Untergrund wechselt zwischen glattem Eis und bröckelnder Asche.',
+    'Neben dem Lavastrom zu gehen ist wie zwischen zwei Welten zu stehen — sengende Hitze auf der einen Seite, beißende Kälte auf der anderen. Der Boden ist ein Flickenteppich aus schwarzem Stein und schmelzendem Permafrost.',
+  ],
+  'arctic_inferno-river-crossing': [
+    'Eine Brücke aus verzaubertem Eis überspannt den Lavastrom und widersteht auf wundersame Weise der Hitze. Eiskristalle klammern sich an ihre Oberfläche, dampfend aber nie schmelzend.',
+    'Eine Brücke aus Basaltplatten, von Zwergeningenieuren errichtet, überquert den geschmolzenen Fluss. Runen der Kältebann leuchten blau an ihren Kanten und halten die schlimmste Hitze fern.',
   ],
 
   // ━━━ TROPISCH (TROPICAL) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -272,6 +318,30 @@ export const CLIMATE_TERRAIN_DESCRIPTIONS_DE: Record<DescriptionKey, string[]> =
     'Verfallene Steinplatten deuten auf eine alte Straße hin, doch der Dschungel hat sie fast vollständig verschlungen. Ranken und Wurzeln sprengen den Belag.',
     'Der Pfad folgt dem Flussufer — manchmal fest, manchmal knöcheltief im Schlamm. Moskitos umschwirren euch in dichten Wolken.',
   ],
+  tropical_river: [
+    'Ein breiter, brauner Fluss strömt durch den Dschungel, seine Strömung stark und unberechenbar. Halb versunkene Baumstämme verbergen sonnende Krokodile.',
+    'Der Fluss ist von Vegetation verstopft — schwimmende Hyazinthen, hängende Ranken und riesige Seerosenblätter. Papageien kreischen aus dem Blätterdach.',
+  ],
+  tropical_riverside: [
+    'Ein schlammiger Pfad folgt dem Fluss durch dichten Dschungel. Affen schnattern im Blätterdach, und die Luft summt vor Moskitos. Das Wasser neben euch ist braun und reißend.',
+    'Der Weg am Flussufer ist schmal und überwuchert, durch hängende Ranken und Riesenfarne geschlagen. Bunte Vögel huschen zwischen den Bäumen, und das Tosen des Flusses ist allgegenwärtig.',
+  ],
+  'tropical_river-crossing': [
+    'Eine Seilbrücke schwingt über dem Fluss, ihre Holzlatten glitschig von der Dschungelfeuchtigkeit. Nebel steigt von den Stromschnellen auf, und leuchtende Schmetterlinge flattern durch den Sprühnebel.',
+    'Ein gewaltiger umgestürzter Baum dient als natürliche Brücke über den Fluss. Seine Rinde ist mit Moos und Orchideen bedeckt, und ein geschnitztes Geländer verrät, dass andere diese Überquerung schon genutzt haben.',
+  ],
+  'tropical_inferno-river': [
+    'Ein Lavastrom schneidet durch den dampfenden Dschungel und verbrennt alles an seinen Rändern. Das Kronendach darüber ist ein Tunnel aus verkohlten Ästen und aufsteigender Asche.',
+    'Geschmolzenes Gestein ergíeßt sich den Vulkanhang hinab in den Dschungel, verkocht die Bäche und setzt das Unterholz in Brand. Die Luft ist erstickend und unerträglich heiß.',
+  ],
+  'tropical_inferno-riverside': [
+    'Der Pfad folgt dem Lavastrom durch verkohlten Dschungel. Verbrannte Bäume stehen wie Skelett-Wachen, und die Hitze ist erstickend. Das Leben kehrt abrupt ein Dutzend Meter vom Lavastrom entfernt zurück.',
+    'Ein Weg aus erkalteter Lava verläuft neben dem geschmolzenen Fluss, der Stein rissig und scharf. Dschungelranken erobern bereits die Ränder zurück, doch die Mitte ist kahl und glühend heiß.',
+  ],
+  'tropical_inferno-river-crossing': [
+    'Eine uralte Steinbrücke, mit Schlangenmotiven verziert, überspannt den Lavastrom. Dschungelkletterpflanzen klammern sich an ihr fernes Ende, doch die nahe Seite ist von der Hitze blank gescheuert.',
+    'Eine Hängebrücke aus verzaubertem Seil und Eisenholzplanken schwebt hoch über dem Lavafluss. Die Hitze steigt in schimmernden Wellen auf, und die Seile ächzen mit jedem Stoß vulkanischen Windes.',
+  ],
 
   // ━━━ ARID (TROCKEN) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -358,8 +428,30 @@ export const CLIMATE_TERRAIN_DESCRIPTIONS_DE: Record<DescriptionKey, string[]> =
     'Kamelspuren und Fußabdrücke in verschiedenen Stadien der Verwitterung zeigen, dass dieser Pfad noch genutzt wird — wenn auch selten.',
     'Am Wegesrand steht ein halb versandeter Brunnen. Ob er noch Wasser führt? Die verwitterte Aufschrift verspricht „Drei Tage bis zur nächsten Karawanserei".',
     'Die Straße führt schnurgerade zum Horizont. In dieser endlosen Weite wirkt jeder Schritt sinnlos — doch aufzugeben wäre tödlich.',
+  ],  arid_river: [
+    'Ein trockenes Flussbett — ein Wadi — durchschneidet die Wüste, sein sandiger Grund übersät mit glatten Steinen. Sturzfluten könnten es in Minuten füllen.',
+    'Ein Rinnsal kostbaren Wassers sickert über ein rissiges Flussbett, kaum genug, um den Sand zu benetzen. Verzweifeltes Gestrüpp klammert sich an die Ränder.',
   ],
-
+  arid_riverside: [
+    'Ein schwacher Pfad folgt dem trockenen Wadi und bietet Schatten von seinen erodierten Ufern. Spärliche Dornbüsche säumen den Weg — Beweis, dass hier in der Regenzeit Wasser fließt.',
+    'Das Wandern entlang des Flussbetts ist einfacher als die offene Wüste zu durchqueren. Der festgepackte Sand ist fest unter den Füßen, und gelegentliche Tümpel brackigen Wassers locken Wüstenvögel an.',
+  ],
+  'arid_river-crossing': [
+    'Eine niedrige Steinbrücke wölbt sich über das Wadi, sandgestrahlt und uralt. Ihre Fundamente sind durch Jahrhunderte von Sturzfluten freigelegt, aber sie hält stand.',
+    'Trittsteine überqueren das seichte Rinnsal des Flussbetts, mit bedachter Sorgfalt ausgelegt. Kamelspuren und Fußabdrücke markieren beide Ufer — dies ist ein bekannter Übergang.',
+  ],
+  'arid_inferno-river': [
+    'Ein Lavastrom fließt durch die Wüste, seine strahlende Hitze verwandelt den Sand zu Glas entlang seiner Ufer. Trugbilder tanzen über der Lava.',
+    'Der Lavastrom hat sich tief in den Sandstein gegraben, glühend wie eine Wunde in der Erde. Die Hitze ist selbst aus der Entfernung erdrückend.',
+  ],
+  'arid_inferno-riverside': [
+    'Der Pfad folgt dem glasrandigen Lavastrom durch die Wüste. Der Boden ist rissig und verschmolzen, und Hitzetrugbilder lassen den Horizont tanzen. Nichts wächst im Umkreis von fünfzig Schritten.',
+    'Neben dem Infernofluss zu wandern ist wie neben einer Schmiede zu marschieren. Der Sand hat sich zu Obsidianglas verwandelt, und die Luft brennt mit jedem Atemzug in den Lungen.',
+  ],
+  'arid_inferno-river-crossing': [
+    'Eine Brücke aus verschmolzenem Sandstein erstreckt sich über den Lavakanal, ihre Oberfläche von der Hitze glatt glasiert. Uralte Schutzzeichen sind in ihre Seiten geritzt, noch immer schwach warm bei Berührung.',
+    'Ein natürlicher Bogen aus erkaltetem Basalt überspannt den Lavafluss, wo der Kanal sich verengt. Die Überquerung ist kurz aber erschreckend — das Glühen von unten beleuchtet euer Gesicht orange.',
+  ],
   // ━━━ VULKANISCH (VOLCANIC) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   volcanic_plains: [
@@ -445,6 +537,30 @@ export const CLIMATE_TERRAIN_DESCRIPTIONS_DE: Record<DescriptionKey, string[]> =
     'Der Weg ist schwarz und glänzend, als wäre er frisch geteert. Doch es ist erstarrte Lava, die bei jedem Schritt hohl klingt.',
     'Steinerne Wegmarkierungen aus Basalt trotzen dem Verfall. Die Schriftzeichen darauf sind in einer Sprache verfasst, die niemand mehr spricht.',
     'Die Straße führt direkt auf den rauchenden Berg zu. Mit jedem Schritt wird es wärmer, und der Schwefelgeruch beißt in den Augen.',
+  ],
+  volcanic_river: [
+    'Ein Fluss aus überhitztem Wasser strömt durch einen Kanal aus Vulkangestein, zu heiß zum Berühren. Mineralablagerungen färben seine Ufer in kräftigem Gelb und Orange.',
+    'Ein dampfender Fluss tritt aus einer Höhle im Berghang, sein Wasser grau von Asche und scharf nach Schwefel riechend.',
+  ],
+  volcanic_riverside: [
+    'Ein Pfad aus gehärteter Lava folgt dem dampfenden Fluss durch die vulkanische Einöde. Der Boden zittert leicht, und das mineralverfärbte Wasser zischt und brodelt neben euch.',
+    'Der Weg verläuft am Ufer eines überhitzten Flusses. Geysire aus Dampf brechen ohne Vorwarnung hervor, und die Felsen sind glitschig von Mineralablagerungen in unnatürlichen Gelb- und Rottönen.',
+  ],
+  'volcanic_river-crossing': [
+    'Eine von Zwergen erbaute Steinbrücke überspannt den dampfenden Fluss, ihre Bögen geschwärzt von Mineralablagerungen. Das Wasser darunter ist trüb und kochend, und die Luft stinkt nach Schwefel.',
+    'Ein natürlicher Damm aus erkalteter Lava hat eine flache Überquerung geschaffen. Das Wasser ist heiß, aber passierbar, und Dampf kräuselt sich mit jedem Schritt um eure Knöchel.',
+  ],
+  'volcanic_inferno-river': [
+    'Der Infernofluss selbst — ein breiter Kanal aus langsam fließender Lava, seine Oberfläche verkrustet schwarz, bevor sie aufbricht und darunter glühend oranges Magma enthüllt. Die Hitze verzerrt die Luft.',
+    'Ein Strom aus flüssigem Feuer stürzt über eine Basaltstufe in einem Lavafall von schrecklicher Schönheit. Glut und Asche treiben im überhitzten Aufwind wie höllischer Schnee.',
+  ],
+  'volcanic_inferno-riverside': [
+    'Die einzige passierbare Route verläuft auf einem Grat aus erkaltetem Basalt neben dem Lavastrom. Der Stein ist warm durch eure Stiefel, und die Luft flirrt vor Hitze.',
+    'Ein Pfad aus dunklem Vulkanglas verläuft parallel zum Infernofluss. Die Kruste unter euren Füßen ist an manchen Stellen dünn — oranges Glühen schimmert durch die Risse.',
+  ],
+  'volcanic_inferno-river-crossing': [
+    'Eine Brücke aus verzaubertem Obsidian überspannt den Lavastrom, Runen der Kältebann leuchten blau entlang ihrer Länge. Die Überquerung ist schmal aber solide — ein uraltes Werk feuerriesen-hafter Handwerkskunst.',
+    'Eine Kettenbrücke, ihre Glieder aus Adamantin geschmiedet, hängt über dem Lavastrom. Die Hitze von unten ist intensiv, aber die Überquerung hält trotz des Schwankens stand.',
   ],
 
   // ━━━ MARITIM (MARITIME) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -532,5 +648,29 @@ export const CLIMATE_TERRAIN_DESCRIPTIONS_DE: Record<DescriptionKey, string[]> =
     'Der Weg ist rutschig von Algen und Salzwasser. Ein falscher Schritt, und ihr rutscht die Klippe hinab ins tosende Meer.',
     'Steinerne Poller und verrostete Ketten säumen die Straße — Überreste alter Häfen, deren Dörfer längst verlassen sind.',
     'Der Wind ist hier so stark, dass ihr euch dagegen lehnen müsst. Salzgischt peitscht euch ins Gesicht, und das Donnern der Brandung übertönt jedes Gespräch.',
+  ],
+  maritime_river: [
+    'Ein Tidenfluss strömt träge zum Meer, seine Ufer schlammig und von Schilf gesäumt. Möwen kreisen über ihm, und die Luft riecht nach Salzwasser und feuchter Erde.',
+    'Die Flussmündung ist breit und brackig, das Süßwasser des Flusses vermischt sich mit der einlaufenden Flut. Watvögel stochern im freigelegten Schlick.',
+  ],
+  maritime_riverside: [
+    'Ein Deichweg folgt dem Tidenfluss in Richtung Meer. Salzwiesen erstrecken sich auf der einen Seite, der schlammige Fluss auf der anderen. Reiher stehen reglos in den Untiefen.',
+    'Der Pfad entlang der Flussmündung ist fest und ausgetreten — ein Fischerpfad. Krebskörbe und trocknende Netze markieren die Route, und der Geruch von Salz ist allgegenwärtig.',
+  ],
+  'maritime_river-crossing': [
+    'Eine hölzerne Zugbrücke überspannt den Tidenfluss, ihre Balken grau vom Salz. Ein kleines Zollhaus steht am nahen Ende, und Fischerboote schaukeln im Kanal darunter.',
+    'Ein steinerner Damm überquert den Fluss bei Ebbe, seine Oberfläche glitschig von Seetang. Bei Flut verkehrt eine Fähre vom verwitterten Dock am nahen Ufer.',
+  ],
+  'maritime_inferno-river': [
+    'Ein Lavastrom trifft auf den Ozean in einem katastrophalen Aufeinandertreffen von Feuer und Wasser. Gewaltige Dampffahnen schießen himmelwärts, und das Meer kocht hundert Meter weit.',
+    'Geschmolzenes Gestein ergíeßt sich in den Hafen und schickt Jets aus überhitztem Dampf über die Küste. Verlassene Fischerboote schwelen an ihren Liegeplätzen.',
+  ],
+  'maritime_inferno-riverside': [
+    'Der Küstenpfad folgt dem Lavastrom zum Meer, die Luft dick von Dampf und Schwefelgestank. Der Ozean ist durch Lücken im wallenden Dunst sichtbar.',
+    'Neben der Lava wandernd, wie sie sich dem Ufer nähert, spürt ihr die Hitze des Stroms und die kühle Meeresbrise gleichermaßen. Verlassene Fischerhütten säumen das versengte Ufer.',
+  ],
+  'maritime_inferno-river-crossing': [
+    'Eine massive Eisenbrücke, aus verzweifelter Notwendigkeit erbaut, überspannt den Lavastrom nahe der Küste. Ihre Oberfläche ist heiß bei Berührung, und die Nieten glühen schwach im vulkanischen Licht.',
+    'Ein natürlicher Bogen aus erkalteter Lava erstreckt sich über den geschmolzenen Kanal, wo er das Meer trifft. Dampf verdeckt die andere Seite, aber die Überquerung ist solide — vorerst.',
   ],
 };

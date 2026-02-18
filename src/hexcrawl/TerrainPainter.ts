@@ -187,22 +187,25 @@ export function drawTerrainHex(
 export class HexcrawlSettingsModal extends Modal {
   private onSave: (settings: HexcrawlSettingsResult) => void;
   private enabled: boolean;
-  private meterMax: number;
-  private meterThreshold: number;
+  private initialFood: number;
+  private initialWater: number;
+  private partySize: number;
   private descriptionLanguage: DescriptionLanguage;
 
   constructor(
     app: App,
     currentEnabled: boolean,
-    currentMeterMax: number,
-    currentMeterThreshold: number,
+    currentFood: number,
+    currentWater: number,
+    currentPartySize: number,
     currentLanguage: DescriptionLanguage,
     onSave: (settings: HexcrawlSettingsResult) => void,
   ) {
     super(app);
     this.enabled = currentEnabled;
-    this.meterMax = currentMeterMax;
-    this.meterThreshold = currentMeterThreshold;
+    this.initialFood = currentFood;
+    this.initialWater = currentWater;
+    this.partySize = currentPartySize;
     this.descriptionLanguage = currentLanguage || 'en';
     this.onSave = onSave;
   }
@@ -223,23 +226,33 @@ export class HexcrawlSettingsModal extends Modal {
       });
 
     new Setting(contentEl)
-      .setName(hLoc(this.descriptionLanguage, 'survivalMeterMax'))
-      .setDesc(hLoc(this.descriptionLanguage, 'survivalMeterMaxDesc'))
+      .setName(hLoc(this.descriptionLanguage, 'initialFood'))
+      .setDesc(hLoc(this.descriptionLanguage, 'initialFoodDesc'))
       .addSlider(slider => {
-        slider.setLimits(4, 12, 1)
-          .setValue(this.meterMax)
+        slider.setLimits(0, 100, 1)
+          .setValue(this.initialFood)
           .setDynamicTooltip()
-          .onChange(v => this.meterMax = v);
+          .onChange(v => this.initialFood = v);
       });
 
     new Setting(contentEl)
-      .setName(hLoc(this.descriptionLanguage, 'dangerThreshold'))
-      .setDesc(hLoc(this.descriptionLanguage, 'dangerThresholdDesc'))
+      .setName(hLoc(this.descriptionLanguage, 'initialWater'))
+      .setDesc(hLoc(this.descriptionLanguage, 'initialWaterDesc'))
       .addSlider(slider => {
-        slider.setLimits(1, 4, 1)
-          .setValue(this.meterThreshold)
+        slider.setLimits(0, 100, 1)
+          .setValue(this.initialWater)
           .setDynamicTooltip()
-          .onChange(v => this.meterThreshold = v);
+          .onChange(v => this.initialWater = v);
+      });
+
+    new Setting(contentEl)
+      .setName(hLoc(this.descriptionLanguage, 'partySize'))
+      .setDesc(hLoc(this.descriptionLanguage, 'partySizeDesc'))
+      .addSlider(slider => {
+        slider.setLimits(1, 12, 1)
+          .setValue(this.partySize)
+          .setDynamicTooltip()
+          .onChange(v => this.partySize = v);
       });
 
     new Setting(contentEl)
@@ -261,8 +274,9 @@ export class HexcrawlSettingsModal extends Modal {
           .onClick(() => {
             this.onSave({
               enabled: this.enabled,
-              meterMax: this.meterMax,
-              meterThreshold: this.meterThreshold,
+              initialFood: this.initialFood,
+              initialWater: this.initialWater,
+              partySize: this.partySize,
               descriptionLanguage: this.descriptionLanguage,
             });
             this.close();
@@ -278,8 +292,9 @@ export class HexcrawlSettingsModal extends Modal {
 
 export interface HexcrawlSettingsResult {
   enabled: boolean;
-  meterMax: number;
-  meterThreshold: number;
+  initialFood: number;
+  initialWater: number;
+  partySize: number;
   descriptionLanguage: DescriptionLanguage;
 }
 

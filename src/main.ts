@@ -4618,26 +4618,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Load active layer (defaults to Player)
 			config.activeLayer = savedData.activeLayer || 'Player';
 			
-			// Load or initialize travel paces for hexcrawl maps
-			if (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') {
-				console.log('[PACE LOAD] Loading travel paces for hex map');
-				console.log('[PACE LOAD] savedData.travelPaces exists:', !!savedData.travelPaces);
-				if (savedData.travelPaces) {
-					console.log('[PACE LOAD] Using saved paces. Count:', savedData.travelPaces.length);
-					console.log('[PACE LOAD] Enabled paces:', savedData.travelPaces.filter((p: any) => p.enabled).map((p: any) => p.name));
-				}
-				config.travelPaces = savedData.travelPaces || this.mapManager.initializeDefaultTravelPaces();
-				if (!savedData.travelPaces) {
-					console.log('[PACE LOAD] Initialized default paces. Count:', config.travelPaces.length);
-					console.log('[PACE LOAD] Default enabled paces:', config.travelPaces.filter((p: any) => p.enabled).map((p: any) => p.name));
-				}
-				config.activePaceId = savedData.activePaceId || config.travelPaces.find((p: any) => p.enabled)?.id;
-				config.baseCalibration = savedData.baseCalibration || this.mapManager.calculateBaseCalibration(
-					config.gridSize,
-					config.travelPaces.find((p: any) => p.name === 'Walking (Normal)')?.milesPerDay || 24
-				);
-			}
-			
 			// Store the source note path for campaign detection
 			const notePath = ctx?.sourcePath || '';
 			
@@ -4717,6 +4697,32 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let aoeOrigin: { x: number; y: number } | null = null;
 			let aoePreviewEnd: { x: number; y: number } | null = null;
 			let pendingAoeAnchorMarkerId: string | null = null; // Set when AoE is cast from token context menu
+			// Hexcrawl travel range overlay state
+			let hexcrawlMoveHoverHex: { col: number; row: number } | null = null;
+
+			// Hex distance helper for offset-coordinate hex grids (used for movement range)
+			const hexDistance = (c1: number, r1: number, c2: number, r2: number): number => {
+				if (config.gridType === 'hex-horizontal') {
+					// Offset (odd-col) hex grid → convert to cube coordinates
+					const x1 = c1;
+					const z1 = r1 - (c1 - (c1 & 1)) / 2;
+					const y1 = -x1 - z1;
+					const x2 = c2;
+					const z2 = r2 - (c2 - (c2 & 1)) / 2;
+					const y2 = -x2 - z2;
+					return Math.max(Math.abs(x1 - x2), Math.abs(y1 - y2), Math.abs(z1 - z2));
+				} else {
+					// hex-vertical → offset (odd-row) hex grid → convert to cube coordinates
+					const x1 = c1 - (r1 - (r1 & 1)) / 2;
+					const z1 = r1;
+					const y1 = -x1 - z1;
+					const x2 = c2 - (r2 - (r2 & 1)) / 2;
+					const z2 = r2;
+					const y2 = -x2 - z2;
+					return Math.max(Math.abs(x1 - x2), Math.abs(y1 - y2), Math.abs(z1 - z2));
+				}
+			};
+
 			// Ensure aoeEffects array exists on config
 			if (!config.aoeEffects) config.aoeEffects = [];
 			
@@ -5025,8 +5031,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const aoeBtn = createToolBtn(commonToolGroup, '💥', 'AoE');
 		const eraserBtn = createToolBtn(commonToolGroup, '🧹', 'Eraser');
 		
-		// === HEXCRAWL SECTION (expandable, hex maps only) ===
-		const isHexcrawlMap = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical');
+		// === HEXCRAWL SECTION (expandable, hex maps on world/regional maps only) ===
+		const isHexcrawlMap = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && (config.type === 'world' || config.type === 'regional');
 		const hcLang = (config.hexcrawlState?.descriptionLanguage as 'en' | 'de') || 'en';
 		const hexcrawlSectionHeader = toolbarContent.createDiv({ cls: 'dnd-map-section-header' });
 		hexcrawlSectionHeader.createEl('span', { text: hLoc(hcLang, 'toolbarHexcrawl'), cls: 'dnd-map-section-title' });
@@ -5070,6 +5076,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		clearTerrainBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			config.hexTerrains = [];
+			redrawTerrainLayer();
 			redrawAnnotations();
 			this.saveMapAnnotations(config, el);
 			new Notice(hLoc(hcLang, 'allTerrainCleared'));
@@ -5126,6 +5133,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		clearClimateBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			config.hexClimates = [];
+			redrawTerrainLayer();
 			redrawAnnotations();
 			this.saveMapAnnotations(config, el);
 			new Notice(hLoc(hcLang, 'allClimateCleared'));
@@ -5639,16 +5647,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				gridSliderLabel.textContent = `${Math.round(val * 10) / 10}px`;
 				input.replaceWith(gridSliderLabel);
 				// Redraw grid
-				if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
-					// For hexcrawl with paces, redraw all overlays
-					redrawGridOverlays();
-				} else {
-					// For standard grids, use single overlay
-					if (gridCanvas) gridCanvas.remove();
-					if (config.gridType && config.gridType !== 'none') {
-						gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX, config.gridOffsetY);
-					}
-				}
+				redrawGridOverlays();
 				redrawAnnotations();
 				this.saveMapAnnotations(config, el);
 			};
@@ -5681,16 +5680,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			config.gridSize = newSize;
 			gridSliderLabel.textContent = `${Math.round(newSize * 10) / 10}px`;
 			// Redraw grid live
-			if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
-				// For hexcrawl with paces, redraw all overlays
-				redrawGridOverlays();
-			} else {
-				// For standard grids, use single overlay
-				if (gridCanvas) gridCanvas.remove();
-				if (config.gridType && config.gridType !== 'none') {
-					gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX, config.gridOffsetY);
-				}
-			}
+			redrawGridOverlays();
 			redrawAnnotations();
 			// Debounced save
 			if (gridSliderTimeout) clearTimeout(gridSliderTimeout);
@@ -5800,6 +5790,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 					if (layer !== 'Background' && (activeTool === 'fog' || activeTool === 'walls' || activeTool === 'lights')) {
 						setActiveTool('pan');
 					}
+					// Terrain/climate canvas follows Background layer visibility
+					if (terrainCanvas) {
+						terrainCanvas.style.opacity = layer === 'Background' ? '1' : '0.25';
+					}
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
 					// Sync to player view on layer change (needed for fog/light visibility)
@@ -5819,7 +5813,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				config,
 				el,
 				save: () => this.saveMapAnnotations(config, el),
-				redraw: () => redrawAnnotations(),
+				redraw: () => { redrawTerrainLayer(); redrawAnnotations(); },
 				setActiveTool: () => {},
 			};
 			this.refreshHexcrawlView();
@@ -5930,7 +5924,7 @@ export default class DndCampaignHubPlugin extends Plugin {
               target: { x: tMarker.position.x, y: tMarker.position.y, elevation: tElev }
             };
           }
-          const payload = {
+          const payload: any = {
             markers: config.markers,
             drawings: config.drawings,
             highlights: config.highlights,
@@ -5947,14 +5941,23 @@ export default class DndCampaignHubPlugin extends Plugin {
             scale: config.scale,
             name: config.name,
             type: config.type,
-            travelPaces: config.travelPaces,
-            activePaceId: config.activePaceId,
-            baseCalibration: config.baseCalibration,
             dragRuler: dragRuler,
             measureRuler: measureRuler,
             targetDistRuler: targetDistRuler,
-            selectedVisionTokenId: selectedVisionTokenId
+            selectedVisionTokenId: selectedVisionTokenId,
+            hexTerrains: config.hexTerrains,
+            hexClimates: config.hexClimates,
+            hexcrawlState: config.hexcrawlState,
+            hexcrawlRangeOverlay: (activeTool === 'hexcrawl-move' && config.hexcrawlState?.enabled && config.hexcrawlState?.partyPosition) ? {
+              active: true,
+              hoverHex: hexcrawlMoveHoverHex,
+            } : null,
           };
+          // Attach pending hexcrawl travel animation data (set by hexcrawl-move handler)
+          if ((viewport as any)._pendingHexcrawlTravel) {
+            payload.hexcrawlTravel = (viewport as any)._pendingHexcrawlTravel;
+            (viewport as any)._pendingHexcrawlTravel = null;
+          }
           const mapId = config.mapId || resourcePath;
           console.log('[GM] Syncing player views for mapId:', mapId);
           console.log('[GM] Payload:', payload);
@@ -5996,6 +5999,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | null = null;
 		let isTemporaryPan = false;
 		let gridCanvas: HTMLCanvasElement | null = null;
+		let terrainCanvas: HTMLCanvasElement | null = null;
 		let annotationCanvas: HTMLCanvasElement | null = null;
 
 		// Function to update transform
@@ -6133,20 +6137,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			return Math.sqrt(dx * dx + dy * dy);
 		};
 
-			// Helper: Get effective grid size (for hexcrawl with paces, use active pace size)
+			// Helper: Get effective grid size (fixed single grid — no pace scaling)
 			const getEffectiveGridSize = () => {
-				// For hexcrawl maps with travel paces, use active pace hex size
-				if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces && config.activePaceId) {
-					const activePace = config.travelPaces.find((p: any) => p.id === config.activePaceId);
-					const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || activePace;
-					if (activePace && basePace) {
-						return this.mapManager.calculateHexSizeForPace(
-							basePace.milesPerDay,
-							config.gridSize,
-							activePace.milesPerDay
-						);
-					}
-				}
 				return config.gridSize;
 			};
 
@@ -6180,64 +6172,27 @@ export default class DndCampaignHubPlugin extends Plugin {
 				return { col: 0, row: 0 };
 			};
 
-			// Function to redraw grid overlays for travel paces (hexcrawl only)
+			// Function to redraw grid overlays (single fixed grid)
 			const redrawGridOverlays = () => {
 				// Remove all existing grid overlays
 				const existingOverlays = mapWrapper.querySelectorAll('.dnd-map-grid-overlay');
 				existingOverlays.forEach(overlay => overlay.remove());
 				gridCanvas = null;
 				
-				// Only draw pace-based overlays for hexcrawl maps with travel paces
-				if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
-					const visiblePaces = config.travelPaces.filter((p: any) => p.enabled && p.visible);
-					const activePace = config.travelPaces.find((p: any) => p.id === config.activePaceId);
-					
-					// Calculate base pace for calibration (usually Walking Normal)
-					const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || activePace;
-					if (!basePace) return;
-					
-					// Draw each visible pace overlay
-					visiblePaces.forEach((pace: any) => {
-						const hexSize = this.mapManager.calculateHexSizeForPace(
-							basePace.milesPerDay,
-							config.gridSize,
-							pace.milesPerDay
-						);
-						
-						const isActive = pace.id === config.activePaceId;
-						const overlay = this.drawPaceGridOverlay(
-							mapWrapper,
-							img,
-							config,
-							pace,
-							hexSize,
-							isActive,
-							config.gridOffsetX || 0,
-							config.gridOffsetY || 0
-						);
-						
-						// Store first overlay as gridCanvas for legacy compatibility
-						if (!gridCanvas) {
-							gridCanvas = overlay;
-						}
-					});
-				} else if (config.gridType && config.gridType !== 'none') {
-					// Regular grid (non-hexcrawl or square grid)
+				// Draw single grid overlay
+				if (config.gridType && config.gridType !== 'none' && config.gridSize) {
 					gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0);
 				}
 			};
 
-			// Function to redraw annotations
-			const redrawAnnotations = () => {
-				console.log('redrawAnnotations called, annotationCanvas exists:', !!annotationCanvas);
-				if (!annotationCanvas) return;
-				const ctx = annotationCanvas.getContext('2d');
-				console.log('Got canvas context:', !!ctx);
-				if (!ctx) return;
-				
-				ctx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
-				
-				// Draw terrain hexes (bottom layer, below highlights)
+			// Function to redraw the terrain/climate background canvas
+			const redrawTerrainLayer = () => {
+				if (!terrainCanvas) return;
+				const tctx = terrainCanvas.getContext('2d');
+				if (!tctx) return;
+				tctx.clearRect(0, 0, terrainCanvas.width, terrainCanvas.height);
+
+				// Draw terrain hexes
 				if (config.hexTerrains && config.hexTerrains.length > 0 && config.gridSize) {
 					const ox = config.gridOffsetX || 0;
 					const oy = config.gridOffsetY || 0;
@@ -6252,7 +6207,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							const colOffsetY = (ht.col & 1) ? vert / 2 : 0;
 							const cx = ht.col * horiz + ox;
 							const cy = ht.row * vert + colOffsetY + oy;
-							drawTerrainHex(ctx, cx, cy, size, def, 'hex-horizontal');
+							drawTerrainHex(tctx, cx, cy, size, def, 'hex-horizontal');
 						} else if (config.gridType === 'hex-vertical') {
 							const vert = effectiveGridSz;
 							const size = (2/3) * vert;
@@ -6260,12 +6215,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 							const rowOffsetX = (ht.row & 1) ? horiz / 2 : 0;
 							const cx = ht.col * horiz + rowOffsetX + ox;
 							const cy = ht.row * vert + oy;
-							drawTerrainHex(ctx, cx, cy, size, def, 'hex-vertical');
+							drawTerrainHex(tctx, cx, cy, size, def, 'hex-vertical');
 						}
 					});
 				}
 
-				// Draw climate zone borders (on top of terrain fill, below highlights)
+				// Draw climate zone borders
 				if (config.hexClimates && config.hexClimates.length > 0 && config.gridSize) {
 					const ox = config.gridOffsetX || 0;
 					const oy = config.gridOffsetY || 0;
@@ -6280,7 +6235,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							const colOffsetY = (hc.col & 1) ? vert / 2 : 0;
 							const cx = hc.col * horiz + ox;
 							const cy = hc.row * vert + colOffsetY + oy;
-							drawClimateHexBorder(ctx, cx, cy, size, cdef, 'hex-horizontal');
+							drawClimateHexBorder(tctx, cx, cy, size, cdef, 'hex-horizontal');
 						} else if (config.gridType === 'hex-vertical') {
 							const vert = effectiveGridSz;
 							const size = (2/3) * vert;
@@ -6288,10 +6243,21 @@ export default class DndCampaignHubPlugin extends Plugin {
 							const rowOffsetX = (hc.row & 1) ? horiz / 2 : 0;
 							const cx = hc.col * horiz + rowOffsetX + ox;
 							const cy = hc.row * vert + oy;
-							drawClimateHexBorder(ctx, cx, cy, size, cdef, 'hex-vertical');
+							drawClimateHexBorder(tctx, cx, cy, size, cdef, 'hex-vertical');
 						}
 					});
 				}
+			};
+
+			// Function to redraw annotations
+			const redrawAnnotations = () => {
+				console.log('redrawAnnotations called, annotationCanvas exists:', !!annotationCanvas);
+				if (!annotationCanvas) return;
+				const ctx = annotationCanvas.getContext('2d');
+				console.log('Got canvas context:', !!ctx);
+				if (!ctx) return;
+				
+				ctx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
 				
 				// Draw highlights
 				if (config.highlights) {
@@ -6934,6 +6900,149 @@ export default class DndCampaignHubPlugin extends Plugin {
           }
         } catch (e) { }
 				
+				// Draw hexcrawl party position marker (visible on Player layer for GM)
+				if (config.hexcrawlState && config.hexcrawlState.enabled && config.hexcrawlState.partyPosition &&
+					(config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') &&
+					(config.type === 'world' || config.type === 'regional')) {
+					const hcPos = config.hexcrawlState.partyPosition;
+					const ox = config.gridOffsetX || 0;
+					const oy = config.gridOffsetY || 0;
+					const effectiveGridSz = getEffectiveGridSize();
+					let ppx: number, ppy: number;
+					if (config.gridType === 'hex-horizontal') {
+						const horiz = effectiveGridSz;
+						const size = (2/3) * horiz;
+						const vert = Math.sqrt(3) * size;
+						const colOffsetY = (hcPos.col & 1) ? vert / 2 : 0;
+						ppx = hcPos.col * horiz + ox;
+						ppy = hcPos.row * vert + colOffsetY + oy;
+					} else {
+						const vert = effectiveGridSz;
+						const size = (2/3) * vert;
+						const horiz = Math.sqrt(3) * size;
+						const rowOffsetX = (hcPos.row & 1) ? horiz / 2 : 0;
+						ppx = hcPos.col * horiz + rowOffsetX + ox;
+						ppy = hcPos.row * vert + oy;
+					}
+					const hexSz = (2/3) * effectiveGridSz;
+					const ir = hexSz * 0.55;
+
+					// Outer glow
+					ctx.save();
+					ctx.globalAlpha = 1.0;
+					const gmGlow = ctx.createRadialGradient(ppx, ppy, ir * 0.3, ppx, ppy, ir * 1.6);
+					gmGlow.addColorStop(0, 'rgba(255, 180, 50, 0.6)');
+					gmGlow.addColorStop(0.6, 'rgba(255, 140, 30, 0.2)');
+					gmGlow.addColorStop(1, 'rgba(255, 180, 50, 0)');
+					ctx.fillStyle = gmGlow;
+					ctx.beginPath();
+					ctx.arc(ppx, ppy, ir * 1.6, 0, Math.PI * 2);
+					ctx.fill();
+					ctx.restore();
+
+					// Solid circle background
+					ctx.save();
+					ctx.globalAlpha = 1.0;
+					ctx.fillStyle = 'rgba(40, 30, 15, 0.92)';
+					ctx.beginPath();
+					ctx.arc(ppx, ppy, ir, 0, Math.PI * 2);
+					ctx.fill();
+					ctx.strokeStyle = '#c8a85c';
+					ctx.lineWidth = 3;
+					ctx.stroke();
+					ctx.restore();
+
+					// Campfire emoji
+					ctx.save();
+					ctx.globalAlpha = 1.0;
+					ctx.font = `${Math.round(ir * 1.3)}px sans-serif`;
+					ctx.textAlign = 'center';
+					ctx.textBaseline = 'middle';
+					ctx.fillText('🏕️', ppx, ppy);
+					ctx.restore();
+				}
+
+				// Draw hexcrawl travel range overlay (when travel-to-hex tool is active)
+				if (activeTool === 'hexcrawl-move' && config.hexcrawlState && config.hexcrawlState.enabled &&
+					config.hexcrawlState.partyPosition &&
+					(config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') &&
+					(config.type === 'world' || config.type === 'regional')) {
+					const hcState = config.hexcrawlState;
+					const partyPos = hcState.partyPosition;
+					const tracker = new HexcrawlTracker(hcState, config.hexTerrains || [], config.hexClimates || []);
+					const remaining = tracker.getRemainingMovement();
+					const ox = config.gridOffsetX || 0;
+					const oy = config.gridOffsetY || 0;
+					const effectiveGridSz = getEffectiveGridSize();
+
+					// Helper to get hex pixel center
+					const hexCenter = (col: number, row: number): { x: number; y: number } => {
+						if (config.gridType === 'hex-horizontal') {
+							const horiz = effectiveGridSz;
+							const size = (2 / 3) * horiz;
+							const vert = Math.sqrt(3) * size;
+							const colOffsetY = (col & 1) ? vert / 2 : 0;
+							return { x: col * horiz + ox, y: row * vert + colOffsetY + oy };
+						} else {
+							const vert = effectiveGridSz;
+							const size = (2 / 3) * vert;
+							const horiz = Math.sqrt(3) * size;
+							const rowOffsetX = (row & 1) ? horiz / 2 : 0;
+							return { x: col * horiz + rowOffsetX + ox, y: row * vert + oy };
+						}
+					};
+					const hexSize = (2 / 3) * effectiveGridSz;
+
+					// Draw green fill for adjacent reachable hexes (you can only move one hex at a time)
+					ctx.save();
+					for (let dc = -1; dc <= 1; dc++) {
+						for (let dr = -1; dr <= 1; dr++) {
+							const c = partyPos.col + dc;
+							const r = partyPos.row + dr;
+							if (c < 0 || r < 0) continue;
+							if (c === partyPos.col && r === partyPos.row) continue;
+							const dist = hexDistance(partyPos.col, partyPos.row, c, r);
+							if (dist !== 1) continue;
+							const hexCost = tracker.getMovementCostForHex(c, r);
+							if (hexCost <= remaining) {
+								// Adjacent + affordable: green tint
+								const center = hexCenter(c, r);
+								ctx.fillStyle = 'rgba(0, 200, 80, 0.18)';
+								ctx.strokeStyle = 'rgba(0, 200, 80, 0.35)';
+								ctx.lineWidth = 1.5;
+								if (config.gridType === 'hex-horizontal') {
+									this.drawFilledHexFlat(ctx, center.x, center.y, hexSize);
+								} else {
+									this.drawFilledHexPointy(ctx, center.x, center.y, hexSize);
+								}
+							}
+						}
+					}
+					ctx.restore();
+
+					// Draw hover highlight: green if adjacent + affordable, red if not
+					if (hexcrawlMoveHoverHex) {
+						const hCol = hexcrawlMoveHoverHex.col;
+						const hRow = hexcrawlMoveHoverHex.row;
+						if (!(hCol === partyPos.col && hRow === partyPos.row)) {
+							const dist = hexDistance(partyPos.col, partyPos.row, hCol, hRow);
+							const hexCost = tracker.getMovementCostForHex(hCol, hRow);
+							const canMove = dist === 1 && hexCost <= remaining;
+							const center = hexCenter(hCol, hRow);
+							ctx.save();
+							ctx.fillStyle = canMove ? 'rgba(0, 220, 80, 0.38)' : 'rgba(220, 40, 30, 0.35)';
+							ctx.strokeStyle = canMove ? 'rgba(0, 220, 80, 0.7)' : 'rgba(220, 40, 30, 0.65)';
+							ctx.lineWidth = 2.5;
+							if (config.gridType === 'hex-horizontal') {
+								this.drawFilledHexFlat(ctx, center.x, center.y, hexSize);
+							} else {
+								this.drawFilledHexPointy(ctx, center.x, center.y, hexSize);
+							}
+							ctx.restore();
+						}
+					}
+				}
+
 				// Draw marker drag ruler
 				if (markerDragOrigin && draggingMarkerIndex >= 0) {
 					const draggedMarker = config.markers[draggingMarkerIndex];
@@ -7208,15 +7317,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				const oy = config.gridOffsetY || 0;
 				
 				if (config.gridType === 'hex-horizontal') {
-					// For hexcrawl with paces, use pace-specific hex size
-					let effectiveSize = config.gridSize;
-					if (config.travelPaces && highlight.paceId) {
-						const pace = config.travelPaces.find((p: any) => p.id === highlight.paceId);
-						const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || pace;
-						if (pace && basePace) {
-							effectiveSize = this.mapManager.calculateHexSizeForPace(basePace.milesPerDay, config.gridSize, pace.milesPerDay);
-						}
-					}
+					const effectiveSize = config.gridSize;
 					const horiz = effectiveSize;
 					const size = (2/3) * horiz;
 					const vert = Math.sqrt(3) * size;
@@ -7225,15 +7326,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const centerY = highlight.row * vert + colOffsetY + oy;
 					this.drawFilledHexFlat(ctx, centerX, centerY, size);
 				} else if (config.gridType === 'hex-vertical') {
-					// For hexcrawl with paces, use pace-specific hex size
-					let effectiveSize = config.gridSize;
-					if (config.travelPaces && highlight.paceId) {
-						const pace = config.travelPaces.find((p: any) => p.id === highlight.paceId);
-						const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || pace;
-						if (pace && basePace) {
-							effectiveSize = this.mapManager.calculateHexSizeForPace(basePace.milesPerDay, config.gridSize, pace.milesPerDay);
-						}
-					}
+					const effectiveSize = config.gridSize;
 					const vert = effectiveSize;
 					const size = (2/3) * vert;
 					const horiz = Math.sqrt(3) * size;
@@ -7264,7 +7357,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const drawPoiIcon = async (ctx: CanvasRenderingContext2D, poiRef: any) => {
 				// For hexcrawl/exploration maps, PoI icons are GM-only hints at 70% opacity
 				// For other map types, use layer-based transparency
-				const isHexcrawlMap = config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical';
+				const isHexcrawlMap = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && (config.type === 'world' || config.type === 'regional');
 				let poiAlpha: number;
 				if (isHexcrawlMap) {
 					poiAlpha = 0.7;
@@ -7277,15 +7370,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 				const ox = config.gridOffsetX || 0;
 				const oy = config.gridOffsetY || 0;
 				
-				// Get hex size (pace-specific if applicable)
-				let effectiveSize = config.gridSize;
-				if (config.travelPaces && poiRef.paceId) {
-					const pace = config.travelPaces.find((p: any) => p.id === poiRef.paceId);
-					const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || pace;
-					if (pace && basePace) {
-						effectiveSize = this.mapManager.calculateHexSizeForPace(basePace.milesPerDay, config.gridSize, pace.milesPerDay);
-					}
-				}
+				// Get hex size (fixed grid — no pace scaling)
+				const effectiveSize = config.gridSize;
 				
 				// Calculate hex center
 				let centerX, centerY;
@@ -8065,6 +8151,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'crosshair';
 				} else if (tool === 'hexcrawl-move') {
 					viewport.style.cursor = 'crosshair';
+					hexcrawlMoveHoverHex = null; // Reset hover on tool activation
+					redrawAnnotations();
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 					new Notice(hLoc(hcLang, 'clickHexTravel'), 3000);
 				} else if (tool === 'set-start-hex') {
 					setStartHexBtn.addClass('active');
@@ -8093,6 +8182,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 						redrawAnnotations();
 						if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 					}
+				}
+
+				// Clear hexcrawl move overlay when switching away
+				if (tool !== 'hexcrawl-move' && hexcrawlMoveHoverHex !== null) {
+					hexcrawlMoveHoverHex = null;
+					redrawAnnotations();
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 				}
 			};
 
@@ -8199,15 +8295,24 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// For images, use 'load'; for videos, use 'loadeddata' (first frame available)
 			const onMediaReady = () => {
 				if (config.gridType && config.gridType !== 'none' && config.gridSize) {
-					// Use multi-pace overlay system for hexcrawl maps
-					if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
-						redrawGridOverlays();
-					} else {
-						// Standard single grid for non-hexcrawl maps
-						gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0);
-					}
+					redrawGridOverlays();
 				}
 				
+				// Create terrain/climate background canvas (sits between grid overlays and annotations)
+				terrainCanvas = document.createElement('canvas');
+				terrainCanvas.classList.add('dnd-map-terrain-layer');
+				terrainCanvas.width = img.naturalWidth;
+				terrainCanvas.height = img.naturalHeight;
+				terrainCanvas.style.position = 'absolute';
+				terrainCanvas.style.top = '0';
+				terrainCanvas.style.left = '0';
+				terrainCanvas.style.width = `${img.width}px`;
+				terrainCanvas.style.height = `${img.height}px`;
+				terrainCanvas.style.pointerEvents = 'none';
+				// Terrain/climate is Background-layer content: dim when not on Background
+				terrainCanvas.style.opacity = config.activeLayer === 'Background' ? '1' : '0.25';
+				mapWrapper.appendChild(terrainCanvas);
+
 				// Create annotation canvas
 				annotationCanvas = document.createElement('canvas');
 				annotationCanvas.classList.add('dnd-map-annotation-layer');
@@ -8219,12 +8324,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 				annotationCanvas.style.width = `${img.width}px`;
 				annotationCanvas.style.height = `${img.height}px`;
 				mapWrapper.appendChild(annotationCanvas);
-				
+
+				redrawTerrainLayer();
 				redrawAnnotations();
 				
 				// Add ResizeObserver to update canvas dimensions when img resizes
 				// This prevents grid distortion when window resizes
 				const resizeObserver = new ResizeObserver(() => {
+					// Update terrain canvas display size
+					if (terrainCanvas) {
+						terrainCanvas.style.width = `${img.width}px`;
+						terrainCanvas.style.height = `${img.height}px`;
+						redrawTerrainLayer();
+					}
 					// Update annotation canvas display size
 					if (annotationCanvas) {
 						annotationCanvas.style.width = `${img.width}px`;
@@ -8232,14 +8344,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 						redrawAnnotations();
 					}
 					
-					// Update grid overlay display size (handle multiple overlays for hexcrawl)
-					if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
-						const gridOverlays = mapWrapper.querySelectorAll('.dnd-map-grid-overlay');
-						gridOverlays.forEach((overlay: any) => {
-							overlay.style.width = `${img.width}px`;
-							overlay.style.height = `${img.height}px`;
-						});
-					} else if (gridCanvas) {
+					// Update grid overlay display size
+					if (gridCanvas) {
 						gridCanvas.style.width = `${img.width}px`;
 						gridCanvas.style.height = `${img.height}px`;
 					}
@@ -8334,18 +8440,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							};
 							
 							// Redraw grid with new size
-							if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
-								// For hexcrawl with paces, redraw all overlays
-								redrawGridOverlays();
-							} else {
-								// For standard grids, use single overlay
-								if (gridCanvas) {
-									gridCanvas.remove();
-								}
-								if (config.gridType && config.gridType !== 'none' && config.gridSize) {
-									gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0);
-								}
-							}
+							redrawGridOverlays();
 							
 							// Save configuration to JSON file
 							await this.saveMapAnnotations(config, el);
@@ -8379,12 +8474,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 					// Check if clicking on a PoI icon (hexcrawl maps)
 					if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.poiReferences && config.poiReferences.length > 0) {
 						const hex = pixelToHex(mapPos.x, mapPos.y);
-						const currentPaceId = config.travelPaces ? config.activePaceId : undefined;
 						
 						// Find PoI at this hex
 						const poiRef = config.poiReferences.find((ref: any) => 
-							ref.col === hex.col && ref.row === hex.row && 
-							(ref.paceId === currentPaceId || !currentPaceId)
+							ref.col === hex.col && ref.row === hex.row
 						);
 						
 						if (poiRef) {
@@ -8468,10 +8561,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (activeTool === 'highlight') {
 					// Toggle grid highlight on clicked tile
 					const hex = pixelToHex(mapPos.x, mapPos.y);
-					// For hexcrawl with paces, check if highlight exists for this pace
-					const currentPaceId = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces ? config.activePaceId : undefined;
 					const existingIndex = config.highlights.findIndex(
-						(h: any) => h.col === hex.col && h.row === hex.row && h.paceId === currentPaceId
+						(h: any) => h.col === hex.col && h.row === hex.row
 					);
 					saveToHistory();
 					if (existingIndex >= 0) {
@@ -8484,10 +8575,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 							color: selectedColor,
 							layer: config.activeLayer || 'Player'
 						};
-						// For hexcrawl with paces, store which pace this highlight is for
-						if (currentPaceId) {
-							highlight.paceId = currentPaceId;
-						}
 						config.highlights.push(highlight);
 					}
 					redrawAnnotations();
@@ -8496,7 +8583,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (activeTool === 'poi') {
 					// Assign PoI to clicked hex
 					const hex = pixelToHex(mapPos.x, mapPos.y);
-					const currentPaceId = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces ? config.activePaceId : undefined;
 					
 					// Extract campaign folder (prioritize note path, fallback to map path)
 					let campaignFolder = null;
@@ -8530,7 +8616,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 							this.app,
 							campaignFolder,
 							hex,
-							currentPaceId,
 							(poiFile: string) => {
 								// Add PoI reference to map
 								if (!config.poiReferences) {
@@ -8539,7 +8624,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								
 								// Check if PoI already assigned to this hex
 								const existingIndex = config.poiReferences.findIndex(
-									(ref: any) => ref.col === hex.col && ref.row === hex.row && ref.paceId === currentPaceId
+									(ref: any) => ref.col === hex.col && ref.row === hex.row
 								);
 								
 								if (existingIndex >= 0) {
@@ -8553,7 +8638,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 										poiFile,
 										col: hex.col,
 										row: hex.row,
-										paceId: currentPaceId,
 										layer: config.activeLayer || 'DM',
 										addedAt: Date.now()
 									});
@@ -8753,10 +8837,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					// Try to erase a highlight at the clicked hex
 					if (!removed) {
 						const hex = pixelToHex(mapPos.x, mapPos.y);
-						// For hexcrawl with paces, only erase highlight for current pace
-						const currentPaceId = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces ? config.activePaceId : undefined;
 						const highlightIndex = config.highlights.findIndex(
-							(h: any) => h.col === hex.col && h.row === hex.row && h.paceId === currentPaceId
+							(h: any) => h.col === hex.col && h.row === hex.row
 						);
 						if (highlightIndex >= 0) {
 							saveToHistory();
@@ -8769,10 +8851,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					// Try to erase a PoI reference at the clicked hex
 					if (!removed && (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.poiReferences && config.poiReferences.length > 0) {
 						const hex = pixelToHex(mapPos.x, mapPos.y);
-						const currentPaceId = config.travelPaces ? config.activePaceId : undefined;
 						const poiIndex = config.poiReferences.findIndex(
-							(ref: any) => ref.col === hex.col && ref.row === hex.row && 
-							(ref.paceId === currentPaceId || !currentPaceId)
+							(ref: any) => ref.col === hex.col && ref.row === hex.row
 						);
 						if (poiIndex >= 0) {
 							saveToHistory();
@@ -8928,6 +9008,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					} else {
 						config.hexTerrains.push({ col: hex.col, row: hex.row, terrain: selectedTerrainType });
 					}
+					redrawTerrainLayer();
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
 					this.refreshHexcrawlView();
@@ -8947,6 +9028,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					} else {
 						config.hexClimates.push({ col: hex.col, row: hex.row, climate: selectedClimateType });
 					}
+					redrawTerrainLayer();
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
 					this.refreshHexcrawlView();
@@ -8993,6 +9075,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								config.hexTerrains.push({ col: hex.col, row: hex.row, terrain: 'plains', customDescription: newDesc });
 							}
 							this.saveMapAnnotations(config, el);
+							redrawTerrainLayer();
 							new Notice(newDesc ? hLoc(hcLang, 'descSaved', { col: hex.col, row: hex.row }) : hLoc(hcLang, 'descCleared', { col: hex.col, row: hex.row }));
 						},
 						hcLang,
@@ -9005,6 +9088,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 						new Notice(hLoc(hcLang, 'enableHexcrawlFirst'));
 						return;
 					}
+					// Only allow moving to an adjacent hex (distance === 1)
+					if (hcState.partyPosition) {
+						const dist = hexDistance(hcState.partyPosition.col, hcState.partyPosition.row, hex.col, hex.row);
+						if (dist !== 1) {
+							new Notice(hLoc(hcLang, 'mustMoveAdjacent'));
+							return;
+						}
+					}
+					// Capture party position BEFORE travel for animation
+					const prevPartyPos = hcState.partyPosition ? { col: hcState.partyPosition.col, row: hcState.partyPosition.row } : null;
 					const tracker = new HexcrawlTracker(hcState, config.hexTerrains || [], config.hexClimates || []);
 					if (!tracker.canMoveToday()) {
 						new Notice(hLoc(hcLang, 'noMovementBudget'));
@@ -9014,9 +9107,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 						if (!result || !result.completed) return; // User cancelled
 						// State is already mutated inside tracker by the modal
 						config.hexcrawlState = tracker.toJSON();
+						// Set pending travel animation for player view
+						if (prevPartyPos) {
+							(viewport as any)._pendingHexcrawlTravel = {
+								fromCol: prevPartyPos.col, fromRow: prevPartyPos.row,
+								toCol: hex.col, toRow: hex.row
+							};
+						}
 						this.saveMapAnnotations(config, el);
 						this.refreshHexcrawlView();
 						redrawAnnotations();
+						(viewport as any)._syncPlayerView();
 						new Notice(hLoc(hcLang, 'traveledToHex', { col: hex.col, row: hex.row }));
 					});
 				}
@@ -9178,16 +9279,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					startX = e.clientX;
 					startY = e.clientY;
 					// Redraw grid with new offset
-					if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
-						// For hexcrawl with paces, redraw all overlays
-						redrawGridOverlays();
-					} else {
-						// For standard grids, use single overlay
-						if (gridCanvas) gridCanvas.remove();
-						if (config.gridType && config.gridType !== 'none' && config.gridSize) {
-							gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX, config.gridOffsetY);
-						}
-					}
+					redrawGridOverlays();
 					redrawAnnotations();
 				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
 					// Dragging a marker
@@ -9390,6 +9482,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 					// Update wall preview position
 					wallPreviewPos = { x: mapPos.x, y: mapPos.y };
 					redrawAnnotations();
+        } else if (activeTool === 'hexcrawl-move') {
+					// Track hovered hex for travel range overlay
+					const hex = pixelToHex(mapPos.x, mapPos.y);
+					if (!hexcrawlMoveHoverHex || hexcrawlMoveHoverHex.col !== hex.col || hexcrawlMoveHoverHex.row !== hex.row) {
+						hexcrawlMoveHoverHex = hex;
+						redrawAnnotations();
+						if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					}
         } else if (activeTool === 'player-view' && isDraggingGmRect && gmDragStart) {
           // Update GM view rect as mouse moves
           gmDragCurrent = { x: mapPos.x, y: mapPos.y };
@@ -11092,118 +11192,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				});
 			}
 
-			// Travel Pace Controls (for hexcrawl maps) - positioned over map on right side
-			if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.travelPaces) {
-				const paceControls = viewport.createDiv({ cls: 'dnd-map-pace-controls' });
-				const paceHeader = paceControls.createDiv({ cls: 'dnd-map-pace-header' });
-				
-				const paceToggle = paceHeader.createEl('span', { 
-					text: '▼', 
-					cls: 'dnd-map-pace-toggle' 
-				});
-				
-				const paceTitle = paceHeader.createEl('span', { 
-					text: '🗺️', 
-					cls: 'dnd-map-pace-title' 
-				});
-				
-				const managePacesBtn = paceHeader.createEl('button', {
-					text: '⚙️',
-					cls: 'dnd-map-pace-manage-btn',
-					attr: { 'aria-label': 'Manage Travel Paces' }
-				});
-				
-				managePacesBtn.addEventListener('click', (e) => {
-					e.stopPropagation(); // Prevent header click from toggling
-					new TravelPaceManagerModal(this.app, this, config, () => {
-						console.log('Pace manager callback triggered. Enabled paces:', 
-							config.travelPaces.filter((p: any) => p.enabled).map((p: any) => p.name));
-						// Refresh the pace controls after changes
-						paceContent.empty();
-						paceContent.appendChild(paceList);
-						renderPaceList();
-						// Redraw grid overlays
-						redrawGridOverlays();
-						this.saveMapAnnotations(config, el);
-					}).open();
-				});
-				
-				// Content wrapper for collapse animation
-				const paceContent = paceControls.createDiv({ cls: 'dnd-map-pace-content' });
-				const paceList = paceContent.createDiv({ cls: 'dnd-map-pace-list' });
-				
-				const renderPaceList = () => {
-					paceList.empty();
-					const enabledPaces = config.travelPaces.filter((p: any) => p.enabled);
-					
-					if (enabledPaces.length === 0) {
-						paceList.createEl('div', { 
-							text: 'No paces enabled', 
-							cls: 'dnd-map-pace-empty' 
-						});
-						return;
-					}
-					
-					enabledPaces.forEach((pace: any) => {
-						const paceItem = paceList.createDiv({ 
-							cls: 'dnd-map-pace-item' + (pace.id === config.activePaceId ? ' active' : '')
-						});
-						
-						const paceInfo = paceItem.createDiv({ cls: 'dnd-map-pace-info' });
-						
-						const visibilityBtn = paceInfo.createEl('button', {
-							text: pace.visible ? '👁️' : '👁️‍🗨️',
-							cls: 'dnd-map-pace-visibility-btn',
-							attr: { 'aria-label': pace.visible ? 'Hide overlay' : 'Show overlay' }
-						});
-						
-						visibilityBtn.style.opacity = pace.visible ? '1' : '0.3';
-						
-						visibilityBtn.addEventListener('click', (e) => {
-							e.stopPropagation();
-							pace.visible = !pace.visible;
-							visibilityBtn.textContent = pace.visible ? '👁️' : '👁️‍🗨️';
-							visibilityBtn.style.opacity = pace.visible ? '1' : '0.3';
-							redrawGridOverlays();
-							this.saveMapAnnotations(config, el);
-						});
-						
-						const colorIndicator = paceInfo.createEl('span', { cls: 'dnd-map-pace-color' });
-						colorIndicator.style.backgroundColor = pace.color;
-						
-						const paceName = paceInfo.createEl('span', { 
-							text: `${pace.icon || ''} ${pace.name}`,
-							cls: 'dnd-map-pace-name'
-						});
-						
-						const paceDistance = paceInfo.createEl('span', {
-							text: `${pace.milesPerDay} mi/day`,
-							cls: 'dnd-map-pace-distance'
-						});
-						
-						paceItem.addEventListener('click', () => {
-							config.activePaceId = pace.id;
-							renderPaceList();
-							// Redraw grid overlays to update active/inactive visual state
-							redrawGridOverlays();
-							redrawAnnotations();
-							// Sync to player view
-							if ((viewport as any)._syncPlayerView) {
-								(viewport as any)._syncPlayerView();
-							}
-							this.saveMapAnnotations(config, el);
-						});
-					});
-				};
-				
-				renderPaceList();
-				
-				// Collapsible functionality
-				paceHeader.addEventListener('click', () => {
-					paceControls.toggleClass('collapsed', !paceControls.hasClass('collapsed'));
-				});
-			}
-
 			// Clear drawings button
 			const clearBtn = controls.createEl('button', {
 				text: '🗑️ Clear Drawings',
@@ -11858,10 +11846,6 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 				scale: config.scale || { value: 5, unit: 'feet' },
 				// Layer settings
 				activeLayer: config.activeLayer || 'Player',
-				// Travel paces (for hexcrawl maps) - always save if present
-				travelPaces: config.travelPaces,
-				activePaceId: config.activePaceId,
-				baseCalibration: config.baseCalibration,
 				// Annotations
 				highlights: config.highlights || [],
 				markers: config.markers || [],
@@ -11893,12 +11877,6 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 			console.log('Drawings count:', mapData.drawings.length);
 			console.log('Walls count:', mapData.walls.length);
 			console.log('Light sources count:', mapData.lightSources.length);
-			if (mapData.travelPaces) {
-				console.log('[PACE SAVE] Saving travel paces. Count:', mapData.travelPaces.length);
-				console.log('[PACE SAVE] Enabled paces being saved:', mapData.travelPaces.filter((p: any) => p.enabled).map((p: any) => p.name));
-			} else {
-				console.log('[PACE SAVE] No travel paces to save');
-			}
 			
 			// Save to dedicated file using adapter for config directory files
 			const annotationPath = this.getMapAnnotationPath(config.mapId);
@@ -12137,102 +12115,6 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 		ctx.closePath();
 		ctx.fill();
 		ctx.stroke();
-	}
-
-	/**
-	 * Draw a travel pace-specific grid overlay for hexcrawl maps
-	 * Each pace renders hexagons at its own scale relative to the base calibration
-	 */
-	drawPaceGridOverlay(
-		container: HTMLElement,
-		img: MapMediaElement,
-		config: any,
-		pace: any,
-		hexSize: number,
-		isActive: boolean,
-		offsetX: number = 0,
-		offsetY: number = 0
-	): HTMLCanvasElement {
-		// Create canvas for this pace's grid overlay
-		const canvas = document.createElement('canvas');
-		canvas.classList.add('dnd-map-grid-overlay');
-		canvas.dataset.paceId = pace.id;
-		canvas.width = img.naturalWidth;
-		canvas.height = img.naturalHeight;
-		canvas.style.position = 'absolute';
-		canvas.style.top = '0';
-		canvas.style.left = '0';
-		canvas.style.width = `${img.width}px`;
-		canvas.style.height = `${img.height}px`;
-		canvas.style.pointerEvents = 'none';
-		canvas.style.zIndex = isActive ? '10' : '5';
-
-		const ctx = canvas.getContext('2d');
-		if (!ctx) return canvas;
-
-		// Parse pace color and apply with appropriate alpha
-		const color = pace.color || '#000000';
-		const alpha = isActive ? 0.6 : 0.3;
-		const lineWidth = isActive ? 3 : 2;
-		
-		// Convert hex color to rgba
-		const r = parseInt(color.slice(1, 3), 16);
-		const g = parseInt(color.slice(3, 5), 16);
-		const b = parseInt(color.slice(5, 7), 16);
-		
-		ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
-		ctx.lineWidth = lineWidth;
-		
-		// Use dashed line for non-active paces
-		if (!isActive) {
-			ctx.setLineDash([8, 8]);
-		}
-
-		if (config.gridType === 'hex-horizontal') {
-			// Flat-top hex grid with custom size for this pace
-			const horiz = hexSize;
-			const size = (2/3) * horiz;
-			const vert = Math.sqrt(3) * size;
-			
-			const startCol = Math.floor(-offsetX / horiz) - 2;
-			const endCol = Math.ceil((canvas.width - offsetX) / horiz) + 2;
-			const startRow = Math.floor(-offsetY / vert) - 2;
-			const endRow = Math.ceil((canvas.height - offsetY) / vert) + 2;
-			
-			for (let row = startRow; row < endRow; row++) {
-				for (let col = startCol; col < endCol; col++) {
-					const colOffsetY = (col & 1) ? vert / 2 : 0;
-					const centerX = col * horiz + offsetX;
-					const centerY = row * vert + colOffsetY + offsetY;
-					
-					this.drawHexFlat(ctx, centerX, centerY, size);
-				}
-			}
-		} else if (config.gridType === 'hex-vertical') {
-			// Pointy-top hex grid with custom size for this pace
-			const vert = hexSize;
-			const size = (2/3) * vert;
-			const horiz = Math.sqrt(3) * size;
-			
-			const startCol = Math.floor(-offsetX / horiz) - 2;
-			const endCol = Math.ceil((canvas.width - offsetX) / horiz) + 2;
-			const startRow = Math.floor(-offsetY / vert) - 2;
-			const endRow = Math.ceil((canvas.height - offsetY) / vert) + 2;
-			
-			for (let row = startRow; row < endRow; row++) {
-				for (let col = startCol; col < endCol; col++) {
-					const rowOffsetX = (row & 1) ? horiz / 2 : 0;
-					const centerX = col * horiz + rowOffsetX + offsetX;
-					const centerY = row * vert + offsetY;
-					
-					this.drawHexPointy(ctx, centerX, centerY, size);
-				}
-			}
-		}
-
-		// Append canvas to container
-		container.appendChild(canvas);
-		return canvas;
 	}
 
 	async createFaction() {
@@ -13621,286 +13503,6 @@ class PurgeConfirmModal extends Modal {
   }
 }
 
-class TravelPaceManagerModal extends Modal {
-  plugin: DndCampaignHubPlugin;
-  config: any;
-  onUpdate: () => void;
-
-  constructor(app: App, plugin: DndCampaignHubPlugin, config: any, onUpdate: () => void) {
-    super(app);
-    this.plugin = plugin;
-    this.config = config;
-    this.onUpdate = onUpdate;
-  }
-
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass('dnd-pace-manager-modal');
-
-    contentEl.createEl('h2', { text: '🗺️ Manage Travel Paces' });
-
-    const description = contentEl.createEl('p', { 
-      cls: 'setting-item-description',
-      text: 'Enable or disable travel paces, adjust settings, and create custom paces for your hexcrawl map.'
-    });
-
-    // Category tabs
-    const tabContainer = contentEl.createDiv({ cls: 'dnd-pace-tabs' });
-    const categories: Array<{key: string, label: string, icon: string}> = [
-      { key: 'all', label: 'All', icon: '📋' },
-      { key: 'land', label: 'Land', icon: '🏞️' },
-      { key: 'water', label: 'Water', icon: '🌊' },
-      { key: 'air', label: 'Air', icon: '☁️' },
-      { key: 'magic', label: 'Magic', icon: '✨' },
-      { key: 'custom', label: 'Custom', icon: '⚙️' }
-    ];
-
-    let activeCategory = 'all';
-
-    const paceListContainer = contentEl.createDiv({ cls: 'dnd-pace-manager-list' });
-
-    const renderPaceList = () => {
-      paceListContainer.empty();
-
-      const filteredPaces = this.config.travelPaces.filter((p: any) => 
-        activeCategory === 'all' || p.category === activeCategory
-      );
-
-      if (filteredPaces.length === 0) {
-        paceListContainer.createEl('div', { 
-          text: 'No paces in this category', 
-          cls: 'dnd-pace-empty' 
-        });
-        return;
-      }
-
-      filteredPaces.forEach((pace: any, index: number) => {
-        const paceItem = paceListContainer.createDiv({ cls: 'dnd-pace-manager-item' });
-
-        const leftSection = paceItem.createDiv({ cls: 'dnd-pace-manager-left' });
-
-        const checkbox = leftSection.createEl('input', { type: 'checkbox' });
-        checkbox.checked = pace.enabled;
-        checkbox.addEventListener('change', () => {
-          pace.enabled = checkbox.checked;
-          console.log(`Pace '${pace.name}' enabled set to: ${pace.enabled}`);
-          if (!pace.enabled && this.config.activePaceId === pace.id) {
-            // If disabling the active pace, switch to first enabled pace
-            const firstEnabled = this.config.travelPaces.find((p: any) => p.enabled);
-            if (firstEnabled) {
-              this.config.activePaceId = firstEnabled.id;
-            }
-          }
-        });
-
-        const colorPicker = leftSection.createEl('input', { 
-          type: 'color',
-          attr: { value: pace.color }
-        });
-        colorPicker.value = pace.color;
-        colorPicker.addEventListener('change', () => {
-          pace.color = colorPicker.value;
-        });
-
-        const paceInfo = leftSection.createDiv({ cls: 'dnd-pace-manager-info' });
-        const paceName = paceInfo.createEl('strong', { text: `${pace.icon || ''} ${pace.name}` });
-        const paceDetails = paceInfo.createEl('span', { 
-          text: `${pace.milesPerDay} mi/day • ${pace.category}`,
-          cls: 'dnd-pace-details'
-        });
-
-        const rightSection = paceItem.createDiv({ cls: 'dnd-pace-manager-right' });
-
-        if (pace.isCustom) {
-          const deleteBtn = rightSection.createEl('button', {
-            text: '🗑️',
-            cls: 'dnd-pace-delete-btn',
-            attr: { 'aria-label': 'Delete pace' }
-          });
-
-          deleteBtn.addEventListener('click', () => {
-            const paceIndex = this.config.travelPaces.indexOf(pace);
-            if (paceIndex > -1) {
-              this.config.travelPaces.splice(paceIndex, 1);
-              if (this.config.activePaceId === pace.id) {
-                const firstEnabled = this.config.travelPaces.find((p: any) => p.enabled);
-                if (firstEnabled) {
-                  this.config.activePaceId = firstEnabled.id;
-                }
-              }
-              renderPaceList();
-            }
-          });
-        }
-      });
-    };
-
-    categories.forEach(cat => {
-      const tab = tabContainer.createEl('button', {
-        text: `${cat.icon} ${cat.label}`,
-        cls: 'dnd-pace-tab' + (activeCategory === cat.key ? ' active' : '')
-      });
-
-      tab.addEventListener('click', () => {
-        activeCategory = cat.key;
-        tabContainer.querySelectorAll('.dnd-pace-tab').forEach(t => t.removeClass('active'));
-        tab.addClass('active');
-        renderPaceList();
-      });
-    });
-
-    renderPaceList();
-
-    // Add custom pace button
-    const addCustomContainer = contentEl.createDiv({ cls: 'dnd-pace-add-custom' });
-    const addCustomBtn = addCustomContainer.createEl('button', {
-      text: '➕ Add Custom Pace',
-      cls: 'mod-cta'
-    });
-
-    addCustomBtn.addEventListener('click', () => {
-      new CustomPaceCreationModal(this.app, this.plugin, (customPace: any) => {
-        this.config.travelPaces.push(customPace);
-        activeCategory = 'custom';
-        tabContainer.querySelectorAll('.dnd-pace-tab').forEach(t => t.removeClass('active'));
-        const customTab = tabContainer.querySelectorAll('.dnd-pace-tab')[5];
-        if (customTab) customTab.addClass('active'); // Select custom tab
-        renderPaceList();
-      }).open();
-    });
-
-    // Buttons
-    const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
-    
-    const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
-    cancelBtn.addEventListener('click', () => this.close());
-
-    const saveBtn = buttonContainer.createEl('button', { text: 'Save' });
-    saveBtn.addClass('mod-cta');
-    saveBtn.addEventListener('click', () => {
-      console.log('Pace manager Save clicked. Enabled paces:', 
-        this.config.travelPaces.filter((p: any) => p.enabled).map((p: any) => p.name));
-      this.onUpdate();
-      this.close();
-    });
-  }
-
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
-  }
-}
-
-class CustomPaceCreationModal extends Modal {
-  plugin: DndCampaignHubPlugin;
-  onCreate: (pace: any) => void;
-  name: string = '';
-  category: string = 'custom';
-  milesPerDay: number = 24;
-  color: string = '#FF6B6B';
-  icon: string = '🎯';
-
-  constructor(app: App, plugin: DndCampaignHubPlugin, onCreate: (pace: any) => void) {
-    super(app);
-    this.plugin = plugin;
-    this.onCreate = onCreate;
-  }
-
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-
-    contentEl.createEl('h2', { text: '➕ Create Custom Pace' });
-
-    new Setting(contentEl)
-      .setName('Pace Name')
-      .setDesc('Name of this travel method')
-      .addText(text => {
-        text.setPlaceholder('e.g., Teleportation Circle')
-          .setValue(this.name)
-          .onChange(value => this.name = value);
-      });
-
-    new Setting(contentEl)
-      .setName('Category')
-      .setDesc('Type of travel')
-      .addDropdown(dropdown => {
-        dropdown
-          .addOption('land', '🏞️ Land')
-          .addOption('water', '🌊 Water')
-          .addOption('air', '☁️ Air')
-          .addOption('magic', '✨ Magic')
-          .addOption('custom', '⚙️ Custom')
-          .setValue(this.category)
-          .onChange(value => this.category = value);
-      });
-
-    new Setting(contentEl)
-      .setName('Miles per Day')
-      .setDesc('Travel distance covered per day')
-      .addText(text => {
-        text.setPlaceholder('24')
-          .setValue(String(this.milesPerDay))
-          .onChange(value => {
-            const parsed = parseInt(value);
-            if (!isNaN(parsed) && parsed > 0) {
-              this.milesPerDay = parsed;
-            }
-          });
-        text.inputEl.type = 'number';
-        text.inputEl.min = '1';
-      });
-
-    new Setting(contentEl)
-      .setName('Color')
-      .setDesc('Hex grid overlay color')
-      .addColorPicker(color => {
-        color.setValue(this.color)
-          .onChange(value => this.color = value);
-      });
-
-    new Setting(contentEl)
-      .setName('Icon')
-      .setDesc('Emoji or icon for this pace')
-      .addText(text => {
-        text.setPlaceholder('🎯')
-          .setValue(this.icon)
-          .onChange(value => this.icon = value);
-      });
-
-    const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
-
-    const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
-    cancelBtn.addEventListener('click', () => this.close());
-
-    const createBtn = buttonContainer.createEl('button', { text: 'Create' });
-    createBtn.addClass('mod-cta');
-    createBtn.addEventListener('click', () => {
-      if (!this.name.trim()) {
-        new Notice('Please enter a pace name');
-        return;
-      }
-
-      const customPace = this.plugin.mapManager.createCustomPace(
-        this.name,
-        this.category as any,
-        this.milesPerDay,
-        this.color,
-        this.icon
-      );
-
-      this.onCreate(customPace);
-      this.close();
-    });
-  }
-
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
-  }
-}
-
 class DndHubModal extends Modal {
   plugin: DndCampaignHubPlugin;
 
@@ -13908,6 +13510,7 @@ class DndHubModal extends Modal {
     super(app);
     this.plugin = plugin;
   }
+
 
   showInitializationUI(container: HTMLElement) {
     container.createEl("p", { 
@@ -28309,6 +27912,11 @@ class PlayerMapView extends ItemView {
    */
   updateMapData(config: any) {
     console.log('[PV] updateMapData called with config:', config);
+    // Extract travel animation data before storing config
+    const hexcrawlTravel = config.hexcrawlTravel;
+    if (hexcrawlTravel) {
+      delete config.hexcrawlTravel; // Don't persist animation trigger
+    }
     this.mapConfig = config;
     // Use syncCanvasToImage when available — it ensures the canvas is properly
     // sized before drawing (important for video where media may still be loading).
@@ -28318,6 +27926,11 @@ class PlayerMapView extends ItemView {
     } else {
       console.log('[PV] mapConfig updated, calling redrawAnnotations (no sync fn yet)');
       this.redrawAnnotations();
+    }
+    // Trigger hexcrawl travel animation if present
+    if (hexcrawlTravel) {
+      console.log('[PV] Triggering hexcrawl travel animation:', hexcrawlTravel);
+      this.animateHexcrawlTravel(hexcrawlTravel.fromCol, hexcrawlTravel.fromRow, hexcrawlTravel.toCol, hexcrawlTravel.toRow);
     }
     console.log('[PV] update completed');
   }
@@ -29073,6 +28686,12 @@ class PlayerMapView extends ItemView {
       this.drawGrid(ctx, config);
     }
 
+    // ── Hexcrawl rendering (terrain, visited trail, party marker) ──────
+    const isHexcrawlMap = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && (config.type === 'world' || config.type === 'regional');
+    if (isHexcrawlMap) {
+      this.drawHexcrawlLayer(ctx, config);
+    }
+
     // Filter to Player, Elevated, and Subterranean layers (exclude DM and Background)
     // Player tokens are always visible regardless of layer
     const visibleLayers = ['Player', 'Elevated', 'Subterranean'];
@@ -29115,7 +28734,6 @@ class PlayerMapView extends ItemView {
     playerHighlights.forEach((h: any) => this.drawHighlight(ctx, h));
 
     // Draw PoI icons (player layer only) - hidden entirely for hexcrawl/exploration maps
-    const isHexcrawlMap = config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical';
     if (!isHexcrawlMap) {
       playerPoiRefs.forEach((p: any) => this.drawPoiIcon(ctx, p, config));
     }
@@ -30111,30 +29729,7 @@ class PlayerMapView extends ItemView {
         ctx.stroke();
       }
     } else if (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') {
-      // For hexcrawl maps with travel paces, use the active pace's hex size
-      let gridSize = config.gridSize;
-      
-      if (config.travelPaces && config.activePaceId && config.baseCalibration) {
-        const activePace = config.travelPaces.find((p: any) => p.id === config.activePaceId);
-        const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || activePace;
-        
-        if (activePace && basePace) {
-          // Calculate hex size for the active pace
-          gridSize = this.plugin.mapManager.calculateHexSizeForPace(
-            basePace.milesPerDay,
-            config.gridSize,
-            activePace.milesPerDay
-          );
-          
-          // Use active pace color
-          const color = activePace.color || '#000000';
-          const r = parseInt(color.slice(1, 3), 16);
-          const g = parseInt(color.slice(3, 5), 16);
-          const b = parseInt(color.slice(5, 7), 16);
-          ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.6)`;
-          ctx.lineWidth = 3;
-        }
-      }
+      const gridSize = config.gridSize;
       
       if (config.gridType === 'hex-horizontal') {
         const horiz = gridSize;
@@ -30202,6 +29797,281 @@ class PlayerMapView extends ItemView {
     }
     ctx.closePath();
     ctx.stroke();
+  }
+
+  // ── Hexcrawl helpers ────────────────────────────────────────────────
+
+  /** Calculate effective grid size (fixed single grid — no pace scaling). */
+  private getPlayerEffectiveGridSize(config: any): number {
+    return config.gridSize;
+  }
+
+  /** Convert hex col/row → pixel centre, matching the GM coordinate system. */
+  private hexToPixel(col: number, row: number, config: any): { x: number; y: number } {
+    const ox = config.gridOffsetX || 0;
+    const oy = config.gridOffsetY || 0;
+    const effectiveSize = this.getPlayerEffectiveGridSize(config);
+
+    if (config.gridType === 'hex-horizontal') {
+      const horiz = effectiveSize;
+      const size = (2 / 3) * horiz;
+      const vert = Math.sqrt(3) * size;
+      const colOffsetY = (col & 1) ? vert / 2 : 0;
+      return { x: col * horiz + ox, y: row * vert + colOffsetY + oy };
+    } else {
+      // hex-vertical
+      const vert = effectiveSize;
+      const size = (2 / 3) * vert;
+      const horiz = Math.sqrt(3) * size;
+      const rowOffsetX = (row & 1) ? horiz / 2 : 0;
+      return { x: col * horiz + rowOffsetX + ox, y: row * vert + oy };
+    }
+  }
+
+  /**
+   * Hex distance for offset-coordinate grids (cube coordinate conversion).
+   */
+  private hexDistance(c1: number, r1: number, c2: number, r2: number, gridType: string): number {
+    if (gridType === 'hex-horizontal') {
+      const x1 = c1, z1 = r1 - (c1 - (c1 & 1)) / 2, y1 = -x1 - z1;
+      const x2 = c2, z2 = r2 - (c2 - (c2 & 1)) / 2, y2 = -x2 - z2;
+      return Math.max(Math.abs(x1 - x2), Math.abs(y1 - y2), Math.abs(z1 - z2));
+    } else {
+      const x1 = c1 - (r1 - (r1 & 1)) / 2, z1 = r1, y1 = -x1 - z1;
+      const x2 = c2 - (r2 - (r2 & 1)) / 2, z2 = r2, y2 = -x2 - z2;
+      return Math.max(Math.abs(x1 - x2), Math.abs(y1 - y2), Math.abs(z1 - z2));
+    }
+  }
+
+  /**
+   * Render the full hexcrawl layer: terrain fills, climate borders,
+   * visited-hex trail, and the pulsing party position marker.
+   */
+  private drawHexcrawlLayer(ctx: CanvasRenderingContext2D, config: any) {
+    const effectiveGridSz = this.getPlayerEffectiveGridSize(config);
+
+    // NOTE: Terrain fills and climate borders are intentionally omitted from
+    // the player view — players only see the map image, the visited trail,
+    // and their current party location.
+
+    // ── 1. Visited-hex trail ───────────────────────────────────────
+    const hcState = config.hexcrawlState;
+    if (hcState && hcState.visitedHexes && hcState.visitedHexes.length > 1) {
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      ctx.strokeStyle = '#c8a85c';
+      ctx.lineWidth = Math.max(3, effectiveGridSz * 0.06);
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.setLineDash([effectiveGridSz * 0.10, effectiveGridSz * 0.08]);
+
+      ctx.beginPath();
+      const first = this.hexToPixel(hcState.visitedHexes[0].col, hcState.visitedHexes[0].row, config);
+      ctx.moveTo(first.x, first.y);
+      for (let i = 1; i < hcState.visitedHexes.length; i++) {
+        const pt = this.hexToPixel(hcState.visitedHexes[i].col, hcState.visitedHexes[i].row, config);
+        ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.stroke();
+
+      // Draw small dots at each visited hex center
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#c8a85c';
+      hcState.visitedHexes.forEach((vh: any) => {
+        const pt = this.hexToPixel(vh.col, vh.row, config);
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, Math.max(3, effectiveGridSz * 0.04), 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+    }
+
+    // ── 4. Party position marker (pulsing campfire icon) ───────────
+    if (hcState && hcState.enabled && hcState.partyPosition) {
+      const pp = this.hexToPixel(hcState.partyPosition.col, hcState.partyPosition.row, config);
+      const hexSize = (2 / 3) * effectiveGridSz;
+      const iconRadius = hexSize * 0.65;
+
+      // Outer glow ring (large, warm pulse)
+      ctx.save();
+      ctx.globalAlpha = 1.0;
+      const glow = ctx.createRadialGradient(pp.x, pp.y, iconRadius * 0.3, pp.x, pp.y, iconRadius * 1.6);
+      glow.addColorStop(0, 'rgba(255, 180, 50, 0.7)');
+      glow.addColorStop(0.6, 'rgba(255, 140, 30, 0.3)');
+      glow.addColorStop(1, 'rgba(255, 180, 50, 0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(pp.x, pp.y, iconRadius * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Solid circle background
+      ctx.save();
+      ctx.globalAlpha = 1.0;
+      ctx.fillStyle = 'rgba(40, 30, 15, 0.95)';
+      ctx.beginPath();
+      ctx.arc(pp.x, pp.y, iconRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#c8a85c';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.restore();
+
+      // Campfire emoji (large)
+      ctx.save();
+      ctx.globalAlpha = 1.0;
+      ctx.font = `${Math.round(iconRadius * 1.4)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🏕️', pp.x, pp.y);
+      ctx.restore();
+    }
+
+    // ── 5. Travel range overlay (synced from GM hexcrawl-move tool) ─
+    const overlay = config.hexcrawlRangeOverlay;
+    if (overlay && overlay.active && hcState && hcState.enabled && hcState.partyPosition &&
+        (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical')) {
+      const partyPos = hcState.partyPosition;
+      const tracker = new HexcrawlTracker(hcState, config.hexTerrains || [], config.hexClimates || []);
+      const remaining = tracker.getRemainingMovement();
+      const hexSize = (2 / 3) * effectiveGridSz;
+
+      // Green fill for adjacent affordable hexes (travel is one hex at a time)
+      ctx.save();
+      for (let dc = -1; dc <= 1; dc++) {
+        for (let dr = -1; dr <= 1; dr++) {
+          const c = partyPos.col + dc;
+          const r = partyPos.row + dr;
+          if (c < 0 || r < 0) continue;
+          if (c === partyPos.col && r === partyPos.row) continue;
+          const dist = this.hexDistance(partyPos.col, partyPos.row, c, r, config.gridType);
+          if (dist !== 1) continue;
+          const hexCost = tracker.getMovementCostForHex(c, r);
+          if (hexCost <= remaining) {
+            const center = this.hexToPixel(c, r, config);
+            ctx.fillStyle = 'rgba(0, 200, 80, 0.18)';
+            ctx.strokeStyle = 'rgba(0, 200, 80, 0.35)';
+            ctx.lineWidth = 1.5;
+            if (config.gridType === 'hex-horizontal') {
+              this.drawFilledHexFlat(ctx, center.x, center.y, hexSize);
+            } else {
+              this.drawFilledHexPointy(ctx, center.x, center.y, hexSize);
+            }
+          }
+        }
+      }
+      ctx.restore();
+
+      // Hover highlight: green if adjacent + affordable, red if not
+      const hoverHex = overlay.hoverHex;
+      if (hoverHex && !(hoverHex.col === partyPos.col && hoverHex.row === partyPos.row)) {
+        const dist = this.hexDistance(partyPos.col, partyPos.row, hoverHex.col, hoverHex.row, config.gridType);
+        const hexCost = tracker.getMovementCostForHex(hoverHex.col, hoverHex.row);
+        const canMove = dist === 1 && hexCost <= remaining;
+        const center = this.hexToPixel(hoverHex.col, hoverHex.row, config);
+        ctx.save();
+        ctx.fillStyle = canMove ? 'rgba(0, 220, 80, 0.38)' : 'rgba(220, 40, 30, 0.35)';
+        ctx.strokeStyle = canMove ? 'rgba(0, 220, 80, 0.7)' : 'rgba(220, 40, 30, 0.65)';
+        ctx.lineWidth = 2.5;
+        if (config.gridType === 'hex-horizontal') {
+          this.drawFilledHexFlat(ctx, center.x, center.y, hexSize);
+        } else {
+          this.drawFilledHexPointy(ctx, center.x, center.y, hexSize);
+        }
+        ctx.restore();
+      }
+    }
+  }
+
+  // ── Hexcrawl travel animation ───────────────────────────────────
+
+  /** Currently running travel animation frame id (for cancellation). */
+  private _hexTravelAnimFrame: number = 0;
+
+  /**
+   * Animate the party marker moving from one hex to another.
+   * Uses requestAnimationFrame for a smooth ~1.5 s transition, then redraws
+   * the static scene at the end.
+   */
+  private animateHexcrawlTravel(fromCol: number, fromRow: number, toCol: number, toRow: number) {
+    if (!this.canvas || !this.mapConfig) return;
+    const config = this.mapConfig;
+    const effectiveGridSz = this.getPlayerEffectiveGridSize(config);
+    const hexSize = (2 / 3) * effectiveGridSz;
+    const from = this.hexToPixel(fromCol, fromRow, config);
+    const to = this.hexToPixel(toCol, toRow, config);
+    const duration = 1400; // ms
+    const startTime = performance.now();
+
+    // Cancel any running animation
+    if (this._hexTravelAnimFrame) cancelAnimationFrame(this._hexTravelAnimFrame);
+
+    const animFrame = (now: number) => {
+      const t = Math.min((now - startTime) / duration, 1);
+      // Ease-in-out cubic
+      const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+      // Full redraw (static scene without the old party marker at destination)
+      this.redrawAnnotations();
+      const ctx = this.canvas?.getContext('2d');
+      if (!ctx) return;
+
+      const cx = from.x + (to.x - from.x) * ease;
+      const cy = from.y + (to.y - from.y) * ease;
+      const iconRadius = hexSize * 0.38;
+
+      // Animated marker glow
+      ctx.save();
+      const glow = ctx.createRadialGradient(cx, cy, iconRadius * 0.3, cx, cy, iconRadius * 1.8);
+      glow.addColorStop(0, `rgba(255, 200, 60, ${0.6 - 0.2 * ease})`);
+      glow.addColorStop(1, 'rgba(255, 200, 60, 0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(cx, cy, iconRadius * 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Animated circle
+      ctx.save();
+      ctx.fillStyle = 'rgba(40, 30, 15, 0.85)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, iconRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#f0c050';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.restore();
+
+      // Moving icon
+      ctx.save();
+      ctx.font = `${Math.round(iconRadius * 1.3)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🧭', cx, cy);
+      ctx.restore();
+
+      // Trail line behind the moving marker
+      ctx.save();
+      ctx.globalAlpha = 0.4 * (1 - ease * 0.5);
+      ctx.strokeStyle = '#f0c050';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(cx, cy);
+      ctx.stroke();
+      ctx.restore();
+
+      if (t < 1) {
+        this._hexTravelAnimFrame = requestAnimationFrame(animFrame);
+      } else {
+        this._hexTravelAnimFrame = 0;
+        // Final static redraw at destination
+        this.redrawAnnotations();
+      }
+    };
+
+    this._hexTravelAnimFrame = requestAnimationFrame(animFrame);
   }
 
   private drawMeasureRuler(ctx: CanvasRenderingContext2D, config: any) {
@@ -30469,16 +30339,7 @@ class PlayerMapView extends ItemView {
     const oy = config.gridOffsetY || 0;
 
     if (config.gridType === 'hex-horizontal') {
-      // For hexcrawl with paces, use pace-specific hex size
-      let effectiveSize = config.gridSize;
-      if (config.travelPaces && highlight.paceId) {
-        const pace = config.travelPaces.find((p: any) => p.id === highlight.paceId);
-        const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || pace;
-        if (pace && basePace) {
-          effectiveSize = this.plugin.mapManager.calculateHexSizeForPace(basePace.milesPerDay, config.gridSize, pace.milesPerDay);
-        }
-      }
-      const horiz = effectiveSize;
+      const horiz = config.gridSize;
       const size = (2 / 3) * horiz;
       const vert = Math.sqrt(3) * size;
       const colOffsetY = (highlight.col & 1) ? vert / 2 : 0;
@@ -30486,16 +30347,7 @@ class PlayerMapView extends ItemView {
       const centerY = highlight.row * vert + colOffsetY + oy;
       this.drawFilledHexFlat(ctx, centerX, centerY, size);
     } else if (config.gridType === 'hex-vertical') {
-      // For hexcrawl with paces, use pace-specific hex size
-      let effectiveSize = config.gridSize;
-      if (config.travelPaces && highlight.paceId) {
-        const pace = config.travelPaces.find((p: any) => p.id === highlight.paceId);
-        const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || pace;
-        if (pace && basePace) {
-          effectiveSize = this.plugin.mapManager.calculateHexSizeForPace(basePace.milesPerDay, config.gridSize, pace.milesPerDay);
-        }
-      }
-      const vert = effectiveSize;
+      const vert = config.gridSize;
       const size = (2 / 3) * vert;
       const horiz = Math.sqrt(3) * size;
       const rowOffsetX = (highlight.row & 1) ? horiz / 2 : 0;
@@ -30520,22 +30372,14 @@ class PlayerMapView extends ItemView {
 
   private drawPoiIcon(ctx: CanvasRenderingContext2D, poiRef: any, config: any) {
     // Skip rendering for hexcrawl/exploration maps - PoIs are GM-only hints
-    const isHexcrawlMap = config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical';
+    const isHexcrawlMap = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && (config.type === 'world' || config.type === 'regional');
     if (isHexcrawlMap) return;
     ctx.globalAlpha = 0.9; // Slightly transparent for player view
     
     const ox = config.gridOffsetX || 0;
     const oy = config.gridOffsetY || 0;
     
-    // Get hex size (pace-specific if applicable)
-    let effectiveSize = config.gridSize;
-    if (config.travelPaces && poiRef.paceId) {
-      const pace = config.travelPaces.find((p: any) => p.id === poiRef.paceId);
-      const basePace = config.travelPaces.find((p: any) => p.name === 'Walking (Normal)') || pace;
-      if (pace && basePace) {
-        effectiveSize = this.plugin.mapManager.calculateHexSizeForPace(basePace.milesPerDay, config.gridSize, pace.milesPerDay);
-      }
-    }
+    const effectiveSize = config.gridSize;
     
     // Calculate hex center
     let centerX, centerY;

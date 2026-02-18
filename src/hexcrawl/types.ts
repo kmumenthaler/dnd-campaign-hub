@@ -30,6 +30,12 @@ export type TerrainType =
   | 'jungle'
   | 'underdark'
   | 'water'
+  | 'river'
+  | 'riverside'
+  | 'river-crossing'
+  | 'inferno-river'
+  | 'inferno-riverside'
+  | 'inferno-river-crossing'
   | 'road';
 
 export interface TerrainDefinition {
@@ -41,6 +47,7 @@ export interface TerrainDefinition {
   difficultTerrain: boolean;
   forageDC: number; // Survival DC to forage
   navigationDC: number; // INT/Survival DC to avoid getting lost
+  encounterDC: number; // Base DC for random encounter (d20 >= DC triggers)
   description: string;
 }
 
@@ -55,18 +62,24 @@ export interface TerrainDefinition {
  * Forage/Navigation DCs from DMG Ch.5 and XGtE.
  */
 export const TERRAIN_DEFINITIONS: TerrainDefinition[] = [
-  { id: 'road',       name: 'Road',       icon: '🛤️', color: '#A0855B', travelModifier: 1.25, difficultTerrain: false, forageDC: 20, navigationDC: 0,  description: 'Maintained path or trade route — fast, safe travel' },
-  { id: 'plains',     name: 'Plains',     icon: '🌾', color: '#90B860', travelModifier: 1.0,  difficultTerrain: false, forageDC: 15, navigationDC: 10, description: 'Open grasslands, meadows, and prairies' },
-  { id: 'coastal',    name: 'Coastal',    icon: '🏖️', color: '#E8D5A0', travelModifier: 1.0,  difficultTerrain: false, forageDC: 10, navigationDC: 5,  description: 'Shorelines, beaches, and tidal flats' },
-  { id: 'forest',     name: 'Forest',     icon: '🌲', color: '#2D6B30', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 10, navigationDC: 15, description: 'Dense woodlands and thick canopy' },
-  { id: 'hills',      name: 'Hills',      icon: '⛰️', color: '#8B7355', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 15, navigationDC: 10, description: 'Rolling highlands and rocky outcrops' },
-  { id: 'jungle',     name: 'Jungle',     icon: '🌴', color: '#1A5C1A', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 10, navigationDC: 15, description: 'Tropical jungle with extreme undergrowth' },
-  { id: 'swamp',      name: 'Swamp',      icon: '🐊', color: '#5C6B3C', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 10, navigationDC: 15, description: 'Marshes, bogs, and wetlands' },
-  { id: 'desert',     name: 'Desert',     icon: '🏜️', color: '#D4A843', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 20, navigationDC: 10, description: 'Arid wastelands and sand dunes' },
-  { id: 'mountains',  name: 'Mountains',  icon: '🏔️', color: '#6B6B6B', travelModifier: 0.33, difficultTerrain: true,  forageDC: 20, navigationDC: 15, description: 'Steep peaks and alpine passes' },
-  { id: 'arctic',     name: 'Arctic',     icon: '❄️', color: '#B0D4E8', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 20, navigationDC: 10, description: 'Frozen tundra, glaciers, and icy wastes' },
-  { id: 'underdark',  name: 'Underdark',  icon: '🕳️', color: '#3C2845', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 20, navigationDC: 20, description: 'Subterranean tunnels and caverns' },
-  { id: 'water',      name: 'Water',      icon: '🌊', color: '#4A80B0', travelModifier: 0.0,  difficultTerrain: false, forageDC: 15, navigationDC: 15, description: 'Open water — requires a vessel to cross' },
+  { id: 'road',       name: 'Road',       icon: '🛤️', color: '#A0855B', travelModifier: 1.25, difficultTerrain: false, forageDC: 20, navigationDC: 0,  encounterDC: 20, description: 'Maintained path or trade route — fast, safe travel' },
+  { id: 'plains',     name: 'Plains',     icon: '🌾', color: '#90B860', travelModifier: 1.0,  difficultTerrain: false, forageDC: 15, navigationDC: 10, encounterDC: 18, description: 'Open grasslands, meadows, and prairies' },
+  { id: 'coastal',    name: 'Coastal',    icon: '🏖️', color: '#E8D5A0', travelModifier: 1.0,  difficultTerrain: false, forageDC: 10, navigationDC: 5,  encounterDC: 18, description: 'Shorelines, beaches, and tidal flats' },
+  { id: 'forest',     name: 'Forest',     icon: '🌲', color: '#2D6B30', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 10, navigationDC: 15, encounterDC: 16, description: 'Dense woodlands and thick canopy' },
+  { id: 'hills',      name: 'Hills',      icon: '⛰️', color: '#8B7355', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 15, navigationDC: 10, encounterDC: 17, description: 'Rolling highlands and rocky outcrops' },
+  { id: 'jungle',     name: 'Jungle',     icon: '🌴', color: '#1A5C1A', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 10, navigationDC: 15, encounterDC: 14, description: 'Tropical jungle with extreme undergrowth' },
+  { id: 'swamp',      name: 'Swamp',      icon: '🐊', color: '#5C6B3C', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 10, navigationDC: 15, encounterDC: 15, description: 'Marshes, bogs, and wetlands' },
+  { id: 'desert',     name: 'Desert',     icon: '🏜️', color: '#D4A843', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 20, navigationDC: 10, encounterDC: 17, description: 'Arid wastelands and sand dunes' },
+  { id: 'mountains',  name: 'Mountains',  icon: '🏔️', color: '#6B6B6B', travelModifier: 0.33, difficultTerrain: true,  forageDC: 20, navigationDC: 15, encounterDC: 16, description: 'Steep peaks and alpine passes' },
+  { id: 'arctic',     name: 'Arctic',     icon: '❄️', color: '#B0D4E8', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 20, navigationDC: 10, encounterDC: 17, description: 'Frozen tundra, glaciers, and icy wastes' },
+  { id: 'underdark',  name: 'Underdark',  icon: '🕳️', color: '#3C2845', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 20, navigationDC: 20, encounterDC: 12, description: 'Subterranean tunnels and caverns' },
+  { id: 'water',          name: 'Water',          icon: '🌊', color: '#4A80B0', travelModifier: 0.0,  difficultTerrain: false, forageDC: 15, navigationDC: 15, encounterDC: 18, description: 'Open water — requires a vessel to cross' },
+  { id: 'river',                  name: 'River',                  icon: '🏞️', color: '#5B9BD5', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 10, navigationDC: 10, encounterDC: 17, description: 'Flowing river — may require fording, swimming, or a boat' },
+  { id: 'riverside',              name: 'Riverside',              icon: '🚶', color: '#7EB8DA', travelModifier: 0.75, difficultTerrain: false, forageDC: 10, navigationDC: 5,  encounterDC: 17, description: 'Walking along the riverbank — easy travel following the water' },
+  { id: 'river-crossing',         name: 'River Crossing',         icon: '🌉', color: '#8FAADC', travelModifier: 1.0,  difficultTerrain: false, forageDC: 10, navigationDC: 5,  encounterDC: 18, description: 'A crossing point — bridge, ford, or ferry over the river' },
+  { id: 'inferno-river',          name: 'Inferno River',          icon: '🌋', color: '#CC3300', travelModifier: 0.0,  difficultTerrain: true,  forageDC: 25, navigationDC: 15, encounterDC: 12, description: 'River of molten lava — impassable without magic or fire immunity' },
+  { id: 'inferno-riverside',      name: 'Inferno Riverside',      icon: '🔥', color: '#E85C33', travelModifier: 0.5,  difficultTerrain: true,  forageDC: 20, navigationDC: 10, encounterDC: 14, description: 'Walking alongside a lava river — intense heat but passable' },
+  { id: 'inferno-river-crossing',  name: 'Inferno River Crossing',  icon: '⛓️', color: '#FF6644', travelModifier: 0.75, difficultTerrain: true,  forageDC: 22, navigationDC: 10, encounterDC: 13, description: 'A crossing over the lava flow — enchanted bridge, cooled obsidian path, or similar' },
 ];
 
 /**
@@ -148,7 +161,6 @@ export interface HexClimate {
  */
 export type ExplorationRoleId =
   | 'navigator'
-  | 'scout'
   | 'forager';
 
 export interface ExplorationRole {
@@ -161,23 +173,38 @@ export interface ExplorationRole {
 }
 
 export const EXPLORATION_ROLES: ExplorationRole[] = [
-  { id: 'navigator', name: 'Navigator', icon: '🧭', skill: 'Survival',   ability: 'WIS', description: 'Avoid getting lost — Survival check to set the course (DMG Ch.5)' },
-  { id: 'scout',     name: 'Scout',     icon: '👁️', skill: 'Perception', ability: 'WIS', description: 'Spot threats ahead — passive Perception detects dangers (DMG Ch.5)' },
-  { id: 'forager',   name: 'Forager',   icon: '🍖', skill: 'Survival',   ability: 'WIS', description: 'Find food & water — Survival check DC varies by terrain (DMG Ch.5)' },
+  { id: 'navigator', name: 'Navigator', icon: '🧭', skill: 'Survival',   ability: 'WIS', description: 'Avoid getting lost — Wisdom (Survival) check vs terrain DC (DMG p.112)' },
+  { id: 'forager',   name: 'Forager',   icon: '🍖', skill: 'Survival',   ability: 'WIS', description: 'Find food & water — Wisdom (Survival) check, find 1d6+WIS mod lbs on success (DMG p.111)' },
 ];
 
-// ─── Survival Meter ───────────────────────────────────────────────────────
+// ─── Food & Water Rations (RAW — DMG p.111, PHB p.185) ────────────────────
 
-export interface SurvivalMeterState {
-  current: number;    // Current meter value
-  max: number;        // Maximum meter value (default 8)
-  threshold: number;  // Value at which survival encounter triggers (default 2)
+/**
+ * RAW food/water tracking.
+ * - A creature needs 1 lb food and 1 gallon water per day.
+ * - After 3 + CON modifier days without food → 1 exhaustion/day.
+ * - Without water: 1 exhaustion/day (or 2 in extreme heat).
+ * - Foraging: DC varies by terrain. On success, find 1d6 + WIS mod lbs food.
+ */
+export interface RationsState {
+  /** Pounds of food the party currently carries */
+  foodLbs: number;
+  /** Gallons of water the party currently carries */
+  waterGallons: number;
+  /** Number of party members (for daily consumption) */
+  partySize: number;
+  /** Consecutive days without sufficient food */
+  daysWithoutFood: number;
+  /** Consecutive days without sufficient water */
+  daysWithoutWater: number;
 }
 
-export const DEFAULT_SURVIVAL_METER: SurvivalMeterState = {
-  current: 8,
-  max: 8,
-  threshold: 2,
+export const DEFAULT_RATIONS: RationsState = {
+  foodLbs: 10,
+  waterGallons: 10,
+  partySize: 4,
+  daysWithoutFood: 0,
+  daysWithoutWater: 0,
 };
 
 // ─── Weather System ───────────────────────────────────────────────────────
@@ -226,26 +253,93 @@ export const WEATHER_TABLE: WeatherCondition[] = [
 // ─── Hexcrawl Travel State ────────────────────────────────────────────────
 
 /**
- * Travel pace for hexcrawl (distinct from the map overlay travel paces).
- * These represent the party's chosen pace each day.
+ * Travel pace modifier for hexcrawl.
+ * Applied on top of whichever travel method the party is using.
  */
 export type HexcrawlPace = 'slow' | 'normal' | 'fast';
 
 export interface HexcrawlPaceDefinition {
   id: HexcrawlPace;
   name: string;
-  milesPerDay: number; // 18/24/30
-  hexesPerDay: number; // 3/4/5 (at 6 miles per hex)
+  modifier: number;           // 0.75 / 1.0 / 1.25
   stealthPossible: boolean;
-  perceptionPenalty: boolean; // -5 passive Perception for fast
+  perceptionPenalty: boolean;  // -5 passive Perception for fast
   description: string;
 }
 
 export const HEXCRAWL_PACES: HexcrawlPaceDefinition[] = [
-  { id: 'slow',   name: 'Slow Pace',   milesPerDay: 18, hexesPerDay: 3, stealthPossible: true,  perceptionPenalty: false, description: 'Able to use stealth. 18 mi/day (3 hexes)' },
-  { id: 'normal', name: 'Normal Pace', milesPerDay: 24, hexesPerDay: 4, stealthPossible: false, perceptionPenalty: false, description: 'Standard travel. 24 mi/day (4 hexes)' },
-  { id: 'fast',   name: 'Fast Pace',   milesPerDay: 30, hexesPerDay: 5, stealthPossible: false, perceptionPenalty: true,  description: '-5 passive Perception. 30 mi/day (5 hexes)' },
+  { id: 'slow',   name: 'Slow Pace',   modifier: 0.75, stealthPossible: true,  perceptionPenalty: false, description: 'Able to use stealth. ×0.75 speed' },
+  { id: 'normal', name: 'Normal Pace', modifier: 1.0,  stealthPossible: false, perceptionPenalty: false, description: 'Standard travel. ×1.0 speed' },
+  { id: 'fast',   name: 'Fast Pace',   modifier: 1.25, stealthPossible: false, perceptionPenalty: true,  description: '-5 passive Perception. ×1.25 speed' },
 ];
+
+/**
+ * Travel method categories
+ */
+export type TravelMethodCategory = 'land' | 'water' | 'air' | 'magic';
+
+/**
+ * A specific means of travel (walking, horse, ship, griffon, etc.)
+ * hexesPerDay is the base movement at normal pace, before pace/weather modifiers.
+ */
+export interface TravelMethodDefinition {
+  id: string;
+  name: string;
+  category: TravelMethodCategory;
+  icon: string;
+  milesPerDay: number;
+  hexesPerDay: number; // milesPerDay / 6, rounded
+  description: string;
+}
+
+export const TRAVEL_METHODS: TravelMethodDefinition[] = [
+  // ── Land — On Foot ──────────────────────────────────────
+  { id: 'walking',        name: 'Walking',          category: 'land',  icon: '🚶', milesPerDay: 24,  hexesPerDay: 4,  description: 'On foot, standard travel' },
+
+  // ── Land — Mounted ─────────────────────────────────────
+  { id: 'horse-riding',   name: 'Horse (Riding)',    category: 'land',  icon: '🐴', milesPerDay: 48,  hexesPerDay: 8,  description: 'Mounted on a riding horse' },
+  { id: 'horse-draft',    name: 'Horse (Draft)',     category: 'land',  icon: '🐴', milesPerDay: 40,  hexesPerDay: 7,  description: 'Mounted on a draft horse' },
+  { id: 'pony',           name: 'Pony',              category: 'land',  icon: '🐎', milesPerDay: 32,  hexesPerDay: 5,  description: 'Mounted on a pony' },
+  { id: 'camel',          name: 'Camel',             category: 'land',  icon: '🐪', milesPerDay: 40,  hexesPerDay: 7,  description: 'Mounted on a camel' },
+  { id: 'elephant',       name: 'Elephant',          category: 'land',  icon: '🐘', milesPerDay: 32,  hexesPerDay: 5,  description: 'Riding an elephant' },
+
+  // ── Land — Vehicles ────────────────────────────────────
+  { id: 'cart',           name: 'Cart / Wagon',      category: 'land',  icon: '🛒', milesPerDay: 16,  hexesPerDay: 3,  description: 'Horse-drawn cart or wagon' },
+  { id: 'carriage',       name: 'Carriage',          category: 'land',  icon: '🎠', milesPerDay: 32,  hexesPerDay: 5,  description: 'Horse-drawn carriage' },
+
+  // ── Water ──────────────────────────────────────────────
+  { id: 'rowboat',        name: 'Rowboat',           category: 'water', icon: '🚣', milesPerDay: 15,  hexesPerDay: 3,  description: 'Small rowing boat' },
+  { id: 'keelboat',       name: 'Keelboat',          category: 'water', icon: '⛵', milesPerDay: 12,  hexesPerDay: 2,  description: 'River keelboat' },
+  { id: 'longship',       name: 'Longship',          category: 'water', icon: '⛵', milesPerDay: 36,  hexesPerDay: 6,  description: 'Viking-style longship' },
+  { id: 'sailing-ship',   name: 'Sailing Ship',      category: 'water', icon: '⛵', milesPerDay: 48,  hexesPerDay: 8,  description: 'Ocean-going sailing vessel' },
+  { id: 'galley',         name: 'Galley',            category: 'water', icon: '🚢', milesPerDay: 60,  hexesPerDay: 10, description: 'Large oar-powered warship' },
+  { id: 'warship',        name: 'Warship',           category: 'water', icon: '⚓', milesPerDay: 30,  hexesPerDay: 5,  description: 'Military sailing vessel' },
+
+  // ── Air — Mounts ───────────────────────────────────────
+  { id: 'griffon',        name: 'Griffon',           category: 'air',   icon: '🦅', milesPerDay: 64,  hexesPerDay: 11, description: 'Flying griffon mount' },
+  { id: 'hippogriff',     name: 'Hippogriff',        category: 'air',   icon: '🦅', milesPerDay: 64,  hexesPerDay: 11, description: 'Flying hippogriff mount' },
+  { id: 'pegasus',        name: 'Pegasus',           category: 'air',   icon: '🦄', milesPerDay: 72,  hexesPerDay: 12, description: 'Winged horse' },
+  { id: 'wyvern',         name: 'Wyvern',            category: 'air',   icon: '🐉', milesPerDay: 64,  hexesPerDay: 11, description: 'Wyvern mount' },
+  { id: 'giant-eagle',    name: 'Giant Eagle',       category: 'air',   icon: '🦅', milesPerDay: 64,  hexesPerDay: 11, description: 'Giant eagle mount' },
+
+  // ── Air / Magic ────────────────────────────────────────
+  { id: 'broom-of-flying',  name: 'Broom of Flying',  category: 'magic', icon: '🧹', milesPerDay: 72,  hexesPerDay: 12, description: 'Magical flying broom' },
+  { id: 'carpet-of-flying', name: 'Carpet of Flying', category: 'magic', icon: '🧵', milesPerDay: 64,  hexesPerDay: 11, description: 'Magical flying carpet' },
+  { id: 'phantom-steed',    name: 'Phantom Steed',   category: 'magic', icon: '✨', milesPerDay: 104, hexesPerDay: 17, description: 'Phantom horse (3rd-level spell)' },
+
+  // ── Air — Dragons ──────────────────────────────────────
+  { id: 'dragon-young',   name: 'Dragon (Young)',    category: 'air',   icon: '🐉', milesPerDay: 80,  hexesPerDay: 13, description: 'Young dragon mount' },
+  { id: 'dragon-adult',   name: 'Dragon (Adult)',    category: 'air',   icon: '🐉', milesPerDay: 80,  hexesPerDay: 13, description: 'Adult dragon mount' },
+  { id: 'dragon-ancient', name: 'Dragon (Ancient)',  category: 'air',   icon: '🐉', milesPerDay: 80,  hexesPerDay: 13, description: 'Ancient dragon mount' },
+];
+
+/** Category display metadata */
+export const TRAVEL_METHOD_CATEGORIES: Record<TravelMethodCategory, { label: string; icon: string }> = {
+  land:  { label: 'Land',  icon: '🏔️' },
+  water: { label: 'Water', icon: '🌊' },
+  air:   { label: 'Air',   icon: '☁️' },
+  magic: { label: 'Magic', icon: '✨' },
+};
 
 /**
  * Log entry for a single hex visited during travel.
@@ -263,7 +357,10 @@ export interface TravelLogEntry {
   encounterDetails?: string;
   discoveryFound: boolean;
   discoveryDetails?: string;
-  survivalMeterChange: number; // Positive = gained, negative = lost
+  /** Whether navigation failed and the party got lost */
+  navigationFailed?: boolean;
+  /** Food found via foraging (lbs) — 0 if failed */
+  foodForaged: number;
   notes: string;
   timestamp: string;
 }
@@ -298,8 +395,10 @@ export interface HexcrawlState {
   visitedHexes: { col: number; row: number; day: number }[];
   /** Current travel pace */
   pace: HexcrawlPace;
-  /** Survival meter */
-  survivalMeter: SurvivalMeterState;
+  /** Current travel method (walking, horse, ship, etc.) */
+  travelMethod: string;
+  /** Food & water rations (RAW) */
+  rations: RationsState;
   /** Today's weather */
   currentWeather: WeatherType;
   /** Full travel log */
@@ -308,6 +407,8 @@ export interface HexcrawlState {
   roleAssignments: Record<string, string>;
   /** Current exhaustion level for the party (simplified) */
   exhaustionLevel: number;
+  /** Hexes traveled since last encounter (progressive encounter DC) */
+  hexesSinceEncounter: number;
   /** Timestamp of last update */
   lastModified: string;
   /** Language for auto-generated read-aloud descriptions */
@@ -326,11 +427,13 @@ export function createDefaultHexcrawlState(mapId: string): HexcrawlState {
     partyPosition: { col: 0, row: 0 },
     visitedHexes: [],
     pace: 'normal',
-    survivalMeter: { ...DEFAULT_SURVIVAL_METER },
+    travelMethod: 'walking',
+    rations: { ...DEFAULT_RATIONS },
     currentWeather: 'clear',
     travelLog: [],
     roleAssignments: {},
     exhaustionLevel: 0,
+    hexesSinceEncounter: 0,
     lastModified: new Date().toISOString(),
     descriptionLanguage: 'en',
   };

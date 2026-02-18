@@ -259,20 +259,17 @@ export class PoiEditModal extends Modal {
 export class PoiPickerModal extends Modal {
 	private campaignFolder: string;
 	private hexCoords: { col: number; row: number };
-	private paceId: string | undefined;
 	private onSelect: (poiFile: string) => void;
 
 	constructor(
 		app: App,
 		campaignFolder: string,
 		hexCoords: { col: number; row: number },
-		paceId: string | undefined,
 		onSelect: (poiFile: string) => void
 	) {
 		super(app);
 		this.campaignFolder = campaignFolder;
 		this.hexCoords = hexCoords;
-		this.paceId = paceId;
 		this.onSelect = onSelect;
 	}
 
@@ -355,7 +352,6 @@ export class PoiPickerModal extends Modal {
 				this.app,
 				this.campaignFolder,
 				this.hexCoords,
-				this.paceId,
 				this.onSelect
 			).open();
 		});
@@ -402,7 +398,6 @@ export class PoiPickerModal extends Modal {
 export class PoiCreationModal extends Modal {
 	private campaignFolder: string;
 	private hexCoords: { col: number; row: number };
-	private paceId: string | undefined;
 	private onSelect: (poiFile: string) => void;
 
 	private name: string = '';
@@ -415,13 +410,11 @@ export class PoiCreationModal extends Modal {
 		app: App,
 		campaignFolder: string,
 		hexCoords: { col: number; row: number },
-		paceId: string | undefined,
 		onSelect: (poiFile: string) => void
 	) {
 		super(app);
 		this.campaignFolder = campaignFolder;
 		this.hexCoords = hexCoords;
-		this.paceId = paceId;
 		this.onSelect = onSelect;
 	}
 

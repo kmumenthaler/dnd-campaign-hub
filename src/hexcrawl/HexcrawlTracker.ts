@@ -16,12 +16,13 @@ import {
   WeatherType,
   TravelLogEntry,
   ExplorationCheckResult,
-  SurvivalMeterState,
+  RationsState,
   createDefaultHexcrawlState,
   getTerrainDefinition,
   HEXCRAWL_PACES,
+  TRAVEL_METHODS,
   WEATHER_TABLE,
-  DEFAULT_SURVIVAL_METER,
+  DEFAULT_RATIONS,
 } from './types';
 
 // ─── Tracker ──────────────────────────────────────────────────────────────
@@ -99,15 +100,15 @@ export class HexcrawlTracker {
 
   /**
    * Get the maximum hexes the party can move today, considering:
-   * - Base pace (slow/normal/fast → 3/4/5)
-   * - Current hex terrain modifier
+   * - Travel method base speed (walking 4, horse 8, ship 8, etc.)
+   * - Pace modifier (slow ×0.75, normal ×1.0, fast ×1.25)
    * - Weather modifier
    */
   getMaxHexesToday(): number {
+    const method = TRAVEL_METHODS.find(m => m.id === this.state.travelMethod) ?? TRAVEL_METHODS[0]!;
     const paceDef = HEXCRAWL_PACES.find(p => p.id === this.state.pace) ?? HEXCRAWL_PACES[1]!;
     const weather = WEATHER_TABLE.find(w => w.type === this.state.currentWeather) ?? WEATHER_TABLE[0]!;
-    // Base budget from pace
-    return Math.max(1, Math.floor(paceDef!.hexesPerDay * weather!.travelModifier));
+    return Math.max(1, Math.floor(method!.hexesPerDay * paceDef!.modifier * weather!.travelModifier));
   }
 
   /**
@@ -203,52 +204,6 @@ export class HexcrawlTracker {
     return result;
   }
 
-  // ── Survival Meter ───────────────────────────────────────────────────
-
-  /**
-   * Decrement the survival meter by an amount.
-   * Returns the new value.
-   */
-  decrementMeter(amount: number = 1): number {
-    this.state.survivalMeter.current = Math.max(0, this.state.survivalMeter.current - amount);
-    this.state.lastModified = new Date().toISOString();
-    return this.state.survivalMeter.current;
-  }
-
-  /**
-   * Increment the survival meter (e.g., successful forage, sanctuary).
-   */
-  incrementMeter(amount: number = 1): number {
-    this.state.survivalMeter.current = Math.min(
-      this.state.survivalMeter.max,
-      this.state.survivalMeter.current + amount
-    );
-    this.state.lastModified = new Date().toISOString();
-    return this.state.survivalMeter.current;
-  }
-
-  /**
-   * Reset meter to max (sanctuary, full rest in settlement, etc.)
-   */
-  resetMeter(): void {
-    this.state.survivalMeter.current = this.state.survivalMeter.max;
-    this.state.lastModified = new Date().toISOString();
-  }
-
-  /**
-   * Check if survival meter is at or below the danger threshold.
-   */
-  isMeterAtThreshold(): boolean {
-    return this.state.survivalMeter.current <= this.state.survivalMeter.threshold;
-  }
-
-  /**
-   * Check if survival meter is at zero (exhaustion starts).
-   */
-  isMeterDepleted(): boolean {
-    return this.state.survivalMeter.current <= 0;
-  }
-
   // ── Exhaustion ───────────────────────────────────────────────────────
 
   addExhaustion(levels: number = 1): number {
@@ -313,6 +268,25 @@ export class HexcrawlTracker {
 
   clearRoles(): void {
     this.state.roleAssignments = {};
+    this.state.lastModified = new Date().toISOString();
+  }
+
+  /**
+   * Reset all travel progress: clears the travel log, visited hexes,
+   * resets day counter, movement budget, weather, exhaustion, and
+   * the survival meter. The party position and role assignments are
+   * kept, and hexcrawl stays enabled.
+   */
+  resetTravel(): void {
+    this.state.currentDay = 1;
+    this.state.hexesMovedToday = 0;
+    this.state.visitedHexes = [];
+    this.state.travelLog = [];
+    this.state.currentWeather = 'clear';
+    this.state.exhaustionLevel = 0;
+    this.state.hexesSinceEncounter = 0;
+    this.state.rations.daysWithoutFood = 0;
+    this.state.rations.daysWithoutWater = 0;
     this.state.lastModified = new Date().toISOString();
   }
 

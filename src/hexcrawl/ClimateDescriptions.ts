@@ -113,6 +113,30 @@ const CLIMATE_TERRAIN_DESCRIPTIONS: Record<DescriptionKey, string[]> = {
     'A well-maintained cobblestone road cuts through the countryside, flanked by low stone walls and occasionally shaded by ancient elms.',
     'The trade road is wide and rutted by wagon wheels. A milestone reads the distance to the next town. Travellers dot the route in both directions.',
   ],
+  temperate_river: [
+    'A gentle river meanders through rolling meadows, its banks lined with willows trailing their branches in the current. Trout flash silver beneath the surface.',
+    'The river widens here into a shallow ford. Smooth stones gleam beneath the clear water, and the far bank is thick with wildflowers.',
+  ],
+  temperate_riverside: [
+    'A well-worn footpath follows the riverbank through dappled shade. The gentle murmur of the current accompanies every step, and kingfishers flash between the willows.',
+    'The trail hugs the river’s edge, winding between mossy boulders and stands of reeds. Dragonflies hover over the shallows, and the air smells of wet earth and wildflowers.',
+  ],
+  'temperate_river-crossing': [
+    'A sturdy stone bridge arches over the river, its moss-covered parapets worn smooth by generations of travellers. Below, the water churns gently around the pilings.',
+    'A wooden footbridge spans the river, its planks creaking underfoot. Rope handrails are strung from post to post, and a small shrine to a traveller’s god marks the near bank.',
+  ],
+  'temperate_inferno-river': [
+    'A river of molten rock cuts through the otherwise pastoral landscape—an impossible scar of glowing orange. The grass withers to black within yards of its banks.',
+    'Lava flows sluggishly between scorched banks, hissing where it meets a tributary of normal water. Columns of steam obscure the far side.',
+  ],
+  'temperate_inferno-riverside': [
+    'The path follows the lava river at a cautious distance. The grass is scorched brown, and the heat radiates in waves that make the meadow beyond shimmer like a mirage.',
+    'A narrow trail of packed ash runs parallel to the lava flow. Blackened stumps of trees line the route, and the air is dry and acrid despite the green countryside beyond.',
+  ],
+  'temperate_inferno-river-crossing': [
+    'An ancient stone bridge, its surface glazed and cracked from the heat, spans the lava river. Runes of protection glow faintly along its railings, warding off the worst of the inferno.',
+    'A natural arch of cooled obsidian stretches over the molten flow—a precarious but passable crossing. The stone is warm underfoot and creaks ominously.',
+  ],
 
   // ━━━ ARCTIC ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -167,6 +191,30 @@ const CLIMATE_TERRAIN_DESCRIPTIONS: Record<DescriptionKey, string[]> = {
     'The trail is barely visible—just a line of stakes driven into the snow, each topped with a frayed red flag. The wind tries to push you off the path.',
     'A frozen trade route, packed hard by sled runners. Frost-rimed mile markers list distances in Dwarvish runes.',
   ],
+  arctic_river: [
+    'The river is frozen solid beneath a blanket of snow. Pressure cracks zigzag across the surface, groaning ominously with each step.',
+    'Meltwater trickles beneath a crust of ice, visible through translucent patches. The current is deceptively swift underneath.',
+  ],
+  arctic_riverside: [
+    'The frozen riverbank offers a flat, wind-scoured path through the tundra. Animal tracks—fox, hare, wolf—crisscross the snow beside the ice.',
+    'A trail of packed snow follows the river’s frozen course. Ice-encrusted boulders line the bank, and the silence is broken only by the creak of the glacier upstream.',
+  ],
+  'arctic_river-crossing': [
+    'A bridge of ice and timber spans the frozen river, its surface dusted with fresh snow. Guide ropes are staked into the banks on either side.',
+    'The river is frozen thick enough to cross on foot. Sled runners have scored parallel tracks in the ice, and a crude waymarker of stacked stones stands on the far bank.',
+  ],
+  'arctic_inferno-river': [
+    'A river of lava carves through the permafrost, sending billowing clouds of steam into the frozen air. The contrast is surreal—fire and ice locked in endless war.',
+    'Molten rock flows steaming through a valley of ice. The snow retreats from its banks in a perfect gradient from black obsidian to white powder.',
+  ],
+  'arctic_inferno-riverside': [
+    'The path follows a strip of bare, warm ground between the lava flow and the snowfield. Steam rises in curtains, and the footing shifts between slick ice and crumbling ash.',
+    'Walking beside the lava river is like standing between two worlds—searing heat on one side, biting cold on the other. The ground is a patchwork of black stone and melting permafrost.',
+  ],
+  'arctic_inferno-river-crossing': [
+    'A span of enchanted ice bridges the lava river, somehow resisting the heat. Frost crystals cling to its surface, steaming but never melting.',
+    'A bridge of basalt slabs, laid by dwarven engineers, crosses the molten flow. Runes of cold ward glow blue along its edges, keeping the worst of the heat at bay.',
+  ],
 
   // ━━━ TROPICAL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -220,6 +268,30 @@ const CLIMATE_TERRAIN_DESCRIPTIONS: Record<DescriptionKey, string[]> = {
     'An overgrown trail hacked through the jungle—already the vegetation is reclaiming it. Machete marks scar the tree trunks.',
     'A raised wooden causeway spans the wetlands, its planks green with algae and warped by the humidity.',
   ],
+  tropical_river: [
+    'A wide, brown river surges through the jungle, its current strong and unpredictable. Half-submerged logs conceal basking crocodiles.',
+    'The river is choked with vegetation—floating hyacinths, trailing vines, and enormous lily pads. Parrots screech from the canopy overhead.',
+  ],
+  tropical_riverside: [
+    'A muddy trail follows the river through dense jungle. Monkeys chatter in the canopy, and the air hums with mosquitoes. The water beside you is brown and swift.',
+    'The path along the riverbank is narrow and overgrown, hacked through hanging vines and giant ferns. Colourful birds dart between the trees, and the river’s roar is constant.',
+  ],
+  'tropical_river-crossing': [
+    'A rope bridge sways over the river, its wooden slats slick with jungle moisture. Mist rises from the rapids below, and bright butterflies flit through the spray.',
+    'A massive fallen tree serves as a natural bridge over the river. Its bark is covered in moss and orchids, and a carved handrail suggests others have used this crossing before.',
+  ],
+  'tropical_inferno-river': [
+    'A river of lava cuts through the steaming jungle, incinerating everything at its edges. The canopy above is a tunnel of charred branches and rising ash.',
+    'Molten rock pours down the volcanic slope into the jungle, boiling away streams and setting the undergrowth ablaze. The air is choking and unbearably hot.',
+  ],
+  'tropical_inferno-riverside': [
+    'The trail follows the lava flow through blackened jungle. Charred trees stand like skeletal sentinels, and the heat is suffocating. Life returns abruptly a dozen yards from the flow.',
+    'A path of cooled lava runs beside the molten river, the stone cracked and sharp. Jungle vines are already reclaiming the edges, but the centre is bare and radiantly hot.',
+  ],
+  'tropical_inferno-river-crossing': [
+    'An ancient stone span, carved with serpent motifs, bridges the lava flow. Jungle creepers cling to its far end, but the near side is scoured clean by heat.',
+    'A suspended bridge of enchanted rope and ironwood planks hangs high above the lava river. The heat rises in shimmering waves, and the ropes creak with each gust of volcanic wind.',
+  ],
 
   // ━━━ ARID ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -272,6 +344,30 @@ const CLIMATE_TERRAIN_DESCRIPTIONS: Record<DescriptionKey, string[]> = {
     'A caravan trail marked by cairns of stacked stones. The sand has drifted across it in places, and old wagon ruts are the only guide.',
     'The trade road is a baked-clay ribbon cutting through the wasteland. Bleached animal skulls mark the route at intervals—grim milestones.',
   ],
+  arid_river: [
+    'A dry riverbed—a wadi—cuts through the desert, its sandy bottom littered with smooth stones. Flash floods could fill it in minutes.',
+    'A trickle of precious water seeps along a cracked riverbed, barely enough to wet the sand. Desperate scrub clings to its edges.',
+  ],
+  arid_riverside: [
+    'A faint trail follows the dry wadi, offering shade from its eroded banks. Sparse thorn bushes line the route—proof that water flows here in the rainy season.',
+    'Walking along the riverbed is easier than crossing the open desert. The packed sand is firm underfoot, and occasional pools of brackish water attract desert birds.',
+  ],
+  'arid_river-crossing': [
+    'A low stone bridge arches over the wadi, sand-blasted and ancient. Its foundations are exposed by centuries of flash floods, but it holds firm.',
+    'Stepping stones cross the shallow trickle of the riverbed, laid out with deliberate care. Camel tracks and footprints mark both banks—this is a known crossing point.',
+  ],
+  'arid_inferno-river': [
+    'A river of molten rock flows through the desert, its radiant heat turning the sand to glass along its banks. Mirages dance above the lava.',
+    'The lava river has carved a deep channel through the sandstone, glowing like a wound in the earth. The heat is staggering even from a distance.',
+  ],
+  'arid_inferno-riverside': [
+    'The trail follows the glass-edged lava flow through the desert. The ground is cracked and fused, and heat mirages make the horizon dance. Nothing grows within fifty paces.',
+    'Walking beside the inferno river is like marching alongside a forge. The sand has turned to obsidian glass, and the air burns the lungs with each breath.',
+  ],
+  'arid_inferno-river-crossing': [
+    'A bridge of fused sandstone stretches over the lava channel, its surface glazed smooth by the heat. Ancient wards are carved into its sides, still faintly warm to the touch.',
+    'A natural arch of cooled basalt spans the lava flow where the channel narrows. The crossing is brief but terrifying—the glow below lights your face orange.',
+  ],
 
   // ━━━ VOLCANIC ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -322,6 +418,30 @@ const CLIMATE_TERRAIN_DESCRIPTIONS: Record<DescriptionKey, string[]> = {
   volcanic_road: [
     'A path of cooled lava, worn smooth by travellers. It winds between steaming vents and crags of obsidian. Metal wagon fittings have corroded to red flakes.',
     'The Ashway—a raised road built on packed volcanic gravel—crosses the lava fields. Sulphur-yellow deposits mark the route\'s edges.',
+  ],
+  volcanic_river: [
+    'A river of superheated water runs through a channel of volcanic rock, too hot to touch. Mineral deposits paint its banks in vivid yellows and oranges.',
+    'A steaming river emerges from a cave in the mountainside, its waters grey with ash and smelling sharply of sulphur.',
+  ],
+  volcanic_riverside: [
+    'A trail of hardened lava follows the steaming river through the volcanic wasteland. The ground trembles faintly, and the mineral-stained water hisses and bubbles beside you.',
+    'The path runs along the bank of a superheated river. Geysers of steam erupt without warning, and the rocks are slick with mineral deposits in unnatural shades of yellow and red.',
+  ],
+  'volcanic_river-crossing': [
+    'A dwarven-built stone bridge spans the steaming river, its arches blackened by mineral deposits. The water below is opaque and boiling, and the air reeks of sulphur.',
+    'A natural dam of cooled lava has created a shallow crossing. The water is hot but passable, and steam curls around your ankles with every step.',
+  ],
+  'volcanic_inferno-river': [
+    'The Inferno River itself—a wide channel of slow-moving lava, its surface crusting black before cracking to reveal molten orange beneath. The heat warps the air.',
+    'A river of liquid fire cascades over a basalt shelf in a lava-fall of terrible beauty. Embers and ash drift on the superheated updraft like hellish snow.',
+  ],
+  'volcanic_inferno-riverside': [
+    'The only passable route runs along a ridge of cooled basalt beside the lava river. The stone is warm through your boots, and the air shimmers with heat haze.',
+    'A path of dark volcanic glass parallels the Inferno River. The crust beneath your feet is thin in places—orange glow visible through the cracks.',
+  ],
+  'volcanic_inferno-river-crossing': [
+    'A span of enchanted obsidian bridges the lava river, runes of cold-warding glowing blue along its length. The crossing is narrow but solid—an ancient work of fire-giant artifice.',
+    'A chain bridge, its links forged from adamantine, hangs over the lava flow. The heat below is intense, but the crossing holds firm despite the sway.',
   ],
 
   // ━━━ MARITIME ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -374,5 +494,29 @@ const CLIMATE_TERRAIN_DESCRIPTIONS: Record<DescriptionKey, string[]> = {
   maritime_road: [
     'A coastal road carved into the cliff face, its seaward edge crumbling. Spray from the waves below coats the stones in slippery salt.',
     'The old harbour road follows the shoreline, passing through fishing villages and between drying racks heavy with salted fish.',
+  ],
+  maritime_river: [
+    'A tidal river flows sluggishly toward the sea, its banks muddy and lined with reeds. Gulls wheel overhead, and the air smells of brine and damp earth.',
+    'The estuary is wide and brackish, the fresh river water mixing with the incoming tide. Wading birds pick through the exposed mudflats.',
+  ],
+  maritime_riverside: [
+    'A dike-top path follows the tidal river toward the sea. Salt marshes stretch on one side, and the muddy river on the other. Herons stand motionless in the shallows.',
+    'The trail along the estuary is firm and well-trodden—a fisherman’s path. Crab pots and drying nets mark the route, and the tang of brine is ever-present.',
+  ],
+  'maritime_river-crossing': [
+    'A wooden drawbridge spans the tidal river, its timbers grey with salt. A small tollhouse stands at the near end, and fishing boats bob in the channel below.',
+    'A stone causeway crosses the river at low tide, its surface slippery with seaweed. At high tide, a ferry operates from the weathered dock on the near shore.',
+  ],
+  'maritime_inferno-river': [
+    'A lava flow meets the ocean in a catastrophic clash of fire and water. Massive plumes of steam billow skyward, and the sea boils for a hundred yards out.',
+    'Molten rock pours into the harbour, sending jets of superheated steam across the coast. Abandoned fishing boats smoulder at their moorings.',
+  ],
+  'maritime_inferno-riverside': [
+    'The coastal path follows the lava flow toward the sea, the air thick with steam and the stench of sulphur. The ocean is visible through gaps in the billowing vapour.',
+    'Walking beside the lava as it approaches the shore, you feel the heat of the flow and the cool sea breeze in equal measure. Abandoned fishing huts line the scorched bank.',
+  ],
+  'maritime_inferno-river-crossing': [
+    'A massive iron bridge, built by desperate necessity, spans the lava flow near the coast. Its surface is hot to the touch, and the rivets glow faintly in the volcanic light.',
+    'A natural arch of cooled lava stretches over the molten channel where it meets the sea. Steam obscures the far side, but the crossing is solid—for now.',
   ],
 };

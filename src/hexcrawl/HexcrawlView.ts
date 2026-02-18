@@ -22,6 +22,9 @@ import {
   TERRAIN_DEFINITIONS,
   EXPLORATION_ROLES,
   HEXCRAWL_PACES,
+  TRAVEL_METHODS,
+  TRAVEL_METHOD_CATEGORIES,
+  TravelMethodCategory,
   WEATHER_TABLE,
 } from './types';
 
@@ -190,6 +193,88 @@ export class HexcrawlView extends ItemView {
     const movFill = movBar.createDiv({ cls: 'hexcrawl-view-progress-fill' });
     movFill.style.width = `${Math.min(100, (moved / Math.max(1, maxHex)) * 100)}%`;
 
+    // ── Travel Method Selector ─────────────────────────────
+    const methodSection = container.createDiv({ cls: 'hexcrawl-view-section' });
+    methodSection.createEl('div', { text: hLoc(L, 'travelMethod'), cls: 'hexcrawl-view-label' });
+
+    const currentMethod = TRAVEL_METHODS.find(m => m.id === hcState.travelMethod) ?? TRAVEL_METHODS[0]!;
+
+    // Dropdown trigger button
+    const methodDropdown = methodSection.createDiv({ cls: 'hexcrawl-method-dropdown' });
+    const methodTrigger = methodDropdown.createEl('button', { cls: 'hexcrawl-method-trigger' });
+    methodTrigger.createEl('span', { text: currentMethod!.icon, cls: 'hexcrawl-method-trigger-icon' });
+    methodTrigger.createEl('span', { text: currentMethod!.name, cls: 'hexcrawl-method-trigger-name' });
+    const methodHexes = Math.max(1, Math.floor(currentMethod!.hexesPerDay * (HEXCRAWL_PACES.find(p => p.id === hcState.pace) ?? HEXCRAWL_PACES[1]!).modifier));
+    methodTrigger.createEl('span', { text: `${methodHexes} hex/d`, cls: 'hexcrawl-method-trigger-speed' });
+    methodTrigger.createEl('span', { text: '▾', cls: 'hexcrawl-method-trigger-arrow' });
+
+    // Dropdown panel (hidden by default)
+    const methodPanel = methodDropdown.createDiv({ cls: 'hexcrawl-method-panel hidden' });
+    const methodSearch = methodPanel.createEl('input', {
+      type: 'search',
+      placeholder: hLoc(L, 'searchMethods'),
+      cls: 'hexcrawl-method-search',
+    });
+    const methodList = methodPanel.createDiv({ cls: 'hexcrawl-method-list' });
+
+    const renderMethodList = (filter: string = '') => {
+      methodList.empty();
+      const lf = filter.toLowerCase();
+      const categories: TravelMethodCategory[] = ['land', 'water', 'air', 'magic'];
+      for (const cat of categories) {
+        const methods = TRAVEL_METHODS.filter(m =>
+          m.category === cat &&
+          (lf === '' || m.name.toLowerCase().includes(lf) || m.category.includes(lf))
+        );
+        if (methods.length === 0) continue;
+        const catMeta = TRAVEL_METHOD_CATEGORIES[cat];
+        methodList.createEl('div', {
+          text: `${catMeta.icon} ${hLoc(L, `methodCat.${cat}`)}`,
+          cls: 'hexcrawl-method-cat-header',
+        });
+        for (const m of methods) {
+          const paceMod = (HEXCRAWL_PACES.find(p => p.id === hcState.pace) ?? HEXCRAWL_PACES[1]!).modifier;
+          const eff = Math.max(1, Math.floor(m.hexesPerDay * paceMod));
+          const item = methodList.createDiv({
+            cls: `hexcrawl-method-item ${m.id === hcState.travelMethod ? 'active' : ''}`,
+          });
+          item.createEl('span', { text: m.icon, cls: 'hexcrawl-method-item-icon' });
+          item.createEl('span', { text: m.name, cls: 'hexcrawl-method-item-name' });
+          item.createEl('span', { text: `${eff} hex/d`, cls: 'hexcrawl-method-item-speed' });
+          item.addEventListener('click', () => {
+            hcState.travelMethod = m.id;
+            bridge.save();
+            this.render();
+          });
+        }
+      }
+    };
+
+    renderMethodList();
+
+    methodSearch.addEventListener('input', () => renderMethodList(methodSearch.value));
+
+    // Toggle panel on click
+    methodTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isHidden = methodPanel.hasClass('hidden');
+      methodPanel.toggleClass('hidden', !isHidden);
+      if (isHidden) {
+        methodSearch.value = '';
+        renderMethodList();
+        methodSearch.focus();
+      }
+    });
+
+    // Close panel on outside click
+    const closePanel = (e: MouseEvent) => {
+      if (!methodDropdown.contains(e.target as Node)) {
+        methodPanel.addClass('hidden');
+        document.removeEventListener('click', closePanel);
+      }
+    };
+    document.addEventListener('click', closePanel);
+
     // ── Pace Selector ────────────────────────────────────
     const paceSection = container.createDiv({ cls: 'hexcrawl-view-section' });
     paceSection.createEl('div', { text: hLoc(L, 'travelPace'), cls: 'hexcrawl-view-label' });
@@ -208,6 +293,11 @@ export class HexcrawlView extends ItemView {
         this.render();
       });
     }
+
+    // ── Effective Speed Display ──────────────────────────
+    const effectiveHexes = tracker.getMaxHexesToday();
+    const effectiveSection = paceSection.createDiv({ cls: 'hexcrawl-view-effective-speed' });
+    effectiveSection.createEl('span', { text: `→ ${hLoc(L, 'effectiveSpeed', { hexes: effectiveHexes })}` });
 
     // ── Weather ──────────────────────────────────────────
     const weatherSection = container.createDiv({ cls: 'hexcrawl-view-section' });
@@ -259,54 +349,33 @@ export class HexcrawlView extends ItemView {
       this.render();
     });
 
-    // ── Survival Meter ───────────────────────────────────
-    const meterSection = container.createDiv({ cls: 'hexcrawl-view-section' });
-    meterSection.createEl('div', { text: hLoc(L, 'survivalMeter'), cls: 'hexcrawl-view-label' });
+    // ── Party Size ─────────────────────────────────────────
+    const rationsSection = container.createDiv({ cls: 'hexcrawl-view-section' });
+    rationsSection.createEl('div', { text: hLoc(L, 'partySizeLabel'), cls: 'hexcrawl-view-label' });
 
-    const meterBar = meterSection.createDiv({ cls: 'hexcrawl-view-meter' });
-    for (let i = 0; i < hcState.survivalMeter.max; i++) {
-      const seg = meterBar.createDiv({ cls: 'hexcrawl-view-meter-seg' });
-      if (i < hcState.survivalMeter.current) {
-        seg.addClass('filled');
-        if (i < hcState.survivalMeter.threshold) seg.addClass('danger');
-      }
+    // Ensure rations object exists on state
+    if (!hcState.rations) {
+      hcState.rations = { foodLbs: 0, waterGallons: 0, partySize: 4, daysWithoutFood: 0, daysWithoutWater: 0 };
     }
 
-    const meterLabel = meterSection.createDiv({ cls: 'hexcrawl-view-meter-label' });
-    meterLabel.createEl('span', {
-      text: `${hcState.survivalMeter.current} / ${hcState.survivalMeter.max}`,
+    const sizeRow = rationsSection.createDiv({ cls: 'hexcrawl-view-rations-row' });
+    sizeRow.createEl('span', { text: `${hLoc(L, 'partySizeLabel')}: ${hcState.rations.partySize}`, cls: 'hexcrawl-view-ration-value' });
+    const sizeDec = sizeRow.createEl('button', { text: '−', cls: 'hexcrawl-view-btn small' });
+    sizeDec.addEventListener('click', () => {
+      if (hcState.rations.partySize > 1) { hcState.rations.partySize -= 1; bridge.save(); this.render(); }
     });
-    if (hcState.survivalMeter.current <= hcState.survivalMeter.threshold) {
-      meterLabel.createEl('span', { text: hLoc(L, 'danger'), cls: 'hexcrawl-view-danger' });
-    }
+    const sizeInc = sizeRow.createEl('button', { text: '+', cls: 'hexcrawl-view-btn small' });
+    sizeInc.addEventListener('click', () => {
+      hcState.rations.partySize += 1; bridge.save(); this.render();
+    });
 
-    // Meter adjust buttons
-    const meterActions = meterSection.createDiv({ cls: 'hexcrawl-view-row' });
-    const decBtn = meterActions.createEl('button', { text: hLoc(L, 'minus1'), cls: 'hexcrawl-view-btn small' });
-    decBtn.addEventListener('click', () => {
-      const tr = new HexcrawlTracker(hcState, bridge.config.hexTerrains || []);
-      tr.decrementMeter();
-      bridge.config.hexcrawlState = tr.toJSON();
-      bridge.save();
-      this.render();
-    });
-    const incBtn = meterActions.createEl('button', { text: hLoc(L, 'plus1'), cls: 'hexcrawl-view-btn small' });
-    incBtn.addEventListener('click', () => {
-      const tr = new HexcrawlTracker(hcState, bridge.config.hexTerrains || []);
-      tr.incrementMeter();
-      bridge.config.hexcrawlState = tr.toJSON();
-      bridge.save();
-      this.render();
-    });
-    const resetBtn = meterActions.createEl('button', { text: hLoc(L, 'resetLabel'), cls: 'hexcrawl-view-btn small' });
-    resetBtn.addEventListener('click', () => {
-      const tr = new HexcrawlTracker(hcState, bridge.config.hexTerrains || []);
-      tr.resetMeter();
-      bridge.config.hexcrawlState = tr.toJSON();
-      bridge.save();
-      this.render();
-      new Notice(hLoc(L, 'meterReset'));
-    });
+    // Starvation/dehydration warnings
+    if (hcState.rations.daysWithoutFood >= 3) {
+      rationsSection.createEl('div', { text: hLoc(L, 'starvationWarning', { days: hcState.rations.daysWithoutFood }), cls: 'hexcrawl-view-danger' });
+    }
+    if (hcState.rations.daysWithoutWater >= 1) {
+      rationsSection.createEl('div', { text: hLoc(L, 'dehydrationWarning', { days: hcState.rations.daysWithoutWater }), cls: 'hexcrawl-view-danger' });
+    }
 
     // ── Exhaustion ───────────────────────────────────────
     if (hcState.exhaustionLevel > 0) {
@@ -410,6 +479,21 @@ export class HexcrawlView extends ItemView {
       this.render();
       new Notice(hLoc(L, 'newDayNotice', { day: hcState.currentDay }));
     });
+
+    const resetTravelBtn = actionsSection.createEl('button', {
+      text: hLoc(L, 'resetTravel'),
+      cls: 'hexcrawl-view-action-btn danger',
+    });
+    resetTravelBtn.addEventListener('click', () => {
+      if (!confirm(hLoc(L, 'resetTravelConfirm'))) return;
+      const tr = new HexcrawlTracker(hcState, bridge.config.hexTerrains || []);
+      tr.resetTravel();
+      bridge.config.hexcrawlState = tr.toJSON();
+      bridge.save();
+      bridge.redraw();
+      this.render();
+      new Notice(hLoc(L, 'resetTravelDone'));
+    });
   }
 
   // ── Settings helper ────────────────────────────────────────────────
@@ -420,20 +504,19 @@ export class HexcrawlView extends ItemView {
     new HexcrawlSettingsModal(
       this.app,
       hcState.enabled,
-      hcState.survivalMeter.max,
-      hcState.survivalMeter.threshold,
+      hcState.rations?.foodLbs ?? 10,
+      hcState.rations?.waterGallons ?? 10,
+      hcState.rations?.partySize ?? 4,
       hcState.descriptionLanguage || 'en',
       (result) => {
         if (!config.hexcrawlState) {
           config.hexcrawlState = createDefaultHexcrawlState(config.mapId);
         }
         config.hexcrawlState.enabled = result.enabled;
-        config.hexcrawlState.survivalMeter.max = result.meterMax;
-        config.hexcrawlState.survivalMeter.threshold = result.meterThreshold;
+        config.hexcrawlState.rations.foodLbs = result.initialFood;
+        config.hexcrawlState.rations.waterGallons = result.initialWater;
+        config.hexcrawlState.rations.partySize = result.partySize;
         config.hexcrawlState.descriptionLanguage = result.descriptionLanguage;
-        if (config.hexcrawlState.survivalMeter.current > result.meterMax) {
-          config.hexcrawlState.survivalMeter.current = result.meterMax;
-        }
         bridge.save();
         this.render();
         new Notice(result.enabled ? hLoc(this.lang, 'hexcrawlEnabled') : hLoc(this.lang, 'hexcrawlDisabled'));

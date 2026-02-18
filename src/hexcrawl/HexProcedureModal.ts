@@ -10,8 +10,7 @@
  *   3. Exploration Checks — party skill checks for each assigned role
  *   4. Encounter Check — roll for random encounter
  *   5. Discovery — show PoI or roll random discovery
- *   6. Survival Meter — update based on results
- *   7. Summary — recap of everything that happened
+ *   6. Summary — recap of everything that happened
  */
 
 import { App, Modal, Setting, Notice, TextAreaComponent } from 'obsidian';
@@ -29,6 +28,7 @@ import {
   EXPLORATION_ROLES,
   WEATHER_TABLE,
   HEXCRAWL_PACES,
+  TRAVEL_METHODS,
 } from './types';
 import {
   getClimateTerrainDescription,
@@ -45,9 +45,9 @@ export interface HexProcedureResult {
   logEntry?: Omit<TravelLogEntry, 'timestamp'>;
 }
 
-type ProcedureStep = 'terrain' | 'weather' | 'checks' | 'encounter' | 'discovery' | 'survival' | 'summary';
+type ProcedureStep = 'terrain' | 'weather' | 'checks' | 'encounter' | 'discovery' | 'summary';
 
-const STEP_ORDER: ProcedureStep[] = ['terrain', 'weather', 'checks', 'encounter', 'discovery', 'survival', 'summary'];
+const STEP_ORDER: ProcedureStep[] = ['terrain', 'weather', 'checks', 'encounter', 'discovery', 'summary'];
 
 /** Step label keys map to HexcrawlLocale keys so they can be localised. */
 const STEP_LABEL_KEYS: Record<ProcedureStep, string> = {
@@ -56,7 +56,6 @@ const STEP_LABEL_KEYS: Record<ProcedureStep, string> = {
   checks: 'stepChecks',
   encounter: 'stepEncounter',
   discovery: 'stepDiscovery',
-  survival: 'stepSurvival',
   summary: 'stepSummary',
 };
 
@@ -82,8 +81,12 @@ export class HexProcedureModal extends Modal {
   private encounterDetails: string = '';
   private discoveryFound: boolean = false;
   private discoveryDetails: string = '';
-  private survivalMeterChange: number = 0;
   private hexNotes: string = '';
+  
+  // RAW D&D 5e mechanics
+  private navigationFailed: boolean = false;
+  private foodForaged: number = 0;
+  private foragerWisMod: number = 0;
 
   constructor(
     app: App,
@@ -122,9 +125,11 @@ export class HexProcedureModal extends Modal {
     // Day / movement info bar
     const infoBar = contentEl.createDiv({ cls: 'hexcrawl-procedure-info' });
     const pace = HEXCRAWL_PACES.find(p => p.id === this.tracker.state.pace) ?? HEXCRAWL_PACES[1]!;
+    const method = TRAVEL_METHODS.find(m => m.id === this.tracker.state.travelMethod) ?? TRAVEL_METHODS[0]!;
     const cost = this.tracker.getMovementCostForHex(this.targetCol, this.targetRow);
     const remaining = this.tracker.getRemainingMovement();
     infoBar.createEl('span', { text: hLoc(L, 'dayN', { n: this.tracker.state.currentDay }) });
+    infoBar.createEl('span', { text: `${method!.icon} ${method!.name}` });
     infoBar.createEl('span', { text: hLoc(L, `pace.${pace!.id}`) });
     infoBar.createEl('span', { text: hLoc(L, 'moveCost', { cost }) });
     infoBar.createEl('span', { text: hLoc(L, 'remaining', { remaining, max: this.tracker.getMaxHexesToday() }) });
@@ -215,7 +220,6 @@ export class HexProcedureModal extends Modal {
       case 'checks': this.renderChecksStep(); break;
       case 'encounter': this.renderEncounterStep(); break;
       case 'discovery': this.renderDiscoveryStep(); break;
-      case 'survival': this.renderSurvivalStep(); break;
       case 'summary': this.renderSummaryStep(); break;
     }
   }
@@ -376,10 +380,9 @@ export class HexProcedureModal extends Modal {
       let baseDC = 10;
       if (role.id === 'navigator') baseDC = terrain.navigationDC || 10;
       if (role.id === 'forager') baseDC = terrain.forageDC || 15;
-      if (role.id === 'scout') baseDC = 12;
 
       // Weather modifiers
-      if (weather!.type === 'fog' && (role.id === 'navigator' || role.id === 'scout')) baseDC += 5;
+      if (weather!.type === 'fog' && role.id === 'navigator') baseDC += 5;
       if (weather!.severity === 'severe' || weather!.severity === 'extreme') baseDC += 2;
 
       // DC display
@@ -418,22 +421,87 @@ export class HexProcedureModal extends Modal {
         } else {
           this.checkResults.push(result);
         }
+        
+        // Update RAW mechanics state
+        if (role.id === 'navigator') {
+          this.navigationFailed = !newPassed;
+        }
+        
         // Re-render the checks step
         this.renderCurrentStep();
       });
+      
+      // RAW consequences for specific roles
+      if (role.id === 'navigator') {
+        const consequenceDiv = row.createDiv({ cls: 'hexcrawl-check-consequence' });
+        if (passed) {
+          consequenceDiv.createEl('span', { text: hLoc(L, 'navSuccess'), cls: 'hexcrawl-consequence-success' });
+        } else {
+          consequenceDiv.createEl('span', { text: hLoc(L, 'navFail'), cls: 'hexcrawl-consequence-fail' });
+        }
+      }
+      
+      if (role.id === 'forager') {
+        const forageDiv = row.createDiv({ cls: 'hexcrawl-check-forage' });
+        if (passed) {
+          const forageControls = forageDiv.createDiv({ cls: 'hexcrawl-forage-controls' });
+          
+          // WIS modifier input
+          forageControls.createEl('label', { text: hLoc(L, 'wisMod') });
+          const wisInput = forageControls.createEl('input', {
+            type: 'number',
+            value: String(this.foragerWisMod),
+            cls: 'hexcrawl-wis-input',
+          });
+          wisInput.addEventListener('change', (e) => {
+            this.foragerWisMod = parseInt((e.target as HTMLInputElement).value) || 0;
+          });
+          
+          // Roll button
+          const rollBtn = forageControls.createEl('button', {
+            text: hLoc(L, 'forageRoll'),
+            cls: 'hexcrawl-action-btn',
+          });
+          const resultSpan = forageControls.createEl('span', { cls: 'hexcrawl-forage-result' });
+          if (this.foodForaged > 0) {
+            resultSpan.textContent = hLoc(L, 'foodFound', { lbs: this.foodForaged });
+          }
+          
+          rollBtn.addEventListener('click', () => {
+            const roll = Math.floor(Math.random() * 6) + 1;
+            this.foodForaged = roll + this.foragerWisMod;
+            resultSpan.textContent = hLoc(L, 'foodFound', { lbs: this.foodForaged });
+          });
+        } else {
+          forageDiv.createEl('span', { text: hLoc(L, 'noFoodFound'), cls: 'hexcrawl-consequence-fail' });
+          this.foodForaged = 0;
+        }
+      }
     }
 
-    // Summary box
-    const failCount = this.checkResults.filter(r => !r.passed).length;
+    // RAW Consequences Summary
     const passCount = this.checkResults.filter(r => r.passed).length;
+    const failCount = this.checkResults.filter(r => !r.passed).length;
     const summaryBox = this.bodyEl.createDiv({ cls: 'hexcrawl-checks-summary' });
+    summaryBox.createEl('h4', { text: hLoc(L, 'checksConsequences') });
     summaryBox.createEl('span', { text: hLoc(L, 'passedN', { n: passCount }) });
     summaryBox.createEl('span', { text: hLoc(L, 'failedN', { n: failCount }) });
-    if (failCount > 0) {
-      summaryBox.createEl('span', {
-        text: hLoc(L, 'survivalMeterPenalty', { n: failCount }),
-        cls: 'hexcrawl-meter-penalty',
-      });
+    
+    // Show navigation status
+    const navResult = this.checkResults.find(r => r.roleId === 'navigator');
+    if (navResult) {
+      const navStatus = navResult.passed ? hLoc(L, 'navSuccess') : hLoc(L, 'navFail');
+      summaryBox.createEl('div', { text: navStatus, cls: navResult.passed ? 'hexcrawl-consequence-success' : 'hexcrawl-consequence-fail' });
+    }
+    
+    // Show foraging status
+    const forageResult = this.checkResults.find(r => r.roleId === 'forager');
+    if (forageResult) {
+      if (forageResult.passed && this.foodForaged > 0) {
+        summaryBox.createEl('div', { text: hLoc(L, 'foodFound', { lbs: this.foodForaged }), cls: 'hexcrawl-consequence-success' });
+      } else if (!forageResult.passed) {
+        summaryBox.createEl('div', { text: hLoc(L, 'noFoodFound'), cls: 'hexcrawl-consequence-fail' });
+      }
     }
   }
 
@@ -445,10 +513,20 @@ export class HexProcedureModal extends Modal {
 
     const terrain = getTerrainDefinition(this.tracker.getTerrainAt(this.targetCol, this.targetRow));
 
+    // Progressive encounter DC: base DC - (2 × hexes since last encounter), min 2
+    const hexesSince = this.tracker.state.hexesSinceEncounter ?? 0;
+    const effectiveDC = Math.max(2, terrain.encounterDC - (hexesSince * 2));
+
     this.bodyEl.createEl('p', {
       text: hLoc(L, 'encounterHelpText'),
       cls: 'hexcrawl-step-desc',
     });
+
+    // Show DC info
+    const dcInfo = this.bodyEl.createDiv({ cls: 'hexcrawl-encounter-dc-info' });
+    dcInfo.createEl('span', { text: hLoc(L, 'encounterBaseDC', { dc: terrain.encounterDC }), cls: 'hexcrawl-encounter-dc' });
+    dcInfo.createEl('span', { text: hLoc(L, 'hexesSinceEncounter', { n: hexesSince }), cls: 'hexcrawl-encounter-dc' });
+    dcInfo.createEl('span', { text: hLoc(L, 'effectiveEncounterDC', { dc: effectiveDC, chance: Math.min(95, (21 - effectiveDC) * 5) }), cls: 'hexcrawl-encounter-dc effective' });
 
     // Encounter roll
     const rollRow = this.bodyEl.createDiv({ cls: 'hexcrawl-encounter-actions' });
@@ -466,7 +544,7 @@ export class HexProcedureModal extends Modal {
     rollBtn.addEventListener('click', () => {
       const roll = Math.floor(Math.random() * 20) + 1;
       this.encounterRolled = true;
-      this.encounterTriggered = roll >= 18;
+      this.encounterTriggered = roll >= effectiveDC;
       resultEl.textContent = hLoc(L, 'rolledResult', { roll, result: this.encounterTriggered ? hLoc(L, 'encounterBang') : hLoc(L, 'safe') });
       resultEl.toggleClass('encounter-triggered', this.encounterTriggered);
     });
@@ -542,97 +620,12 @@ export class HexProcedureModal extends Modal {
     }
   }
 
-  // ─── Step 6: Survival Meter ──────────────────────────────────────────
-
-  private renderSurvivalStep() {
-    const L = this.lang;
-    const meter = this.tracker.state.survivalMeter;
-    const failCount = this.checkResults.filter(r => !r.passed).length;
-
-    this.bodyEl.createEl('h3', { text: hLoc(L, 'survivalMeterUpdate') });
-
-    // Current meter display
-    const meterDisplay = this.bodyEl.createDiv({ cls: 'hexcrawl-meter-display' });
-
-    // Visual meter bar
-    const meterBar = meterDisplay.createDiv({ cls: 'hexcrawl-meter-bar' });
-    for (let i = 0; i < meter.max; i++) {
-      const segment = meterBar.createDiv({ cls: 'hexcrawl-meter-segment' });
-      if (i < meter.current) {
-        segment.addClass('filled');
-        if (i < meter.threshold) segment.addClass('danger');
-      }
-    }
-
-    const valueEl = meterDisplay.createEl('div', {
-      text: `${meter.current} / ${meter.max}`,
-      cls: 'hexcrawl-meter-value',
-    });
-
-    // Auto-calculated change from check results
-    let autoChange = -failCount;
-
-    // Successful forage recovers 1
-    const forageResult = this.checkResults.find(r => r.roleId === 'forager');
-    if (forageResult?.passed) autoChange += 1;
-
-    this.bodyEl.createEl('p', {
-      text: hLoc(L, 'failedChecksPenalty', { n: failCount }) + (forageResult?.passed ? hLoc(L, 'successfulForage') : ''),
-      cls: 'hexcrawl-step-desc',
-    });
-
-    // Manual adjustment
-    const adjustRow = this.bodyEl.createDiv({ cls: 'hexcrawl-meter-adjust' });
-    adjustRow.createEl('span', { text: hLoc(L, 'additionalAdjustment') });
-
-    const minusBtn = adjustRow.createEl('button', { text: hLoc(L, 'minus1'), cls: 'hexcrawl-meter-btn' });
-    const changeDisplay = adjustRow.createEl('span', {
-      text: `${this.survivalMeterChange >= 0 ? '+' : ''}${this.survivalMeterChange}`,
-      cls: 'hexcrawl-meter-change',
-    });
-    const plusBtn = adjustRow.createEl('button', { text: hLoc(L, 'plus1'), cls: 'hexcrawl-meter-btn' });
-
-    minusBtn.addEventListener('click', () => {
-      this.survivalMeterChange -= 1;
-      changeDisplay.textContent = `${this.survivalMeterChange >= 0 ? '+' : ''}${this.survivalMeterChange}`;
-    });
-    plusBtn.addEventListener('click', () => {
-      this.survivalMeterChange += 1;
-      changeDisplay.textContent = `${this.survivalMeterChange >= 0 ? '+' : ''}${this.survivalMeterChange}`;
-    });
-
-    // Net effect preview
-    const netChange = autoChange + this.survivalMeterChange;
-    const projectedValue = Math.max(0, Math.min(meter.max, meter.current + netChange));
-    this.bodyEl.createEl('div', {
-      text: hLoc(L, 'netChange', { change: `${netChange >= 0 ? '+' : ''}${netChange}`, projected: projectedValue, max: meter.max }),
-      cls: `hexcrawl-meter-preview ${projectedValue <= meter.threshold ? 'danger' : ''}`,
-    });
-
-    // Warnings
-    if (projectedValue <= meter.threshold && projectedValue > 0) {
-      this.bodyEl.createEl('div', {
-        text: hLoc(L, 'dangerThresholdWarning'),
-        cls: 'hexcrawl-meter-warning',
-      });
-    }
-    if (projectedValue <= 0) {
-      this.bodyEl.createEl('div', {
-        text: hLoc(L, 'meterDepletedWarning'),
-        cls: 'hexcrawl-meter-critical',
-      });
-    }
-  }
-
-  // ─── Step 7: Summary ─────────────────────────────────────────────────
+  // ─── Step 4: Summary ─────────────────────────────────────────────────
 
   private renderSummaryStep() {
     const L = this.lang;
     const terrain = getTerrainDefinition(this.tracker.getTerrainAt(this.targetCol, this.targetRow));
     const weather = WEATHER_TABLE.find(w => w.type === this.tracker.state.currentWeather) ?? WEATHER_TABLE[0]!;
-    const failCount = this.checkResults.filter(r => !r.passed).length;
-    const forageResult = this.checkResults.find(r => r.roleId === 'forager');
-    const netChange = -failCount + (forageResult?.passed ? 1 : 0) + this.survivalMeterChange;
 
     this.bodyEl.createEl('h3', { text: hLoc(L, 'hexSummary') });
 
@@ -656,6 +649,27 @@ export class HexProcedureModal extends Modal {
       }
     }
 
+    // RAW Navigation Result
+    const navResult = this.checkResults.find(r => r.roleId === 'navigator');
+    if (navResult) {
+      const navDiv = summary.createDiv({ cls: 'hexcrawl-summary-section' });
+      navDiv.createEl('strong', { text: hLoc(L, 'navigation') });
+      const navText = this.navigationFailed ? hLoc(L, 'navFail') : hLoc(L, 'navSuccess');
+      navDiv.createEl('div', { text: navText, cls: this.navigationFailed ? 'hexcrawl-consequence-fail' : 'hexcrawl-consequence-success' });
+    }
+
+    // RAW Foraging Result
+    const forageResult = this.checkResults.find(r => r.roleId === 'forager');
+    if (forageResult) {
+      const forageDiv = summary.createDiv({ cls: 'hexcrawl-summary-section' });
+      forageDiv.createEl('strong', { text: hLoc(L, 'foraging') });
+      if (forageResult.passed && this.foodForaged > 0) {
+        forageDiv.createEl('div', { text: hLoc(L, 'foodFound', { lbs: this.foodForaged }), cls: 'hexcrawl-consequence-success' });
+      } else {
+        forageDiv.createEl('div', { text: hLoc(L, 'noFoodFound'), cls: 'hexcrawl-consequence-fail' });
+      }
+    }
+
     // Encounter
     if (this.encounterRolled) {
       summary.createEl('div', {
@@ -674,15 +688,30 @@ export class HexProcedureModal extends Modal {
       });
     }
 
-    // Survival Meter
-    const projectedMeter = Math.max(0, Math.min(
-      this.tracker.state.survivalMeter.max,
-      this.tracker.state.survivalMeter.current + netChange
-    ));
-    summary.createEl('div', {
-      text: hLoc(L, 'survivalMeterSummary', { current: this.tracker.state.survivalMeter.current, projected: projectedMeter, max: this.tracker.state.survivalMeter.max, change: `${netChange >= 0 ? '+' : ''}${netChange}` }),
-      cls: `hexcrawl-summary-row ${projectedMeter <= this.tracker.state.survivalMeter.threshold ? 'danger' : ''}`,
-    });
+    // Rations Status
+    const rationsDiv = summary.createDiv({ cls: 'hexcrawl-summary-section' });
+    rationsDiv.createEl('strong', { text: hLoc(L, 'rationsStatus') });
+    const currentFood = this.tracker.state.rations?.foodLbs ?? 0;
+    const currentWater = this.tracker.state.rations?.waterGallons ?? 0;
+    const projectedFood = currentFood + this.foodForaged;
+    rationsDiv.createEl('div', { text: hLoc(L, 'foodRations', { current: projectedFood }) });
+    rationsDiv.createEl('div', { text: hLoc(L, 'waterRations', { current: currentWater }) });
+
+    // Exhaustion warnings
+    const daysWithoutFood = this.tracker.state.rations?.daysWithoutFood ?? 0;
+    const daysWithoutWater = this.tracker.state.rations?.daysWithoutWater ?? 0;
+    if (daysWithoutFood >= 3) {
+      summary.createEl('div', {
+        text: hLoc(L, 'starvationWarning', { days: daysWithoutFood }),
+        cls: 'hexcrawl-meter-critical',
+      });
+    }
+    if (daysWithoutWater >= 1) {
+      summary.createEl('div', {
+        text: hLoc(L, 'dehydrationWarning', { days: daysWithoutWater }),
+        cls: 'hexcrawl-meter-critical',
+      });
+    }
 
     // GM notes
     this.bodyEl.createEl('h4', { text: hLoc(L, 'notesHeading') });
@@ -705,23 +734,17 @@ export class HexProcedureModal extends Modal {
 
   private completeProcedure() {
     const terrain = this.tracker.getTerrainAt(this.targetCol, this.targetRow);
-    const failCount = this.checkResults.filter(r => !r.passed).length;
-    const forageResult = this.checkResults.find(r => r.roleId === 'forager');
-    const netChange = -failCount + (forageResult?.passed ? 1 : 0) + this.survivalMeterChange;
 
-    // Apply survival meter changes
-    if (netChange < 0) {
-      this.tracker.decrementMeter(Math.abs(netChange));
-    } else if (netChange > 0) {
-      this.tracker.incrementMeter(netChange);
+    // Apply RAW foraging mechanics - add food to rations
+    if (this.foodForaged > 0) {
+      this.tracker.state.rations.foodLbs += this.foodForaged;
     }
 
-    // Check for exhaustion
-    if (this.tracker.isMeterDepleted()) {
-      this.tracker.addExhaustion(1);
-      new Notice(hLoc(this.lang, 'exhaustionNotice', { level: this.tracker.state.exhaustionLevel }));
-    } else if (this.tracker.isMeterAtThreshold()) {
-      new Notice(hLoc(this.lang, 'thresholdNotice'));
+    // Update progressive encounter counter
+    if (this.encounterTriggered) {
+      this.tracker.state.hexesSinceEncounter = 0;
+    } else {
+      this.tracker.state.hexesSinceEncounter = (this.tracker.state.hexesSinceEncounter ?? 0) + 1;
     }
 
     // Move party to this hex
@@ -741,7 +764,8 @@ export class HexProcedureModal extends Modal {
       encounterDetails: this.encounterDetails || undefined,
       discoveryFound: this.discoveryFound,
       discoveryDetails: this.discoveryDetails || undefined,
-      survivalMeterChange: netChange,
+      foodForaged: this.foodForaged,
+      navigationFailed: this.navigationFailed ? true : undefined,
       notes: [this.terrainNotes, this.hexNotes].filter(Boolean).join('\n\n'),
     };
 
