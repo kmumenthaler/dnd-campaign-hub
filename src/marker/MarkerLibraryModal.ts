@@ -1,5 +1,5 @@
 import { App, Modal, Setting, Notice, TFile, TFolder } from 'obsidian';
-import { MarkerDefinition, MarkerType, CreatureSize } from './MarkerTypes';
+import { MarkerDefinition, MarkerType, CreatureSize, ImageFit } from './MarkerTypes';
 import { MarkerLibrary } from './MarkerLibrary';
 
 /** Predefined icon options for markers */
@@ -62,6 +62,7 @@ export class MarkerLibraryModal extends Modal {
 	private icon: string = '';
 	private backgroundColor: string = '#ff0000';
 	private imageFile: string = '';
+	private imageFit: ImageFit = 'cover';
 	private creatureSize: CreatureSize = 'medium';
 	private pixelSize: number = 40;
 	private darkvision: number = 0;
@@ -83,6 +84,7 @@ export class MarkerLibraryModal extends Modal {
 			this.icon = marker.icon;
 			this.backgroundColor = marker.backgroundColor;
 			this.imageFile = marker.imageFile || '';
+			this.imageFit = marker.imageFit || 'cover';
 			this.creatureSize = marker.creatureSize || 'medium';
 			this.pixelSize = marker.pixelSize || 40;
 			this.darkvision = marker.darkvision || 0;
@@ -256,6 +258,20 @@ export class MarkerLibraryModal extends Modal {
 			);
 		}
 
+		// Image Fit
+		new Setting(contentEl)
+			.setName('Image Fit')
+			.setDesc('Cover fills the token (may crop). Contain shows the full image.')
+			.addDropdown(dropdown => dropdown
+				.addOption('cover', 'Cover (fill & crop)')
+				.addOption('contain', 'Contain (full image)')
+				.setValue(this.imageFit)
+				.onChange(value => {
+					this.imageFit = value as ImageFit;
+					this.updatePreview();
+				})
+			);
+
 		// Icon/Emoji
 		new Setting(contentEl)
 			.setName('Icon')
@@ -327,7 +343,14 @@ export class MarkerLibraryModal extends Modal {
 			try {
 				const resourcePath = this.app.vault.adapter.getResourcePath(this.imageFile);
 				el.style.backgroundImage = `url("${resourcePath}")`;
-				el.style.backgroundSize = 'cover';
+				const fit = this.imageFit || 'cover';
+				if (fit === 'contain') {
+					el.style.backgroundSize = 'contain';
+					el.style.backgroundRepeat = 'no-repeat';
+					el.style.backgroundColor = this.backgroundColor;
+				} else {
+					el.style.backgroundSize = 'cover';
+				}
 				el.style.backgroundPosition = 'center';
 			} catch {
 				el.style.backgroundColor = this.backgroundColor;
@@ -358,6 +381,7 @@ export class MarkerLibraryModal extends Modal {
 			icon: this.icon,
 			backgroundColor: this.backgroundColor,
 			imageFile: this.imageFile || undefined,
+			imageFit: this.imageFit !== 'cover' ? this.imageFit : undefined,
 			createdAt: this.marker?.createdAt || now,
 			updatedAt: now
 		};

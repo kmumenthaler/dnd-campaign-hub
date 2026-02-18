@@ -92,7 +92,14 @@ export class MarkerPickerModal extends Modal {
 					try {
 						const rp = this.app.vault.adapter.getResourcePath(marker.imageFile);
 						preview.style.backgroundImage = `url("${rp}")`;
-						preview.style.backgroundSize = 'cover';
+						const fit = marker.imageFit || 'cover';
+						if (fit === 'contain') {
+							preview.style.backgroundSize = 'contain';
+							preview.style.backgroundRepeat = 'no-repeat';
+							preview.style.backgroundColor = marker.backgroundColor;
+						} else {
+							preview.style.backgroundSize = 'cover';
+						}
 						preview.style.backgroundPosition = 'center';
 					} catch {
 						preview.style.backgroundColor = marker.backgroundColor;

@@ -7182,13 +7182,25 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const cachedImg = loadMarkerImage(markerDef.imageFile);
 					if (cachedImg) {
 						ctx.clip();
-						ctx.drawImage(
-							cachedImg,
-							position.x - radius,
-							position.y - radius,
-							radius * 2,
-							radius * 2
-						);
+						const fit = markerDef.imageFit || 'cover';
+						const imgW = cachedImg.naturalWidth;
+						const imgH = cachedImg.naturalHeight;
+						const tokenSize = radius * 2;
+						if (fit === 'contain') {
+							// Show entire image inside the token, preserving aspect ratio
+							ctx.fillStyle = markerDef.backgroundColor || '#333333';
+							ctx.fill();
+							const scale = Math.min(tokenSize / imgW, tokenSize / imgH);
+							const drawW = imgW * scale;
+							const drawH = imgH * scale;
+							ctx.drawImage(cachedImg, position.x - drawW / 2, position.y - drawH / 2, drawW, drawH);
+						} else {
+							// Cover: fill the token, may crop edges, preserving aspect ratio
+							const scale = Math.max(tokenSize / imgW, tokenSize / imgH);
+							const drawW = imgW * scale;
+							const drawH = imgH * scale;
+							ctx.drawImage(cachedImg, position.x - drawW / 2, position.y - drawH / 2, drawW, drawH);
+						}
 						imageDrawn = true;
 					}
 				}
@@ -11820,6 +11832,328 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 		new Notice(`✅ SRD import complete! ${totalSuccess} items imported, ${totalErrors} errors. (${duration}s)`);
 	}
 
+	/**
+	 * Import all SRD creatures as battlemap tokens with images.
+	 * Fetches every monster from the D&D 5e SRD API, downloads its artwork,
+	 * creates a creature note in z_Beastiarity, and registers a MarkerDefinition
+	 * (creature-type token) in the marker library with the image attached.
+	 * Already-existing creatures are overwritten.
+	 */
+	async importSRDCreatureTokens(): Promise<{ imported: number; errors: number }> {
+		const SRD_BASE = "https://www.dnd5eapi.co";
+		const API_BASE = `${SRD_BASE}/api/2014`;
+		const BESTIARY_FOLDER = "z_Beastiarity";
+		const IMAGE_FOLDER = "z_Beastiarity/images";
+		const BATCH_SIZE = 8;
+
+		let imported = 0;
+		let errors = 0;
+
+		new Notice("🐉 Starting SRD creature token import…");
+		const startTime = Date.now();
+
+		try {
+			// Ensure folders exist
+			await this.ensureFolderExists(BESTIARY_FOLDER);
+			await this.ensureFolderExists(IMAGE_FOLDER);
+
+			// 1. Fetch monster list
+			const listResponse = await requestUrl({ url: `${API_BASE}/monsters` });
+			const monsters: { index: string; name: string; url: string }[] = listResponse.json.results || [];
+
+			if (monsters.length === 0) {
+				new Notice("⚠️ No monsters returned from the SRD API.");
+				return { imported: 0, errors: 0 };
+			}
+
+			new Notice(`📋 Found ${monsters.length} SRD creatures. Importing…`);
+
+			// 2. Process in batches
+			for (let i = 0; i < monsters.length; i += BATCH_SIZE) {
+				const batch = monsters.slice(i, i + BATCH_SIZE);
+
+				const batchResults = await Promise.allSettled(
+					batch.map(async (entry) => {
+						try {
+							// Fetch full monster data
+							const detailRes = await requestUrl({ url: `${SRD_BASE}${entry.url}` });
+							const m = detailRes.json;
+
+							// ── Download image ──
+							let imagePath: string | undefined;
+							if (m.image) {
+								try {
+									const imgUrl = `${SRD_BASE}${m.image}`;
+									const imgRes = await requestUrl({ url: imgUrl });
+									const ext = m.image.split(".").pop() || "png";
+									imagePath = `${IMAGE_FOLDER}/${m.index}.${ext}`;
+
+									// Write image (overwrite if exists)
+									if (await this.app.vault.adapter.exists(imagePath)) {
+										await this.app.vault.adapter.writeBinary(imagePath, imgRes.arrayBuffer);
+									} else {
+										await this.app.vault.createBinary(imagePath, imgRes.arrayBuffer);
+									}
+								} catch (imgErr) {
+									console.warn(`[SRD Import] Image download failed for ${m.name}:`, imgErr);
+									imagePath = undefined;
+								}
+							}
+
+							// ── Map creature size ──
+							const sizeMap: Record<string, CreatureSize> = {
+								Tiny: "tiny", Small: "small", Medium: "medium",
+								Large: "large", Huge: "huge", Gargantuan: "gargantuan"
+							};
+							const creatureSize: CreatureSize = sizeMap[m.size] || "medium";
+
+							// ── Parse darkvision ──
+							let darkvision = 0;
+							if (m.senses?.darkvision) {
+								const dvMatch = String(m.senses.darkvision).match(/(\d+)/);
+								if (dvMatch && dvMatch[1]) darkvision = parseInt(dvMatch[1], 10);
+							}
+
+							// ── Build / update MarkerDefinition (token) ──
+							// Check if a token for this creature already exists (by name + type)
+							const existingMarkers = this.markerLibrary.getAllMarkers();
+							let existingToken = existingMarkers.find(
+								(mk) => mk.name === m.name && mk.type === "creature"
+							);
+
+							const now = Date.now();
+							const tokenId = existingToken?.id || this.markerLibrary.generateId();
+
+							const tokenDef: MarkerDefinition = {
+								id: tokenId,
+								name: m.name,
+								type: "creature",
+								icon: "",
+								backgroundColor: "#8b0000",
+								borderColor: "#ffffff",
+								imageFile: imagePath,
+								imageFit: "contain",
+								creatureSize,
+								darkvision: darkvision > 0 ? darkvision : undefined,
+								createdAt: existingToken?.createdAt || now,
+								updatedAt: now
+							};
+							await this.markerLibrary.setMarker(tokenDef);
+
+							// ── Build creature note ──
+							const noteContent = this.buildSRDCreatureNote(m, tokenId, imagePath);
+							const filePath = `${BESTIARY_FOLDER}/${m.name}.md`;
+
+							if (await this.app.vault.adapter.exists(filePath)) {
+								const existingFile = this.app.vault.getAbstractFileByPath(filePath) as TFile;
+								if (existingFile) {
+									await this.app.vault.modify(existingFile, noteContent);
+								}
+							} else {
+								await this.app.vault.create(filePath, noteContent);
+							}
+
+							imported++;
+						} catch (err) {
+							console.error(`[SRD Import] Failed to import ${entry.name}:`, err);
+							errors++;
+						}
+					})
+				);
+
+				// Progress notice every 40 creatures
+				if (i > 0 && i % 40 === 0) {
+					new Notice(`🐉 Progress: ${i}/${monsters.length} creatures…`);
+				}
+			}
+
+			const duration = Math.round((Date.now() - startTime) / 1000);
+			new Notice(
+				`✅ SRD creature import complete! ${imported} tokens imported, ${errors} errors. (${duration}s)`
+			);
+		} catch (error) {
+			console.error("[SRD Import] Fatal error during creature import:", error);
+			new Notice("❌ SRD creature import failed. Check the console for details.");
+		}
+
+		return { imported, errors };
+	}
+
+	/**
+	 * Build a creature note markdown from SRD API monster data.
+	 * Creates the same frontmatter format as the Creature Creation Modal
+	 * so the note is fully compatible with the plugin's creature system.
+	 */
+	private buildSRDCreatureNote(m: any, tokenId: string, imagePath?: string): string {
+		// ── Helpers ──
+		const calcMod = (score: number) => Math.floor((score - 10) / 2);
+		const esc = (s: string) => String(s || "").replace(/"/g, '\\"');
+
+		// ── Speed string ──
+		let speedParts: string[] = [];
+		if (m.speed) {
+			if (m.speed.walk) speedParts.push(m.speed.walk);
+			if (m.speed.fly) speedParts.push(`fly ${m.speed.fly}`);
+			if (m.speed.swim) speedParts.push(`swim ${m.speed.swim}`);
+			if (m.speed.burrow) speedParts.push(`burrow ${m.speed.burrow}`);
+			if (m.speed.climb) speedParts.push(`climb ${m.speed.climb}`);
+			if (m.speed.hover) speedParts.push("hover");
+		}
+		const speedStr = speedParts.join(", ") || "30 ft.";
+
+		// ── Armor class ──
+		let acValue = 10;
+		if (Array.isArray(m.armor_class) && m.armor_class.length > 0) {
+			acValue = m.armor_class[0].value ?? 10;
+		} else if (typeof m.armor_class === "number") {
+			acValue = m.armor_class;
+		}
+
+		// ── Ability scores ──
+		const str = m.strength ?? 10;
+		const dex = m.dexterity ?? 10;
+		const con = m.constitution ?? 10;
+		const int = m.intelligence ?? 10;
+		const wis = m.wisdom ?? 10;
+		const cha = m.charisma ?? 10;
+		const fage = [calcMod(str), calcMod(dex), calcMod(con), calcMod(int), calcMod(wis), calcMod(cha)];
+
+		// ── CR formatting ──
+		const formatCR = (cr: number) => {
+			if (cr === 0.125) return "1/8";
+			if (cr === 0.25) return "1/4";
+			if (cr === 0.5) return "1/2";
+			return String(cr);
+		};
+
+		// ── Proficiencies → saves & skills ──
+		let saves = "";
+		let skillsaves = "";
+		if (Array.isArray(m.proficiencies)) {
+			const savesArr: string[] = [];
+			const skillArr: string[] = [];
+			for (const p of m.proficiencies) {
+				const idx: string = p.proficiency?.index || "";
+				const val: number = p.value ?? 0;
+				if (idx.startsWith("saving-throw-")) {
+					const ability = idx.replace("saving-throw-", "").substring(0, 3);
+					savesArr.push(`\n  - ${ability}: ${val}`);
+				} else if (idx.startsWith("skill-")) {
+					const skill = idx.replace("skill-", "");
+					skillArr.push(`\n  - ${skill}: ${val}`);
+				}
+			}
+			if (savesArr.length > 0) saves = savesArr.join("");
+			if (skillArr.length > 0) skillsaves = skillArr.join("");
+		}
+
+		// ── Damage & condition fields ──
+		const join = (arr: any) => {
+			if (!arr || !Array.isArray(arr)) return "";
+			return arr.map((x: any) => (typeof x === "string" ? x : x?.name || x?.index || "")).join(", ");
+		};
+		const dmgVuln = join(m.damage_vulnerabilities);
+		const dmgRes = join(m.damage_resistances);
+		const dmgImm = join(m.damage_immunities);
+		const condImm = join(m.condition_immunities);
+
+		// ── Senses & languages ──
+		let sensesStr = "";
+		if (m.senses) {
+			const parts: string[] = [];
+			if (m.senses.darkvision) parts.push(`darkvision ${m.senses.darkvision}`);
+			if (m.senses.blindsight) parts.push(`blindsight ${m.senses.blindsight}`);
+			if (m.senses.truesight) parts.push(`truesight ${m.senses.truesight}`);
+			if (m.senses.tremorsense) parts.push(`tremorsense ${m.senses.tremorsense}`);
+			if (m.senses.passive_perception) parts.push(`passive Perception ${m.senses.passive_perception}`);
+			sensesStr = parts.join(", ");
+		}
+		const languages = m.languages || "";
+
+		// ── Traits / actions / legendary / reactions ──
+		const fmtBlock = (items: any[] | undefined, key: string) => {
+			if (!items || items.length === 0) return `\n${key}:`;
+			let out = `\n${key}:`;
+			for (const item of items) {
+				if (item.name && item.desc) {
+					out += `\n  - name: ${item.name}`;
+					out += `\n    desc: "${esc(item.desc)}"`;
+				}
+			}
+			return out;
+		};
+
+		// ── Assemble frontmatter ──
+		let fm = `---
+statblock: true
+layout: Basic 5e Layout
+name: ${m.name}
+size: ${m.size || "Medium"}
+type: ${m.type || "creature"}`;
+		if (m.subtype) fm += `\nsubtype: ${m.subtype}`;
+		fm += `\nalignment: ${m.alignment || "unaligned"}`;
+		fm += `\nac: ${acValue}`;
+		fm += `\nhp: ${m.hit_points ?? 1}`;
+		fm += `\nhit_dice: ${m.hit_dice || ""}`;
+		fm += `\nspeed: ${speedStr}`;
+		fm += `\nstats:\n  - ${str}\n  - ${dex}\n  - ${con}\n  - ${int}\n  - ${wis}\n  - ${cha}`;
+		fm += `\nfage_stats:\n  - ${fage[0]}\n  - ${fage[1]}\n  - ${fage[2]}\n  - ${fage[3]}\n  - ${fage[4]}\n  - ${fage[5]}`;
+		fm += `\nsaves:${saves}`;
+		fm += `\nskillsaves:${skillsaves}`;
+		fm += `\ndamage_vulnerabilities: ${dmgVuln}`;
+		fm += `\ndamage_resistances: ${dmgRes}`;
+		fm += `\ndamage_immunities: ${dmgImm}`;
+		fm += `\ncondition_immunities: ${condImm}`;
+		fm += `\nsenses: ${sensesStr}`;
+		fm += `\nlanguages: ${languages}`;
+		fm += `\ncr: ${formatCR(m.challenge_rating ?? 0)}`;
+		fm += `\nspells:`;
+		fm += fmtBlock(m.special_abilities, "traits");
+		fm += fmtBlock(m.actions, "actions");
+		fm += fmtBlock(m.legendary_actions, "legendary_actions");
+		fm += `\nbonus_actions:`;
+		fm += fmtBlock(m.reactions, "reactions");
+		fm += `\ntoken_id: ${tokenId}`;
+		fm += `\nsource: D&D 5e SRD`;
+		fm += `\n---\n\n`;
+
+		// ── Body ──
+		let body = "";
+		if (imagePath) {
+			body += `![[${imagePath}]]\n\n`;
+		}
+		body += `${m.name} creature imported from the D&D 5e SRD.\n`;
+
+		body += `\n\`\`\`dataviewjs
+// Action buttons for creature management
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
+
+// Edit Creature button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit Creature",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-creature");
+});
+
+// Delete Creature button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete Creature",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-creature");
+});
+\`\`\`\n\n`;
+
+		body += `\`\`\`statblock\ncreature: ${m.name}\n\`\`\`\n`;
+
+		return fm + body;
+	}
+
 	async importSRDCategory(
 		categoryKey: string, 
 		folderName: string, 
@@ -12560,6 +12894,47 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
             })
         );
     });
+
+    // SRD Creature Token Import
+    containerEl.createEl("h3", { text: "🐉 SRD Creature Token Import" });
+
+    const creatureImportContainer = containerEl.createDiv({ cls: "dnd-about-container" });
+    creatureImportContainer.createEl("p", {
+      text: "Import all 334 SRD creatures as battlemap tokens with artwork. Each creature gets a note in z_Beastiarity with full stats, a token in the marker library with the correct size and darkvision, and its SRD artwork saved locally. Already-existing creatures will be overwritten."
+    });
+
+    const creatureImportStatusEl = containerEl.createDiv();
+
+    new Setting(containerEl)
+      .setName("Import All SRD Creature Tokens")
+      .setDesc("Downloads all SRD monsters, their images, creates creature notes and battlemap tokens. This may take a few minutes.")
+      .addButton((button) =>
+        button
+          .setButtonText("🐉 Import SRD Creatures")
+          .setCta()
+          .onClick(async () => {
+            button.setDisabled(true);
+            button.setButtonText("⏳ Importing…");
+            creatureImportStatusEl.empty();
+            creatureImportStatusEl.createEl("p", { text: "Import in progress… check Obsidian notices for updates." });
+
+            try {
+              const result = await this.plugin.importSRDCreatureTokens();
+              creatureImportStatusEl.empty();
+              creatureImportStatusEl.createEl("p", {
+                text: `✅ Done! ${result.imported} creatures imported, ${result.errors} errors.`
+              });
+            } catch (err) {
+              creatureImportStatusEl.empty();
+              creatureImportStatusEl.createEl("p", {
+                text: `❌ Import failed: ${err instanceof Error ? err.message : String(err)}`
+              });
+            } finally {
+              button.setDisabled(false);
+              button.setButtonText("🐉 Import SRD Creatures");
+            }
+          })
+      );
 
     // About Section
     containerEl.createEl("h3", { text: "ℹ️ About" });
@@ -29888,7 +30263,25 @@ class PlayerMapView extends ItemView {
       const cachedImg = this.loadMarkerImage(markerDef.imageFile);
       if (cachedImg) {
         ctx.clip();
-        ctx.drawImage(cachedImg, pos.x - radius, pos.y - radius, radius * 2, radius * 2);
+        const fit = markerDef.imageFit || 'cover';
+        const imgW = cachedImg.naturalWidth;
+        const imgH = cachedImg.naturalHeight;
+        const tokenSize = radius * 2;
+        if (fit === 'contain') {
+          // Show entire image inside the token, preserving aspect ratio
+          ctx.fillStyle = markerDef.backgroundColor || '#333333';
+          ctx.fill();
+          const scale = Math.min(tokenSize / imgW, tokenSize / imgH);
+          const drawW = imgW * scale;
+          const drawH = imgH * scale;
+          ctx.drawImage(cachedImg, pos.x - drawW / 2, pos.y - drawH / 2, drawW, drawH);
+        } else {
+          // Cover: fill the token, may crop edges, preserving aspect ratio
+          const scale = Math.max(tokenSize / imgW, tokenSize / imgH);
+          const drawW = imgW * scale;
+          const drawH = imgH * scale;
+          ctx.drawImage(cachedImg, pos.x - drawW / 2, pos.y - drawH / 2, drawW, drawH);
+        }
         imageDrawn = true;
       }
     }

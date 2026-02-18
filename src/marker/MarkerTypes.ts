@@ -42,6 +42,13 @@ export interface TokenElevation {
 }
 
 /**
+ * How the token image fits within the circular token frame.
+ * - 'cover': Image fills the entire token (may crop edges). Best for headshots/portraits.
+ * - 'contain': Entire image is visible within the token (may show background). Best for full-body illustrations.
+ */
+export type ImageFit = 'cover' | 'contain';
+
+/**
  * A marker definition stored in the global marker library
  */
 export interface MarkerDefinition {
@@ -52,6 +59,7 @@ export interface MarkerDefinition {
 	backgroundColor: string; // Hex color
 	borderColor?: string; // Optional border hex color
 	imageFile?: string; // Optional vault path to image for marker background
+	imageFit?: ImageFit; // How the image fits in the token frame (default: 'cover')
 	// For player/npc/creature: size is driven by creatureSize
 	creatureSize?: CreatureSize;
 	// For poi/other: size is in pixels
