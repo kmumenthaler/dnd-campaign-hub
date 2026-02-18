@@ -2,6 +2,8 @@
  * Map Manager Type Definitions
  */
 
+import type { HexTerrain, HexClimate, HexcrawlState } from '../hexcrawl/types';
+
 export type MapTool = 'pan' | 'select' | 'draw' | 'ruler' | 'target-distance' | 'poi';
 
 export type TravelCategory = 'land' | 'water' | 'air' | 'magic' | 'custom';
@@ -85,6 +87,10 @@ export interface MapData {
   drawings?: Drawing[];
   markers?: Marker[];
   poiReferences?: PoiReference[]; // Points of Interest on hexcrawl maps
+  hexTerrains?: HexTerrain[]; // Per-hex terrain assignments for hexcrawl
+  hexClimates?: HexClimate[]; // Per-hex climate zone assignments for hexcrawl
+  customTerrainDescriptions?: Record<string, string[]>; // GM custom read-aloud descriptions per terrain type
+  hexcrawlState?: HexcrawlState; // Hexcrawl travel tracker state
   rulerCalibration?: number; // pixels per unit (for ruler accuracy)
   travelPaces?: TravelPace[]; // Available travel paces for hexcrawl maps
   activePaceId?: string; // Currently active pace (synced to player view)

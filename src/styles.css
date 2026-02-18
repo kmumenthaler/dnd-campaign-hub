@@ -6372,3 +6372,1228 @@
 .reroll-entry-actions {
   flex-shrink: 0;
 }
+
+/* ========================================
+   HEXCRAWL SYSTEM STYLES
+   ======================================== */
+
+/* Hexcrawl Toolbar Status */
+.hexcrawl-toolbar-status {
+  padding: 6px 4px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.hexcrawl-status-disabled {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 4px;
+}
+
+.hexcrawl-status-day {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.hexcrawl-status-info {
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.hexcrawl-status-exhaustion {
+  color: var(--text-error);
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+/* Survival meter mini bar in toolbar */
+.hexcrawl-status-meter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+  font-size: 10px;
+}
+
+.hexcrawl-mini-meter {
+  display: flex;
+  gap: 1px;
+  flex: 1;
+}
+
+.hexcrawl-mini-seg {
+  height: 8px;
+  flex: 1;
+  background: var(--background-modifier-border);
+  border-radius: 1px;
+}
+
+.hexcrawl-mini-seg.filled {
+  background: var(--interactive-accent);
+}
+
+.hexcrawl-mini-seg.filled.danger {
+  background: var(--text-error);
+}
+
+/* Pace selector row */
+.hexcrawl-status-pace-row {
+  display: flex;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.hexcrawl-pace-btn {
+  flex: 1;
+  padding: 2px 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  text-align: center;
+}
+
+.hexcrawl-pace-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.hexcrawl-pace-btn.active {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: white;
+}
+
+/* End Day button */
+.hexcrawl-end-day-btn {
+  width: 100%;
+  padding: 4px 8px;
+  margin-top: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.hexcrawl-end-day-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* ========================================
+   HEX PROCEDURE MODAL STYLES
+   ======================================== */
+
+.hexcrawl-procedure-modal-container.modal {
+  width: 700px !important;
+  max-width: 95vw !important;
+  max-height: 85vh;
+}
+
+.hexcrawl-procedure-modal .modal-content {
+  padding: 0;
+  overflow-y: auto;
+}
+
+/* Header */
+.hexcrawl-procedure-modal h2 {
+  margin: 16px 20px 0;
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+/* Info bar */
+.hexcrawl-procedure-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 8px 20px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.hexcrawl-procedure-info span {
+  background: var(--background-secondary);
+  padding: 3px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+/* Step indicator */
+.hexcrawl-step-indicator {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-wrap: wrap;
+}
+.hexcrawl-step-dot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 16px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.hexcrawl-step-dot:hover {
+  background: var(--background-modifier-hover);
+}
+.hexcrawl-step-dot.active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+  font-weight: 600;
+}
+.hexcrawl-step-dot.completed {
+  background: var(--background-modifier-success);
+  border-color: var(--text-success);
+  color: var(--text-success);
+}
+.hexcrawl-step-dot-label {
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* Body area */
+.hexcrawl-procedure-body {
+  padding: 16px 20px;
+  min-height: 220px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.hexcrawl-procedure-body h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.hexcrawl-procedure-body h4 {
+  margin: 16px 0 6px;
+  font-size: 14px;
+}
+.hexcrawl-step-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+/* Terrain card */
+.hexcrawl-terrain-card {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  grid-template-rows: auto auto auto;
+  gap: 4px 12px;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--background-secondary);
+  margin-bottom: 14px;
+}
+.hexcrawl-terrain-icon {
+  grid-row: 1 / 3;
+  font-size: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hexcrawl-terrain-card h3 {
+  margin: 0;
+  font-size: 15px;
+  grid-column: 2;
+}
+.hexcrawl-terrain-name-row {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hexcrawl-terrain-name-row h3 {
+  margin: 0;
+  font-size: 15px;
+  grid-column: unset;
+}
+.hexcrawl-climate-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.hexcrawl-terrain-desc {
+  grid-column: 2;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+.hexcrawl-terrain-stats {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.hexcrawl-terrain-stats > div {
+  background: var(--background-primary);
+  padding: 4px 8px;
+  border-radius: 4px;
+  text-align: center;
+}
+
+/* Textarea */
+.hexcrawl-textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+/* Description re-roll actions */
+.hexcrawl-description-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+.hexcrawl-description-actions .hexcrawl-action-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+/* Weather card */
+.hexcrawl-weather-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--background-secondary);
+  margin-bottom: 12px;
+}
+.hexcrawl-weather-stat {
+  font-size: 12px;
+  color: var(--text-normal);
+  display: flex;
+  gap: 6px;
+}
+.hexcrawl-weather-effects {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.hexcrawl-weather-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* Action buttons (reusable) */
+.hexcrawl-action-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+.hexcrawl-action-btn:hover {
+  filter: brightness(1.1);
+}
+.hexcrawl-action-btn.secondary {
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+.hexcrawl-action-btn.secondary:hover {
+  background: var(--background-modifier-hover);
+}
+.hexcrawl-action-btn.active {
+  background: var(--text-error);
+  color: white;
+  border-color: var(--text-error);
+}
+
+/* Checks grid — vertical card layout */
+.hexcrawl-checks-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.hexcrawl-check-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--background-secondary);
+  border: 2px solid transparent;
+  transition: border-color 0.15s ease;
+}
+.hexcrawl-check-row:has(.hexcrawl-check-toggle.pass) {
+  border-color: rgba(0, 180, 0, 0.25);
+}
+.hexcrawl-check-row:has(.hexcrawl-check-toggle.fail) {
+  border-color: rgba(220, 0, 0, 0.25);
+}
+.hexcrawl-check-role {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hexcrawl-check-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.hexcrawl-check-skill {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.hexcrawl-check-dc {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-accent);
+  background: var(--background-primary);
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.hexcrawl-check-player {
+  width: 100px;
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 12px;
+}
+.hexcrawl-check-toggle {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 70px;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+.hexcrawl-check-toggle.pass {
+  background: rgba(0, 180, 0, 0.15);
+  color: var(--text-success);
+  border-color: var(--text-success);
+}
+.hexcrawl-check-toggle.fail {
+  background: rgba(220, 0, 0, 0.15);
+  color: var(--text-error);
+  border-color: var(--text-error);
+}
+.hexcrawl-checks-summary {
+  display: flex;
+  gap: 16px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--background-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.hexcrawl-meter-penalty {
+  color: var(--text-error);
+}
+
+/* Encounter section */
+.hexcrawl-encounter-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.hexcrawl-encounter-result {
+  font-size: 13px;
+  font-weight: 500;
+}
+.hexcrawl-encounter-result.encounter-triggered {
+  color: var(--text-error);
+}
+.hexcrawl-encounter-override {
+  margin-bottom: 12px;
+}
+
+/* Discovery section */
+.hexcrawl-discovery-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* Survival meter */
+.hexcrawl-meter-display {
+  margin-bottom: 12px;
+}
+.hexcrawl-meter-bar {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+.hexcrawl-meter-segment {
+  height: 18px;
+  flex: 1;
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+.hexcrawl-meter-segment.filled {
+  background: var(--interactive-accent);
+}
+.hexcrawl-meter-segment.filled.danger {
+  background: var(--text-error);
+}
+.hexcrawl-meter-value {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.hexcrawl-meter-adjust {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin: 10px 0;
+}
+.hexcrawl-meter-btn {
+  width: 32px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  text-align: center;
+}
+.hexcrawl-meter-btn:hover {
+  background: var(--background-modifier-hover);
+}
+.hexcrawl-meter-change {
+  font-weight: 600;
+  min-width: 30px;
+  text-align: center;
+}
+.hexcrawl-meter-preview {
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--background-secondary);
+  margin-top: 8px;
+}
+.hexcrawl-meter-preview.danger {
+  background: rgba(220, 0, 0, 0.1);
+  color: var(--text-error);
+}
+.hexcrawl-meter-warning {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(220, 180, 0, 0.1);
+  color: var(--text-warning, #e0a000);
+  font-size: 12px;
+  font-weight: 500;
+}
+.hexcrawl-meter-critical {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(220, 0, 0, 0.12);
+  color: var(--text-error);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Summary */
+.hexcrawl-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.hexcrawl-summary-row {
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  font-size: 13px;
+}
+.hexcrawl-summary-row.danger {
+  background: rgba(220, 0, 0, 0.1);
+  color: var(--text-error);
+  font-weight: 500;
+}
+.hexcrawl-summary-section {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--background-secondary);
+  font-size: 12px;
+}
+.hexcrawl-summary-section strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.hexcrawl-summary-section > div {
+  padding: 2px 0;
+}
+
+/* Complete button */
+.hexcrawl-complete-btn {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-top: 12px;
+  border-radius: 6px;
+  border: none;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.hexcrawl-complete-btn:hover {
+  filter: brightness(1.1);
+}
+
+/* Navigation buttons */
+.hexcrawl-procedure-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.hexcrawl-nav-btn {
+  padding: 6px 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s ease;
+}
+
+.hexcrawl-nav-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.hexcrawl-nav-next {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+.hexcrawl-nav-next:hover {
+  filter: brightness(1.1);
+}
+
+.hexcrawl-nav-cancel {
+  color: var(--text-muted);
+}
+
+/* ========================================
+   HEXCRAWL SETTINGS MODAL
+   ======================================== */
+
+.hexcrawl-settings-modal .setting-item {
+  padding: 8px 0;
+}
+
+.hexcrawl-settings-modal .setting-item-name {
+  font-size: 13px;
+}
+
+.hexcrawl-settings-modal .setting-item-description {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   Hex Tile Description Edit Modal
+   ============================================================ */
+
+.hex-tile-desc-container.modal {
+  width: 500px !important;
+  max-width: 90vw !important;
+}
+
+.hex-tile-desc-modal {
+  padding: 16px 20px;
+}
+
+.hex-tile-desc-modal h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.hex-tile-desc-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+  line-height: 1.4;
+}
+
+.hex-tile-desc-textarea {
+  width: 100%;
+  font-size: 13px;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: inherit;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+.hex-tile-desc-textarea:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.hex-tile-desc-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.hex-tile-desc-clear-btn {
+  padding: 6px 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.hex-tile-desc-clear-btn:hover {
+  background: #e74c3c;
+  color: white;
+  border-color: #e74c3c;
+}
+
+.hex-tile-desc-save-btn {
+  padding: 6px 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Tile-specific description badge in procedure modal */
+.hexcrawl-tile-desc-badge {
+  font-size: 11px;
+  color: var(--interactive-accent);
+  font-style: italic;
+  margin-bottom: 4px;
+}
+
+/* ============================================================
+   Hex Description Settings Modal
+   ============================================================ */
+
+.hex-description-settings-container.modal {
+  width: 700px !important;
+  max-width: 95vw !important;
+  max-height: 85vh;
+}
+
+.hex-description-settings-modal {
+  padding: 16px 20px;
+}
+
+.hex-description-settings-modal h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.hex-desc-settings-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+  line-height: 1.4;
+}
+
+.hex-desc-terrain-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding-right: 4px;
+  margin-bottom: 16px;
+}
+
+.hex-desc-terrain-section {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.hex-desc-terrain-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--background-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.hex-desc-terrain-header:hover {
+  background: var(--background-modifier-hover);
+}
+
+.hex-desc-terrain-name {
+  font-weight: 600;
+  font-size: 13px;
+  flex: 1;
+}
+
+.hex-desc-count-badge {
+  font-size: 11px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-weight: 600;
+  min-width: 22px;
+  text-align: center;
+}
+
+.hex-desc-add-btn {
+  font-size: 11px;
+  padding: 2px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-weight: 500;
+}
+.hex-desc-add-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.hex-desc-entries {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hex-desc-entries.hidden {
+  display: none;
+}
+
+.hex-desc-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.hex-desc-entry {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.hex-desc-textarea {
+  flex: 1;
+  font-size: 12px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: inherit;
+  line-height: 1.5;
+}
+.hex-desc-textarea:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.hex-desc-delete-btn {
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.hex-desc-delete-btn:hover {
+  background: #e74c3c;
+  color: white;
+  border-color: #e74c3c;
+}
+
+.hex-desc-settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.hex-desc-save-btn {
+  padding: 8px 24px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ============================================================
+   Hexcrawl View — Right-sidebar leaf panel
+   ============================================================ */
+
+.hexcrawl-view {
+  padding: 12px;
+  overflow-y: auto;
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+/* Empty / disconnected states */
+.hexcrawl-view-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  text-align: center;
+  gap: 8px;
+}
+.hexcrawl-view-empty-icon {
+  font-size: 48px;
+}
+.hexcrawl-view-empty-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+.hexcrawl-view-empty-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.hexcrawl-view-enable-btn {
+  margin-top: 12px;
+  padding: 6px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Header */
+.hexcrawl-view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.hexcrawl-view-header h4 {
+  margin: 0;
+  font-size: 15px;
+}
+.hexcrawl-view-settings-btn {
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.hexcrawl-view-settings-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* Sections */
+.hexcrawl-view-section {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.hexcrawl-view-label {
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+/* Day & Movement */
+.hexcrawl-view-day {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.hexcrawl-view-movement {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.hexcrawl-view-progress {
+  height: 6px;
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.hexcrawl-view-progress-fill {
+  height: 100%;
+  background: var(--interactive-accent);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* Pace selector */
+.hexcrawl-view-pace-row {
+  display: flex;
+  gap: 4px;
+}
+.hexcrawl-view-pace-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.15s ease;
+}
+.hexcrawl-view-pace-btn:hover {
+  background: var(--background-modifier-hover);
+}
+.hexcrawl-view-pace-btn.active {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.hexcrawl-view-pace-icon {
+  font-size: 18px;
+}
+.hexcrawl-view-pace-name {
+  font-weight: 600;
+}
+
+/* Weather card */
+.hexcrawl-view-weather-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--background-secondary);
+  margin-bottom: 6px;
+}
+.hexcrawl-view-weather-icon {
+  font-size: 28px;
+}
+.hexcrawl-view-weather-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+.hexcrawl-view-weather-effect {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.hexcrawl-view-weather-mod {
+  font-size: 11px;
+  color: var(--text-error);
+  font-weight: 600;
+}
+
+/* Rows / Actions */
+.hexcrawl-view-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.hexcrawl-view-btn {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  cursor: pointer;
+  font-size: 12px;
+}
+.hexcrawl-view-btn:hover {
+  background: var(--background-modifier-hover);
+}
+.hexcrawl-view-btn.small {
+  padding: 2px 8px;
+  font-size: 12px;
+  min-width: 32px;
+  text-align: center;
+}
+.hexcrawl-view-select {
+  flex: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  font-size: 12px;
+  color: var(--text-normal);
+}
+
+/* Survival meter */
+.hexcrawl-view-meter {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+.hexcrawl-view-meter-seg {
+  flex: 1;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--background-modifier-border);
+  transition: background 0.2s ease;
+}
+.hexcrawl-view-meter-seg.filled {
+  background: var(--interactive-accent);
+}
+.hexcrawl-view-meter-seg.filled.danger {
+  background: var(--text-error);
+}
+.hexcrawl-view-meter-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.hexcrawl-view-danger {
+  color: var(--text-error);
+  font-weight: 600;
+}
+
+/* Exhaustion */
+.hexcrawl-view-exhaustion {
+  background: rgba(var(--text-error-rgb), 0.08);
+  border-radius: 6px;
+  padding: 8px;
+  border-left: 3px solid var(--text-error);
+}
+.hexcrawl-view-exhaustion-title {
+  font-weight: 600;
+  color: var(--text-error);
+  margin-bottom: 4px;
+}
+.hexcrawl-view-exhaustion-effect {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Party position */
+.hexcrawl-view-position {
+  font-size: 12px;
+  padding: 6px 8px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+}
+
+/* Exploration Roles */
+.hexcrawl-view-roles-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hexcrawl-view-role-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hexcrawl-view-role-name {
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 100px;
+}
+.hexcrawl-view-role-input {
+  flex: 1;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  font-size: 12px;
+  color: var(--text-normal);
+}
+
+/* Travel log */
+.hexcrawl-view-log-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.hexcrawl-view-log-badge {
+  font-size: 11px;
+}
+
+/* Action buttons */
+.hexcrawl-view-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.hexcrawl-view-action-btn {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+.hexcrawl-view-action-btn:hover {
+  background: var(--background-modifier-hover);
+}
+.hexcrawl-view-action-btn.primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+.hexcrawl-view-action-btn.primary:hover {
+  filter: brightness(1.1);
+}

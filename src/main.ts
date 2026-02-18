@@ -31,6 +31,39 @@ import { DEFAULT_MUSIC_SETTINGS, AUDIO_EXTENSIONS } from "./music/types";
 import { renderMusicPlayer, renderSoundboard } from "./music/MusicPlayerView";
 import { SceneMusicModal, renderSceneMusicBlock, buildSceneMusicCodeblock } from "./music/SceneMusicBlock";
 import { RandomEncounterTableModal } from "./encounter/RandomEncounterTableModal";
+import {
+  HexcrawlTracker,
+  HexProcedureModal,
+  openHexProcedureModal,
+  buildTerrainPicker,
+  setHexTerrain,
+  getHexTerrainAt,
+  drawTerrainHex,
+  getTerrainDefinition,
+  HexcrawlSettingsModal,
+  HexDescriptionSettingsModal,
+  HexDescriptionEditModal,
+  TERRAIN_DEFINITIONS,
+  HEXCRAWL_PACES,
+  WEATHER_TABLE,
+  createDefaultHexcrawlState,
+  HexcrawlView,
+  HEXCRAWL_VIEW_TYPE,
+  CLIMATE_DEFINITIONS,
+  getClimateDefinition,
+  drawClimateHexBorder,
+  getHexClimateAt,
+  hLoc,
+} from './hexcrawl';
+import type {
+  TerrainType,
+  HexTerrain,
+  HexcrawlState,
+  TerrainPickerState,
+  HexcrawlBridge,
+  ClimateType,
+  HexClimate,
+} from './hexcrawl';
 
 interface TabletopCalibration {
   monitorDiagonalInch: number;  // e.g. 27
@@ -2565,6 +2598,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   markerLibrary!: MarkerLibrary;
   musicPlayer!: MusicPlayer;
   _playerMapViews: Set<PlayerMapView> = new Set();
+  _hexcrawlBridge: HexcrawlBridge | null = null;
 
   async onload() {
     await this.loadSettings();
@@ -2595,6 +2629,12 @@ export default class DndCampaignHubPlugin extends Plugin {
         this._playerMapViews.add(view);
         return view;
       }
+    );
+
+    // Register the Hexcrawl View (right sidebar panel)
+    this.registerView(
+      HEXCRAWL_VIEW_TYPE,
+      (leaf) => new HexcrawlView(leaf, this)
     );
 
     // Initialize the encounter builder
@@ -4454,6 +4494,41 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	/**
+	 * Open the Hexcrawl panel in the bottom-right split.
+	 * If already open, just reveal it.
+	 */
+	async openHexcrawlPanel() {
+		const existing = this.app.workspace.getLeavesOfType(HEXCRAWL_VIEW_TYPE);
+		if (existing.length > 0 && existing[0]) {
+			this.app.workspace.revealLeaf(existing[0]);
+			return;
+		}
+
+		// Open in the right sidebar — use createLeafInParent to split bottom
+		const rightLeaf = this.app.workspace.getRightLeaf(false);
+		if (rightLeaf) {
+			await rightLeaf.setViewState({
+				type: HEXCRAWL_VIEW_TYPE,
+				active: true,
+			});
+			this.app.workspace.revealLeaf(rightLeaf);
+		}
+	}
+
+	/**
+	 * Refresh any open HexcrawlView leaves (called after map state changes).
+	 */
+	refreshHexcrawlView() {
+		const leaves = this.app.workspace.getLeavesOfType(HEXCRAWL_VIEW_TYPE);
+		for (const leaf of leaves) {
+			const view = leaf.view as HexcrawlView;
+			if (view && typeof view.refresh === 'function') {
+				view.refresh();
+			}
+		}
+	}
+
+	/**
 	 * Detect campaign path from the currently active file
 	 */
 	detectCampaignFromActiveFile(): string | null {
@@ -4522,6 +4597,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 			config.aoeEffects = savedData.aoeEffects || [];
 			config.tunnels = savedData.tunnels || [];
 			config.poiReferences = savedData.poiReferences || [];
+			
+			// Load hexcrawl terrain, climate, and state data
+			config.hexTerrains = savedData.hexTerrains || [];
+			config.hexClimates = savedData.hexClimates || [];
+			config.customTerrainDescriptions = savedData.customTerrainDescriptions || {};
+			config.hexcrawlState = savedData.hexcrawlState || null;
 			
 			// Load fog of war data
 			config.fogOfWar = savedData.fogOfWar || { enabled: true, regions: [] };
@@ -4605,7 +4686,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | 'poi' = 'pan';
+    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' = 'pan';
 		let selectedColor = '#ff0000';
       // GM player-view rect drag state
       let gmDragStart: { x: number; y: number } | null = null;
@@ -4944,6 +5025,127 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const aoeBtn = createToolBtn(commonToolGroup, '💥', 'AoE');
 		const eraserBtn = createToolBtn(commonToolGroup, '🧹', 'Eraser');
 		
+		// === HEXCRAWL SECTION (expandable, hex maps only) ===
+		const isHexcrawlMap = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical');
+		const hcLang = (config.hexcrawlState?.descriptionLanguage as 'en' | 'de') || 'en';
+		const hexcrawlSectionHeader = toolbarContent.createDiv({ cls: 'dnd-map-section-header' });
+		hexcrawlSectionHeader.createEl('span', { text: hLoc(hcLang, 'toolbarHexcrawl'), cls: 'dnd-map-section-title' });
+		hexcrawlSectionHeader.createEl('span', { text: '▼', cls: 'dnd-map-section-toggle' });
+		const hexcrawlContent = toolbarContent.createDiv({ cls: 'dnd-map-section-content' });
+		
+		// Hide hexcrawl section on non-hex maps
+		hexcrawlSectionHeader.toggleClass('hidden', !isHexcrawlMap);
+		hexcrawlContent.toggleClass('hidden', !isHexcrawlMap);
+		
+		const terrainPaintBtn = createToolBtn(hexcrawlContent, '🌍', hLoc(hcLang, 'toolTerrainPaint'));
+		const climatePaintBtn = createToolBtn(hexcrawlContent, '🌡️', hLoc(hcLang, 'toolClimatePaint'));
+		const setStartHexBtn = createToolBtn(hexcrawlContent, '📌', hLoc(hcLang, 'toolSetStartHex'));
+		const hexDescBtn = createToolBtn(hexcrawlContent, '📝', hLoc(hcLang, 'toolHexDesc'));
+		
+		// Terrain picker sub-menu (shown when terrain-paint tool is active)
+		let selectedTerrainType: TerrainType = 'forest';
+		const terrainPicker = terrainPaintBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
+		for (const def of TERRAIN_DEFINITIONS) {
+			const tName = hLoc(hcLang, `terrain.${def.id}`);
+			const btn = terrainPicker.createEl('button', {
+				cls: `dnd-map-aoe-shape-btn ${def.id === selectedTerrainType ? 'active' : ''}`,
+				attr: { title: `${tName} — Speed ×${def.travelModifier}` },
+			});
+			btn.createEl('span', { text: def.icon });
+			btn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				selectedTerrainType = def.id;
+				terrainPicker.querySelectorAll('.dnd-map-aoe-shape-btn').forEach(b => b.removeClass('active'));
+				btn.addClass('active');
+				terrainPicker.addClass('hidden');
+			});
+		}
+		// Clear terrain button
+		terrainPicker.createDiv({ cls: 'dnd-fog-picker-sep' });
+		const clearTerrainBtn = terrainPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn dnd-fog-action-btn',
+			attr: { title: hLoc(hcLang, 'clearAllTerrain') },
+		});
+		clearTerrainBtn.createEl('span', { text: '🗑️' });
+		clearTerrainBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			config.hexTerrains = [];
+			redrawAnnotations();
+			this.saveMapAnnotations(config, el);
+			new Notice(hLoc(hcLang, 'allTerrainCleared'));
+			this.refreshHexcrawlView();
+		});
+		// Description settings button
+		terrainPicker.createDiv({ cls: 'dnd-fog-picker-sep' });
+		const descSettingsBtn = terrainPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn dnd-fog-action-btn',
+			attr: { title: hLoc(hcLang, 'customTerrainDescsTooltip') },
+		});
+		descSettingsBtn.createEl('span', { text: '⚙️' });
+		descSettingsBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			terrainPicker.addClass('hidden');
+			new HexDescriptionSettingsModal(
+				this.app,
+				config.customTerrainDescriptions || {},
+				(updated) => {
+					config.customTerrainDescriptions = updated;
+					this.saveMapAnnotations(config, el);
+					new Notice(hLoc(hcLang, 'customDescsSaved'));
+				},
+				hcLang,
+			).open();
+		});
+
+		// Climate picker sub-menu (shown when climate-paint tool is active)
+		let selectedClimateType: import('./hexcrawl/types').ClimateType = 'temperate';
+		const climatePicker = climatePaintBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
+		for (const cdef of CLIMATE_DEFINITIONS) {
+			const cName = hLoc(hcLang, `climate.${cdef.id}`);
+			const cDesc = hLoc(hcLang, `climateDesc.${cdef.id}`);
+			const btn = climatePicker.createEl('button', {
+				cls: `dnd-map-aoe-shape-btn ${cdef.id === selectedClimateType ? 'active' : ''}`,
+				attr: { title: `${cName} — ${cDesc}` },
+			});
+			btn.createEl('span', { text: cdef.icon });
+			btn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				selectedClimateType = cdef.id;
+				climatePicker.querySelectorAll('.dnd-map-aoe-shape-btn').forEach(b => b.removeClass('active'));
+				btn.addClass('active');
+				climatePicker.addClass('hidden');
+			});
+		}
+		// Clear climate button
+		climatePicker.createDiv({ cls: 'dnd-fog-picker-sep' });
+		const clearClimateBtn = climatePicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn dnd-fog-action-btn',
+			attr: { title: hLoc(hcLang, 'clearAllClimate') },
+		});
+		clearClimateBtn.createEl('span', { text: '🗑️' });
+		clearClimateBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			config.hexClimates = [];
+			redrawAnnotations();
+			this.saveMapAnnotations(config, el);
+			new Notice(hLoc(hcLang, 'allClimateCleared'));
+			this.refreshHexcrawlView();
+		});
+		
+		// Open Hexcrawl Panel button
+		const openHexcrawlBtn = createToolBtn(hexcrawlContent, '📋', hLoc(hcLang, 'toolOpenPanel'));
+		openHexcrawlBtn.addEventListener('click', async () => {
+			await this.openHexcrawlPanel();
+		});
+		
+		// Toggle hexcrawl section visibility
+		let hexcrawlSectionOpen = true;
+		hexcrawlSectionHeader.addEventListener('click', () => {
+			hexcrawlSectionOpen = !hexcrawlSectionOpen;
+			hexcrawlContent.toggleClass('hidden', !hexcrawlSectionOpen || !isHexcrawlMap);
+			hexcrawlSectionHeader.querySelector('.dnd-map-section-toggle')!.textContent = hexcrawlSectionOpen ? '▼' : '▶';
+		});
+
 		// === VISION SECTION (expandable, Background layer only) ===
 		const visionSectionHeader = toolbarContent.createDiv({ cls: 'dnd-map-section-header' });
 		visionSectionHeader.createEl('span', { text: 'Vision', cls: 'dnd-map-section-title' });
@@ -4954,15 +5156,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const wallsBtn = createToolBtn(visionContent, '🧱', 'Walls');
 		const lightsBtn = createToolBtn(visionContent, '💡', 'Lights');
 
-		// Toggle vision section visibility based on layer
-		visionSectionHeader.toggleClass('hidden', config.activeLayer !== 'Background');
-		visionContent.toggleClass('hidden', config.activeLayer !== 'Background');
+		// Toggle vision section visibility based on layer (hidden entirely for hexcrawl maps)
+		visionSectionHeader.toggleClass('hidden', config.activeLayer !== 'Background' || isHexcrawlMap);
+		visionContent.toggleClass('hidden', config.activeLayer !== 'Background' || isHexcrawlMap);
 
-		// === TOKEN VISION TOGGLE (always visible, all layers) ===
+		// === TOKEN VISION TOGGLE (always visible, all layers — hidden for hexcrawl) ===
 		const tokenVisionSectionHeader = toolbarContent.createDiv({ cls: 'dnd-map-section-header' });
 		tokenVisionSectionHeader.createEl('span', { text: 'Token Vision', cls: 'dnd-map-section-title' });
 		tokenVisionSectionHeader.createEl('span', { text: '▼', cls: 'dnd-map-section-toggle' });
 		const tokenVisionContent = toolbarContent.createDiv({ cls: 'dnd-map-section-content' });
+		tokenVisionSectionHeader.toggleClass('hidden', isHexcrawlMap);
+		tokenVisionContent.toggleClass('hidden', isHexcrawlMap);
 
 		// Token Vision Selector - custom dropdown to pick which token's vision to show in Player View
 		const visionSelectorRow = tokenVisionContent.createDiv({ cls: 'dnd-map-vision-selector' });
@@ -5086,8 +5290,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const clearTunnelsBtn = createToolBtn(tunnelsContent, '🧹', 'Clear Tunnels');
 		
 		// Toggle tunnels section visibility based on layer
-		tunnelsSectionHeader.toggleClass('hidden', config.activeLayer !== 'Subterranean');
-		tunnelsContent.toggleClass('hidden', config.activeLayer !== 'Subterranean');
+		tunnelsSectionHeader.toggleClass('hidden', config.activeLayer !== 'Subterranean' || isHexcrawlMap);
+		tunnelsContent.toggleClass('hidden', config.activeLayer !== 'Subterranean' || isHexcrawlMap);
 		
 		// === SETUP SECTION (expandable) ===
 		const setupSectionHeader = toolbarContent.createDiv({ cls: 'dnd-map-section-header' });
@@ -5567,8 +5771,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					layers.forEach(l => layerButtons[l].removeClass('active'));
 					btn.addClass('active');
 					layerMenu.removeClass('expanded');
-					// Show/hide Vision section based on layer (only available on Background)
-					if (layer !== 'Background') {
+					// Show/hide Vision section based on layer (only available on Background, hidden for hexcrawl)
+					if (layer !== 'Background' || isHexcrawlMap) {
 						visionSectionHeader.addClass('hidden');
 						visionContent.addClass('hidden');
 					} else {
@@ -5582,8 +5786,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 						wallsBtn.removeClass('hidden');
 						lightsBtn.removeClass('hidden');
 					}
-					// Show/hide Tunnels section based on layer (only available on Subterranean)
-					if (layer !== 'Subterranean') {
+					// Show/hide Tunnels section based on layer (only available on Subterranean, hidden for hexcrawl)
+					if (layer !== 'Subterranean' || isHexcrawlMap) {
 						tunnelsSectionHeader.addClass('hidden');
 						tunnelsContent.addClass('hidden');
 					} else {
@@ -5603,6 +5807,23 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 		});
+
+		// For hexcrawl maps, hide Elevated and Subterranean layers
+		if (isHexcrawlMap) {
+			layerButtons['Elevated']?.addClass('hidden');
+			layerButtons['Subterranean']?.addClass('hidden');
+
+			// Wire up the hexcrawl bridge so HexcrawlView can read/write state
+			// NOTE: setActiveTool is patched in later once the function is defined
+			this._hexcrawlBridge = {
+				config,
+				el,
+				save: () => this.saveMapAnnotations(config, el),
+				redraw: () => redrawAnnotations(),
+				setActiveTool: () => {},
+			};
+			this.refreshHexcrawlView();
+		}
 
 		// Add Player View button (top right)
 		const playerViewBtn = viewport.createEl('button', {
@@ -5772,7 +5993,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let startX = 0;
 		let startY = 0;
 		// Middle mouse button temporary pan state
-		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | 'poi' | null = null;
+		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | null = null;
 		let isTemporaryPan = false;
 		let gridCanvas: HTMLCanvasElement | null = null;
 		let annotationCanvas: HTMLCanvasElement | null = null;
@@ -6015,6 +6236,62 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (!ctx) return;
 				
 				ctx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
+				
+				// Draw terrain hexes (bottom layer, below highlights)
+				if (config.hexTerrains && config.hexTerrains.length > 0 && config.gridSize) {
+					const ox = config.gridOffsetX || 0;
+					const oy = config.gridOffsetY || 0;
+					const effectiveGridSz = getEffectiveGridSize();
+					config.hexTerrains.forEach((ht: HexTerrain) => {
+						const def = TERRAIN_DEFINITIONS.find(d => d.id === ht.terrain);
+						if (!def) return;
+						if (config.gridType === 'hex-horizontal') {
+							const horiz = effectiveGridSz;
+							const size = (2/3) * horiz;
+							const vert = Math.sqrt(3) * size;
+							const colOffsetY = (ht.col & 1) ? vert / 2 : 0;
+							const cx = ht.col * horiz + ox;
+							const cy = ht.row * vert + colOffsetY + oy;
+							drawTerrainHex(ctx, cx, cy, size, def, 'hex-horizontal');
+						} else if (config.gridType === 'hex-vertical') {
+							const vert = effectiveGridSz;
+							const size = (2/3) * vert;
+							const horiz = Math.sqrt(3) * size;
+							const rowOffsetX = (ht.row & 1) ? horiz / 2 : 0;
+							const cx = ht.col * horiz + rowOffsetX + ox;
+							const cy = ht.row * vert + oy;
+							drawTerrainHex(ctx, cx, cy, size, def, 'hex-vertical');
+						}
+					});
+				}
+
+				// Draw climate zone borders (on top of terrain fill, below highlights)
+				if (config.hexClimates && config.hexClimates.length > 0 && config.gridSize) {
+					const ox = config.gridOffsetX || 0;
+					const oy = config.gridOffsetY || 0;
+					const effectiveGridSz = getEffectiveGridSize();
+					config.hexClimates.forEach((hc: any) => {
+						const cdef = CLIMATE_DEFINITIONS.find(d => d.id === hc.climate);
+						if (!cdef) return;
+						if (config.gridType === 'hex-horizontal') {
+							const horiz = effectiveGridSz;
+							const size = (2/3) * horiz;
+							const vert = Math.sqrt(3) * size;
+							const colOffsetY = (hc.col & 1) ? vert / 2 : 0;
+							const cx = hc.col * horiz + ox;
+							const cy = hc.row * vert + colOffsetY + oy;
+							drawClimateHexBorder(ctx, cx, cy, size, cdef, 'hex-horizontal');
+						} else if (config.gridType === 'hex-vertical') {
+							const vert = effectiveGridSz;
+							const size = (2/3) * vert;
+							const horiz = Math.sqrt(3) * size;
+							const rowOffsetX = (hc.row & 1) ? horiz / 2 : 0;
+							const cx = hc.col * horiz + rowOffsetX + ox;
+							const cy = hc.row * vert + oy;
+							drawClimateHexBorder(ctx, cx, cy, size, cdef, 'hex-vertical');
+						}
+					});
+				}
 				
 				// Draw highlights
 				if (config.highlights) {
@@ -7676,7 +7953,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-				[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, viewBtn, fogBtn, wallsBtn, lightsBtn, moveGridBtn].forEach(btn => btn.removeClass('active'));
+				[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, viewBtn, fogBtn, wallsBtn, lightsBtn, moveGridBtn, terrainPaintBtn, climatePaintBtn, setStartHexBtn, hexDescBtn].forEach(btn => btn.removeClass('active'));
 				
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
@@ -7727,6 +8004,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 				lightsPicker.toggleClass('hidden', tool !== 'lights');
 				// Show/hide Player View controls picker
 				pvPicker.toggleClass('hidden', tool !== 'player-view');
+				// Show/hide Terrain picker
+				terrainPicker.toggleClass('hidden', tool !== 'terrain-paint');
+				// Show/hide Climate picker
+				climatePicker.toggleClass('hidden', tool !== 'climate-paint');
+
+
 				
 				if (tool === 'pan') {
 					panBtn.addClass('active');
@@ -7774,6 +8057,23 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (tool === 'poi') {
 					poiBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
+				} else if (tool === 'terrain-paint') {
+					terrainPaintBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+				} else if (tool === 'climate-paint') {
+					climatePaintBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+				} else if (tool === 'hexcrawl-move') {
+					viewport.style.cursor = 'crosshair';
+					new Notice(hLoc(hcLang, 'clickHexTravel'), 3000);
+				} else if (tool === 'set-start-hex') {
+					setStartHexBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+					new Notice(hLoc(hcLang, 'clickHexSetStart'), 3000);
+				} else if (tool === 'hex-desc') {
+					hexDescBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+					new Notice(hLoc(hcLang, 'clickHexEditDesc'), 3000);
 				}
 			
 				// Clear ruler when switching tools
@@ -7795,6 +8095,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 					}
 				}
 			};
+
+			// Patch the hexcrawl bridge with the real setActiveTool now that it's defined
+			if (this._hexcrawlBridge) {
+				this._hexcrawlBridge.setActiveTool = (tool: string) => setActiveTool(tool as any);
+			}
 
 			// Wire up tool button handlers
 			panBtn.addEventListener('click', () => {
@@ -7858,6 +8163,31 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('Move Grid button clicked');
 				setActiveTool('move-grid');
 			});
+			terrainPaintBtn.addEventListener('click', () => {
+				console.log('Terrain Paint button clicked');
+				if (activeTool === 'terrain-paint') {
+					terrainPicker.toggleClass('hidden', !terrainPicker.hasClass('hidden'));
+				} else {
+					setActiveTool('terrain-paint');
+				}
+			});
+			climatePaintBtn.addEventListener('click', () => {
+				console.log('Climate Paint button clicked');
+				if (activeTool === 'climate-paint') {
+					climatePicker.toggleClass('hidden', !climatePicker.hasClass('hidden'));
+				} else {
+					setActiveTool('climate-paint');
+				}
+			});
+			setStartHexBtn.addEventListener('click', () => {
+				console.log('Set Starting Hex button clicked');
+				setActiveTool('set-start-hex');
+			});
+			hexDescBtn.addEventListener('click', () => {
+				console.log('Hex Description button clicked');
+				setActiveTool('hex-desc');
+			});
+
 		viewBtn.addEventListener('click', () => {
 			console.log('Player View button clicked');
 			setActiveTool('player-view');
@@ -8231,7 +8561,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								
 								redrawAnnotations();
 								this.saveMapAnnotations(config, el);
-								new Notice('Point of Interest assigned to hex');
+								new Notice(hLoc(hcLang, 'poiAssigned'));
 							}
 						).open();
 					});
@@ -8452,7 +8782,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							redrawAnnotations();
 							this.saveMapAnnotations(config, el);
 							updateGridToolsVisibility();
-							new Notice(`📍 Removed "${poiName}" from this hex`);
+							new Notice(hLoc(hcLang, 'poiRemoved', { name: poiName }));
 							return; // Skip generic notice
 						}
 					}
@@ -8580,6 +8910,115 @@ export default class DndCampaignHubPlugin extends Plugin {
 					} else {
 						new Notice('Please select a light source type first');
 					}
+				} else if (activeTool === 'terrain-paint') {
+					// Paint terrain type onto clicked hex
+					console.log('[Terrain Paint] Click detected, selectedTerrainType:', selectedTerrainType);
+					const hex = pixelToHex(mapPos.x, mapPos.y);
+					console.log('[Terrain Paint] Hex coords:', hex.col, hex.row);
+					if (!config.hexTerrains) config.hexTerrains = [];
+					const idx = config.hexTerrains.findIndex((ht: HexTerrain) => ht.col === hex.col && ht.row === hex.row);
+					saveToHistory();
+					if (idx >= 0) {
+						if (config.hexTerrains[idx].terrain === selectedTerrainType) {
+							// Clicking same terrain again removes it
+							config.hexTerrains.splice(idx, 1);
+						} else {
+							config.hexTerrains[idx].terrain = selectedTerrainType;
+						}
+					} else {
+						config.hexTerrains.push({ col: hex.col, row: hex.row, terrain: selectedTerrainType });
+					}
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
+					this.refreshHexcrawlView();
+				} else if (activeTool === 'climate-paint') {
+					// Paint climate zone onto clicked hex
+					const hex = pixelToHex(mapPos.x, mapPos.y);
+					if (!config.hexClimates) config.hexClimates = [];
+					const idx = config.hexClimates.findIndex((hc: any) => hc.col === hex.col && hc.row === hex.row);
+					saveToHistory();
+					if (idx >= 0) {
+						if (config.hexClimates[idx].climate === selectedClimateType) {
+							// Clicking same climate again removes it
+							config.hexClimates.splice(idx, 1);
+						} else {
+							config.hexClimates[idx].climate = selectedClimateType;
+						}
+					} else {
+						config.hexClimates.push({ col: hex.col, row: hex.row, climate: selectedClimateType });
+					}
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
+					this.refreshHexcrawlView();
+				} else if (activeTool === 'set-start-hex') {
+					// Set the party's starting hex position
+					const hex = pixelToHex(mapPos.x, mapPos.y);
+					if (!config.hexcrawlState) {
+						config.hexcrawlState = createDefaultHexcrawlState(config.mapId);
+					}
+					config.hexcrawlState.partyPosition = { col: hex.col, row: hex.row };
+					this.saveMapAnnotations(config, el);
+					redrawAnnotations();
+					this.refreshHexcrawlView();
+					const terrain = getTerrainDefinition(
+						new HexcrawlTracker(config.hexcrawlState, config.hexTerrains || [], config.hexClimates || []).getTerrainAt(hex.col, hex.row)
+					);
+					new Notice(hLoc(hcLang, 'startPositionSet', { col: hex.col, row: hex.row, icon: terrain.icon, name: hLoc(hcLang, `terrain.${terrain.id}`) }));
+					// Switch back to pan after placing
+					setActiveTool('pan');
+				} else if (activeTool === 'hex-desc') {
+					// Edit per-tile custom description
+					const hex = pixelToHex(mapPos.x, mapPos.y);
+					if (!config.hexTerrains) config.hexTerrains = [];
+					const existing = config.hexTerrains.find((ht: HexTerrain) => ht.col === hex.col && ht.row === hex.row);
+					const terrainDef = getTerrainDefinition(existing?.terrain || 'plains');
+					const currentDesc = existing?.customDescription;
+					new HexDescriptionEditModal(
+						this.app,
+						hex.col,
+						hex.row,
+						`${terrainDef.icon} ${hLoc(hcLang, `terrain.${terrainDef.id}`)}`,
+						currentDesc,
+						(newDesc) => {
+							if (!config.hexTerrains) config.hexTerrains = [];
+							const idx = config.hexTerrains.findIndex((ht: HexTerrain) => ht.col === hex.col && ht.row === hex.row);
+							if (idx >= 0) {
+								if (newDesc) {
+									config.hexTerrains[idx].customDescription = newDesc;
+								} else {
+									delete config.hexTerrains[idx].customDescription;
+								}
+							} else if (newDesc) {
+								// No terrain entry yet — create one with default 'plains'
+								config.hexTerrains.push({ col: hex.col, row: hex.row, terrain: 'plains', customDescription: newDesc });
+							}
+							this.saveMapAnnotations(config, el);
+							new Notice(newDesc ? hLoc(hcLang, 'descSaved', { col: hex.col, row: hex.row }) : hLoc(hcLang, 'descCleared', { col: hex.col, row: hex.row }));
+						},
+						hcLang,
+					).open();
+				} else if (activeTool === 'hexcrawl-move') {
+					// Travel to clicked hex using per-hex procedure
+					const hex = pixelToHex(mapPos.x, mapPos.y);
+					const hcState = config.hexcrawlState;
+					if (!hcState || !hcState.enabled) {
+						new Notice(hLoc(hcLang, 'enableHexcrawlFirst'));
+						return;
+					}
+					const tracker = new HexcrawlTracker(hcState, config.hexTerrains || [], config.hexClimates || []);
+					if (!tracker.canMoveToday()) {
+						new Notice(hLoc(hcLang, 'noMovementBudget'));
+						return;
+					}
+					openHexProcedureModal(this.app, tracker, hex.col, hex.row, config.customTerrainDescriptions).then((result) => {
+						if (!result || !result.completed) return; // User cancelled
+						// State is already mutated inside tracker by the modal
+						config.hexcrawlState = tracker.toJSON();
+						this.saveMapAnnotations(config, el);
+						this.refreshHexcrawlView();
+						redrawAnnotations();
+						new Notice(hLoc(hcLang, 'traveledToHex', { col: hex.col, row: hex.row }));
+					});
 				}
         else if (activeTool === 'player-view') {
           // Check if clicking inside existing rect to move it (accounting for rotation)
@@ -11430,6 +11869,10 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 				aoeEffects: config.aoeEffects || [],
 				tunnels: config.tunnels || [],
 				poiReferences: config.poiReferences || [],
+				hexTerrains: config.hexTerrains || [],
+				hexClimates: config.hexClimates || [],
+				customTerrainDescriptions: config.customTerrainDescriptions || {},
+				hexcrawlState: config.hexcrawlState || null,
 				fogOfWar: config.fogOfWar || { enabled: false, regions: [] },
 				walls: config.walls || [],
 				lightSources: config.lightSources || [],
