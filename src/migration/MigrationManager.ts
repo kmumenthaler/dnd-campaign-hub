@@ -18,7 +18,8 @@ export const TEMPLATE_VERSIONS = {
   spell: "1.0.0",
   campaign: "1.0.0",
   trap: "1.1.0", // Updated with Edit/Delete buttons
-  creature: "1.2.0" // Added token_id for map markers
+  creature: "1.2.0", // Added token_id for map markers
+  "encounter-table": "1.1.0" // Updated with Edit/Delete/Reroll buttons
 };
 
 /**
@@ -120,6 +121,14 @@ export class MigrationManager {
       const content = await this.app.vault.read(file);
       const buttonCommand = fileType === 'npc' ? 'dnd-campaign-hub:edit-npc' : 'dnd-campaign-hub:edit-pc';
       if (!content.includes(buttonCommand)) {
+        return true;
+      }
+    }
+
+    // Check for missing edit/delete buttons in encounter-table notes
+    if (fileType === 'encounter-table') {
+      const content = await this.app.vault.read(file);
+      if (!content.includes('dnd-campaign-hub:edit-encounter-table')) {
         return true;
       }
     }
@@ -569,6 +578,88 @@ deleteBtn.addEventListener("click", () => {
   }
 
   /**
+   * Migrate encounter-table to v1.1.0 (add edit/delete/reroll buttons)
+   */
+  async migrateEncounterTableTo1_1_0(file: TFile): Promise<void> {
+    console.log(`Migrating encounter-table ${file.path} to v1.1.0`);
+
+    const content = await this.app.vault.read(file);
+
+    // Check if edit/delete buttons already exist
+    if (content.includes('dnd-campaign-hub:edit-encounter-table')) {
+      console.log(`Encounter table ${file.path} already has edit/delete buttons`);
+      await this.updateTemplateVersion(file, "1.1.0");
+      return;
+    }
+
+    // Try to replace existing dataviewjs button block with the updated one
+    const updatedButtonBlock = `\`\`\`dataviewjs
+// Action buttons for Encounter Table
+const buttonContainer = dv.el("div", "", {
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" }
+});
+
+// Roll Encounter button
+const rollBtn = buttonContainer.createEl("button", {
+  text: "🎲 Roll Encounter",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+rollBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:roll-random-encounter");
+});
+
+// Regenerate Table button
+const regenBtn = buttonContainer.createEl("button", {
+  text: "🔄 Regenerate Table",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+regenBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:create-random-encounter-table");
+});
+
+// Edit (Reroll Entries) button
+const editBtn = buttonContainer.createEl("button", {
+  text: "✏️ Edit Table",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-encounter-table");
+});
+
+// Delete button
+const deleteBtn = buttonContainer.createEl("button", {
+  text: "🗑️ Delete Table",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-encounter-table");
+});
+\`\`\``;
+
+    // Try to replace existing button block (from v1.0.0 with Roll + Regenerate only)
+    const replaced = await this.replaceDataviewjsBlock(
+      file,
+      'Action buttons for Encounter Table',
+      updatedButtonBlock
+    );
+
+    if (!replaced) {
+      // No existing block found — inject after the title heading
+      const titleMatch = content.match(/^(---\n[\s\S]*?\n---\n\n)(# .+\n)/m);
+      if (titleMatch) {
+        const newContent = content.replace(
+          titleMatch[0],
+          `${titleMatch[1]}${titleMatch[2]}\n${updatedButtonBlock}\n\n`
+        );
+        await this.app.vault.modify(file, newContent);
+      }
+    }
+
+    await this.updateTemplateVersion(file, "1.1.0");
+    console.log(`Encounter table ${file.path} migrated to v1.1.0 with edit/delete buttons`);
+  }
+
+  /**
    * Apply migration based on file type and version
    */
   async migrateFile(file: TFile): Promise<boolean> {
@@ -672,6 +763,21 @@ deleteBtn.addEventListener("click", () => {
         if (frontmatter && !frontmatter.token_id) {
           console.log(`${file.path} has correct version but missing token_id, re-running migration`);
           await this.migrateCreatureTo1_2_0(file);
+          return true;
+        }
+      }
+
+      // Encounter-table-specific migrations
+      if (fileType === "encounter-table") {
+        if (this.compareVersions(currentVersion, "1.1.0") < 0) {
+          await this.migrateEncounterTableTo1_1_0(file);
+          return true;
+        }
+        // Check if edit/delete buttons are missing even if version is 1.1.0
+        const etContent = await this.app.vault.read(file);
+        if (!etContent.includes('dnd-campaign-hub:edit-encounter-table')) {
+          console.log(`${file.path} has v1.1.0 but missing buttons, re-running migration`);
+          await this.migrateEncounterTableTo1_1_0(file);
           return true;
         }
       }

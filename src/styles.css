@@ -6042,3 +6042,333 @@
   border: 1px solid var(--background-modifier-border);
   margin-left: auto;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Random Encounter Table Modal
+   ────────────────────────────────────────────────────────────────────── */
+
+.dnd-encounter-table-modal {
+  width: 640px;
+  max-height: 85vh;
+}
+
+.dnd-encounter-table-modal .modal-content {
+  overflow-y: auto;
+}
+
+/* Status message */
+.encounter-status p {
+  margin: 6px 0;
+  font-size: 13px;
+}
+
+/* Preview container */
+.encounter-table-preview {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 10px;
+  margin-top: 8px;
+}
+
+.encounter-preview-placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 24px 0;
+}
+
+/* Preview table */
+.encounter-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.encounter-table th,
+.encounter-table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.encounter-table th {
+  font-weight: 600;
+  background: var(--background-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.encounter-table tbody tr:hover {
+  background: var(--background-secondary-alt);
+}
+
+/* Difficulty colours */
+.encounter-difficulty-trivial   { color: var(--text-muted); }
+.encounter-difficulty-easy      { color: #22bb33; }
+.encounter-difficulty-medium    { color: #f0ad4e; }
+.encounter-difficulty-hard      { color: #ee7733; }
+.encounter-difficulty-deadly    { color: #bb2124; font-weight: 600; }
+.encounter-difficulty-tpk-risk  { color: #880000; font-weight: 700; }
+
+/* ─── Encounter Table Codeblock Card ──────────────────────────────── */
+
+.dnd-encounter-table-block {
+  background: var(--background-secondary);
+  border-radius: 8px;
+  padding: 14px 18px;
+  border: 1px solid var(--background-modifier-border);
+  margin: 8px 0;
+}
+
+.dnd-encounter-table-block-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.dnd-encounter-table-block-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-normal);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.dnd-encounter-table-block-name:hover {
+  color: var(--text-accent);
+  text-decoration: underline;
+}
+
+.dnd-encounter-table-block-env {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.dnd-encounter-table-block-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.dnd-encounter-table-block-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.dnd-encounter-table-block-table th,
+.dnd-encounter-table-block-table td {
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  text-align: left;
+}
+
+.dnd-encounter-table-block-table th {
+  background: var(--background-primary);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.dnd-encounter-table-block-table tbody tr:hover {
+  background: var(--background-modifier-hover);
+}
+
+.dnd-encounter-table-row-active {
+  background: rgba(var(--interactive-accent-rgb, 0, 122, 255), 0.15) !important;
+  border-left: 3px solid var(--interactive-accent) !important;
+}
+
+.dnd-encounter-table-block-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.dnd-encounter-table-roll-result {
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: var(--background-primary);
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  font-size: 14px;
+}
+
+.dnd-encounter-table-block-error {
+  padding: 12px;
+  background: rgba(255, 0, 0, 0.1);
+  border: 1px solid rgba(255, 0, 0, 0.3);
+  border-radius: 6px;
+  color: var(--text-error);
+  font-size: 13px;
+}
+
+/* ─── Insert Encounter Table Modal ────────────────────────────────── */
+
+.dnd-insert-encounter-table-modal {
+  max-width: 600px;
+}
+
+.dnd-insert-encounter-table-modal .modal-content {
+  padding: 20px;
+}
+
+.encounter-table-search {
+  margin-bottom: 12px;
+}
+
+.encounter-table-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 14px;
+}
+
+.encounter-table-search-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+}
+
+.encounter-table-list {
+  max-height: 360px;
+  overflow-y: auto;
+  margin-bottom: 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+}
+
+.encounter-table-list-item {
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--background-modifier-border);
+  transition: background 0.1s;
+}
+
+.encounter-table-list-item:last-child {
+  border-bottom: none;
+}
+
+.encounter-table-list-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.encounter-table-list-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.encounter-table-list-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.encounter-table-list-meta {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.encounter-table-list-empty,
+.encounter-table-list-hint {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.encounter-table-list-empty-state {
+  padding: 30px 20px;
+  text-align: center;
+}
+
+.encounter-table-loading {
+  text-align: center;
+  padding: 20px;
+  color: var(--text-muted);
+}
+
+/* ─── Reroll Encounter Table Modal ────────────────────────────────── */
+
+.dnd-reroll-encounter-modal {
+  max-width: 650px;
+}
+
+.dnd-reroll-encounter-modal .modal-content {
+  padding: 20px;
+}
+
+.reroll-info {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.reroll-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.reroll-entry-list {
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  margin-bottom: 14px;
+}
+
+.reroll-entry-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.reroll-entry-item:last-child {
+  border-bottom: none;
+}
+
+.reroll-entry-roll {
+  font-weight: 700;
+  font-size: 15px;
+  min-width: 28px;
+  color: var(--text-muted);
+}
+
+.reroll-entry-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.reroll-entry-encounter {
+  font-size: 14px;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.reroll-entry-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.reroll-entry-actions {
+  flex-shrink: 0;
+}

@@ -30,6 +30,7 @@ import type { MusicSettings, SceneMusicConfig } from "./music/types";
 import { DEFAULT_MUSIC_SETTINGS, AUDIO_EXTENSIONS } from "./music/types";
 import { renderMusicPlayer, renderSoundboard } from "./music/MusicPlayerView";
 import { SceneMusicModal, renderSceneMusicBlock, buildSceneMusicCodeblock } from "./music/SceneMusicBlock";
+import { RandomEncounterTableModal } from "./encounter/RandomEncounterTableModal";
 
 interface TabletopCalibration {
   monitorDiagonalInch: number;  // e.g. 27
@@ -2637,6 +2638,13 @@ export default class DndCampaignHubPlugin extends Plugin {
       renderSceneMusicBlock(source, el, ctx, this.musicPlayer, this.settings.musicSettings);
     });
 
+    // Register markdown code block processor for encounter table cards
+    this.registerMarkdownCodeBlockProcessor('dnd-encounter-table', (source, el, ctx) => {
+      import('./encounter/EncounterTableBlock').then(({ renderEncounterTableBlock }) => {
+        renderEncounterTableBlock(source, el, ctx, this.app, this);
+      });
+    });
+
     console.log("D&D Campaign Hub: Plugin loaded");
 
     // Check for version updates
@@ -3295,6 +3303,98 @@ export default class DndCampaignHubPlugin extends Plugin {
       name: "Purge D&D Campaign Hub Data",
       callback: () => {
         new PurgeConfirmModal(this.app, this).open();
+      },
+    });
+
+    // ── Random Encounter Table commands ──
+    this.addCommand({
+      id: "create-random-encounter-table",
+      name: "Create Random Encounter Table",
+      callback: () => {
+        new RandomEncounterTableModal(this.app, this).open();
+      },
+    });
+
+    this.addCommand({
+      id: "roll-random-encounter",
+      name: "Roll Random Encounter",
+      callback: async () => {
+        await this.rollRandomEncounter();
+      },
+    });
+
+    this.addCommand({
+      id: "insert-encounter-table-codeblock",
+      name: "🎲 Insert Encounter Table Code Block",
+      editorCallback: (editor) => {
+        import('./encounter/InsertEncounterTableModal').then(({ InsertEncounterTableModal }) => {
+          new InsertEncounterTableModal(this.app, this, (codeblock) => {
+            editor.replaceSelection(codeblock + '\n');
+          }).open();
+        });
+      },
+    });
+
+    this.addCommand({
+      id: "reroll-encounter-table-entry",
+      name: "🔄 Reroll Encounter Table Entry",
+      callback: () => {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile) {
+          new Notice("Open an encounter table note first.");
+          return;
+        }
+        const cache = this.app.metadataCache.getFileCache(activeFile);
+        if (cache?.frontmatter?.type !== "encounter-table") {
+          new Notice("⚠️ This is not an encounter table note.");
+          return;
+        }
+        import('./encounter/RerollEncounterModal').then(({ RerollEncounterModal }) => {
+          new RerollEncounterModal(this.app, this, activeFile).open();
+        });
+      },
+    });
+
+    this.addCommand({
+      id: "edit-encounter-table",
+      name: "✏️ Edit Encounter Table",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) {
+          new Notice("Please open an encounter table note first");
+          return;
+        }
+        const cache = this.app.metadataCache.getFileCache(file);
+        if (cache?.frontmatter?.type !== "encounter-table") {
+          new Notice("This is not an encounter table note");
+          return;
+        }
+        import('./encounter/RerollEncounterModal').then(({ RerollEncounterModal }) => {
+          new RerollEncounterModal(this.app, this, file).open();
+        });
+      },
+    });
+
+    this.addCommand({
+      id: "delete-encounter-table",
+      name: "🗑️ Delete Encounter Table",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) {
+          new Notice("Please open an encounter table note first");
+          return;
+        }
+        const cache = this.app.metadataCache.getFileCache(file);
+        if (cache?.frontmatter?.type !== "encounter-table") {
+          new Notice("This is not an encounter table note");
+          return;
+        }
+        const tableName = cache.frontmatter.name || file.basename;
+        const confirmed = await this.confirmDelete(file.name);
+        if (confirmed) {
+          await this.app.vault.delete(file);
+          new Notice(`✓ Encounter table "${tableName}" deleted`);
+        }
       },
     });
 
@@ -12263,6 +12363,40 @@ source: D&D 5e SRD
 			const modal = new NamePromptModal(this.app, type, resolve);
 			modal.open();
 		});
+	}
+
+	/**
+	 * Roll on the encounter table of the currently active note.
+	 * Reads frontmatter to verify the note is an encounter-table and picks a random entry.
+	 */
+	async rollRandomEncounter() {
+		const activeFile = this.app.workspace.getActiveFile();
+		if (!activeFile) {
+			new Notice("Open an encounter table note first.");
+			return;
+		}
+
+		const cache = this.app.metadataCache.getFileCache(activeFile);
+		if (cache?.frontmatter?.type !== "encounter-table") {
+			new Notice("⚠️ This is not an encounter table note.");
+			return;
+		}
+
+		const entries = cache.frontmatter.entries || 6;
+		const roll = Math.floor(Math.random() * entries) + 1;
+
+		// Try to find the matching row in the table
+		const content = await this.app.vault.read(activeFile);
+		const tableRowRegex = new RegExp(`^\\|\\s*${roll}\\s*\\|(.+?)\\|(.+?)\\|(.+?)\\|`, "m");
+		const match = content.match(tableRowRegex);
+
+		if (match) {
+			const encounter = match[1]?.trim() ?? "Unknown";
+			const difficulty = match[2]?.trim() ?? "";
+			new Notice(`🎲 Rolled ${roll} on d${entries}:\n${encounter}\nDifficulty: ${difficulty}`, 8000);
+		} else {
+			new Notice(`🎲 Rolled ${roll} on d${entries}!`, 5000);
+		}
 	}
 
 	async ensureFolderExists(path: string) {

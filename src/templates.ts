@@ -2170,3 +2170,67 @@ deleteBtn.addEventListener("click", () => {
 
 
 `;
+
+export const ENCOUNTER_TABLE_TEMPLATE = `---
+type: encounter-table
+template_version: 1.0.0
+name: 
+environment: 
+party_level: 3
+party_size: 4
+entries: 6
+campaign: 
+date_created: 
+---
+
+# 🎲 Random Encounter Table
+
+\`\`\`dataviewjs
+// Action buttons for Encounter Table
+const buttonContainer = dv.el("div", "", {
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" }
+});
+
+// Roll Encounter button
+const rollBtn = buttonContainer.createEl("button", {
+  text: "🎲 Roll Encounter",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+rollBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:roll-random-encounter");
+});
+
+// Regenerate Table button
+const regenBtn = buttonContainer.createEl("button", {
+  text: "🔄 Regenerate Table",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+regenBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:create-random-encounter-table");
+});
+\`\`\`
+
+> [!info] Table Info
+> **Environment:**  
+> **Party Level:**  | **Party Size:** 
+> **Roll:** 1d6
+
+## Encounter Table
+
+| Roll | Encounter | Difficulty | XP |
+|------|-----------|------------|-----|
+| 1 |  |  |  |
+| 2 |  |  |  |
+| 3 |  |  |  |
+| 4 |  |  |  |
+| 5 |  |  |  |
+| 6 |  |  |  |
+
+## Encounter Details
+
+*Add details for each encounter here.*
+
+## GM Notes
+
+*Add environmental details, encounter triggers, or narrative hooks here.*
+`;
