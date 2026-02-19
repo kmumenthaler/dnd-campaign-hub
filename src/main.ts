@@ -5450,7 +5450,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 		pvFullscreenBtn.createEl('span', { text: '🖵' });
 		pvFullscreenBtn.addEventListener('click', () => {
 			if ((this as any)._playerMapViews) {
+				const mapId = config.mapId || resourcePath;
 				(this as any)._playerMapViews.forEach((pv: any) => {
+					if ((pv as any).mapId !== mapId) return;
 					try { if (typeof pv.toggleFullscreen === 'function') pv.toggleFullscreen(); else (pv as any).toggleFullscreen?.(); } catch (e) {}
 				});
 			}
@@ -5467,9 +5469,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 				// After calibration, compute and send scale to player views based on current gm rect
 				try {
 					const rect = (viewport as any)._gmViewRect || (this as any)._gmViewRect || null;
-					if (!rect) return;
+				if (!rect) return;
 					if ((this as any)._playerMapViews) {
+						const mapId = config.mapId || resourcePath;
 						(this as any)._playerMapViews.forEach((pv: any) => {
+							if ((pv as any).mapId !== mapId) return;
 							try {
 								// Prefer calibration-derived scale so each grid cell maps to the
 								// configured physical miniature base size on the player's screen.
