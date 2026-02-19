@@ -88,12 +88,12 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
 
 class CalibrationModal extends Modal {
   pixelDistance: number;
-  onSelect: (miles: number) => void;
+  onConfirm: () => void;
 
-  constructor(app: App, pixelDistance: number, onSelect: (miles: number) => void) {
+  constructor(app: App, pixelDistance: number, onConfirm: () => void) {
     super(app);
     this.pixelDistance = pixelDistance;
-    this.onSelect = onSelect;
+    this.onConfirm = onConfirm;
   }
 
   onOpen() {
@@ -108,42 +108,17 @@ class CalibrationModal extends Modal {
     });
 
     contentEl.createEl("p", { 
-      text: "Select the travel pace this hex represents (D&D 5e daily travel distance):",
+      text: "Each hex represents 6 miles (D\u200D&D 5e standard). Confirm to apply this calibration.",
       cls: "dnd-map-calibration-label"
     });
 
-    // Travel pace options
-    const optionsContainer = contentEl.createDiv({ cls: "dnd-calibration-options" });
-
-    const paceOptions = [
-      { miles: 30, label: "30 Miles/Day (Fast Pace)", desc: "Forced march" },
-      { miles: 24, label: "24 Miles/Day (Normal Pace)", desc: "Standard travel" },
-      { miles: 18, label: "18 Miles/Day (Slow Pace)", desc: "Stealthy or difficult terrain" }
-    ];
-
-    paceOptions.forEach(option => {
-      const optionBtn = optionsContainer.createEl("button", {
-        cls: "dnd-calibration-option-btn"
-      });
-
-      optionBtn.createEl("div", { 
-        text: option.label,
-        cls: "dnd-calibration-option-label"
-      });
-
-      optionBtn.createEl("div", { 
-        text: option.desc,
-        cls: "dnd-calibration-option-desc"
-      });
-
-      optionBtn.addEventListener("click", () => {
-        this.onSelect(option.miles);
-        this.close();
-      });
-    });
-
-    // Cancel button
+    // Confirm / Cancel buttons
     const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
+    const confirmBtn = buttonContainer.createEl("button", { text: "Apply", cls: "mod-cta" });
+    confirmBtn.addEventListener("click", () => {
+      this.onConfirm();
+      this.close();
+    });
     const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => this.close());
   }
@@ -8431,12 +8406,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 							Math.pow(calibrationPoint2.y - calibrationPoint1.y, 2)
 						);
 						
-						// Show modal to select travel pace
-						new CalibrationModal(this.app, pixelDistance, async (miles: number) => {
-							// Update grid size and scale
+						// Show confirmation modal (always 6-mile hexes)
+						new CalibrationModal(this.app, pixelDistance, async () => {
+							// Update grid size and scale (fixed 6-mile hexes)
 							config.gridSize = Math.round(pixelDistance);
 							config.scale = {
-								value: miles,
+								value: 6,
 								unit: 'miles'
 							};
 							
@@ -8446,7 +8421,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							// Save configuration to JSON file
 							await this.saveMapAnnotations(config, el);
 							
-							new Notice(`Grid calibrated: ${miles} miles per hex`);
+							new Notice('Grid calibrated: 6 miles per hex');
 							
 							// Reset calibration state
 							isCalibrating = false;
