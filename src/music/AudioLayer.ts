@@ -30,6 +30,8 @@ export class AudioLayer {
   private progressTimer: ReturnType<typeof setInterval> | null = null;
   /** Flag to prevent re-entrant track switches during a fade-out */
   private isFadingOut: boolean = false;
+  /** Whether a valid track source has been loaded into the audio element */
+  private _trackLoaded: boolean = false;
 
   /** Callback when state changes (for UI updates) */
   onStateChange: ((state: MusicPlayerState) => void) | null = null;
@@ -88,6 +90,12 @@ export class AudioLayer {
     if (this.currentTracks.length === 0) return;
     if (this.state.currentTrackIndex < 0) {
       this.playTrackByIndex(0);
+      return;
+    }
+    // If a track index is set but no audio src is loaded (e.g. after
+    // loadPlaylist + manual index assignment), load it properly
+    if (!this._trackLoaded) {
+      this.playTrackByIndex(this.state.currentTrackIndex);
       return;
     }
     if (this.state.isPlaying) return;
@@ -151,6 +159,38 @@ export class AudioLayer {
       this.state.position = 0;
       this.emitStateChange();
     }
+  }
+
+  /**
+   * Fade out and stop, returning a promise that resolves once the
+   * audio is fully silent and paused.  Used for scene transitions
+   * so the caller can wait for the fade before starting new music.
+   * If no fade is configured, resolves immediately.
+   */
+  stopAsync(): Promise<void> {
+    return new Promise<void>(resolve => {
+      if (this.fadeDurationMs > 0 && (this.state.isPlaying || this.isFadingOut)) {
+        this.isFadingOut = true;
+        this.fadeOut().then(() => {
+          this.audio.pause();
+          this.audio.currentTime = 0;
+          this.restoreVolume();
+          this.isFadingOut = false;
+          this.state.isPlaying = false;
+          this.state.position = 0;
+          this.emitStateChange();
+          resolve();
+        });
+      } else {
+        this.cancelFade();
+        this.audio.pause();
+        this.audio.currentTime = 0;
+        this.state.isPlaying = false;
+        this.state.position = 0;
+        this.emitStateChange();
+        resolve();
+      }
+    });
   }
 
   next() {
@@ -296,7 +336,17 @@ export class AudioLayer {
   // ─── Playlist Management ────────────────────────────────────
 
   loadPlaylist(playlist: Playlist) {
+    // Stop any currently playing audio before loading a new playlist
+    this.cancelFade();
+    this.isFadingOut = false;
+    this.audio.pause();
+    this.audio.src = '';
+    this._trackLoaded = false;
+
     this.state.currentPlaylistId = playlist.id;
+    this.state.isPlaying = false;
+    this.state.position = 0;
+    this.state.duration = 0;
     this.currentTracks = playlist.trackPaths.map(p => ({
       filePath: p,
       title: p.split('/').pop()?.replace(/\.[^.]+$/, '') || p,
@@ -388,6 +438,7 @@ export class AudioLayer {
   private switchToTrack(index: number, track: Track, file: TFile) {
     const url = this.app.vault.getResourcePath(file);
     this.audio.src = url;
+    this._trackLoaded = true;
 
     // Update state immediately so UI reflects the new track
     this.state.currentTrackIndex = index;

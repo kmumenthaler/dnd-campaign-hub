@@ -230,29 +230,57 @@ export function renderSceneMusicBlock(
   // ── Play / Stop button ──────────────────────────────────
   const controls = container.createEl('div', { cls: 'scene-music-block-controls' });
 
-  let isLoaded = false;
-
-  const playBtn = controls.createEl('button', { text: '▶ Load & Play', cls: 'scene-music-play-btn mod-cta' });
-  playBtn.addEventListener('click', () => {
-    if (!isLoaded) {
-      musicPlayer.loadSceneMusic(config, config.autoPlay);
-      isLoaded = true;
+  /** Sync button appearance with the actual player state. */
+  const syncButton = () => {
+    const active = musicPlayer.isScenePlaying(config);
+    if (active) {
       playBtn.textContent = '⏹ Stop';
       playBtn.classList.remove('mod-cta');
       playBtn.classList.add('mod-warning');
-      new Notice('🎵 Scene music loaded' + (config.autoPlay ? ' & playing' : ''));
     } else {
-      musicPlayer.stopAll();
-      isLoaded = false;
       playBtn.textContent = '▶ Load & Play';
       playBtn.classList.add('mod-cta');
       playBtn.classList.remove('mod-warning');
     }
+  };
+
+  const playBtn = controls.createEl('button', {
+    text: '▶ Load & Play',
+    cls: 'scene-music-play-btn mod-cta',
   });
+
+  playBtn.addEventListener('click', () => {
+    if (musicPlayer.isScenePlaying(config)) {
+      // This scene is active → stop everything
+      musicPlayer.stopAll();
+    } else {
+      // Load & play this scene (stops any previous scene first)
+      musicPlayer.loadSceneMusic(config, config.autoPlay);
+      new Notice('🎵 Scene music loaded' + (config.autoPlay ? ' & playing' : ''));
+    }
+    // Button state will be updated by the scene-change listener
+  });
+
+  // Listen for scene changes (another block started / stopped) so the
+  // button always reflects reality.  Unsubscribe when the element is
+  // removed from the DOM.
+  const unsubscribe = musicPlayer.onSceneChange(() => syncButton());
+
+  // Initial sync in case this scene is already playing
+  syncButton();
+
+  // Clean up listener when the code-block element is detached
+  const observer = new MutationObserver(() => {
+    if (!el.isConnected) {
+      unsubscribe();
+      observer.disconnect();
+    }
+  });
+  observer.observe(el.parentElement || document.body, { childList: true, subtree: true });
 
   // Auto-play indicator
   if (config.autoPlay) {
-    const badge = controls.createEl('span', {
+    controls.createEl('span', {
       text: '⚡ auto-play',
       cls: 'scene-music-autoplay-badge',
     });

@@ -21,6 +21,12 @@ export class MusicPlayer {
   /** Max concurrent sound effects */
   private readonly MAX_SFX = 8;
 
+  /** Currently active scene music config (null when no scene is loaded) */
+  private _activeSceneConfig: SceneMusicConfig | null = null;
+
+  /** Listeners notified when the active scene changes (load / stop) */
+  private _sceneChangeListeners: Set<() => void> = new Set();
+
   // ─── Backward-compatible property proxies (→ primary) ───────
 
   get state(): MusicPlayerState { return this.primary.state; }
@@ -161,6 +167,40 @@ export class MusicPlayer {
   stopAll() {
     this.primary.stop();
     this.ambient.stop();
+    this._activeSceneConfig = null;
+    this._notifySceneChange();
+  }
+
+  // ─── Scene tracking helpers ─────────────────────────────────
+
+  /**
+   * Generate a deterministic key for a SceneMusicConfig so we can
+   * compare two configs to decide if a scene is already loaded.
+   */
+  private static _sceneKey(config: SceneMusicConfig): string {
+    return `${config.primaryPlaylistId || ''}|${config.primaryTrackPath || ''}|${config.ambientPlaylistId || ''}|${config.ambientTrackPath || ''}`;
+  }
+
+  /**
+   * Returns true if the given scene music config is currently the
+   * active scene (i.e. it was the last config loaded via loadSceneMusic
+   * and hasn't been stopped).
+   */
+  isScenePlaying(config: SceneMusicConfig): boolean {
+    if (!this._activeSceneConfig) return false;
+    return MusicPlayer._sceneKey(config) === MusicPlayer._sceneKey(this._activeSceneConfig);
+  }
+
+  /** Register a callback invoked whenever the active scene changes. */
+  onSceneChange(cb: () => void): () => void {
+    this._sceneChangeListeners.add(cb);
+    return () => { this._sceneChangeListeners.delete(cb); };
+  }
+
+  private _notifySceneChange() {
+    for (const cb of this._sceneChangeListeners) {
+      try { cb(); } catch (e) { console.error('[MusicPlayer] scene-change listener error', e); }
+    }
   }
 
   // ─── Soundboard ─────────────────────────────────────────────
@@ -204,14 +244,35 @@ export class MusicPlayer {
   /**
    * Load (and optionally auto-play) music from a SceneMusicConfig.
    * Called by the dnd-music code-block renderer or the dashboard detector.
+   *
+   * Fades out any previously playing scene music first, then loads the
+   * new playlists on each layer and starts playback.
    */
   loadSceneMusic(config: SceneMusicConfig, autoPlay = false) {
+    // Mark the new scene immediately so button state updates right away
+    this._activeSceneConfig = { ...config };
+    this._notifySceneChange();
+
+    // Fade out both layers in parallel, then load & play the new scene
+    const fadeOutBoth = Promise.all([
+      this.primary.stopAsync(),
+      this.ambient.stopAsync(),
+    ]);
+
+    fadeOutBoth.then(() => {
+      this._loadAndPlayScene(config, autoPlay);
+    });
+  }
+
+  /**
+   * Internal: load playlists and start playback after fade-out is complete.
+   */
+  private _loadAndPlayScene(config: SceneMusicConfig, autoPlay: boolean) {
     // ── Primary layer ──
     if (config.primaryPlaylistId) {
       const pl = this.settings.playlists.find(p => p.id === config.primaryPlaylistId);
       if (pl) {
         this.primary.loadPlaylist(pl);
-        // Jump to specific track if configured
         if (config.primaryTrackPath) {
           const idx = pl.trackPaths.indexOf(config.primaryTrackPath);
           if (idx !== -1) {
