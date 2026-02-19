@@ -16690,27 +16690,45 @@ class SessionRunDashboardView extends ItemView {
         });
       }
 
-      let isLoaded = false;
+      const syncDashBtn = () => {
+        const active = this.plugin.musicPlayer.isScenePlaying(config);
+        if (active) {
+          playBtn.textContent = '⏹ Stop';
+          playBtn.classList.remove('mod-cta');
+          playBtn.classList.add('mod-warning');
+        } else {
+          playBtn.textContent = '▶ Load & Play';
+          playBtn.classList.add('mod-cta');
+          playBtn.classList.remove('mod-warning');
+        }
+      };
+
       const playBtn = card.createEl('button', {
         text: '▶ Load & Play',
         cls: 'mod-cta scene-music-detect-play',
       });
       playBtn.addEventListener('click', () => {
-        if (!isLoaded) {
-          this.plugin.musicPlayer.loadSceneMusic(config, config.autoPlay);
-          isLoaded = true;
-          playBtn.textContent = '⏹ Stop';
-          playBtn.classList.remove('mod-cta');
-          playBtn.classList.add('mod-warning');
-          new Notice(`🎵 Loaded scene music for "${sceneName}"`);
-        } else {
+        if (this.plugin.musicPlayer.isStopping()) return;
+        if (this.plugin.musicPlayer.isScenePlaying(config)) {
           this.plugin.musicPlayer.stopAll();
-          isLoaded = false;
-          playBtn.textContent = '▶ Load & Play';
-          playBtn.classList.add('mod-cta');
-          playBtn.classList.remove('mod-warning');
+        } else {
+          this.plugin.musicPlayer.loadSceneMusic(config, config.autoPlay);
+          new Notice(`🎵 Loaded scene music for "${sceneName}"`);
         }
       });
+
+      // Sync button state with actual player
+      const unsubDash = this.plugin.musicPlayer.onSceneChange(() => syncDashBtn());
+      syncDashBtn();
+
+      // Clean up listener when the element is detached
+      const dashObserver = new MutationObserver(() => {
+        if (!card.isConnected) {
+          unsubDash();
+          dashObserver.disconnect();
+        }
+      });
+      dashObserver.observe(card.parentElement || document.body, { childList: true, subtree: true });
     }
   }
 

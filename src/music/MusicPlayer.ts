@@ -24,6 +24,9 @@ export class MusicPlayer {
   /** Currently active scene music config (null when no scene is loaded) */
   private _activeSceneConfig: SceneMusicConfig | null = null;
 
+  /** True while stopAll() is fading out — prevents re-entrance */
+  private _stopping: boolean = false;
+
   /** Listeners notified when the active scene changes (load / stop) */
   private _sceneChangeListeners: Set<() => void> = new Set();
 
@@ -163,12 +166,27 @@ export class MusicPlayer {
     return this.getPlaylistById(this.primary.state.currentPlaylistId);
   }
 
-  /** Stop both primary and ambient layers. */
-  stopAll() {
-    this.primary.stop();
-    this.ambient.stop();
-    this._activeSceneConfig = null;
-    this._notifySceneChange();
+  /** Stop both primary and ambient layers.
+   *  Waits for the fade-out to complete before clearing the active scene
+   *  so the UI stays in "Stop" state during the transition. */
+  async stopAll() {
+    if (this._stopping) return;   // Already fading out, ignore repeated clicks
+    this._stopping = true;
+    try {
+      await Promise.all([
+        this.primary.stopAsync(),
+        this.ambient.stopAsync(),
+      ]);
+    } finally {
+      this._activeSceneConfig = null;
+      this._stopping = false;
+      this._notifySceneChange();
+    }
+  }
+
+  /** True while a stopAll fade-out is in progress. */
+  isStopping(): boolean {
+    return this._stopping;
   }
 
   // ─── Scene tracking helpers ─────────────────────────────────
@@ -184,9 +202,11 @@ export class MusicPlayer {
   /**
    * Returns true if the given scene music config is currently the
    * active scene (i.e. it was the last config loaded via loadSceneMusic
-   * and hasn't been stopped).
+   * and hasn't been stopped).  Also returns true while the scene is
+   * fading out via stopAll() so the button stays as "Stop".
    */
   isScenePlaying(config: SceneMusicConfig): boolean {
+    if (this._stopping) return true;  // Still fading out
     if (!this._activeSceneConfig) return false;
     return MusicPlayer._sceneKey(config) === MusicPlayer._sceneKey(this._activeSceneConfig);
   }
@@ -249,6 +269,9 @@ export class MusicPlayer {
    * new playlists on each layer and starts playback.
    */
   loadSceneMusic(config: SceneMusicConfig, autoPlay = false) {
+    // If a stopAll() is still fading out, ignore the load request
+    if (this._stopping) return;
+
     // Mark the new scene immediately so button state updates right away
     this._activeSceneConfig = { ...config };
     this._notifySceneChange();

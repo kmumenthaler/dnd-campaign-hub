@@ -250,6 +250,9 @@ export function renderSceneMusicBlock(
   });
 
   playBtn.addEventListener('click', () => {
+    // Ignore clicks while a stop is fading out
+    if (musicPlayer.isStopping()) return;
+
     if (musicPlayer.isScenePlaying(config)) {
       // This scene is active → stop everything
       musicPlayer.stopAll();
