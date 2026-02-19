@@ -91,6 +91,12 @@ export class EncounterBattlemapModal extends Modal {
   private scaleUnit: 'feet' | 'miles' | 'km' = 'feet';
   private gridType: 'square' | 'hex-horizontal' | 'hex-vertical' | 'none' = 'square';
 
+  // Party token state
+  private includeParty: boolean = true;
+  private partyMembers: Array<{ name: string; level: number; hp: number; ac: number }> = [];
+  private partyLoading: boolean = false;
+  private partyLoaded: boolean = false;
+
   // Cached SRD monster data (for sizes)
   private monsterDataCache: Map<string, SRDMonster> = new Map();
   private srdClient: SRDApiClient;
@@ -134,6 +140,11 @@ export class EncounterBattlemapModal extends Modal {
     // Fetch monster sizes in background
     if (this.encounter) {
       this.fetchMonsterData();
+    }
+
+    // Fetch party members in background (once)
+    if (!this.partyLoaded) {
+      this.loadPartyMembers();
     }
 
     this.render();
@@ -250,7 +261,40 @@ export class EncounterBattlemapModal extends Modal {
           .setValue(this.scaleUnit)
           .onChange(v => this.scaleUnit = v as 'feet' | 'miles' | 'km');
       });
+    // ── Include Party Tokens ──────────────────────────────────
+    const partySection = contentEl.createDiv({ cls: 'ebm-party-section' });
+    partySection.createEl('h4', { text: hLoc(L, 'includePartyTokens') });
 
+    const partyToggle = new Setting(partySection)
+      .setName(hLoc(L, 'includePartyTokensDesc'))
+      .addToggle(toggle => {
+        toggle
+          .setValue(this.includeParty)
+          .onChange(v => {
+            this.includeParty = v;
+            // Show/hide party list
+            const listEl = partySection.querySelector('.ebm-party-list') as HTMLElement;
+            if (listEl) listEl.style.display = v ? '' : 'none';
+          });
+      });
+
+    // Party members list
+    const partyList = partySection.createDiv({ cls: 'ebm-party-list' });
+    if (!this.includeParty) partyList.style.display = 'none';
+
+    if (this.partyLoading) {
+      partyList.createDiv({ text: '⌛ ' + hLoc(L, 'loadingParty'), cls: 'ebm-party-loading' });
+    } else if (this.partyMembers.length === 0) {
+      partyList.createDiv({ text: hLoc(L, 'noPartyMembers'), cls: 'ebm-party-empty' });
+    } else {
+      for (const member of this.partyMembers) {
+        const row = partyList.createDiv({ cls: 'ebm-party-member' });
+        row.createSpan({ text: `⚔️ ${member.name}`, cls: 'ebm-party-member-name' });
+        row.createSpan({ text: `Lv ${member.level}`, cls: 'ebm-party-member-level' });
+        row.createSpan({ text: `HP ${member.hp}`, cls: 'ebm-party-member-stat' });
+        row.createSpan({ text: `AC ${member.ac}`, cls: 'ebm-party-member-stat' });
+      }
+    }
     // ── Buttons ─────────────────────────────────────────
     const btnRow = contentEl.createDiv({ cls: 'ebm-button-row' });
 
@@ -269,10 +313,13 @@ export class EncounterBattlemapModal extends Modal {
 
   // ── Image selection ────────────────────────────────────────────────
 
+  private static readonly MAP_IMAGE_FOLDER = 'z_Assets/Maps';
+
   private selectImage() {
-    // Gather all image/video files from vault
+    // Only search in z_Assets/Maps and its subfolders
     const allFiles = this.app.vault.getFiles();
     const mediaFiles = allFiles.filter(f =>
+      f.path.startsWith(EncounterBattlemapModal.MAP_IMAGE_FOLDER + '/') &&
       MAP_MEDIA_EXTENSIONS.includes(f.extension.toLowerCase())
     );
 
@@ -328,6 +375,12 @@ export class EncounterBattlemapModal extends Modal {
 
       // 2. Create marker definitions & references for creatures
       const markerRefs = await this.buildCreatureMarkers(mapData.dimensions);
+
+      // 2b. Create party member markers if enabled
+      if (this.includeParty && this.partyMembers.length > 0) {
+        const partyRefs = await this.buildPartyMarkers(mapData.dimensions);
+        markerRefs.push(...partyRefs);
+      }
 
       // 3. Save map annotations with markers
       const fullConfig = {
@@ -444,6 +497,175 @@ export class EncounterBattlemapModal extends Modal {
     }
 
     return refs;
+  }
+
+  // ── Build party member markers ─────────────────────────────────────────
+
+  private async buildPartyMarkers(
+    dimensions: { width: number; height: number },
+  ): Promise<MarkerReference[]> {
+    const refs: MarkerReference[] = [];
+    const gridPx = this.gridSize;
+    const gridCols = Math.floor(dimensions.width / gridPx);
+    const gridRows = Math.floor(dimensions.height / gridPx);
+
+    // Place party on the left side of the map
+    const startCol = Math.max(1, Math.floor(gridCols * 0.15));
+    const startRow = Math.max(1, Math.floor(gridRows * 0.3));
+    let placementCol = startCol;
+    let placementRow = startRow;
+    const maxCol = Math.floor(gridCols * 0.4);
+
+    for (const member of this.partyMembers) {
+      const markerDef = await this.ensurePartyMarkerDefinition(member);
+      const instanceId = `marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      const posX = placementCol * gridPx;
+      const posY = placementRow * gridPx;
+
+      refs.push({
+        id: instanceId,
+        markerId: markerDef.id,
+        position: { x: posX, y: posY },
+        placedAt: Date.now(),
+        layer: 'Player',
+      } as MarkerReference);
+
+      // Advance position
+      placementCol += 2;
+      if (placementCol > maxCol) {
+        placementCol = startCol;
+        placementRow += 2;
+      }
+    }
+
+    return refs;
+  }
+
+  /**
+   * Ensure a marker definition exists for a party member.
+   */
+  private async ensurePartyMarkerDefinition(
+    member: { name: string; level: number; hp: number; ac: number },
+  ): Promise<MarkerDefinition> {
+    const library = this.plugin.markerLibrary;
+
+    // Check if a marker with this character name already exists
+    const existing = library.getAllMarkers().find(
+      m => m.name.toLowerCase() === member.name.toLowerCase() && (m.type === 'player' || m.type === 'creature')
+    );
+    if (existing) return existing;
+
+    // Create a new PC marker definition
+    const id = library.generateId();
+    const now = Date.now();
+
+    const def: MarkerDefinition = {
+      id,
+      name: member.name,
+      type: 'player',
+      icon: '🛡️',
+      backgroundColor: '#2563eb', // Blue for party
+      borderColor: '#ffffff',
+      creatureSize: 'medium',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await library.setMarker(def);
+    return def;
+  }
+
+  // ── Load party members from campaign ───────────────────────────────
+
+  private async loadPartyMembers() {
+    this.partyLoading = true;
+    this.partyLoaded = true;
+    this.render();
+
+    try {
+      // Get campaign path
+      const campaignPath = this.plugin.detectCampaignFromActiveFile?.() || this.plugin.settings?.currentCampaign;
+      if (!campaignPath) {
+        this.partyLoading = false;
+        this.render();
+        return;
+      }
+
+      // Read campaign note frontmatter for selected_party_id
+      const campaignFiles = this.app.vault.getFiles().filter(f =>
+        f.path.startsWith(campaignPath + '/') && f.basename.toLowerCase().includes('world')
+      );
+      // Also check for the campaign folder's root note
+      const rootNote = this.app.vault.getAbstractFileByPath(`${campaignPath}/${campaignPath.split('/').pop()}.md`);
+
+      let selectedPartyId = '';
+      // Try campaign root note first, then world note
+      const notesToCheck = rootNote instanceof TFile ? [rootNote, ...campaignFiles] : campaignFiles;
+      for (const noteFile of notesToCheck) {
+        if (!(noteFile instanceof TFile)) continue;
+        const cache = this.app.metadataCache.getFileCache(noteFile);
+        if (cache?.frontmatter?.selected_party_id) {
+          selectedPartyId = cache.frontmatter.selected_party_id;
+          break;
+        }
+      }
+
+      // Fetch party from Initiative Tracker
+      const initiativePlugin = (this.app as any).plugins?.plugins?.['initiative-tracker'];
+      if (!initiativePlugin?.data) {
+        this.partyLoading = false;
+        this.render();
+        return;
+      }
+
+      const parties: any[] = initiativePlugin.data.parties || [];
+      let party: any = null;
+
+      // Try selected_party_id first
+      if (selectedPartyId) {
+        party = parties.find((p: any) => (p.id || p.name) === selectedPartyId);
+      }
+
+      // Fallback: try "<CampaignName> Party"
+      if (!party && campaignPath) {
+        const campaignName = campaignPath.split('/').pop() || '';
+        party = parties.find((p: any) => p.name === `${campaignName} Party`);
+      }
+
+      // Fallback: default party
+      if (!party && initiativePlugin.data.defaultParty) {
+        party = parties.find((p: any) => p.id === initiativePlugin.data.defaultParty);
+      }
+
+      // Fallback: first party
+      if (!party && parties.length > 0) {
+        party = parties[0];
+      }
+
+      if (party?.players) {
+        const allPlayers: any[] = initiativePlugin.data.players || [];
+        const playerById = new Map(allPlayers.map((p: any) => [p.id, p]));
+        const playerByName = new Map(allPlayers.map((p: any) => [p.name, p]));
+
+        for (const entry of party.players) {
+          const player = playerById.get(entry) || playerByName.get(entry);
+          if (player) {
+            this.partyMembers.push({
+              name: player.name || 'Unknown',
+              level: player.level || 1,
+              hp: player.hp || player.currentMaxHP || 20,
+              ac: player.ac || player.currentAC || 14,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[EncounterBattlemapModal] Failed to load party members:', err);
+    }
+
+    this.partyLoading = false;
+    this.render();
   }
 
   /**
@@ -685,7 +907,20 @@ class ImageSelectorModal extends Modal {
       const item = this.listContainer!.createDiv({ cls: 'image-file-item' });
       const ext = file.extension.toLowerCase();
       const isVideo = ['mp4', 'webm'].includes(ext);
-      item.createSpan({ cls: 'image-file-icon', text: isVideo ? '🎬' : '🖼️' });
+
+      // Thumbnail preview
+      const thumb = item.createDiv({ cls: 'image-file-thumb' });
+      if (isVideo) {
+        const vid = thumb.createEl('video', {
+          attr: { src: this.app.vault.getResourcePath(file), muted: 'true', preload: 'metadata' },
+        });
+        vid.addEventListener('loadeddata', () => { vid.currentTime = 0.5; });
+      } else {
+        thumb.createEl('img', {
+          attr: { src: this.app.vault.getResourcePath(file), loading: 'lazy' },
+        });
+      }
+
       const info = item.createDiv({ cls: 'image-file-info' });
       info.createDiv({ cls: 'image-file-name', text: file.name });
       info.createDiv({ cls: 'image-file-path', text: file.parent?.path || '/' });
@@ -710,23 +945,18 @@ class ImageSelectorModal extends Modal {
 
       try {
         const buffer = await file.arrayBuffer();
-        let destFolder = '';
-        const attachmentSetting = (this.app.vault as any).getConfig?.('attachmentFolderPath');
-        if (attachmentSetting && attachmentSetting !== '/' && attachmentSetting !== '.') {
-          destFolder = attachmentSetting;
-          if (!(await this.app.vault.adapter.exists(destFolder))) {
-            await this.app.vault.createFolder(destFolder);
-          }
+        // Always upload to z_Assets/Maps
+        const destFolder = 'z_Assets/Maps';
+        if (!(await this.app.vault.adapter.exists(destFolder))) {
+          await this.app.vault.createFolder(destFolder);
         }
 
-        let destPath = destFolder ? `${destFolder}/${file.name}` : file.name;
+        let destPath = `${destFolder}/${file.name}`;
         let counter = 1;
         const baseName = file.name.replace(/\.[^.]+$/, '');
         const ext = file.name.replace(/^.*\./, '.');
         while (await this.app.vault.adapter.exists(destPath)) {
-          destPath = destFolder
-            ? `${destFolder}/${baseName} (${counter})${ext}`
-            : `${baseName} (${counter})${ext}`;
+          destPath = `${destFolder}/${baseName} (${counter})${ext}`;
           counter++;
         }
 

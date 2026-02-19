@@ -161,7 +161,10 @@ const EN: LocaleMap = {
   mapNameLabel:            'Map Name',
   mapNamePlaceholder:      'Encounter map name…',
   gridConfig:              'Grid Configuration',
-  gridPreset:              'Grid Preset',
+  gridTypeLabel:           'Grid Type',
+  gridSizeLabel:           'Grid Size (px)',
+  gridSizeDesc:            'Size of each grid cell in pixels',
+  gridPreset:              'Quick Presets',
   scaleLabel:              'Scale',
   scaleDesc:               'Real-world distance per grid square',
   skipBattlemap:           'Skip',
@@ -179,6 +182,12 @@ const EN: LocaleMap = {
   battlemapHeading:        'Battlemap',
   encounterNotesHeading:   'Notes',
   encounterNotesPlaceholder: 'Add encounter notes here…',
+
+  // ── Party Tokens ──────────────────────────────────────
+  includePartyTokens:      'Party Tokens',
+  includePartyTokensDesc:  'Place party member tokens on the map',
+  loadingParty:            'Loading party members…',
+  noPartyMembers:          'No party members found',
 
   // ── Notices (procedure complete) ───────────────────────
   exhaustionNotice:       '💀 Party gains 1 level of exhaustion! (Level {level})',
@@ -557,7 +566,10 @@ const DE: LocaleMap = {
   mapNameLabel:            'Kartenname',
   mapNamePlaceholder:      'Name der Begegnungskarte…',
   gridConfig:              'Rasterkonfiguration',
-  gridPreset:              'Rastervorlage',
+  gridTypeLabel:           'Rastertyp',
+  gridSizeLabel:           'Rastergröße (px)',
+  gridSizeDesc:            'Größe jeder Rasterzelle in Pixeln',
+  gridPreset:              'Schnellvorlagen',
   scaleLabel:              'Maßstab',
   scaleDesc:               'Reale Entfernung pro Rasterfeld',
   skipBattlemap:           'Überspringen',
@@ -575,6 +587,12 @@ const DE: LocaleMap = {
   battlemapHeading:        'Schlachtplan',
   encounterNotesHeading:   'Notizen',
   encounterNotesPlaceholder: 'Begegnungsnotizen hier einfügen…',
+
+  // ── Party Tokens ──────────────────────────────────────
+  includePartyTokens:      'Gruppen-Tokens',
+  includePartyTokensDesc:  'Gruppen-Tokens auf der Karte platzieren',
+  loadingParty:            'Gruppenmitglieder werden geladen…',
+  noPartyMembers:          'Keine Gruppenmitglieder gefunden',
 
   // ── Notices (procedure complete) ───────────────────────
   exhaustionNotice:       '💀 Die Gruppe erhält 1 Stufe Erschöpfung! (Stufe {level})',
