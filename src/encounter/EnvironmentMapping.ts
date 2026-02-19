@@ -456,3 +456,86 @@ export function getEnvironmentsForMonster(monsterIndex: string): string[] {
 export function getPopulatedEnvironments(): string[] {
   return ENVIRONMENTS.filter(e => (_envToMonsters.get(e.id)?.length ?? 0) > 0).map(e => e.id);
 }
+
+// ─── Hexcrawl Terrain → Encounter Environment Mapping ─────────────────────
+
+/**
+ * Base mapping from hexcrawl TerrainType to encounter environment IDs.
+ * Some hexcrawl terrains map to multiple environments (primary + secondary)
+ * to give a broader monster pool.
+ */
+const TERRAIN_TO_ENVIRONMENTS: Record<string, string[]> = {
+  'road':                  ['grassland', 'urban'],
+  'plains':                ['grassland'],
+  'forest':                ['forest'],
+  'hills':                 ['hill'],
+  'mountains':             ['mountain'],
+  'swamp':                 ['swamp'],
+  'desert':                ['desert'],
+  'arctic':                ['arctic'],
+  'coastal':               ['coastal'],
+  'jungle':                ['forest', 'swamp'],
+  'underdark':             ['underdark'],
+  'water':                 ['underwater', 'coastal'],
+  'river':                 ['coastal', 'swamp'],
+  'riverside':             ['coastal', 'forest'],
+  'river-crossing':        ['coastal', 'grassland'],
+  'inferno-river':         ['underdark', 'mountain'],
+  'inferno-riverside':     ['underdark', 'mountain'],
+  'inferno-river-crossing': ['underdark', 'mountain'],
+};
+
+/**
+ * Climate can override or add environments to the primary terrain mapping.
+ * For example, a "forest" hex in an arctic climate should also include arctic monsters.
+ */
+const CLIMATE_ENVIRONMENT_OVERRIDES: Record<string, string[]> = {
+  'arctic':    ['arctic'],
+  'tropical':  ['forest', 'swamp'],
+  'arid':      ['desert'],
+  'volcanic':  ['underdark'],
+  'maritime':  ['coastal', 'underwater'],
+  'temperate': [], // No override — use terrain as-is
+};
+
+/**
+ * Resolve the encounter environment IDs for a given hexcrawl terrain + climate.
+ * Returns a deduplicated array of environment IDs, with the primary terrain
+ * environments first, optionally augmented by climate-influenced environments.
+ *
+ * @param terrainType - The hex's terrain (e.g. "forest", "mountains")
+ * @param climateType - The hex's climate zone (e.g. "arctic", "volcanic"), or undefined
+ */
+export function getEnvironmentsForTerrain(
+  terrainType: string,
+  climateType?: string,
+): string[] {
+  const baseEnvs = TERRAIN_TO_ENVIRONMENTS[terrainType] ?? ['grassland'];
+  const climateEnvs = climateType ? (CLIMATE_ENVIRONMENT_OVERRIDES[climateType] ?? []) : [];
+
+  // Merge and deduplicate, primary environments first
+  const merged = [...baseEnvs];
+  for (const env of climateEnvs) {
+    if (!merged.includes(env)) {
+      merged.push(env);
+    }
+  }
+  return merged;
+}
+
+/**
+ * Get all unique SRD monster indices for a set of environment IDs.
+ */
+export function getMonstersForEnvironments(environmentIds: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const envId of environmentIds) {
+    for (const mon of getMonstersForEnvironment(envId)) {
+      if (!seen.has(mon)) {
+        seen.add(mon);
+        result.push(mon);
+      }
+    }
+  }
+  return result;
+}

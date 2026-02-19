@@ -355,6 +355,8 @@ export interface TravelLogEntry {
   encounterRolled: boolean;
   encounterTriggered: boolean;
   encounterDetails?: string;
+  /** Auto-generated encounter data from SRD (for battlemap creation) */
+  generatedEncounter?: any;
   discoveryFound: boolean;
   discoveryDetails?: string;
   /** Whether navigation failed and the party got lost */
@@ -409,6 +411,8 @@ export interface HexcrawlState {
   exhaustionLevel: number;
   /** Hexes traveled since last encounter (progressive encounter DC) */
   hexesSinceEncounter: number;
+  /** Average party level (for encounter generation, 1–20) */
+  partyLevel: number;
   /** Timestamp of last update */
   lastModified: string;
   /** Language for auto-generated read-aloud descriptions */
@@ -434,6 +438,7 @@ export function createDefaultHexcrawlState(mapId: string): HexcrawlState {
     roleAssignments: {},
     exhaustionLevel: 0,
     hexesSinceEncounter: 0,
+    partyLevel: 3,
     lastModified: new Date().toISOString(),
     descriptionLanguage: 'en',
   };

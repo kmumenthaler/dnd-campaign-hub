@@ -9,6 +9,7 @@
 import { ItemView, WorkspaceLeaf, Notice, Setting } from 'obsidian';
 import { HexcrawlTracker } from './HexcrawlTracker';
 import { HexcrawlSettingsModal } from './TerrainPainter';
+import { EncounterBattlemapModal } from './EncounterBattlemapModal';
 import { hLoc } from './HexcrawlLocale';
 import {
   TerrainType,
@@ -377,6 +378,18 @@ export class HexcrawlView extends ItemView {
       rationsSection.createEl('div', { text: hLoc(L, 'dehydrationWarning', { days: hcState.rations.daysWithoutWater }), cls: 'hexcrawl-view-danger' });
     }
 
+    // ── Party Level (for encounter generation) ───────────
+    const levelRow = rationsSection.createDiv({ cls: 'hexcrawl-view-rations-row' });
+    levelRow.createEl('span', { text: `${hLoc(L, 'partyLevelLabel')}: ${hcState.partyLevel ?? 3}`, cls: 'hexcrawl-view-ration-value' });
+    const levelDec = levelRow.createEl('button', { text: '−', cls: 'hexcrawl-view-btn small' });
+    levelDec.addEventListener('click', () => {
+      if ((hcState.partyLevel ?? 3) > 1) { hcState.partyLevel = (hcState.partyLevel ?? 3) - 1; bridge.save(); this.render(); }
+    });
+    const levelInc = levelRow.createEl('button', { text: '+', cls: 'hexcrawl-view-btn small' });
+    levelInc.addEventListener('click', () => {
+      if ((hcState.partyLevel ?? 3) < 20) { hcState.partyLevel = (hcState.partyLevel ?? 3) + 1; bridge.save(); this.render(); }
+    });
+
     // ── Exhaustion ───────────────────────────────────────
     if (hcState.exhaustionLevel > 0) {
       const exSection = container.createDiv({ cls: 'hexcrawl-view-section hexcrawl-view-exhaustion' });
@@ -438,6 +451,25 @@ export class HexcrawlView extends ItemView {
         });
         if (entry.encounterTriggered) {
           logEntry.createEl('span', { text: '⚔️', cls: 'hexcrawl-view-log-badge' });
+          // Add "Create Battlemap" button for encounter entries
+          const bmBtn = logEntry.createEl('button', {
+            text: hLoc(L, 'createEncounterBattlemap'),
+            cls: 'hexcrawl-view-log-battlemap-btn',
+          });
+          bmBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const ebmModal = new EncounterBattlemapModal(
+              this.app,
+              this.plugin,
+              entry.generatedEncounter ?? null,
+              entry.encounterDetails ?? '',
+              entry.terrain,
+              entry.col,
+              entry.row,
+              L as 'en' | 'de',
+            );
+            ebmModal.open();
+          });
         }
       }
     }

@@ -30,3 +30,4 @@ export {
 export { HexcrawlView, HEXCRAWL_VIEW_TYPE } from './HexcrawlView';
 export { hLoc } from './HexcrawlLocale';
 export type { HexcrawlBridge } from './HexcrawlView';
+export { EncounterBattlemapModal } from './EncounterBattlemapModal';

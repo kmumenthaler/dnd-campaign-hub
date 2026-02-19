@@ -14,6 +14,7 @@
  */
 
 import { App, Modal, Setting, Notice, TextAreaComponent } from 'obsidian';
+import type DndCampaignHubPlugin from '../main';
 import { HexcrawlTracker } from './HexcrawlTracker';
 import {
   TerrainType,
@@ -35,6 +36,9 @@ import {
   getAllClimateTerrainDescriptions,
 } from './ClimateDescriptions';
 import { hLoc } from './HexcrawlLocale';
+import { SRDApiClient } from '../encounter/SRDApiClient';
+import { EncounterGenerator, EncounterTableEntry, EncounterDifficulty } from '../encounter/EncounterGenerator';
+import { getEnvironmentsForTerrain, getMonstersForEnvironments, ENVIRONMENTS } from '../encounter/EnvironmentMapping';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -43,6 +47,17 @@ export interface HexProcedureResult {
   completed: boolean;
   /** The built log entry */
   logEntry?: Omit<TravelLogEntry, 'timestamp'>;
+  /** Whether an encounter was triggered (rolled or forced) */
+  encounterTriggered?: boolean;
+  /** If an encounter was generated, the full encounter data (for battlemap creation) */
+  generatedEncounter?: EncounterTableEntry;
+  /** Manual encounter description (if no auto-generation) */
+  encounterDetails?: string;
+  /** The terrain type of the target hex */
+  terrainType?: TerrainType;
+  /** Target hex coordinates */
+  hexCol?: number;
+  hexRow?: number;
 }
 
 type ProcedureStep = 'terrain' | 'weather' | 'checks' | 'encounter' | 'discovery' | 'summary';
@@ -62,6 +77,7 @@ const STEP_LABEL_KEYS: Record<ProcedureStep, string> = {
 // ─── Modal ────────────────────────────────────────────────────────────────
 
 export class HexProcedureModal extends Modal {
+  private plugin: DndCampaignHubPlugin;
   private tracker: HexcrawlTracker;
   private targetCol: number;
   private targetRow: number;
@@ -88,8 +104,15 @@ export class HexProcedureModal extends Modal {
   private foodForaged: number = 0;
   private foragerWisMod: number = 0;
 
+  // Encounter table integration
+  private encounterGenerator: EncounterGenerator | null = null;
+  private srdApiClient: SRDApiClient;
+  private generatedEncounter: EncounterTableEntry | null = null;
+  private isGeneratingEncounter: boolean = false;
+
   constructor(
     app: App,
+    plugin: DndCampaignHubPlugin,
     tracker: HexcrawlTracker,
     targetCol: number,
     targetRow: number,
@@ -97,11 +120,18 @@ export class HexProcedureModal extends Modal {
     customTerrainDescriptions?: Record<string, string[]>,
   ) {
     super(app);
+    this.plugin = plugin;
     this.tracker = tracker;
     this.targetCol = targetCol;
     this.targetRow = targetRow;
     this.resolve = resolve;
     this.customTerrainDescriptions = customTerrainDescriptions || {};
+
+    // Initialize encounter generation
+    this.srdApiClient = new SRDApiClient();
+    if (plugin.encounterBuilder) {
+      this.encounterGenerator = new EncounterGenerator(this.srdApiClient, plugin.encounterBuilder);
+    }
   }
 
   /** Shorthand for the active description language. */
@@ -511,7 +541,9 @@ export class HexProcedureModal extends Modal {
     const L = this.lang;
     this.bodyEl.createEl('h3', { text: hLoc(L, 'randomEncounterCheck') });
 
-    const terrain = getTerrainDefinition(this.tracker.getTerrainAt(this.targetCol, this.targetRow));
+    const terrainType = this.tracker.getTerrainAt(this.targetCol, this.targetRow);
+    const terrain = getTerrainDefinition(terrainType);
+    const climateType = this.tracker.getClimateAt?.(this.targetCol, this.targetRow);
 
     // Progressive encounter DC: base DC - (2 × hexes since last encounter), min 2
     const hexesSince = this.tracker.state.hexesSinceEncounter ?? 0;
@@ -527,6 +559,18 @@ export class HexProcedureModal extends Modal {
     dcInfo.createEl('span', { text: hLoc(L, 'encounterBaseDC', { dc: terrain.encounterDC }), cls: 'hexcrawl-encounter-dc' });
     dcInfo.createEl('span', { text: hLoc(L, 'hexesSinceEncounter', { n: hexesSince }), cls: 'hexcrawl-encounter-dc' });
     dcInfo.createEl('span', { text: hLoc(L, 'effectiveEncounterDC', { dc: effectiveDC, chance: Math.min(95, (21 - effectiveDC) * 5) }), cls: 'hexcrawl-encounter-dc effective' });
+
+    // Show terrain → environment context
+    const envIds = getEnvironmentsForTerrain(terrainType, climateType);
+    const envNames = envIds
+      .map(id => ENVIRONMENTS.find(e => e.id === id))
+      .filter(Boolean)
+      .map(e => `${e!.icon} ${e!.name}`);
+    const envInfo = this.bodyEl.createDiv({ cls: 'hexcrawl-encounter-env-info' });
+    envInfo.createEl('span', {
+      text: hLoc(L, 'encounterEnvironments', { environments: envNames.join(', ') }),
+      cls: 'hexcrawl-encounter-env',
+    });
 
     // Encounter roll
     const rollRow = this.bodyEl.createDiv({ cls: 'hexcrawl-encounter-actions' });
@@ -547,6 +591,13 @@ export class HexProcedureModal extends Modal {
       this.encounterTriggered = roll >= effectiveDC;
       resultEl.textContent = hLoc(L, 'rolledResult', { roll, result: this.encounterTriggered ? hLoc(L, 'encounterBang') : hLoc(L, 'safe') });
       resultEl.toggleClass('encounter-triggered', this.encounterTriggered);
+
+      // Auto-generate encounter when triggered
+      if (this.encounterTriggered && this.encounterGenerator && !this.generatedEncounter) {
+        this.generateRandomEncounter();
+      }
+      // Re-render to show encounter details section
+      this.renderCurrentStep();
     });
 
     // Manual override
@@ -558,19 +609,171 @@ export class HexProcedureModal extends Modal {
     triggerBtn.addEventListener('click', () => {
       this.encounterRolled = true;
       this.encounterTriggered = !this.encounterTriggered;
+      // Auto-generate encounter when forcing trigger
+      if (this.encounterTriggered && this.encounterGenerator && !this.generatedEncounter) {
+        this.generateRandomEncounter();
+      }
       this.renderCurrentStep();
     });
 
-    // Encounter details
+    // Encounter details — shown when triggered
     if (this.encounterTriggered) {
-      this.bodyEl.createEl('h4', { text: hLoc(L, 'encounterDetails') });
-      const ta = new TextAreaComponent(this.bodyEl);
-      ta.setPlaceholder(hLoc(L, 'encounterPlaceholder'));
-      ta.setValue(this.encounterDetails);
-      ta.inputEl.rows = 4;
-      ta.inputEl.classList.add('hexcrawl-textarea');
-      ta.onChange(v => this.encounterDetails = v);
+      this.renderEncounterDetails();
     }
+  }
+
+  /**
+   * Render the encounter details section with generated encounter + reroll + manual notes.
+   */
+  private renderEncounterDetails() {
+    const L = this.lang;
+    this.bodyEl.createEl('h4', { text: hLoc(L, 'encounterDetails') });
+
+    // Loading state
+    if (this.isGeneratingEncounter) {
+      const loadingEl = this.bodyEl.createDiv({ cls: 'hexcrawl-encounter-loading' });
+      loadingEl.createEl('span', { text: hLoc(L, 'generatingEncounter'), cls: 'hexcrawl-loading-text' });
+      return;
+    }
+
+    // Generated encounter card
+    if (this.generatedEncounter) {
+      const card = this.bodyEl.createDiv({ cls: 'hexcrawl-encounter-card' });
+
+      // Monster groups
+      for (const group of this.generatedEncounter.monsters) {
+        const monsterLine = card.createDiv({ cls: 'hexcrawl-encounter-monster' });
+        const countText = group.count > 1 ? `${group.count}× ` : '';
+        monsterLine.createEl('span', {
+          text: `${countText}${group.name}`,
+          cls: 'hexcrawl-encounter-monster-name',
+        });
+        monsterLine.createEl('span', {
+          text: `CR ${group.cr}`,
+          cls: 'hexcrawl-encounter-monster-cr',
+        });
+      }
+
+      // Difficulty & XP
+      const metaLine = card.createDiv({ cls: 'hexcrawl-encounter-meta' });
+      const diffClass = `encounter-difficulty-${this.generatedEncounter.difficulty.toLowerCase().replace(/\s+/g, '-')}`;
+      metaLine.createEl('span', {
+        text: this.generatedEncounter.difficulty,
+        cls: `hexcrawl-encounter-difficulty ${diffClass}`,
+      });
+      metaLine.createEl('span', {
+        text: `${this.generatedEncounter.totalXP} XP`,
+        cls: 'hexcrawl-encounter-xp',
+      });
+
+      // Auto-fill encounter details text
+      const detailsText = this.generatedEncounter.monsters
+        .map(g => `${g.count > 1 ? g.count + '× ' : ''}${g.name} (CR ${g.cr})`)
+        .join(', ')
+        + ` — ${this.generatedEncounter.difficulty}, ${this.generatedEncounter.totalXP} XP`;
+      if (!this.encounterDetails || this.encounterDetails === this._lastAutoEncounterText) {
+        this.encounterDetails = detailsText;
+        this._lastAutoEncounterText = detailsText;
+      }
+
+      // Reroll button
+      const rerollRow = card.createDiv({ cls: 'hexcrawl-encounter-reroll' });
+      const rerollBtn = rerollRow.createEl('button', {
+        text: hLoc(L, 'rerollEncounter'),
+        cls: 'hexcrawl-action-btn secondary',
+      });
+      rerollBtn.addEventListener('click', () => {
+        this.generatedEncounter = null;
+        this._lastAutoEncounterText = '';
+        this.encounterDetails = '';
+        this.generateRandomEncounter();
+      });
+    } else if (this.encounterGenerator) {
+      // Generation available but no encounter yet — offer to generate
+      const genRow = this.bodyEl.createDiv({ cls: 'hexcrawl-encounter-gen-actions' });
+      const genBtn = genRow.createEl('button', {
+        text: hLoc(L, 'generateEncounter'),
+        cls: 'hexcrawl-action-btn',
+      });
+      genBtn.addEventListener('click', () => {
+        this.generateRandomEncounter();
+      });
+    }
+
+    // Manual notes textarea (always available)
+    this.bodyEl.createEl('h5', { text: hLoc(L, 'encounterNotesLabel') });
+    const ta = new TextAreaComponent(this.bodyEl);
+    ta.setPlaceholder(hLoc(L, 'encounterPlaceholder'));
+    ta.setValue(this.encounterDetails);
+    ta.inputEl.rows = 4;
+    ta.inputEl.classList.add('hexcrawl-textarea');
+    ta.onChange(v => this.encounterDetails = v);
+  }
+
+  /** Track auto-generated text so we can replace it on reroll */
+  private _lastAutoEncounterText: string = '';
+
+  /**
+   * Generate a random encounter using the SRD encounter system,
+   * filtered by the hex's terrain and climate.
+   */
+  private async generateRandomEncounter() {
+    if (!this.encounterGenerator) return;
+
+    const terrainType = this.tracker.getTerrainAt(this.targetCol, this.targetRow);
+    const climateType = this.tracker.getClimateAt?.(this.targetCol, this.targetRow);
+    const envIds = getEnvironmentsForTerrain(terrainType, climateType);
+
+    // Use the first (primary) environment for generation
+    const primaryEnv = envIds[0] ?? 'grassland';
+    const partyLevel = this.tracker.state.partyLevel ?? 3;
+    const partySize = this.tracker.state.rations?.partySize ?? 4;
+
+    this.isGeneratingEncounter = true;
+    this.renderCurrentStep();
+
+    try {
+      // Determine what monsters to exclude (from current encounter if any)
+      const excludeIndices = this.generatedEncounter?.monsters.map(m => m.index) ?? [];
+
+      const entry = await this.encounterGenerator.generateSingleEntry(
+        {
+          environmentId: primaryEnv,
+          partyLevel,
+          partySize,
+        },
+        1,
+        excludeIndices,
+      );
+
+      if (entry) {
+        // If primary environment yields nothing, try secondary environments
+        this.generatedEncounter = entry;
+      } else if (envIds.length > 1) {
+        // Try secondary environments
+        for (let i = 1; i < envIds.length; i++) {
+          const fallbackEntry = await this.encounterGenerator.generateSingleEntry(
+            {
+              environmentId: envIds[i]!,
+              partyLevel,
+              partySize,
+            },
+            1,
+            excludeIndices,
+          );
+          if (fallbackEntry) {
+            this.generatedEncounter = fallbackEntry;
+            break;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[HexProcedureModal] Encounter generation failed:', err);
+      new Notice(hLoc(this.lang, 'encounterGenFailed'));
+    }
+
+    this.isGeneratingEncounter = false;
+    this.renderCurrentStep();
   }
 
   // ─── Step 5: Discovery ───────────────────────────────────────────────
@@ -762,6 +965,7 @@ export class HexProcedureModal extends Modal {
       encounterRolled: this.encounterRolled,
       encounterTriggered: this.encounterTriggered,
       encounterDetails: this.encounterDetails || undefined,
+      generatedEncounter: this.generatedEncounter ? JSON.parse(JSON.stringify(this.generatedEncounter)) : undefined,
       discoveryFound: this.discoveryFound,
       discoveryDetails: this.discoveryDetails || undefined,
       foodForaged: this.foodForaged,
@@ -773,7 +977,16 @@ export class HexProcedureModal extends Modal {
     this.tracker.addLogEntry(logEntry);
 
     // Resolve and close
-    this.resolve({ completed: true, logEntry });
+    this.resolve({
+      completed: true,
+      logEntry,
+      encounterTriggered: this.encounterTriggered,
+      generatedEncounter: this.generatedEncounter ?? undefined,
+      encounterDetails: this.encounterDetails || undefined,
+      terrainType: terrain,
+      hexCol: this.targetCol,
+      hexRow: this.targetRow,
+    });
     this.close();
   }
 }
@@ -783,13 +996,14 @@ export class HexProcedureModal extends Modal {
  */
 export function openHexProcedureModal(
   app: App,
+  plugin: DndCampaignHubPlugin,
   tracker: HexcrawlTracker,
   targetCol: number,
   targetRow: number,
   customTerrainDescriptions?: Record<string, string[]>,
 ): Promise<HexProcedureResult> {
   return new Promise((resolve) => {
-    const modal = new HexProcedureModal(app, tracker, targetCol, targetRow, resolve, customTerrainDescriptions);
+    const modal = new HexProcedureModal(app, plugin, tracker, targetCol, targetRow, resolve, customTerrainDescriptions);
     modal.open();
   });
 }

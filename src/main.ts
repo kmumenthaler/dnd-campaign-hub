@@ -54,6 +54,7 @@ import {
   drawClimateHexBorder,
   getHexClimateAt,
   hLoc,
+  EncounterBattlemapModal,
 } from './hexcrawl';
 import type {
   TerrainType,
@@ -9103,7 +9104,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						new Notice(hLoc(hcLang, 'noMovementBudget'));
 						return;
 					}
-					openHexProcedureModal(this.app, tracker, hex.col, hex.row, config.customTerrainDescriptions).then((result) => {
+					openHexProcedureModal(this.app, this, tracker, hex.col, hex.row, config.customTerrainDescriptions).then((result) => {
 						if (!result || !result.completed) return; // User cancelled
 						// State is already mutated inside tracker by the modal
 						config.hexcrawlState = tracker.toJSON();
@@ -9119,6 +9120,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 						redrawAnnotations();
 						(viewport as any)._syncPlayerView();
 						new Notice(hLoc(hcLang, 'traveledToHex', { col: hex.col, row: hex.row }));
+
+						// Encounter battlemap creation is now handled via button in the travel log
 					});
 				}
         else if (activeTool === 'player-view') {
