@@ -2666,6 +2666,29 @@ export default class DndCampaignHubPlugin extends Plugin {
     // Check for version updates
     await this.checkForUpdates();
 
+    // Focus recovery command — workaround for Obsidian/Electron focus bug
+    this.addCommand({
+      id: "reset-focus",
+      name: "Reset Focus (fix stuck input fields)",
+      callback: () => {
+        // Blur whatever currently has focus (may be an invisible/orphaned element)
+        if (document.activeElement && document.activeElement !== document.body) {
+          (document.activeElement as HTMLElement).blur();
+        }
+        // Focus the active editor leaf to restore normal editing
+        const activeLeaf = this.app.workspace.activeLeaf;
+        if (activeLeaf) {
+          this.app.workspace.setActiveLeaf(activeLeaf, { focus: true });
+          // Also try to focus the editor within the leaf
+          const editor = (activeLeaf.view as any)?.editor;
+          if (editor) {
+            editor.focus();
+          }
+        }
+        new Notice('Focus reset');
+      },
+    });
+
     // Add the main command with configurable hotkey
     this.addCommand({
       id: "open-dnd-hub",
