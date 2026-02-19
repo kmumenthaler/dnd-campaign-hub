@@ -3419,6 +3419,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 
   onunload() {
     this.musicPlayer?.destroy();
+    // Close all player-view popout windows to prevent orphaned Electron windows
+    if (this._playerMapViews) {
+      this._playerMapViews.forEach((pv: any) => {
+        try { pv.leaf?.detach(); } catch (e) { /* ignore */ }
+      });
+      this._playerMapViews.clear();
+    }
   }
 
 	async loadSettings() {
@@ -5165,10 +5172,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 			e.stopPropagation();
 			visionMenu.toggleClass('open', !visionMenu.hasClass('open'));
 		});
-		// Close on outside click
-		document.addEventListener('click', () => {
+		// Close on outside click (use named fn so it can be removed)
+		const closeVisionMenu = () => {
 			visionMenu.removeClass('open');
+		};
+		document.addEventListener('click', closeVisionMenu);
+		// Clean up when the element is detached from the DOM
+		const visionMenuObserver = new MutationObserver(() => {
+			if (!visionDropdown.isConnected) {
+				document.removeEventListener('click', closeVisionMenu);
+				visionMenuObserver.disconnect();
+			}
 		});
+		visionMenuObserver.observe(visionDropdown.parentElement || document.body, { childList: true, subtree: true });
 
 		// Helper to build an option item (used for both "All Players" and token entries)
 		const buildVisionOption = (
@@ -26764,12 +26780,21 @@ ${classes}
       dropdownList.style.display = isVisible ? "none" : "block";
     });
 
-    // Close dropdown when clicking outside
-    document.addEventListener("click", (e) => {
+    // Close dropdown when clicking outside (use named fn so it can be removed)
+    const closeDropdown = (e: MouseEvent) => {
       if (!dropdownContainer.contains(e.target as Node)) {
         dropdownList.style.display = "none";
       }
+    };
+    document.addEventListener("click", closeDropdown);
+    // Clean up when the element is detached from the DOM
+    const dropdownObserver = new MutationObserver(() => {
+      if (!dropdownContainer.isConnected) {
+        document.removeEventListener("click", closeDropdown);
+        dropdownObserver.disconnect();
+      }
     });
+    dropdownObserver.observe(dropdownContainer.parentElement || document.body, { childList: true, subtree: true });
 
     return {
       clearSelections: () => {
