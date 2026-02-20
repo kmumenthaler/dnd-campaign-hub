@@ -87,46 +87,159 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   musicSettings: { ...DEFAULT_MUSIC_SETTINGS },
 };
 
-class CalibrationModal extends Modal {
-  pixelDistance: number;
-  onConfirm: () => void;
+/**
+ * Grid Calibration Modal
+ *
+ * Allows the user to:
+ * - Set the grid cell size in pixels (uniform)
+ * - Fine-tune width (W) and height (H) independently
+ * - Use the two-point measurement tool for quick calibration
+ */
+class GridCalibrationModal extends Modal {
+  private config: any;
+  private onApply: (gridSize: number, gridSizeW: number, gridSizeH: number) => void;
+  private measuredDistance: number | null;
 
-  constructor(app: App, pixelDistance: number, onConfirm: () => void) {
+  constructor(
+    app: App,
+    config: any,
+    onApply: (gridSize: number, gridSizeW: number, gridSizeH: number) => void,
+    measuredDistance?: number,
+  ) {
     super(app);
-    this.pixelDistance = pixelDistance;
-    this.onConfirm = onConfirm;
+    this.config = config;
+    this.onApply = onApply;
+    this.measuredDistance = measuredDistance ?? null;
   }
 
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
+    contentEl.addClass('dnd-grid-calibration-modal');
 
-    contentEl.createEl("h2", { text: "Calibrate Grid" });
+    contentEl.createEl('h2', { text: '⚙️ Grid Calibration' });
 
-    contentEl.createEl("p", { 
-      text: `Measured distance: ${Math.round(this.pixelDistance)} pixels`,
-      cls: "dnd-map-calibration-info"
+    // If we have a measurement, show it
+    if (this.measuredDistance !== null) {
+      const measuredDiv = contentEl.createDiv({ cls: 'dnd-grid-cal-measured' });
+      measuredDiv.createEl('p', {
+        text: `📏 Measured distance: ${Math.round(this.measuredDistance * 10) / 10} px`,
+      });
+      const applyMeasuredBtn = measuredDiv.createEl('button', {
+        text: 'Apply as Grid Size',
+        cls: 'mod-cta',
+      });
+      applyMeasuredBtn.style.marginBottom = '16px';
+      applyMeasuredBtn.addEventListener('click', () => {
+        const val = Math.round(this.measuredDistance! * 10) / 10;
+        sizeInput.value = String(val);
+        wInput.value = String(val);
+        hInput.value = String(val);
+      });
+    }
+
+    // ── Uniform Grid Size ────────────────────────────────
+    const uniformSection = contentEl.createDiv({ cls: 'dnd-grid-cal-section' });
+    uniformSection.createEl('h4', { text: 'Grid Cell Size (uniform)' });
+    uniformSection.createEl('p', {
+      text: 'Sets both width and height to the same value.',
+      cls: 'setting-item-description',
     });
 
-    contentEl.createEl("p", { 
-      text: "Each hex represents 6 miles (D\u200D&D 5e standard). Confirm to apply this calibration.",
-      cls: "dnd-map-calibration-label"
+    const currentSize = this.config.gridSize || 70;
+    const currentW = this.config.gridSizeW || currentSize;
+    const currentH = this.config.gridSizeH || currentSize;
+
+    const sizeRow = uniformSection.createDiv({ cls: 'dnd-grid-cal-row' });
+    sizeRow.createEl('label', { text: 'Size (px):' });
+    const sizeInput = sizeRow.createEl('input', {
+      type: 'number',
+      attr: { min: '5', max: '500', step: '0.1', value: String(currentSize) },
+      cls: 'dnd-grid-cal-input',
+    });
+    sizeInput.addEventListener('input', () => {
+      if (linked) {
+        wInput.value = sizeInput.value;
+        hInput.value = sizeInput.value;
+      }
     });
 
-    // Confirm / Cancel buttons
-    const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
-    const confirmBtn = buttonContainer.createEl("button", { text: "Apply", cls: "mod-cta" });
-    confirmBtn.addEventListener("click", () => {
-      this.onConfirm();
+    // ── Independent Width / Height ───────────────────────
+    const indepSection = contentEl.createDiv({ cls: 'dnd-grid-cal-section' });
+    indepSection.createEl('h4', { text: 'Fine-Tune Width & Height' });
+    indepSection.createEl('p', {
+      text: 'Adjust width and height independently to match imperfect grids.',
+      cls: 'setting-item-description',
+    });
+
+    // Link toggle
+    let linked = (currentW === currentH);
+    const linkRow = indepSection.createDiv({ cls: 'dnd-grid-cal-link-row' });
+    const linkBtn = linkRow.createEl('button', {
+      text: linked ? '🔗 Linked' : '🔓 Independent',
+      cls: 'dnd-grid-cal-link-btn',
+    });
+    linkBtn.addEventListener('click', () => {
+      linked = !linked;
+      linkBtn.textContent = linked ? '🔗 Linked' : '🔓 Independent';
+      if (linked) {
+        hInput.value = wInput.value;
+        sizeInput.value = wInput.value;
+      }
+    });
+
+    const whRow = indepSection.createDiv({ cls: 'dnd-grid-cal-wh-row' });
+
+    const wCol = whRow.createDiv({ cls: 'dnd-grid-cal-col' });
+    wCol.createEl('label', { text: 'Width (px):' });
+    const wInput = wCol.createEl('input', {
+      type: 'number',
+      attr: { min: '5', max: '500', step: '0.1', value: String(currentW) },
+      cls: 'dnd-grid-cal-input',
+    });
+    wInput.addEventListener('input', () => {
+      if (linked) {
+        hInput.value = wInput.value;
+        sizeInput.value = wInput.value;
+      }
+    });
+
+    const hCol = whRow.createDiv({ cls: 'dnd-grid-cal-col' });
+    hCol.createEl('label', { text: 'Height (px):' });
+    const hInput = hCol.createEl('input', {
+      type: 'number',
+      attr: { min: '5', max: '500', step: '0.1', value: String(currentH) },
+      cls: 'dnd-grid-cal-input',
+    });
+    hInput.addEventListener('input', () => {
+      if (linked) {
+        wInput.value = hInput.value;
+        sizeInput.value = hInput.value;
+      }
+    });
+
+    // ── Buttons ──────────────────────────────────────────
+    const btnRow = contentEl.createDiv({ cls: 'modal-button-container' });
+    btnRow.style.display = 'flex';
+    btnRow.style.justifyContent = 'flex-end';
+    btnRow.style.gap = '10px';
+    btnRow.style.marginTop = '20px';
+
+    const cancelBtn = btnRow.createEl('button', { text: 'Cancel' });
+    cancelBtn.addEventListener('click', () => this.close());
+
+    const applyBtn = btnRow.createEl('button', { text: '✅ Apply', cls: 'mod-cta' });
+    applyBtn.addEventListener('click', () => {
+      const gs = parseFloat(sizeInput.value) || 70;
+      const gw = parseFloat(wInput.value) || gs;
+      const gh = parseFloat(hInput.value) || gs;
+      this.onApply(gs, gw, gh);
       this.close();
     });
-    const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
-    cancelBtn.addEventListener("click", () => this.close());
   }
 
   onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
+    this.contentEl.empty();
   }
 }
 
@@ -4709,6 +4822,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			if (savedData.dimensions) config.dimensions = savedData.dimensions;
 			if (savedData.gridOffsetX !== undefined) config.gridOffsetX = savedData.gridOffsetX;
 			if (savedData.gridOffsetY !== undefined) config.gridOffsetY = savedData.gridOffsetY;
+			if (savedData.gridSizeW !== undefined) config.gridSizeW = savedData.gridSizeW;
+			if (savedData.gridSizeH !== undefined) config.gridSizeH = savedData.gridSizeH;
+			if (savedData.gridVisible !== undefined) config.gridVisible = savedData.gridVisible;
 			if (savedData.isVideo !== undefined) config.isVideo = savedData.isVideo;
 			
 			// Ensure grid offset defaults
@@ -5443,6 +5559,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		
 		const moveGridBtn = createToolBtn(setupContent, '✥', 'Move Grid');
 		const calibrateBtn = createToolBtn(setupContent, '⚙', 'Calibrate');
+		const measureBtn = createToolBtn(setupContent, '📏', 'Measure');
 		
 		// === PLAYER VIEW (full-width, prominent) ===
 		const viewGroup = toolbarContent.createDiv({ cls: 'dnd-map-tool-group' });
@@ -5697,6 +5814,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			
 			calibrateBtn.toggleClass('hidden', shouldHideGridTools);
 			moveGridBtn.toggleClass('hidden', shouldHideGridTools);
+			measureBtn.toggleClass('hidden', shouldHideGridTools);
 			
 			// PoI button only visible for hexcrawl maps
 			poiBtn.toggleClass('hidden', !isHexcrawl);
@@ -5707,6 +5825,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				calibrationPoint1 = null;
 				calibrationPoint2 = null;
 				calibrateBtn.removeClass('active');
+				measureBtn.removeClass('active');
 			}
 			// If move-grid tool was active and annotations appeared (non-hexcrawl), switch to pan
 			if (shouldHideGridTools && activeTool === 'move-grid') {
@@ -5717,24 +5836,50 @@ export default class DndCampaignHubPlugin extends Plugin {
 		updateGridToolsVisibility();
 
 		calibrateBtn.addEventListener('click', () => {
+			// Open the grid calibration modal (no measurement)
+			new GridCalibrationModal(
+				this.app,
+				config,
+				async (gs, gw, gh) => {
+					config.gridSize = gs;
+					config.gridSizeW = gw;
+					config.gridSizeH = gh;
+					// Update slider flyout label/value
+					gridSlider.value = String(gs);
+					gridSliderLabel.textContent = `${Math.round(gs * 10) / 10}px`;
+					// Update W/H inputs
+					gridWInput.value = String(Math.round((gw || gs) * 10) / 10);
+					gridHInput.value = String(Math.round((gh || gs) * 10) / 10);
+					gridWHLinked = !(gw && gh && gw !== gh);
+					gridLinkBtn.textContent = gridWHLinked ? '🔗' : '🔓';
+					gridLinkBtn.toggleClass('linked', gridWHLinked);
+					redrawGridOverlays();
+					redrawAnnotations();
+					await this.saveMapAnnotations(config, el);
+					new Notice('Grid calibration applied');
+				},
+			).open();
+		});
+
+		measureBtn.addEventListener('click', () => {
 			if (isCalibrating) {
-				// Cancel calibration
+				// Cancel measurement
 				isCalibrating = false;
 				calibrationPoint1 = null;
 				calibrationPoint2 = null;
-				calibrateBtn.removeClass('active');
+				measureBtn.removeClass('active');
 				setActiveTool('pan');
 				redrawAnnotations();
-				new Notice('Calibration cancelled');
+				new Notice('Measurement cancelled');
 			} else {
-				// Start calibration — set flag AFTER setActiveTool so it doesn't get cancelled
-				setActiveTool('pan'); // Clear other tools first
+				// Start two-point measurement
+				setActiveTool('pan');
 				isCalibrating = true;
 				calibrationPoint1 = null;
 				calibrationPoint2 = null;
-				calibrateBtn.addClass('active');
+				measureBtn.addClass('active');
 				viewport.style.cursor = 'crosshair';
-				new Notice('Click two points on the map to measure one hex width');
+				new Notice('Click two points on the map to measure distance');
 			}
 		});
 		
@@ -5812,11 +5957,101 @@ export default class DndCampaignHubPlugin extends Plugin {
 		gridSliderFlyout.addEventListener('mousedown', (e) => e.stopPropagation());
 		gridSliderFlyout.addEventListener('click', (e) => e.stopPropagation());
 		
+		// --- Fine-tune W/H row ---
+		const gridWHRow = gridSliderFlyout.createDiv({ cls: 'dnd-map-grid-wh-row' });
+		let gridWHLinked = !(config.gridSizeW && config.gridSizeH && config.gridSizeW !== config.gridSizeH);
+		
+		const gridWLabel = gridWHRow.createEl('span', { text: 'W', cls: 'dnd-map-grid-wh-label' });
+		const gridWInput = gridWHRow.createEl('input', {
+			type: 'number',
+			cls: 'dnd-map-grid-wh-input',
+			attr: { min: '10', max: '600', step: '0.1', value: String(Math.round((config.gridSizeW || config.gridSize) * 10) / 10) }
+		});
+		
+		const gridLinkBtn = gridWHRow.createEl('button', { 
+			text: gridWHLinked ? '🔗' : '🔓', 
+			cls: 'dnd-map-grid-link-btn' + (gridWHLinked ? ' linked' : '') 
+		});
+		
+		const gridHLabel = gridWHRow.createEl('span', { text: 'H', cls: 'dnd-map-grid-wh-label' });
+		const gridHInput = gridWHRow.createEl('input', {
+			type: 'number',
+			cls: 'dnd-map-grid-wh-input',
+			attr: { min: '10', max: '600', step: '0.1', value: String(Math.round((config.gridSizeH || config.gridSize) * 10) / 10) }
+		});
+		
+		// Prevent events from bubbling
+		[gridWInput, gridHInput, gridLinkBtn].forEach(el2 => {
+			el2.addEventListener('mousedown', (e) => e.stopPropagation());
+			el2.addEventListener('click', (e) => e.stopPropagation());
+		});
+		
+		const syncWHFromGridSize = (size: number) => {
+			const rounded = Math.round(size * 10) / 10;
+			gridWInput.value = String(rounded);
+			gridHInput.value = String(rounded);
+			config.gridSizeW = undefined as any;
+			config.gridSizeH = undefined as any;
+		};
+		
+		const applyWH = () => {
+			const w = parseFloat(gridWInput.value);
+			const h = parseFloat(gridHInput.value);
+			if (!isNaN(w) && w >= 10) config.gridSizeW = w;
+			if (!isNaN(h) && h >= 10) config.gridSizeH = h;
+			redrawGridOverlays();
+			redrawAnnotations();
+			this.saveMapAnnotations(config, el);
+		};
+		
+		let gridWHTimeout: ReturnType<typeof setTimeout> | null = null;
+		const debouncedApplyWH = () => {
+			if (gridWHTimeout) clearTimeout(gridWHTimeout);
+			gridWHTimeout = setTimeout(applyWH, 300);
+		};
+		
+		gridWInput.addEventListener('input', () => {
+			if (gridWHLinked) {
+				gridHInput.value = gridWInput.value;
+			}
+			debouncedApplyWH();
+		});
+		gridHInput.addEventListener('input', () => {
+			if (gridWHLinked) {
+				gridWInput.value = gridHInput.value;
+			}
+			debouncedApplyWH();
+		});
+		
+		gridLinkBtn.addEventListener('click', () => {
+			gridWHLinked = !gridWHLinked;
+			gridLinkBtn.textContent = gridWHLinked ? '🔗' : '🔓';
+			gridLinkBtn.toggleClass('linked', gridWHLinked);
+			if (gridWHLinked) {
+				// Sync H to match W
+				gridHInput.value = gridWInput.value;
+				const val = parseFloat(gridWInput.value);
+				if (!isNaN(val) && val >= 10) {
+					config.gridSize = val;
+					config.gridSizeW = undefined as any;
+					config.gridSizeH = undefined as any;
+					gridSlider.value = String(val);
+					gridSliderLabel.textContent = `${Math.round(val * 10) / 10}px`;
+					redrawGridOverlays();
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
+				}
+			}
+		});
+		
 		let gridSliderTimeout: ReturnType<typeof setTimeout> | null = null;
 		gridSlider.addEventListener('input', (e) => {
 			const newSize = parseFloat((e.target as HTMLInputElement).value);
 			config.gridSize = newSize;
 			gridSliderLabel.textContent = `${Math.round(newSize * 10) / 10}px`;
+			if (gridWHLinked) {
+				syncWHFromGridSize(newSize);
+			}
 			// Redraw grid live
 			redrawGridOverlays();
 			redrawAnnotations();
@@ -6074,6 +6309,9 @@ export default class DndCampaignHubPlugin extends Plugin {
             poiReferences: config.poiReferences,
             gridType: config.gridType,
             gridSize: config.gridSize,
+            gridSizeW: config.gridSizeW,
+            gridSizeH: config.gridSizeH,
+            gridVisible: config.gridVisible !== undefined ? config.gridVisible : true,
             gridOffsetX: config.gridOffsetX || 0,
             gridOffsetY: config.gridOffsetY || 0,
             scale: config.scale,
@@ -6280,31 +6518,67 @@ export default class DndCampaignHubPlugin extends Plugin {
 				return config.gridSize;
 			};
 
+			// Helper: Get hex geometry accounting for independent W/H overrides
+			// Returns { horiz, vert, sizeX, sizeY } for center-to-center spacing and drawing radii
+			const getHexGeometry = () => {
+				if (config.gridType === 'hex-horizontal') {
+					const horiz = config.gridSizeW || config.gridSize;
+					const defaultSize = (2/3) * horiz;
+					const defaultVert = Math.sqrt(3) * defaultSize;
+					const vert = config.gridSizeH || defaultVert;
+					const sizeX = horiz * (2/3);
+					const sizeY = vert / Math.sqrt(3);
+					return { horiz, vert, sizeX, sizeY };
+				} else if (config.gridType === 'hex-vertical') {
+					const vert = config.gridSizeH || config.gridSize;
+					const defaultSize = (2/3) * vert;
+					const defaultHoriz = Math.sqrt(3) * defaultSize;
+					const horiz = config.gridSizeW || defaultHoriz;
+					const sizeY = vert * (2/3);
+					const sizeX = horiz / Math.sqrt(3);
+					return { horiz, vert, sizeX, sizeY };
+				} else {
+					// Square fallback
+					const s = config.gridSize;
+					return { horiz: s, vert: s, sizeX: s, sizeY: s };
+				}
+			};
+
+			// Helper: Convert hex col/row to pixel center using W/H-aware geometry
+			const hexToPixel = (col: number, row: number): { x: number; y: number } => {
+				const ox = config.gridOffsetX || 0;
+				const oy = config.gridOffsetY || 0;
+				const geo = getHexGeometry();
+				if (config.gridType === 'hex-horizontal') {
+					const colOffsetY = (col & 1) ? geo.vert / 2 : 0;
+					return { x: col * geo.horiz + ox, y: row * geo.vert + colOffsetY + oy };
+				} else if (config.gridType === 'hex-vertical') {
+					const rowOffsetX = (row & 1) ? geo.horiz / 2 : 0;
+					return { x: col * geo.horiz + rowOffsetX + ox, y: row * geo.vert + oy };
+				} else {
+					return { x: col * geo.horiz + ox, y: row * geo.vert + oy };
+				}
+			};
+
 			// Function to get cell coordinates from pixel position (accounts for grid offset)
 			const pixelToHex = (x: number, y: number) => {
 				const ox = config.gridOffsetX || 0;
 				const oy = config.gridOffsetY || 0;
-				const effectiveSize = getEffectiveGridSize();
+				const geo = getHexGeometry();
 				
 				if (config.gridType === 'hex-horizontal') {
-					const horiz = effectiveSize;
-					const size = (2/3) * horiz;
-					const vert = Math.sqrt(3) * size;
-					
-					const col = Math.round((x - ox) / horiz);
-					const row = Math.round(((y - oy) - ((col & 1) ? vert / 2 : 0)) / vert);
+					const col = Math.round((x - ox) / geo.horiz);
+					const row = Math.round(((y - oy) - ((col & 1) ? geo.vert / 2 : 0)) / geo.vert);
 					return { col, row };
 				} else if (config.gridType === 'hex-vertical') {
-					const vert = effectiveSize;
-					const size = (2/3) * vert;
-					const horiz = Math.sqrt(3) * size;
-					
-					const row = Math.round((y - oy) / vert);
-					const col = Math.round(((x - ox) - ((row & 1) ? horiz / 2 : 0)) / horiz);
+					const row = Math.round((y - oy) / geo.vert);
+					const col = Math.round(((x - ox) - ((row & 1) ? geo.horiz / 2 : 0)) / geo.horiz);
 					return { col, row };
 				} else if (config.gridType === 'square') {
-					const col = Math.floor((x - ox) / effectiveSize);
-					const row = Math.floor((y - oy) / effectiveSize);
+					const sizeW = config.gridSizeW || config.gridSize;
+					const sizeH = config.gridSizeH || config.gridSize;
+					const col = Math.floor((x - ox) / sizeW);
+					const row = Math.floor((y - oy) / sizeH);
 					return { col, row };
 				}
 				return { col: 0, row: 0 };
@@ -6332,56 +6606,32 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 				// Draw terrain hexes
 				if (config.hexTerrains && config.hexTerrains.length > 0 && config.gridSize) {
-					const ox = config.gridOffsetX || 0;
-					const oy = config.gridOffsetY || 0;
-					const effectiveGridSz = getEffectiveGridSize();
+					const geo = getHexGeometry();
 					config.hexTerrains.forEach((ht: HexTerrain) => {
 						const def = TERRAIN_DEFINITIONS.find(d => d.id === ht.terrain);
 						if (!def) return;
+						const center = hexToPixel(ht.col, ht.row);
+						const hexRadius = Math.min(geo.sizeX, geo.sizeY);
 						if (config.gridType === 'hex-horizontal') {
-							const horiz = effectiveGridSz;
-							const size = (2/3) * horiz;
-							const vert = Math.sqrt(3) * size;
-							const colOffsetY = (ht.col & 1) ? vert / 2 : 0;
-							const cx = ht.col * horiz + ox;
-							const cy = ht.row * vert + colOffsetY + oy;
-							drawTerrainHex(tctx, cx, cy, size, def, 'hex-horizontal');
+							drawTerrainHex(tctx, center.x, center.y, hexRadius, def, 'hex-horizontal');
 						} else if (config.gridType === 'hex-vertical') {
-							const vert = effectiveGridSz;
-							const size = (2/3) * vert;
-							const horiz = Math.sqrt(3) * size;
-							const rowOffsetX = (ht.row & 1) ? horiz / 2 : 0;
-							const cx = ht.col * horiz + rowOffsetX + ox;
-							const cy = ht.row * vert + oy;
-							drawTerrainHex(tctx, cx, cy, size, def, 'hex-vertical');
+							drawTerrainHex(tctx, center.x, center.y, hexRadius, def, 'hex-vertical');
 						}
 					});
 				}
 
 				// Draw climate zone borders
 				if (config.hexClimates && config.hexClimates.length > 0 && config.gridSize) {
-					const ox = config.gridOffsetX || 0;
-					const oy = config.gridOffsetY || 0;
-					const effectiveGridSz = getEffectiveGridSize();
+					const geo = getHexGeometry();
 					config.hexClimates.forEach((hc: any) => {
 						const cdef = CLIMATE_DEFINITIONS.find(d => d.id === hc.climate);
 						if (!cdef) return;
+						const center = hexToPixel(hc.col, hc.row);
+						const hexRadius = Math.min(geo.sizeX, geo.sizeY);
 						if (config.gridType === 'hex-horizontal') {
-							const horiz = effectiveGridSz;
-							const size = (2/3) * horiz;
-							const vert = Math.sqrt(3) * size;
-							const colOffsetY = (hc.col & 1) ? vert / 2 : 0;
-							const cx = hc.col * horiz + ox;
-							const cy = hc.row * vert + colOffsetY + oy;
-							drawClimateHexBorder(tctx, cx, cy, size, cdef, 'hex-horizontal');
+							drawClimateHexBorder(tctx, center.x, center.y, hexRadius, cdef, 'hex-horizontal');
 						} else if (config.gridType === 'hex-vertical') {
-							const vert = effectiveGridSz;
-							const size = (2/3) * vert;
-							const horiz = Math.sqrt(3) * size;
-							const rowOffsetX = (hc.row & 1) ? horiz / 2 : 0;
-							const cx = hc.col * horiz + rowOffsetX + ox;
-							const cy = hc.row * vert + oy;
-							drawClimateHexBorder(tctx, cx, cy, size, cdef, 'hex-vertical');
+							drawClimateHexBorder(tctx, center.x, center.y, hexRadius, cdef, 'hex-vertical');
 						}
 					});
 				}
@@ -7043,26 +7293,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 					(config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') &&
 					(config.type === 'world' || config.type === 'regional')) {
 					const hcPos = config.hexcrawlState.partyPosition;
-					const ox = config.gridOffsetX || 0;
-					const oy = config.gridOffsetY || 0;
-					const effectiveGridSz = getEffectiveGridSize();
-					let ppx: number, ppy: number;
-					if (config.gridType === 'hex-horizontal') {
-						const horiz = effectiveGridSz;
-						const size = (2/3) * horiz;
-						const vert = Math.sqrt(3) * size;
-						const colOffsetY = (hcPos.col & 1) ? vert / 2 : 0;
-						ppx = hcPos.col * horiz + ox;
-						ppy = hcPos.row * vert + colOffsetY + oy;
-					} else {
-						const vert = effectiveGridSz;
-						const size = (2/3) * vert;
-						const horiz = Math.sqrt(3) * size;
-						const rowOffsetX = (hcPos.row & 1) ? horiz / 2 : 0;
-						ppx = hcPos.col * horiz + rowOffsetX + ox;
-						ppy = hcPos.row * vert + oy;
-					}
-					const hexSz = (2/3) * effectiveGridSz;
+					const partyCenter = hexToPixel(hcPos.col, hcPos.row);
+					const ppx = partyCenter.x;
+					const ppy = partyCenter.y;
+					const geo = getHexGeometry();
+					const hexSz = Math.min(geo.sizeX, geo.sizeY);
 					const ir = hexSz * 0.55;
 
 					// Outer glow
@@ -7109,27 +7344,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const partyPos = hcState.partyPosition;
 					const tracker = new HexcrawlTracker(hcState, config.hexTerrains || [], config.hexClimates || []);
 					const remaining = tracker.getRemainingMovement();
-					const ox = config.gridOffsetX || 0;
-					const oy = config.gridOffsetY || 0;
-					const effectiveGridSz = getEffectiveGridSize();
+					const geo = getHexGeometry();
 
-					// Helper to get hex pixel center
-					const hexCenter = (col: number, row: number): { x: number; y: number } => {
-						if (config.gridType === 'hex-horizontal') {
-							const horiz = effectiveGridSz;
-							const size = (2 / 3) * horiz;
-							const vert = Math.sqrt(3) * size;
-							const colOffsetY = (col & 1) ? vert / 2 : 0;
-							return { x: col * horiz + ox, y: row * vert + colOffsetY + oy };
-						} else {
-							const vert = effectiveGridSz;
-							const size = (2 / 3) * vert;
-							const horiz = Math.sqrt(3) * size;
-							const rowOffsetX = (row & 1) ? horiz / 2 : 0;
-							return { x: col * horiz + rowOffsetX + ox, y: row * vert + oy };
-						}
-					};
-					const hexSize = (2 / 3) * effectiveGridSz;
+					// Use hexToPixel for center computation (already W/H-aware)
+					const hexCenter = (col: number, row: number) => hexToPixel(col, row);
 
 					// Draw green fill for adjacent reachable hexes (you can only move one hex at a time)
 					ctx.save();
@@ -7149,9 +7367,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 								ctx.strokeStyle = 'rgba(0, 200, 80, 0.35)';
 								ctx.lineWidth = 1.5;
 								if (config.gridType === 'hex-horizontal') {
-									this.drawFilledHexFlat(ctx, center.x, center.y, hexSize);
+									this.drawFilledHexFlatStretched(ctx, center.x, center.y, geo.sizeX, geo.sizeY);
 								} else {
-									this.drawFilledHexPointy(ctx, center.x, center.y, hexSize);
+									this.drawFilledHexPointyStretched(ctx, center.x, center.y, geo.sizeX, geo.sizeY);
 								}
 							}
 						}
@@ -7172,9 +7390,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 							ctx.strokeStyle = canMove ? 'rgba(0, 220, 80, 0.7)' : 'rgba(220, 40, 30, 0.65)';
 							ctx.lineWidth = 2.5;
 							if (config.gridType === 'hex-horizontal') {
-								this.drawFilledHexFlat(ctx, center.x, center.y, hexSize);
+								this.drawFilledHexFlatStretched(ctx, center.x, center.y, geo.sizeX, geo.sizeY);
 							} else {
-								this.drawFilledHexPointy(ctx, center.x, center.y, hexSize);
+								this.drawFilledHexPointyStretched(ctx, center.x, center.y, geo.sizeX, geo.sizeY);
 							}
 							ctx.restore();
 						}
@@ -7451,39 +7669,29 @@ export default class DndCampaignHubPlugin extends Plugin {
 				ctx.fillStyle = highlight.color + '60'; // Add alpha
 				ctx.strokeStyle = highlight.color;
 				ctx.lineWidth = 2;
-				const ox = config.gridOffsetX || 0;
-				const oy = config.gridOffsetY || 0;
+				const geo = getHexGeometry();
+				const center = hexToPixel(highlight.col, highlight.row);
 				
 				if (config.gridType === 'hex-horizontal') {
-					const effectiveSize = config.gridSize;
-					const horiz = effectiveSize;
-					const size = (2/3) * horiz;
-					const vert = Math.sqrt(3) * size;
-					const colOffsetY = (highlight.col & 1) ? vert / 2 : 0;
-					const centerX = highlight.col * horiz + ox;
-					const centerY = highlight.row * vert + colOffsetY + oy;
-					this.drawFilledHexFlat(ctx, centerX, centerY, size);
+					this.drawFilledHexFlatStretched(ctx, center.x, center.y, geo.sizeX, geo.sizeY);
 				} else if (config.gridType === 'hex-vertical') {
-					const effectiveSize = config.gridSize;
-					const vert = effectiveSize;
-					const size = (2/3) * vert;
-					const horiz = Math.sqrt(3) * size;
-					const rowOffsetX = (highlight.row & 1) ? horiz / 2 : 0;
-					const centerX = highlight.col * horiz + rowOffsetX + ox;
-					const centerY = highlight.row * vert + oy;
-					this.drawFilledHexPointy(ctx, centerX, centerY, size);
+					this.drawFilledHexPointyStretched(ctx, center.x, center.y, geo.sizeX, geo.sizeY);
 				} else if (config.gridType === 'square') {
+					const sizeW = config.gridSizeW || config.gridSize;
+					const sizeH = config.gridSizeH || config.gridSize;
+					const ox = config.gridOffsetX || 0;
+					const oy = config.gridOffsetY || 0;
 					ctx.fillRect(
-						highlight.col * config.gridSize + ox,
-						highlight.row * config.gridSize + oy,
-						config.gridSize,
-						config.gridSize
+						highlight.col * sizeW + ox,
+						highlight.row * sizeH + oy,
+						sizeW,
+						sizeH
 					);
 					ctx.strokeRect(
-						highlight.col * config.gridSize + ox,
-						highlight.row * config.gridSize + oy,
-						config.gridSize,
-						config.gridSize
+						highlight.col * sizeW + ox,
+						highlight.row * sizeH + oy,
+						sizeW,
+						sizeH
 					);
 				}
 				
@@ -7508,26 +7716,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 				const ox = config.gridOffsetX || 0;
 				const oy = config.gridOffsetY || 0;
 				
-				// Get hex size (fixed grid — no pace scaling)
-				const effectiveSize = config.gridSize;
-				
-				// Calculate hex center
-				let centerX, centerY;
-				if (config.gridType === 'hex-horizontal') {
-					const horiz = effectiveSize;
-					const size = (2/3) * horiz;
-					const vert = Math.sqrt(3) * size;
-					const colOffsetY = (poiRef.col & 1) ? vert / 2 : 0;
-					centerX = poiRef.col * horiz + ox;
-					centerY = poiRef.row * vert + colOffsetY + oy;
-				} else {
-					const vert = effectiveSize;
-					const size = (2/3) * vert;
-					const horiz = Math.sqrt(3) * size;
-					const rowOffsetX = (poiRef.row & 1) ? horiz / 2 : 0;
-					centerX = poiRef.col * horiz + rowOffsetX + ox;
-					centerY = poiRef.row * vert + oy;
-				}
+				// Calculate hex center using W/H-aware geometry
+				const center = hexToPixel(poiRef.col, poiRef.row);
+				const centerX = center.x;
+				const centerY = center.y;
 				
 				// Load icon from PoI file
 				let icon = '📍'; // Default icon
@@ -8185,6 +8377,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					calibrationPoint1 = null;
 					calibrationPoint2 = null;
 					calibrateBtn.removeClass('active');
+					measureBtn.removeClass('active');
 				}
 
 				// Cancel AoE placement when switching away
@@ -8513,7 +8706,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				
 				// Update scale
 				const delta = e.deltaY > 0 ? 0.9 : 1.1;
-				scale = Math.max(0.25, Math.min(5, scale * delta));
+				scale = Math.max(0.05, Math.min(20, scale * delta));
 				
 				// Adjust translation to keep the point under the mouse
 				translateX = mouseX - pointX * scale;
@@ -8553,7 +8746,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				const mapPos = screenToMap(e.clientX, e.clientY);
 				console.log('Map position:', mapPos);
 				
-				// Handle calibration mode
+				// Handle calibration mode (two-point measurement via Measure button)
 				if (isCalibrating) {
 					if (!calibrationPoint1) {
 						calibrationPoint1 = { x: mapPos.x, y: mapPos.y };
@@ -8568,31 +8761,37 @@ export default class DndCampaignHubPlugin extends Plugin {
 							Math.pow(calibrationPoint2.y - calibrationPoint1.y, 2)
 						);
 						
-						// Show confirmation modal (always 6-mile hexes)
-						new CalibrationModal(this.app, pixelDistance, async () => {
-							// Update grid size and scale (fixed 6-mile hexes)
-							config.gridSize = Math.round(pixelDistance);
-							config.scale = {
-								value: 6,
-								unit: 'miles'
-							};
-							
-							// Redraw grid with new size
-							redrawGridOverlays();
-							
-							// Save configuration to JSON file
-							await this.saveMapAnnotations(config, el);
-							
-							new Notice('Grid calibrated: 6 miles per hex');
-							
-							// Reset calibration state
-							isCalibrating = false;
-							calibrationPoint1 = null;
-							calibrationPoint2 = null;
-							calibrateBtn.removeClass('active');
-							setActiveTool('pan');
-							redrawAnnotations();
-						}).open();
+						// Reset measurement state
+						isCalibrating = false;
+						calibrationPoint1 = null;
+						calibrationPoint2 = null;
+						measureBtn.removeClass('active');
+						setActiveTool('pan');
+						redrawAnnotations();
+						
+						// Open calibration modal with the measured distance pre-filled
+						new GridCalibrationModal(
+							this.app,
+							config,
+							async (gs, gw, gh) => {
+								config.gridSize = gs;
+								config.gridSizeW = gw;
+								config.gridSizeH = gh;
+								gridSlider.value = String(gs);
+								gridSliderLabel.textContent = `${Math.round(gs * 10) / 10}px`;
+								// Update W/H inputs
+								gridWInput.value = String(Math.round((gw || gs) * 10) / 10);
+								gridHInput.value = String(Math.round((gh || gs) * 10) / 10);
+								gridWHLinked = !(gw && gh && gw !== gh);
+								gridLinkBtn.textContent = gridWHLinked ? '🔗' : '🔓';
+								gridLinkBtn.toggleClass('linked', gridWHLinked);
+								redrawGridOverlays();
+								redrawAnnotations();
+								await this.saveMapAnnotations(config, el);
+								new Notice('Grid calibration applied');
+							},
+							pixelDistance,
+						).open();
 					}
 					e.preventDefault();
 					return;
@@ -11296,13 +11495,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const zoomIn = zoomContainer.createEl('button', { text: '+', cls: 'dnd-map-zoom-btn' });
 			
 			zoomIn.addEventListener('click', () => {
-				scale = Math.min(scale * 1.25, 5);
+				scale = Math.min(scale * 1.25, 20);
 				updateTransform();
 				zoomReset.textContent = `${Math.round(scale * 100)}%`;
 			});
 			
 			zoomOut.addEventListener('click', () => {
-				scale = Math.max(scale * 0.8, 0.25);
+				scale = Math.max(scale * 0.8, 0.05);
 				updateTransform();
 				zoomReset.textContent = `${Math.round(scale * 100)}%`;
 			});
@@ -11323,12 +11522,22 @@ export default class DndCampaignHubPlugin extends Plugin {
 					cls: 'dnd-map-toggle-btn' 
 				});
 				
-				let gridVisible = true;
+				// Initialize from saved state
+				if (config.gridVisible === undefined) config.gridVisible = true;
+				if ((gridCanvas as any) && !config.gridVisible) {
+					(gridCanvas as any).style.display = 'none';
+				}
 				toggleBtn.addEventListener('click', () => {
-					gridVisible = !gridVisible;
-					if (gridCanvas) {
-						gridCanvas.style.display = gridVisible ? 'block' : 'none';
+					config.gridVisible = !config.gridVisible;
+					if ((gridCanvas as any)) {
+						(gridCanvas as any).style.display = config.gridVisible ? 'block' : 'none';
 					}
+					// Sync to player view
+					if ((viewport as any)._syncPlayerView) {
+						(viewport as any)._syncPlayerView();
+					}
+					// Persist
+					this.saveMapAnnotations(config, el);
 				});
 			}
 
@@ -11983,6 +12192,9 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 				gridSize: config.gridSize || 70,
 				gridOffsetX: config.gridOffsetX || 0,
 				gridOffsetY: config.gridOffsetY || 0,
+				gridSizeW: config.gridSizeW || undefined,
+				gridSizeH: config.gridSizeH || undefined,
+				gridVisible: config.gridVisible !== undefined ? config.gridVisible : true,
 				scale: config.scale || { value: 5, unit: 'feet' },
 				// Layer settings
 				activeLayer: config.activeLayer || 'Player',
@@ -12198,13 +12410,14 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 		ctx.lineWidth = 2;
 
 		if (config.gridType === 'square') {
-			const size = config.gridSize;
+			const sizeW = config.gridSizeW || config.gridSize;
+			const sizeH = config.gridSizeH || config.gridSize;
 			// Normalize offset to stay within one grid cell
-			const normalizedOffsetX = ((offsetX % size) + size) % size;
-			const normalizedOffsetY = ((offsetY % size) + size) % size;
+			const normalizedOffsetX = ((offsetX % sizeW) + sizeW) % sizeW;
+			const normalizedOffsetY = ((offsetY % sizeH) + sizeH) % sizeH;
 			
 			// Draw vertical lines
-			for (let x = normalizedOffsetX; x <= canvas.width; x += size) {
+			for (let x = normalizedOffsetX; x <= canvas.width; x += sizeW) {
 				ctx.beginPath();
 				ctx.moveTo(x, 0);
 				ctx.lineTo(x, canvas.height);
@@ -12212,7 +12425,7 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 			}
 
 			// Draw horizontal lines
-			for (let y = normalizedOffsetY; y <= canvas.height; y += size) {
+			for (let y = normalizedOffsetY; y <= canvas.height; y += sizeH) {
 				ctx.beginPath();
 				ctx.moveTo(0, y);
 				ctx.lineTo(canvas.width, y);
@@ -12220,10 +12433,13 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 			}
 		} else if (config.gridType === 'hex-horizontal') {
 			// Flat-top hex grid (horizontal orientation)
-			// gridSize = horizontal spacing between hex centers (horiz = 3/2 * size)
-			const horiz = config.gridSize; // center-to-center X spacing
-			const size = (2/3) * horiz; // radius (center -> corner)
-			const vert = Math.sqrt(3) * size; // center-to-center Y spacing
+			// gridSizeW controls horizontal spacing, gridSizeH controls vertical spacing
+			const horiz = config.gridSizeW || config.gridSize; // center-to-center X spacing
+			const defaultSize = (2/3) * horiz;
+			const defaultVert = Math.sqrt(3) * defaultSize;
+			const vert = config.gridSizeH || defaultVert; // center-to-center Y spacing (overridable)
+			const sizeX = horiz * (2/3); // horizontal radius
+			const sizeY = vert / Math.sqrt(3); // vertical radius (allows stretching)
 			
 			// Calculate range accounting for offset - need to cover entire canvas
 			const startCol = Math.floor(-offsetX / horiz) - 2;
@@ -12238,15 +12454,18 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 					const centerX = col * horiz + offsetX;
 					const centerY = row * vert + colOffsetY + offsetY;
 					
-					this.drawHexFlat(ctx, centerX, centerY, size);
+					this.drawHexFlatStretched(ctx, centerX, centerY, sizeX, sizeY);
 				}
 			}
 		} else if (config.gridType === 'hex-vertical') {
 			// Pointy-top hex grid (vertical orientation)
-			// gridSize = vertical spacing between hex centers (vert = 3/2 * size)
-			const vert = config.gridSize; // center-to-center Y spacing
-			const size = (2/3) * vert; // radius (center -> corner)
-			const horiz = Math.sqrt(3) * size; // center-to-center X spacing
+			// gridSizeH controls vertical spacing, gridSizeW controls horizontal spacing
+			const vert = config.gridSizeH || config.gridSize; // center-to-center Y spacing
+			const defaultSize = (2/3) * vert;
+			const defaultHoriz = Math.sqrt(3) * defaultSize;
+			const horiz = config.gridSizeW || defaultHoriz; // center-to-center X spacing (overridable)
+			const sizeY = vert * (2/3); // vertical radius
+			const sizeX = horiz / Math.sqrt(3); // horizontal radius (allows stretching)
 			
 			// Calculate range accounting for offset - need to cover entire canvas
 			const startCol = Math.floor(-offsetX / horiz) - 2;
@@ -12261,7 +12480,7 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 					const centerX = col * horiz + rowOffsetX + offsetX;
 					const centerY = row * vert + offsetY;
 					
-					this.drawHexPointy(ctx, centerX, centerY, size);
+					this.drawHexPointyStretched(ctx, centerX, centerY, sizeX, sizeY);
 				}
 			}
 		}
@@ -12343,6 +12562,68 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 			} else {
 				ctx.lineTo(x, y);
 			}
+		}
+		ctx.closePath();
+		ctx.fill();
+		ctx.stroke();
+	}
+
+	/**
+	 * Draw a flat-top hexagon with independent X/Y radii (stretched)
+	 */
+	drawHexFlatStretched(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number) {
+		ctx.beginPath();
+		for (let i = 0; i < 6; i++) {
+			const a = (Math.PI / 3) * i;
+			const x = cx + rx * Math.cos(a);
+			const y = cy + ry * Math.sin(a);
+			i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+		}
+		ctx.closePath();
+		ctx.stroke();
+	}
+
+	/**
+	 * Draw a pointy-top hexagon with independent X/Y radii (stretched)
+	 */
+	drawHexPointyStretched(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number) {
+		ctx.beginPath();
+		for (let i = 0; i < 6; i++) {
+			const a = (Math.PI / 6) + (Math.PI / 3) * i;
+			const x = cx + rx * Math.cos(a);
+			const y = cy + ry * Math.sin(a);
+			i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+		}
+		ctx.closePath();
+		ctx.stroke();
+	}
+
+	/**
+	 * Draw a filled flat-top hexagon with independent X/Y radii (stretched)
+	 */
+	drawFilledHexFlatStretched(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number) {
+		ctx.beginPath();
+		for (let i = 0; i < 6; i++) {
+			const a = (Math.PI / 3) * i;
+			const x = cx + rx * Math.cos(a);
+			const y = cy + ry * Math.sin(a);
+			i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+		}
+		ctx.closePath();
+		ctx.fill();
+		ctx.stroke();
+	}
+
+	/**
+	 * Draw a filled pointy-top hexagon with independent X/Y radii (stretched)
+	 */
+	drawFilledHexPointyStretched(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number) {
+		ctx.beginPath();
+		for (let i = 0; i < 6; i++) {
+			const a = (Math.PI / 6) + (Math.PI / 3) * i;
+			const x = cx + rx * Math.cos(a);
+			const y = cy + ry * Math.sin(a);
+			i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
 		}
 		ctx.closePath();
 		ctx.fill();
@@ -28967,8 +29248,8 @@ class PlayerMapView extends ItemView {
     });
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-    // Draw grid overlay if active
-    if (config.gridType && config.gridType !== 'none' && config.gridSize > 0) {
+    // Draw grid overlay if active and visible
+    if (config.gridType && config.gridType !== 'none' && config.gridSize > 0 && config.gridVisible !== false) {
       this.drawGrid(ctx, config);
     }
 
@@ -30003,59 +30284,52 @@ class PlayerMapView extends ItemView {
     ctx.lineWidth = 2;
 
     if (config.gridType === 'square') {
-      const size = config.gridSize;
-      const normalizedOffsetX = ((offsetX % size) + size) % size;
-      const normalizedOffsetY = ((offsetY % size) + size) % size;
+      const sizeW = config.gridSizeW || config.gridSize;
+      const sizeH = config.gridSizeH || config.gridSize;
+      const normalizedOffsetX = ((offsetX % sizeW) + sizeW) % sizeW;
+      const normalizedOffsetY = ((offsetY % sizeH) + sizeH) % sizeH;
 
-      for (let x = normalizedOffsetX; x <= w; x += size) {
+      for (let x = normalizedOffsetX; x <= w; x += sizeW) {
         ctx.beginPath();
         ctx.moveTo(x, 0);
         ctx.lineTo(x, h);
         ctx.stroke();
       }
-      for (let y = normalizedOffsetY; y <= h; y += size) {
+      for (let y = normalizedOffsetY; y <= h; y += sizeH) {
         ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(w, y);
         ctx.stroke();
       }
     } else if (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') {
-      const gridSize = config.gridSize;
+      const geo = this.getPlayerHexGeometry(config);
       
       if (config.gridType === 'hex-horizontal') {
-        const horiz = gridSize;
-        const size = (2 / 3) * horiz;
-        const vert = Math.sqrt(3) * size;
-
-        const startCol = Math.floor(-offsetX / horiz) - 2;
-        const endCol = Math.ceil((w - offsetX) / horiz) + 2;
-        const startRow = Math.floor(-offsetY / vert) - 2;
-        const endRow = Math.ceil((h - offsetY) / vert) + 2;
+        const startCol = Math.floor(-offsetX / geo.horiz) - 2;
+        const endCol = Math.ceil((w - offsetX) / geo.horiz) + 2;
+        const startRow = Math.floor(-offsetY / geo.vert) - 2;
+        const endRow = Math.ceil((h - offsetY) / geo.vert) + 2;
 
         for (let row = startRow; row < endRow; row++) {
           for (let col = startCol; col < endCol; col++) {
-            const colOffsetY = (col & 1) ? vert / 2 : 0;
-            const centerX = col * horiz + offsetX;
-            const centerY = row * vert + colOffsetY + offsetY;
-            this.drawHexFlatOutline(ctx, centerX, centerY, size);
+            const colOffsetY = (col & 1) ? geo.vert / 2 : 0;
+            const centerX = col * geo.horiz + offsetX;
+            const centerY = row * geo.vert + colOffsetY + offsetY;
+            this.drawHexFlatOutlineStretched(ctx, centerX, centerY, geo.sizeX, geo.sizeY);
           }
         }
       } else if (config.gridType === 'hex-vertical') {
-        const vert = gridSize;
-        const size = (2 / 3) * vert;
-        const horiz = Math.sqrt(3) * size;
-
-        const startCol = Math.floor(-offsetX / horiz) - 2;
-        const endCol = Math.ceil((w - offsetX) / horiz) + 2;
-        const startRow = Math.floor(-offsetY / vert) - 2;
-        const endRow = Math.ceil((h - offsetY) / vert) + 2;
+        const startCol = Math.floor(-offsetX / geo.horiz) - 2;
+        const endCol = Math.ceil((w - offsetX) / geo.horiz) + 2;
+        const startRow = Math.floor(-offsetY / geo.vert) - 2;
+        const endRow = Math.ceil((h - offsetY) / geo.vert) + 2;
 
         for (let row = startRow; row < endRow; row++) {
           for (let col = startCol; col < endCol; col++) {
-            const rowOffsetX = (row & 1) ? horiz / 2 : 0;
-            const centerX = col * horiz + rowOffsetX + offsetX;
-            const centerY = row * vert + offsetY;
-            this.drawHexPointyOutline(ctx, centerX, centerY, size);
+            const rowOffsetX = (row & 1) ? geo.horiz / 2 : 0;
+            const centerX = col * geo.horiz + rowOffsetX + offsetX;
+            const centerY = row * geo.vert + offsetY;
+            this.drawHexPointyOutlineStretched(ctx, centerX, centerY, geo.sizeX, geo.sizeY);
           }
         }
       }
@@ -30090,6 +30364,30 @@ class PlayerMapView extends ItemView {
     ctx.stroke();
   }
 
+  private drawHexFlatOutlineStretched(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i;
+      const x = cx + rx * Math.cos(a);
+      const y = cy + ry * Math.sin(a);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  private drawHexPointyOutlineStretched(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 6) + (Math.PI / 3) * i;
+      const x = cx + rx * Math.cos(a);
+      const y = cy + ry * Math.sin(a);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+
   // ── Hexcrawl helpers ────────────────────────────────────────────────
 
   /** Calculate effective grid size (fixed single grid — no pace scaling). */
@@ -30097,23 +30395,48 @@ class PlayerMapView extends ItemView {
     return config.gridSize;
   }
 
-  /** Convert hex col/row → pixel centre, matching the GM coordinate system. */
+  /** Get W/H-aware hex geometry for the player view */
+  private getPlayerHexGeometry(config: any): { horiz: number; vert: number; sizeX: number; sizeY: number } {
+    if (config.gridType === 'hex-horizontal') {
+      const horiz = config.gridSizeW || config.gridSize;
+      const defaultSize = (2 / 3) * horiz;
+      const defaultVert = Math.sqrt(3) * defaultSize;
+      const vert = config.gridSizeH || defaultVert;
+      const sizeX = horiz * (2 / 3);
+      const sizeY = vert / Math.sqrt(3);
+      return { horiz, vert, sizeX, sizeY };
+    } else if (config.gridType === 'hex-vertical') {
+      const vert = config.gridSizeH || config.gridSize;
+      const defaultSize = (2 / 3) * vert;
+      const defaultHoriz = Math.sqrt(3) * defaultSize;
+      const horiz = config.gridSizeW || defaultHoriz;
+      const sizeY = vert * (2 / 3);
+      const sizeX = horiz / Math.sqrt(3);
+      return { horiz, vert, sizeX, sizeY };
+    } else {
+      const s = config.gridSize;
+      return { horiz: s, vert: s, sizeX: s, sizeY: s };
+    }
+  }
+
+  /** Convert hex col/row → pixel centre, matching the GM coordinate system (W/H-aware). */
   private hexToPixel(col: number, row: number, config: any): { x: number; y: number } {
     const ox = config.gridOffsetX || 0;
     const oy = config.gridOffsetY || 0;
-    const effectiveSize = this.getPlayerEffectiveGridSize(config);
 
     if (config.gridType === 'hex-horizontal') {
-      const horiz = effectiveSize;
-      const size = (2 / 3) * horiz;
-      const vert = Math.sqrt(3) * size;
+      const horiz = config.gridSizeW || config.gridSize;
+      const defaultSize = (2 / 3) * horiz;
+      const defaultVert = Math.sqrt(3) * defaultSize;
+      const vert = config.gridSizeH || defaultVert;
       const colOffsetY = (col & 1) ? vert / 2 : 0;
       return { x: col * horiz + ox, y: row * vert + colOffsetY + oy };
     } else {
       // hex-vertical
-      const vert = effectiveSize;
-      const size = (2 / 3) * vert;
-      const horiz = Math.sqrt(3) * size;
+      const vert = config.gridSizeH || config.gridSize;
+      const defaultSize = (2 / 3) * vert;
+      const defaultHoriz = Math.sqrt(3) * defaultSize;
+      const horiz = config.gridSizeW || defaultHoriz;
       const rowOffsetX = (row & 1) ? horiz / 2 : 0;
       return { x: col * horiz + rowOffsetX + ox, y: row * vert + oy };
     }
@@ -30140,6 +30463,8 @@ class PlayerMapView extends ItemView {
    */
   private drawHexcrawlLayer(ctx: CanvasRenderingContext2D, config: any) {
     const effectiveGridSz = this.getPlayerEffectiveGridSize(config);
+    // Get W/H-aware hex geometry
+    const playerGeo = this.getPlayerHexGeometry(config);
 
     // NOTE: Terrain fills and climate borders are intentionally omitted from
     // the player view — players only see the map image, the visited trail,
@@ -30180,7 +30505,7 @@ class PlayerMapView extends ItemView {
     // ── 4. Party position marker (pulsing campfire icon) ───────────
     if (hcState && hcState.enabled && hcState.partyPosition) {
       const pp = this.hexToPixel(hcState.partyPosition.col, hcState.partyPosition.row, config);
-      const hexSize = (2 / 3) * effectiveGridSz;
+      const hexSize = Math.min(playerGeo.sizeX, playerGeo.sizeY);
       const iconRadius = hexSize * 0.65;
 
       // Outer glow ring (large, warm pulse)
@@ -30225,7 +30550,6 @@ class PlayerMapView extends ItemView {
       const partyPos = hcState.partyPosition;
       const tracker = new HexcrawlTracker(hcState, config.hexTerrains || [], config.hexClimates || []);
       const remaining = tracker.getRemainingMovement();
-      const hexSize = (2 / 3) * effectiveGridSz;
 
       // Green fill for adjacent affordable hexes (travel is one hex at a time)
       ctx.save();
@@ -30244,9 +30568,9 @@ class PlayerMapView extends ItemView {
             ctx.strokeStyle = 'rgba(0, 200, 80, 0.35)';
             ctx.lineWidth = 1.5;
             if (config.gridType === 'hex-horizontal') {
-              this.drawFilledHexFlat(ctx, center.x, center.y, hexSize);
+              this.drawFilledHexFlatStretched(ctx, center.x, center.y, playerGeo.sizeX, playerGeo.sizeY);
             } else {
-              this.drawFilledHexPointy(ctx, center.x, center.y, hexSize);
+              this.drawFilledHexPointyStretched(ctx, center.x, center.y, playerGeo.sizeX, playerGeo.sizeY);
             }
           }
         }
@@ -30265,9 +30589,9 @@ class PlayerMapView extends ItemView {
         ctx.strokeStyle = canMove ? 'rgba(0, 220, 80, 0.7)' : 'rgba(220, 40, 30, 0.65)';
         ctx.lineWidth = 2.5;
         if (config.gridType === 'hex-horizontal') {
-          this.drawFilledHexFlat(ctx, center.x, center.y, hexSize);
+          this.drawFilledHexFlatStretched(ctx, center.x, center.y, playerGeo.sizeX, playerGeo.sizeY);
         } else {
-          this.drawFilledHexPointy(ctx, center.x, center.y, hexSize);
+          this.drawFilledHexPointyStretched(ctx, center.x, center.y, playerGeo.sizeX, playerGeo.sizeY);
         }
         ctx.restore();
       }
@@ -30287,8 +30611,8 @@ class PlayerMapView extends ItemView {
   private animateHexcrawlTravel(fromCol: number, fromRow: number, toCol: number, toRow: number) {
     if (!this.canvas || !this.mapConfig) return;
     const config = this.mapConfig;
-    const effectiveGridSz = this.getPlayerEffectiveGridSize(config);
-    const hexSize = (2 / 3) * effectiveGridSz;
+    const playerGeo = this.getPlayerHexGeometry(config);
+    const hexSize = Math.min(playerGeo.sizeX, playerGeo.sizeY);
     const from = this.hexToPixel(fromCol, fromRow, config);
     const to = this.hexToPixel(toCol, toRow, config);
     const duration = 1400; // ms
@@ -30626,41 +30950,33 @@ class PlayerMapView extends ItemView {
     ctx.fillStyle = highlight.color + '60';
     ctx.strokeStyle = highlight.color;
     ctx.lineWidth = 2;
-    const ox = config.gridOffsetX || 0;
-    const oy = config.gridOffsetY || 0;
+
+    const geo = this.getPlayerHexGeometry(config);
+    const center = this.hexToPixel(highlight.col, highlight.row, config);
 
     if (config.gridType === 'hex-horizontal') {
-      const horiz = config.gridSize;
-      const size = (2 / 3) * horiz;
-      const vert = Math.sqrt(3) * size;
-      const colOffsetY = (highlight.col & 1) ? vert / 2 : 0;
-      const centerX = highlight.col * horiz + ox;
-      const centerY = highlight.row * vert + colOffsetY + oy;
-      this.drawFilledHexFlat(ctx, centerX, centerY, size);
+      this.drawFilledHexFlatStretched(ctx, center.x, center.y, geo.sizeX, geo.sizeY);
     } else if (config.gridType === 'hex-vertical') {
-      const vert = config.gridSize;
-      const size = (2 / 3) * vert;
-      const horiz = Math.sqrt(3) * size;
-      const rowOffsetX = (highlight.row & 1) ? horiz / 2 : 0;
-      const centerX = highlight.col * horiz + rowOffsetX + ox;
-      const centerY = highlight.row * vert + oy;
-      this.drawFilledHexPointy(ctx, centerX, centerY, size);
+      this.drawFilledHexPointyStretched(ctx, center.x, center.y, geo.sizeX, geo.sizeY);
     } else if (config.gridType === 'square') {
+      const sizeW = config.gridSizeW || config.gridSize;
+      const sizeH = config.gridSizeH || config.gridSize;
+      const ox = config.gridOffsetX || 0;
+      const oy = config.gridOffsetY || 0;
       ctx.fillRect(
-        highlight.col * config.gridSize + ox,
-        highlight.row * config.gridSize + oy,
-        config.gridSize,
-        config.gridSize
+        highlight.col * sizeW + ox,
+        highlight.row * sizeH + oy,
+        sizeW,
+        sizeH
       );
       ctx.strokeRect(
-        highlight.col * config.gridSize + ox,
-        highlight.row * config.gridSize + oy,
-        config.gridSize,
-        config.gridSize
+        highlight.col * sizeW + ox,
+        highlight.row * sizeH + oy,
+        sizeW,
+        sizeH
       );
     }
   }
-
   private drawPoiIcon(ctx: CanvasRenderingContext2D, poiRef: any, config: any) {
     // Skip rendering for hexcrawl/exploration maps - PoIs are GM-only hints
     const isHexcrawlMap = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && (config.type === 'world' || config.type === 'regional');
@@ -30670,21 +30986,21 @@ class PlayerMapView extends ItemView {
     const ox = config.gridOffsetX || 0;
     const oy = config.gridOffsetY || 0;
     
-    const effectiveSize = config.gridSize;
-    
-    // Calculate hex center
+    // Calculate hex center using W/H-aware geometry
     let centerX, centerY;
     if (config.gridType === 'hex-horizontal') {
-      const horiz = effectiveSize;
-      const size = (2/3) * horiz;
-      const vert = Math.sqrt(3) * size;
+      const horiz = config.gridSizeW || config.gridSize;
+      const defaultSize = (2/3) * horiz;
+      const defaultVert = Math.sqrt(3) * defaultSize;
+      const vert = config.gridSizeH || defaultVert;
       const colOffsetY = (poiRef.col & 1) ? vert / 2 : 0;
       centerX = poiRef.col * horiz + ox;
       centerY = poiRef.row * vert + colOffsetY + oy;
     } else {
-      const vert = effectiveSize;
-      const size = (2/3) * vert;
-      const horiz = Math.sqrt(3) * size;
+      const vert = config.gridSizeH || config.gridSize;
+      const defaultSize = (2/3) * vert;
+      const defaultHoriz = Math.sqrt(3) * defaultSize;
+      const horiz = config.gridSizeW || defaultHoriz;
       const rowOffsetX = (poiRef.row & 1) ? horiz / 2 : 0;
       centerX = poiRef.col * horiz + rowOffsetX + ox;
       centerY = poiRef.row * vert + oy;
@@ -30744,6 +31060,32 @@ class PlayerMapView extends ItemView {
       const y = cy + size * Math.sin(angle);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  private drawFilledHexFlatStretched(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i;
+      const x = cx + rx * Math.cos(a);
+      const y = cy + ry * Math.sin(a);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  private drawFilledHexPointyStretched(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 6) + (Math.PI / 3) * i;
+      const x = cx + rx * Math.cos(a);
+      const y = cy + ry * Math.sin(a);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
     ctx.closePath();
     ctx.fill();

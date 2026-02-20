@@ -3781,6 +3781,7 @@
   transform: translateY(-50%);
   margin-left: 10px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
@@ -3794,6 +3795,7 @@
   transition: all 0.2s ease;
   white-space: nowrap;
   z-index: 100;
+  max-width: 450px;
 }
 
 .dnd-map-tool-btn.active .dnd-map-grid-slider-flyout {
@@ -3870,6 +3872,181 @@
   background: linear-gradient(135deg, rgba(124, 58, 237, 0.9), rgba(99, 102, 241, 0.9));
   border: 2px solid rgba(255, 255, 255, 0.4);
   cursor: pointer;
+}
+
+/* --- Grid W/H fine-tune row --- */
+.dnd-map-grid-wh-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  width: 100%;
+  flex-basis: 100%;
+}
+
+.dnd-map-grid-wh-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
+  min-width: 12px;
+  text-align: center;
+}
+
+.dnd-map-grid-wh-input {
+  width: 52px;
+  height: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  color: white;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  padding: 1px 4px;
+  outline: none;
+  text-align: right;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.dnd-map-grid-wh-input::-webkit-inner-spin-button,
+.dnd-map-grid-wh-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.dnd-map-grid-wh-input:focus {
+  border-color: rgba(124, 58, 237, 0.6);
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.dnd-map-grid-link-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+  min-width: 22px;
+  text-align: center;
+}
+
+.dnd-map-grid-link-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.dnd-map-grid-link-btn.linked {
+  background: rgba(124, 58, 237, 0.25);
+  border-color: rgba(124, 58, 237, 0.5);
+}
+
+/* --- Grid Calibration Modal --- */
+.dnd-grid-calibration-modal .modal-content {
+  padding: 16px;
+}
+
+.dnd-grid-cal-section {
+  margin-bottom: 16px;
+}
+
+.dnd-grid-cal-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.dnd-grid-cal-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.dnd-grid-cal-row label {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 100px;
+}
+
+.dnd-grid-cal-input {
+  width: 80px;
+  height: 26px;
+  font-size: 12px;
+  padding: 2px 6px;
+  text-align: right;
+}
+
+.dnd-grid-cal-link-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.dnd-grid-cal-link-btn {
+  background: var(--interactive-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dnd-grid-cal-link-btn:hover {
+  background: var(--interactive-hover);
+}
+
+.dnd-grid-cal-link-btn.linked {
+  background: rgba(124, 58, 237, 0.2);
+  border-color: rgba(124, 58, 237, 0.5);
+}
+
+.dnd-grid-cal-wh-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.dnd-grid-cal-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dnd-grid-cal-col label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.dnd-grid-cal-col input {
+  width: 80px;
+  height: 26px;
+  font-size: 12px;
+  padding: 2px 6px;
+  text-align: right;
+}
+
+.dnd-grid-cal-measured {
+  padding: 8px;
+  background: var(--background-secondary-alt);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.dnd-grid-cal-measured p {
+  margin: 0 0 6px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dnd-grid-cal-measured .mod-cta {
+  font-size: 11px;
+  padding: 4px 10px;
 }
 
 .dnd-map-color-picker {
