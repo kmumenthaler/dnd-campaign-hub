@@ -1,6 +1,6 @@
 import { App, Modal, Setting, TFile, TFolder, Notice } from 'obsidian';
 import { MapManager } from './MapManager';
-import { MAP_PRESETS, MAP_MEDIA_EXTENSIONS, isVideoExtension } from './types';
+import { MAP_PRESETS, MAP_MEDIA_EXTENSIONS, isVideoExtension, isMapMediaExtension } from './types';
 import type DndCampaignHubPlugin from '../main';
 
 /**
@@ -313,6 +313,9 @@ export class MapCreationModal extends Modal {
         display.setText(`📄 ${file.path}`);
       }
 
+      // Update preview
+      this.updatePreview();
+
       // Auto-detect grid
       const detection = await this.mapManager.analyzeImage(file);
       this.gridSize = detection.suggestedSize;
@@ -478,7 +481,57 @@ export class MapCreationModal extends Modal {
     this.previewContainer.style.alignItems = 'center';
     this.previewContainer.style.justifyContent = 'center';
     this.previewContainer.style.color = 'var(--text-muted)';
-    this.previewContainer.setText('Select an image to see preview');
+
+    if (this.selectedFile) {
+      // File already selected (edit mode) – render preview immediately
+      this.updatePreview();
+    } else {
+      this.previewContainer.setText('Select an image to see preview');
+    }
+  }
+
+  /**
+   * Render the selected image / video into the preview container.
+   */
+  private updatePreview(): void {
+    if (!this.previewContainer || !this.selectedFile) return;
+
+    this.previewContainer.empty();
+    this.previewContainer.style.display = 'block';
+    this.previewContainer.style.position = 'relative';
+    this.previewContainer.style.overflow = 'hidden';
+
+    const resourcePath = this.app.vault.getResourcePath(this.selectedFile);
+    const isVideo = isVideoExtension(this.selectedFile.extension);
+
+    if (isVideo) {
+      const video = this.previewContainer.createEl('video', {
+        attr: { src: resourcePath, controls: '', muted: '' },
+      });
+      video.style.width = '100%';
+      video.style.maxHeight = '350px';
+      video.style.objectFit = 'contain';
+      video.style.borderRadius = '4px';
+      video.autoplay = true;
+      video.loop = true;
+      video.muted = true;
+    } else {
+      const img = this.previewContainer.createEl('img', {
+        attr: { src: resourcePath, alt: this.mapName || 'Map preview' },
+      });
+      img.style.width = '100%';
+      img.style.maxHeight = '350px';
+      img.style.objectFit = 'contain';
+      img.style.borderRadius = '4px';
+    }
+
+    // Caption
+    const caption = this.previewContainer.createDiv();
+    caption.style.textAlign = 'center';
+    caption.style.fontSize = '12px';
+    caption.style.color = 'var(--text-muted)';
+    caption.style.marginTop = '6px';
+    caption.setText(this.selectedFile.name);
   }
 
   private createButtons(container: HTMLElement) {
