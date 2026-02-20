@@ -5894,6 +5894,171 @@
   border-top: 1px solid var(--background-modifier-border);
 }
 
+/* ─── Sound Effect Code Block (dnd-sfx) ──────────────────── */
+
+.dnd-sfx-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  margin: 6px 0;
+}
+
+.dnd-sfx-play-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dnd-sfx-play-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(var(--interactive-accent-rgb), 0.4);
+}
+
+.dnd-sfx-play-btn:active,
+.dnd-sfx-play-btn.playing {
+  transform: scale(0.92);
+}
+
+.dnd-sfx-play-icon {
+  font-size: 18px;
+}
+
+.dnd-sfx-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dnd-sfx-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dnd-sfx-file {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dnd-sfx-block-error {
+  color: var(--text-error);
+  padding: 8px;
+  font-style: italic;
+}
+
+/* ─── SFX Insert Modal ───────────────────────────────────── */
+
+.dnd-sfx-modal .modal-content {
+  padding: 16px;
+}
+
+.dnd-sfx-modal h4 {
+  margin-top: 16px;
+  margin-bottom: 6px;
+  font-size: 14px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 4px;
+}
+
+.dnd-sfx-modal h4:first-child {
+  margin-top: 0;
+}
+
+.dnd-sfx-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 12px 0;
+}
+
+.dnd-sfx-picker-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s ease;
+}
+
+.dnd-sfx-picker-btn:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+
+.dnd-sfx-picker-btn.selected {
+  background: rgba(var(--interactive-accent-rgb), 0.15);
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+.dnd-sfx-picker-icon {
+  font-size: 16px;
+}
+
+.dnd-sfx-picker-name {
+  font-size: 12px;
+}
+
+.dnd-sfx-divider {
+  border: none;
+  border-top: 1px solid var(--background-modifier-border);
+  margin: 10px 0;
+}
+
+.dnd-sfx-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.dnd-sfx-file-name {
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+.dnd-sfx-file-name.dnd-sfx-none {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.dnd-sfx-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
 /* ─── Scene Music Dashboard Detector ─────────────────────── */
 
 .scene-music-detector h3 {

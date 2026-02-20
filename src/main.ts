@@ -31,6 +31,7 @@ import type { MusicSettings, SceneMusicConfig } from "./music/types";
 import { DEFAULT_MUSIC_SETTINGS, AUDIO_EXTENSIONS } from "./music/types";
 import { renderMusicPlayer, renderSoundboard } from "./music/MusicPlayerView";
 import { SceneMusicModal, renderSceneMusicBlock, buildSceneMusicCodeblock } from "./music/SceneMusicBlock";
+import { SoundEffectModal, renderSoundEffectBlock, buildSoundEffectCodeblock } from "./music/SoundEffectBlock";
 import { RandomEncounterTableModal } from "./encounter/RandomEncounterTableModal";
 import {
   HexcrawlTracker,
@@ -2768,6 +2769,11 @@ export default class DndCampaignHubPlugin extends Plugin {
       renderSceneMusicBlock(source, el, ctx, this.musicPlayer, this.settings.musicSettings);
     });
 
+    // Register markdown code block processor for inline sound effect buttons
+    this.registerMarkdownCodeBlockProcessor('dnd-sfx', (source, el, ctx) => {
+      renderSoundEffectBlock(source, el, ctx, this.musicPlayer, this.settings.musicSettings);
+    });
+
     // Register markdown code block processor for encounter table cards
     this.registerMarkdownCodeBlockProcessor('dnd-encounter-table', (source, el, ctx) => {
       import('./encounter/EncounterTableBlock').then(({ renderEncounterTableBlock }) => {
@@ -3551,6 +3557,23 @@ export default class DndCampaignHubPlugin extends Plugin {
             const codeblock = buildSceneMusicCodeblock(config);
             editor.replaceSelection(codeblock + '\n');
             new Notice('Scene music block inserted');
+          }
+        ).open();
+      },
+    });
+
+    this.addCommand({
+      id: "insert-sound-effect",
+      name: "🔊 Insert Sound Effect Block",
+      editorCallback: (editor: Editor) => {
+        new SoundEffectModal(
+          this.app,
+          this.settings.musicSettings,
+          null,
+          (config) => {
+            const codeblock = buildSoundEffectCodeblock(config);
+            editor.replaceSelection(codeblock + '\n');
+            new Notice('Sound effect block inserted');
           }
         ).open();
       },
