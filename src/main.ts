@@ -21,6 +21,7 @@ import {
 } from "./templates";
 import { MapManager } from "./map/MapManager";
 import { MapCreationModal } from "./map/MapCreationModal";
+import { MapManagerModal } from "./map/MapManagerModal";
 import { MarkerLibrary } from "./marker/MarkerLibrary";
 import { MarkerReference, MarkerDefinition, CREATURE_SIZE_SQUARES, CreatureSize, Layer } from "./marker/MarkerTypes";
 import { MigrationManager, MigrationModal, TEMPLATE_VERSIONS } from "./migration";
@@ -2968,6 +2969,12 @@ export default class DndCampaignHubPlugin extends Plugin {
       id: "create-map",
       name: "🗺️ Create Battle Map",
       callback: () => this.createMap(),
+    });
+
+    this.addCommand({
+      id: "manage-maps",
+      name: "🗺️ Map Manager",
+      callback: () => new MapManagerModal(this.app, this, this.mapManager).open(),
     });
 
     this.addCommand({
@@ -13295,6 +13302,26 @@ class DndCampaignHubSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.currentCampaign = value;
             await this.plugin.saveSettings();
+          })
+      );
+
+    // Map Management Section
+    containerEl.createEl("h3", { text: "🗺️ Map Management" });
+
+    const mapMgmtContainer = containerEl.createDiv({ cls: "dnd-about-container" });
+    mapMgmtContainer.createEl("p", {
+      text: "Create, edit, and delete your battle maps and world maps."
+    });
+
+    new Setting(containerEl)
+      .setName("Open Map Manager")
+      .setDesc("View and manage all maps in your campaign")
+      .addButton((button) =>
+        button
+          .setButtonText("🗺️ Map Manager")
+          .setCta()
+          .onClick(() => {
+            new MapManagerModal(this.app, this.plugin, this.plugin.mapManager).open();
           })
       );
 
