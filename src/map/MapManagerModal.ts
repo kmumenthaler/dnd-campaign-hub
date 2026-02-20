@@ -285,10 +285,14 @@ export class MapManagerModal extends Modal {
   /**
    * Open the MapCreationModal in edit mode for the selected map.
    */
-  private editMap(map: StoredMapInfo): void {
+  private async editMap(map: StoredMapInfo): Promise<void> {
     this.close();
-    // Build a config object matching what MapCreationModal expects for edit mode
+
+    // Load the full annotation data so the edit config has everything
+    const fullData = await this.plugin.loadMapAnnotations(map.mapId);
+
     const editConfig = {
+      ...fullData,              // carry all stored fields
       mapId: map.mapId,
       id: map.mapId,
       name: map.name,
@@ -299,7 +303,7 @@ export class MapManagerModal extends Modal {
       gridSize: map.gridSize,
       scale: map.scale,
       dimensions: map.dimensions,
-      createdDate: (map as any).createdDate,
+      createdDate: (fullData as any).createdDate || (map as any).createdDate,
     };
     new MapCreationModal(this.app, this.plugin, this.mapManager, editConfig).open();
   }

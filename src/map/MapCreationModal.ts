@@ -528,21 +528,45 @@ export class MapCreationModal extends Modal {
         mapData.lastModified = new Date().toISOString();
       }
 
-      // Save full config to JSON file immediately
-      const fullConfig = {
-        mapId: mapData.id,
-        name: mapData.name,
-        imageFile: mapData.imageFile,
-        isVideo: mapData.isVideo || false,
-        type: mapData.type,
-        dimensions: mapData.dimensions,
-        gridType: mapData.gridType,
-        gridSize: mapData.gridSize,
-        scale: mapData.scale,
-        highlights: [],
-        markers: [],
-        drawings: []
-      };
+      // Build the config to save
+      let fullConfig: any;
+
+      if (this.editMode && this.editConfig) {
+        // Edit mode: load existing annotation data so tokens, walls,
+        // drawings, fog-of-war, light sources, etc. are NOT wiped
+        const existing = await this.plugin.loadMapAnnotations(mapData.id);
+
+        fullConfig = {
+          ...existing,            // preserve ALL existing annotation data
+          // overwrite only the map-settings fields the user can edit
+          mapId: mapData.id,
+          name: mapData.name,
+          imageFile: mapData.imageFile,
+          isVideo: mapData.isVideo || false,
+          type: mapData.type,
+          dimensions: mapData.dimensions,
+          gridType: mapData.gridType,
+          gridSize: mapData.gridSize,
+          scale: mapData.scale,
+        };
+      } else {
+        // Create mode: start with empty annotations
+        fullConfig = {
+          mapId: mapData.id,
+          name: mapData.name,
+          imageFile: mapData.imageFile,
+          isVideo: mapData.isVideo || false,
+          type: mapData.type,
+          dimensions: mapData.dimensions,
+          gridType: mapData.gridType,
+          gridSize: mapData.gridSize,
+          scale: mapData.scale,
+          highlights: [],
+          markers: [],
+          drawings: []
+        };
+      }
+
       // Use a dummy element since we don't have a rendered map yet
       await this.plugin.saveMapAnnotations(fullConfig, document.createElement('div'));
 
