@@ -189,6 +189,9 @@ const EN: LocaleMap = {
   loadingParty:            'Loading party members…',
   noPartyMembers:          'No party members found',
 
+  // ── Template Suggestions ──────────────────────────────
+  suggestedTemplates:      'Suggested Templates',
+
   // ── Notices (procedure complete) ───────────────────────
   exhaustionNotice:       '💀 Party gains 1 level of exhaustion! (Level {level})',
 
@@ -593,6 +596,9 @@ const DE: LocaleMap = {
   includePartyTokensDesc:  'Gruppen-Tokens auf der Karte platzieren',
   loadingParty:            'Gruppenmitglieder werden geladen…',
   noPartyMembers:          'Keine Gruppenmitglieder gefunden',
+
+  // ── Template Suggestions ──────────────────────────────
+  suggestedTemplates:      'Vorgeschlagene Vorlagen',
 
   // ── Notices (procedure complete) ───────────────────────
   exhaustionNotice:       '💀 Die Gruppe erhält 1 Stufe Erschöpfung! (Stufe {level})',

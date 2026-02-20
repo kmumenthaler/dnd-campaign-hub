@@ -15,9 +15,10 @@ import type { SRDMonster } from '../encounter/SRDApiClient';
 import { SRDApiClient } from '../encounter/SRDApiClient';
 import { MapManager } from '../map/MapManager';
 import { MAP_MEDIA_EXTENSIONS, MAP_IMAGE_EXTENSIONS, MAP_VIDEO_EXTENSIONS, isVideoExtension, MAP_PRESETS } from '../map/types';
+import type { MapTemplateTags } from '../map/types';
 import type { CreatureSize, MarkerDefinition, MarkerReference } from '../marker/MarkerTypes';
 import { CREATURE_SIZE_SQUARES } from '../marker/MarkerTypes';
-import type { DescriptionLanguage, TerrainType } from './types';
+import type { DescriptionLanguage, TerrainType, ClimateType } from './types';
 import { getTerrainDefinition } from './types';
 import { hLoc } from './HexcrawlLocale';
 
@@ -101,6 +102,19 @@ export class EncounterBattlemapModal extends Modal {
   private monsterDataCache: Map<string, SRDMonster> = new Map();
   private srdClient: SRDApiClient;
 
+  // Template selection state
+  private suggestedTemplates: Array<{
+    mapId: string;
+    name: string;
+    imageFile: string;
+    tags: MapTemplateTags;
+    matchScore: number;
+  }> = [];
+  private selectedTemplate: string | null = null;
+  private showTemplates = true;
+  private templatesLoading = true;
+  private currentHexClimate: ClimateType | null = null;
+
   constructor(
     app: App,
     plugin: DndCampaignHubPlugin,
@@ -110,6 +124,7 @@ export class EncounterBattlemapModal extends Modal {
     hexCol: number,
     hexRow: number,
     lang: DescriptionLanguage,
+    climate?: ClimateType | null,
   ) {
     super(app);
     this.plugin = plugin;
@@ -120,6 +135,7 @@ export class EncounterBattlemapModal extends Modal {
     this.hexRow = hexRow;
     this.lang = lang;
     this.srdClient = new SRDApiClient();
+    this.currentHexClimate = climate || null;
 
     // Build default map name from encounter
     const terrain = getTerrainDefinition(terrainType);
@@ -146,6 +162,9 @@ export class EncounterBattlemapModal extends Modal {
     if (!this.partyLoaded) {
       this.loadPartyMembers();
     }
+
+    // Load matching templates
+    this.loadSuggestedTemplates();
 
     this.render();
   }
@@ -214,6 +233,82 @@ export class EncounterBattlemapModal extends Modal {
         cls: 'ebm-btn primary ebm-select-image-btn',
       });
       selectBtn.addEventListener('click', () => this.selectImage());
+    }
+
+    // ── Template Suggestions ────────────────────────────
+    if (this.showTemplates) {
+      const templateSection = contentEl.createDiv({ cls: 'ebm-template-section' });
+      templateSection.createEl('h4', { text: `🏗️ ${hLoc(L, 'suggestedTemplates')}` });
+
+      if (this.templatesLoading) {
+        templateSection.createDiv({ text: '⌛ Loading templates…', cls: 'ebm-template-loading' });
+      } else if (this.suggestedTemplates.length === 0) {
+        const emptyDiv = templateSection.createDiv({ cls: 'ebm-template-empty' });
+        const terrain = getTerrainDefinition(this.terrainType);
+        emptyDiv.createSpan({ text: `No templates match "${terrain.name}". ` });
+        const manualLink = emptyDiv.createEl('a', { text: 'Select image manually ↓', href: '#' });
+        manualLink.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.showTemplates = false;
+          this.render();
+        });
+      } else {
+        const templateGrid = templateSection.createDiv({ cls: 'ebm-template-grid' });
+
+        for (const template of this.suggestedTemplates.slice(0, 6)) {
+          const isSelected = this.selectedTemplate === template.mapId;
+          const card = templateGrid.createDiv({
+            cls: `ebm-template-card ${isSelected ? 'selected' : ''}`,
+          });
+
+          // Thumbnail
+          const thumb = card.createDiv({ cls: 'ebm-template-thumb' });
+          const imgFile = this.app.vault.getAbstractFileByPath(template.imageFile);
+          if (imgFile instanceof TFile) {
+            const img = thumb.createEl('img');
+            img.src = this.app.vault.getResourcePath(imgFile);
+          } else {
+            thumb.createSpan({ text: '🗺️' });
+          }
+
+          // Info
+          const info = card.createDiv({ cls: 'ebm-template-info' });
+          info.createEl('div', { text: template.name, cls: 'ebm-template-name' });
+
+          const tagPreview = info.createDiv({ cls: 'ebm-template-tags' });
+          const tagIcons = [
+            ...template.tags.terrain.slice(0, 2),
+            ...template.tags.location.slice(0, 1),
+          ].join(', ');
+          tagPreview.setText(tagIcons || 'No tags');
+
+          // Match score indicator
+          if (template.matchScore > 2) {
+            card.createDiv({ text: '⭐ Best Match', cls: 'ebm-template-match' });
+          }
+
+          card.addEventListener('click', () => {
+            this.selectedTemplate = template.mapId;
+            this.selectedFile = null;
+            this.render();
+          });
+        }
+      }
+
+      // Toggle to manual mode
+      if (this.suggestedTemplates.length > 0) {
+        const orDiv = templateSection.createDiv({ cls: 'ebm-or-divider' });
+        orDiv.setText('— or select an image manually —');
+        orDiv.style.textAlign = 'center';
+        orDiv.style.color = 'var(--text-muted)';
+        orDiv.style.margin = '12px 0';
+        orDiv.style.cursor = 'pointer';
+        orDiv.addEventListener('click', () => {
+          this.showTemplates = false;
+          this.selectedTemplate = null;
+          this.render();
+        });
+      }
     }
 
     // ── Map name ────────────────────────────────────────
@@ -351,7 +446,7 @@ export class EncounterBattlemapModal extends Modal {
   // ── Create the battlemap ───────────────────────────────────────────
 
   private async createBattlemap() {
-    if (!this.selectedFile) {
+    if (!this.selectedTemplate && !this.selectedFile) {
       new Notice(hLoc(this.lang, 'selectImageFirst'));
       return;
     }
@@ -361,47 +456,84 @@ export class EncounterBattlemapModal extends Modal {
     }
 
     try {
-      // 1. Create map via MapManager
-      const mapManager = this.plugin.mapManager;
-      const mapData = await mapManager.createMap(
-        this.mapName,
-        this.selectedFile.path,
-        'battlemap',
-        this.gridType,
-        this.gridSize,
-        this.scaleValue,
-        this.scaleUnit,
-      );
+      let fullConfig: any;
+
+      if (this.selectedTemplate) {
+        // ── Template-based creation ─────────────────────
+        const templateData = await this.plugin.loadMapAnnotations(this.selectedTemplate);
+        const mapManager = this.plugin.mapManager;
+        const newId = mapManager.generateMapId();
+
+        fullConfig = {
+          mapId: newId,
+          name: this.mapName,
+          imageFile: templateData.imageFile,
+          isVideo: templateData.isVideo || false,
+          type: 'battlemap',
+          dimensions: templateData.dimensions,
+          gridType: templateData.gridType || this.gridType,
+          gridSize: templateData.gridSize || this.gridSize,
+          scale: templateData.scale || { value: this.scaleValue, unit: this.scaleUnit },
+          // Carry over walls, lights, fog from template
+          walls: templateData.walls || [],
+          lightSources: templateData.lightSources || [],
+          fogOfWar: templateData.fogOfWar || { enabled: false, regions: [] },
+          drawings: templateData.drawings || [],
+          highlights: [],
+          markers: [],
+          // NOT a template — it's an active encounter map
+          isTemplate: false,
+          templateTags: undefined,
+          linkedEncounter: '',
+        };
+      } else {
+        // ── Manual image selection (existing logic) ─────
+        const mapManager = this.plugin.mapManager;
+        const mapData = await mapManager.createMap(
+          this.mapName,
+          this.selectedFile!.path,
+          'battlemap',
+          this.gridType,
+          this.gridSize,
+          this.scaleValue,
+          this.scaleUnit,
+        );
+
+        fullConfig = {
+          mapId: mapData.id,
+          name: mapData.name,
+          imageFile: mapData.imageFile,
+          isVideo: mapData.isVideo || false,
+          type: mapData.type,
+          dimensions: mapData.dimensions,
+          gridType: mapData.gridType,
+          gridSize: mapData.gridSize,
+          scale: mapData.scale,
+          highlights: [],
+          markers: [],
+          drawings: [],
+          walls: [],
+          lightSources: [],
+          fogOfWar: { enabled: false, regions: [] },
+          linkedEncounter: '',
+        };
+      }
 
       // 2. Create marker definitions & references for creatures
-      const markerRefs = await this.buildCreatureMarkers(mapData.dimensions);
+      const markerRefs = await this.buildCreatureMarkers(fullConfig.dimensions);
 
       // 2b. Create party member markers if enabled
       if (this.includeParty && this.partyMembers.length > 0) {
-        const partyRefs = await this.buildPartyMarkers(mapData.dimensions);
+        const partyRefs = await this.buildPartyMarkers(fullConfig.dimensions);
         markerRefs.push(...partyRefs);
       }
 
       // 3. Save map annotations with markers
-      const fullConfig = {
-        mapId: mapData.id,
-        name: mapData.name,
-        imageFile: mapData.imageFile,
-        isVideo: mapData.isVideo || false,
-        type: mapData.type,
-        dimensions: mapData.dimensions,
-        gridType: mapData.gridType,
-        gridSize: mapData.gridSize,
-        scale: mapData.scale,
-        highlights: [],
-        markers: markerRefs,
-        drawings: [],
-        linkedEncounter: '', // Will be updated after note is created
-      };
+      fullConfig.markers = markerRefs;
       await this.plugin.saveMapAnnotations(fullConfig, document.createElement('div'));
 
       // 4. Create encounter note in z_Encounters
-      const notePath = await this.createEncounterNote(mapData.id);
+      const notePath = await this.createEncounterNote(fullConfig.mapId);
 
       // 5. Update linkedEncounter
       fullConfig.linkedEncounter = notePath;
@@ -666,6 +798,29 @@ export class EncounterBattlemapModal extends Modal {
 
     this.partyLoading = false;
     this.render();
+  }
+
+  /**
+   * Load and score templates matching the current terrain/climate context.
+   */
+  private async loadSuggestedTemplates(): Promise<void> {
+    this.templatesLoading = true;
+
+    try {
+      const templates = await this.plugin.queryMapTemplates({
+        terrain: this.terrainType,
+        climate: this.currentHexClimate || undefined,
+      });
+
+      this.suggestedTemplates = templates;
+      this.templatesLoading = false;
+      this.render();
+    } catch (err) {
+      console.warn('[EncounterBattlemapModal] Failed to load templates:', err);
+      this.templatesLoading = false;
+      this.suggestedTemplates = [];
+      this.render();
+    }
   }
 
   /**

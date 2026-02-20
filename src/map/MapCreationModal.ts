@@ -29,11 +29,13 @@ export class MapCreationModal extends Modal {
   private editElement: HTMLElement | null = null;
   private importMode: boolean = false;
   private selectedExistingMapId: string | null = null;
+  private insertCodeBlock: boolean = true;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, mapManager: MapManager, editConfig?: any, editElement?: HTMLElement) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, mapManager: MapManager, editConfig?: any, editElement?: HTMLElement, insertCodeBlock: boolean = true) {
     super(app);
     this.plugin = plugin;
     this.mapManager = mapManager;
+    this.insertCodeBlock = insertCodeBlock;
     if (editConfig) {
       this.editMode = true;
       // Normalize editConfig to match MapData interface (mapId -> id)
@@ -293,15 +295,17 @@ export class MapCreationModal extends Modal {
     }
   }
 
+  private static readonly MAP_ASSET_FOLDER = 'z_Assets/Maps';
+
   private async selectImageFromVault() {
-    // Get all image files from vault
+    // Get image/video files exclusively from z_Assets/Maps
     const imageFiles = this.app.vault.getFiles().filter(file => {
       const ext = file.extension.toLowerCase();
-      return MAP_MEDIA_EXTENSIONS.includes(ext);
+      return file.path.startsWith(MapCreationModal.MAP_ASSET_FOLDER + '/') && MAP_MEDIA_EXTENSIONS.includes(ext);
     });
 
     if (imageFiles.length === 0) {
-      new Notice('No image files found in vault');
+      new Notice('No map files found in z_Assets/Maps');
       return;
     }
 
@@ -1027,8 +1031,8 @@ export class MapCreationModal extends Modal {
       if (this.editMode && this.editConfig) {
         // Edit mode: code block already has mapId, just update the JSON
         new Notice(`✅ Map "${this.mapName}" updated`);
-      } else {
-        // Create mode: insert minimal code block with just mapId
+      } else if (this.insertCodeBlock) {
+        // Create mode via command: insert minimal code block with just mapId
         const activeFile = this.app.workspace.getActiveFile();
         if (activeFile) {
           const editor = this.app.workspace.activeEditor?.editor;
@@ -1038,6 +1042,9 @@ export class MapCreationModal extends Modal {
             new Notice(`✅ Map "${this.mapName}" inserted into note`);
           }
         }
+      } else {
+        // Create mode via Map Manager: just save, don't insert code block
+        new Notice(`✅ Map "${this.mapName}" created`);
       }
 
       this.close();
@@ -1199,27 +1206,19 @@ class ImageSelectorModal extends Modal {
         // Read the file as an ArrayBuffer
         const buffer = await file.arrayBuffer();
 
-        // Determine destination folder — use attachments folder or vault root
-        let destFolder = '';
-        // Try to use the configured attachment folder
-        const attachmentSetting = (this.app.vault as any).getConfig?.('attachmentFolderPath');
-        if (attachmentSetting && attachmentSetting !== '/' && attachmentSetting !== '.') {
-          destFolder = attachmentSetting;
-          // Ensure the folder exists
-          if (!(await this.app.vault.adapter.exists(destFolder))) {
-            await this.app.vault.createFolder(destFolder);
-          }
+        // Always upload to z_Assets/Maps
+        const destFolder = 'z_Assets/Maps';
+        if (!(await this.app.vault.adapter.exists(destFolder))) {
+          await this.app.vault.createFolder(destFolder);
         }
 
         // Build a safe path, deduplicating if needed
-        let destPath = destFolder ? `${destFolder}/${file.name}` : file.name;
+        let destPath = `${destFolder}/${file.name}`;
         let counter = 1;
         const baseName = file.name.replace(/\.[^.]+$/, '');
         const ext = file.name.replace(/^.*\./, '.');
         while (await this.app.vault.adapter.exists(destPath)) {
-          destPath = destFolder
-            ? `${destFolder}/${baseName} (${counter})${ext}`
-            : `${baseName} (${counter})${ext}`;
+          destPath = `${destFolder}/${baseName} (${counter})${ext}`;
           counter++;
         }
 

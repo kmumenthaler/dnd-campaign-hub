@@ -12000,6 +12000,9 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 				fogOfWar: config.fogOfWar || { enabled: false, regions: [] },
 				walls: config.walls || [],
 				lightSources: config.lightSources || [],
+				// Template system
+				isTemplate: config.isTemplate || false,
+				templateTags: config.templateTags || undefined,
 				lastModified: new Date().toISOString()
 			};
 			
@@ -12071,6 +12074,95 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 			console.error('Error loading map annotations:', error);
 			return {};
  		}
+	}
+
+	/**
+	 * Query map templates matching the given criteria.
+	 * Returns templates sorted by match score (best matches first).
+	 */
+	async queryMapTemplates(criteria: { terrain?: string; climate?: string; location?: string; timeOfDay?: string; size?: string }): Promise<Array<{
+		mapId: string;
+		name: string;
+		imageFile: string;
+		tags: any;
+		matchScore: number;
+	}>> {
+		const results: Array<{
+			mapId: string;
+			name: string;
+			imageFile: string;
+			tags: any;
+			matchScore: number;
+		}> = [];
+
+		try {
+			const annotationDir = `${this.app.vault.configDir}/plugins/${this.manifest.id}/map-annotations`;
+			if (!(await this.app.vault.adapter.exists(annotationDir))) return results;
+
+			const listing = await this.app.vault.adapter.list(annotationDir);
+
+			for (const filePath of listing.files) {
+				if (!filePath.endsWith('.json')) continue;
+
+				try {
+					const raw = await this.app.vault.adapter.read(filePath);
+					const data = JSON.parse(raw);
+
+					// Skip non-templates
+					if (!data.isTemplate || !data.templateTags) continue;
+
+					const tags = data.templateTags;
+					let score = 0;
+
+					// Terrain match (highest priority)
+					if (criteria.terrain && tags.terrain && tags.terrain.includes(criteria.terrain)) {
+						score += 3;
+					}
+
+					// Climate match
+					if (criteria.climate && tags.climate && tags.climate.includes(criteria.climate)) {
+						score += 2;
+					}
+
+					// Location match
+					if (criteria.location && tags.location && tags.location.includes(criteria.location)) {
+						score += 2;
+					}
+
+					// Time of day match
+					if (criteria.timeOfDay && tags.timeOfDay && tags.timeOfDay.includes(criteria.timeOfDay)) {
+						score += 1;
+					}
+
+					// Size match
+					if (criteria.size && tags.size && tags.size.includes(criteria.size)) {
+						score += 1;
+					}
+
+					// Include if any criteria matched, or if no criteria provided
+					const hasCriteria = criteria.terrain || criteria.climate || criteria.location;
+					if (score > 0 || !hasCriteria) {
+						results.push({
+							mapId: data.mapId,
+							name: data.name || 'Unnamed Template',
+							imageFile: data.imageFile,
+							tags,
+							matchScore: score,
+						});
+					}
+				} catch {
+					// Skip corrupt files
+				}
+			}
+
+			// Sort by score descending
+			results.sort((a, b) => b.matchScore - a.matchScore);
+
+			return results;
+		} catch (err) {
+			console.error('[Plugin] Error querying templates:', err);
+			return results;
+		}
 	}
 
 	/**

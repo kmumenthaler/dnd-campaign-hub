@@ -2893,11 +2893,12 @@
    ======================================== */
 
 .dnd-map-manager-modal {
-  max-width: 750px;
+  width: 1100px;
+  max-width: 95vw;
 }
 
 .dnd-map-manager-modal .modal-content {
-  padding: 16px 20px;
+  padding: 24px 28px;
 }
 
 .dnd-map-manager-topbar {
@@ -7891,4 +7892,231 @@
 .hexcrawl-view-action-btn.danger:hover {
   background: #e05555;
   color: #fff;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MAP TEMPLATE SYSTEM
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Template Tag Modal ─────────────────────────────────────────────────── */
+
+.dnd-template-tag-modal {
+  max-width: 600px;
+}
+
+.dnd-tag-section {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.dnd-tag-section:last-child {
+  border-bottom: none;
+}
+
+.dnd-tag-section h4 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+}
+
+.dnd-tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dnd-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dnd-tag-chip:hover {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.dnd-tag-chip.selected {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.dnd-tag-chip.removable {
+  padding-right: 4px;
+}
+
+.dnd-tag-chip-remove {
+  margin-left: 4px;
+  padding: 2px 6px;
+  font-size: 14px;
+  font-weight: bold;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+  border-radius: 50%;
+}
+
+.dnd-tag-chip-remove:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.dnd-tag-add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dnd-tag-input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+}
+
+.dnd-tag-add-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* ── Map Manager Template Enhancements ──────────────────────────────────── */
+
+.dnd-map-manager-tabs {
+  flex-shrink: 0;
+}
+
+.dnd-map-tab {
+  white-space: nowrap;
+}
+
+.dnd-map-tab.active {
+  font-weight: 600;
+}
+
+.dnd-template-badge {
+  font-weight: 600;
+}
+
+.dnd-map-manager-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ── Encounter Battlemap Template Section ───────────────────────────────── */
+
+.ebm-template-section {
+  margin: 16px 0;
+  padding: 16px;
+  background: var(--background-secondary);
+  border-radius: 8px;
+}
+
+.ebm-template-section h4 {
+  margin: 0 0 12px 0;
+}
+
+.ebm-template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.ebm-template-card {
+  position: relative;
+  border: 2px solid var(--background-modifier-border);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ebm-template-card:hover {
+  border-color: var(--interactive-accent);
+  transform: translateY(-2px);
+}
+
+.ebm-template-card.selected {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
+.ebm-template-thumb {
+  height: 100px;
+  background: var(--background-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.ebm-template-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ebm-template-thumb span {
+  font-size: 32px;
+}
+
+.ebm-template-info {
+  padding: 8px;
+}
+
+.ebm-template-name {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ebm-template-tags {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.ebm-template-match {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-radius: 4px;
+}
+
+.ebm-template-loading,
+.ebm-template-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.ebm-or-divider {
+  font-size: 12px;
+}
+
+.ebm-or-divider:hover {
+  color: var(--text-normal);
+  text-decoration: underline;
 }

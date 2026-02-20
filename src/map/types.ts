@@ -2,7 +2,7 @@
  * Map Manager Type Definitions
  */
 
-import type { HexTerrain, HexClimate, HexcrawlState } from '../hexcrawl/types';
+import type { HexTerrain, HexClimate, HexcrawlState, TerrainType, ClimateType } from '../hexcrawl/types';
 
 export type MapTool = 'pan' | 'select' | 'draw' | 'ruler' | 'target-distance' | 'poi';
 
@@ -148,11 +148,91 @@ export const MAP_PRESETS: MapPreset[] = [
  * Point of Interest Types for Hexcrawl Maps
  */
 export const POI_TYPES: Array<{ value: PoiType; label: string; icon: string; color: string; description: string }> = [
-  { value: 'settlement', label: 'Settlement', icon: '�️', color: '#3b82f6', description: 'Towns, cities, villages, outposts' },
+  { value: 'settlement', label: 'Settlement', icon: '🏘️', color: '#3b82f6', description: 'Towns, cities, villages, outposts' },
   { value: 'dungeon', label: 'Dungeon', icon: '⚔️', color: '#ef4444', description: 'Dungeons, ruins, lairs' },
   { value: 'landmark', label: 'Landmark', icon: '⛰️', color: '#10b981', description: 'Natural features and notable locations' },
   { value: 'danger', label: 'Danger', icon: '⚠️', color: '#dc2626', description: 'Threats and hazards' },
   { value: 'quest', label: 'Quest', icon: '⭐', color: '#8b5cf6', description: 'Story-driven locations' },
   { value: 'custom', label: 'Custom', icon: '⬤', color: '#6b7280', description: 'Custom point of interest' },
 ];
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MAP TEMPLATE SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Time-of-day tags for template maps.
+ */
+export type TimeOfDayTag = 'day' | 'night' | 'any';
+
+/**
+ * Map size categories for template filtering.
+ */
+export type MapSizeTag = 'small' | 'medium' | 'large';
+
+/**
+ * Predefined location types that can be assigned to template maps.
+ * These correspond to common D&D encounter locations.
+ */
+export const LOCATION_TYPES: Array<{ id: string; label: string; icon: string }> = [
+  { id: 'open-field',       label: 'Open Field',       icon: '🌾' },
+  { id: 'forest-clearing',  label: 'Forest Clearing',  icon: '🌲' },
+  { id: 'cave',             label: 'Cave',             icon: '🕳️' },
+  { id: 'dungeon',          label: 'Dungeon',          icon: '🏚️' },
+  { id: 'ruins',            label: 'Ruins',            icon: '🏛️' },
+  { id: 'tower',            label: 'Tower',            icon: '🗼' },
+  { id: 'temple',           label: 'Temple / Shrine',  icon: '⛪' },
+  { id: 'tavern',           label: 'Tavern / Inn',     icon: '🍺' },
+  { id: 'village',          label: 'Village',          icon: '🏘️' },
+  { id: 'castle',           label: 'Castle / Fort',    icon: '🏰' },
+  { id: 'bridge',           label: 'Bridge',           icon: '🌉' },
+  { id: 'camp',             label: 'Camp / Campsite',  icon: '⛺' },
+  { id: 'ship',             label: 'Ship / Dock',      icon: '⛵' },
+  { id: 'underground',      label: 'Underground',      icon: '⛏️' },
+  { id: 'shore',            label: 'Shore / Beach',    icon: '🏖️' },
+  { id: 'road-ambush',      label: 'Road / Ambush',    icon: '🛤️' },
+];
+
+/**
+ * Tags that describe what kind of encounters/environments a template map is suited for.
+ */
+export interface MapTemplateTags {
+  /** Terrain types this map works with (from hexcrawl system) */
+  terrain: TerrainType[];
+  /** Climate types this map works with (from hexcrawl system) */
+  climate: ClimateType[];
+  /** Location type tags (predefined + custom) */
+  location: string[];
+  /** Time of day suitability */
+  timeOfDay: TimeOfDayTag[];
+  /** Map size category */
+  size: MapSizeTag[];
+  /** User-defined custom tags */
+  custom: string[];
+}
+
+/**
+ * Query criteria for finding matching template maps.
+ */
+export interface TemplateQueryCriteria {
+  terrain?: TerrainType;
+  climate?: ClimateType;
+  location?: string;
+  timeOfDay?: TimeOfDayTag;
+  size?: MapSizeTag;
+}
+
+/**
+ * Create an empty default set of template tags.
+ */
+export function createDefaultTemplateTags(): MapTemplateTags {
+  return {
+    terrain: [],
+    climate: [],
+    location: [],
+    timeOfDay: ['any'],
+    size: ['medium'],
+    custom: [],
+  };
+}
 

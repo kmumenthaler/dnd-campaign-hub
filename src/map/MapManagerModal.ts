@@ -1,6 +1,8 @@
 import { App, Modal, Setting, Notice, TFile } from 'obsidian';
 import { MapManager } from './MapManager';
 import { MapCreationModal } from './MapCreationModal';
+import { MapTemplateTagModal } from './MapTemplateTagModal';
+import { MapTemplateTags, createDefaultTemplateTags } from './types';
 import type DndCampaignHubPlugin from '../main';
 
 /**
@@ -17,6 +19,8 @@ interface StoredMapInfo {
   scale: { value: number; unit: string };
   dimensions: { width: number; height: number };
   lastModified?: string;
+  isTemplate?: boolean;
+  templateTags?: MapTemplateTags;
 }
 
 /**
@@ -29,6 +33,7 @@ export class MapManagerModal extends Modal {
   private maps: StoredMapInfo[] = [];
   private listContainer: HTMLElement | null = null;
   private searchQuery = '';
+  private filterMode: 'all' | 'templates' | 'active' = 'all';
 
   constructor(app: App, plugin: DndCampaignHubPlugin, mapManager: MapManager) {
     super(app);
@@ -40,6 +45,7 @@ export class MapManagerModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('dnd-map-manager-modal');
+    this.modalEl.addClass('dnd-map-manager-modal');
 
     contentEl.createEl('h2', { text: '🗺️ Map Manager' });
 
@@ -64,6 +70,54 @@ export class MapManagerModal extends Modal {
       this.renderMapList();
     });
 
+    // ── Filter tabs ─────────────────────────────────────────────────
+    const tabBar = topBar.createDiv({ cls: 'dnd-map-manager-tabs' });
+    tabBar.style.display = 'flex';
+    tabBar.style.gap = '4px';
+
+    const tabs: Array<{ id: 'all' | 'templates' | 'active'; label: string; icon: string }> = [
+      { id: 'all',       label: 'All Maps',  icon: '📋' },
+      { id: 'templates', label: 'Templates', icon: '🏗️' },
+      { id: 'active',    label: 'Active',    icon: '⚔️' },
+    ];
+
+    tabs.forEach(tab => {
+      const btn = tabBar.createEl('button', {
+        text: `${tab.icon} ${tab.label}`,
+        cls: `dnd-map-tab ${this.filterMode === tab.id ? 'active' : ''}`,
+      });
+      btn.style.padding = '6px 12px';
+      btn.style.borderRadius = '4px';
+      btn.style.cursor = 'pointer';
+      btn.style.fontSize = '12px';
+      btn.style.border = this.filterMode === tab.id
+        ? '1px solid var(--interactive-accent)'
+        : '1px solid var(--background-modifier-border)';
+      btn.style.backgroundColor = this.filterMode === tab.id
+        ? 'var(--interactive-accent)'
+        : 'var(--background-secondary)';
+      btn.style.color = this.filterMode === tab.id
+        ? 'var(--text-on-accent)'
+        : 'var(--text-normal)';
+
+      btn.addEventListener('click', () => {
+        this.filterMode = tab.id;
+        tabBar.querySelectorAll('.dnd-map-tab').forEach((t, idx) => {
+          const isActive = tabs[idx]?.id === this.filterMode;
+          (t as HTMLElement).style.border = isActive
+            ? '1px solid var(--interactive-accent)'
+            : '1px solid var(--background-modifier-border)';
+          (t as HTMLElement).style.backgroundColor = isActive
+            ? 'var(--interactive-accent)'
+            : 'var(--background-secondary)';
+          (t as HTMLElement).style.color = isActive
+            ? 'var(--text-on-accent)'
+            : 'var(--text-normal)';
+        });
+        this.renderMapList();
+      });
+    });
+
     const createBtn = topBar.createEl('button', { text: '➕ New Map' });
     createBtn.style.padding = '8px 16px';
     createBtn.style.backgroundColor = 'var(--interactive-accent)';
@@ -73,7 +127,7 @@ export class MapManagerModal extends Modal {
     createBtn.style.whiteSpace = 'nowrap';
     createBtn.addEventListener('click', () => {
       this.close();
-      new MapCreationModal(this.app, this.plugin, this.mapManager).open();
+      new MapCreationModal(this.app, this.plugin, this.mapManager, undefined, undefined, false).open();
     });
 
     // ── Summary line ────────────────────────────────────────────────
@@ -136,19 +190,46 @@ export class MapManagerModal extends Modal {
     if (!this.listContainer) return;
     this.listContainer.empty();
 
-    const filtered = this.searchQuery
-      ? this.maps.filter(m => {
-          const haystack = `${m.name} ${m.type} ${m.imageFile} ${m.gridType}`.toLowerCase();
-          return haystack.includes(this.searchQuery);
-        })
-      : this.maps;
+    let filtered = this.maps;
+
+    // Apply tab filter
+    if (this.filterMode === 'templates') {
+      filtered = filtered.filter(m => m.isTemplate === true);
+    } else if (this.filterMode === 'active') {
+      filtered = filtered.filter(m => !m.isTemplate);
+    }
+
+    // Apply search filter
+    if (this.searchQuery) {
+      filtered = filtered.filter(m => {
+        const haystack = `${m.name} ${m.type} ${m.imageFile} ${m.gridType}`.toLowerCase();
+        if (haystack.includes(this.searchQuery)) return true;
+        // Also search template tags
+        if (m.templateTags) {
+          const tagStr = [
+            ...m.templateTags.terrain,
+            ...m.templateTags.climate,
+            ...m.templateTags.location,
+            ...m.templateTags.custom,
+          ].join(' ').toLowerCase();
+          return tagStr.includes(this.searchQuery);
+        }
+        return false;
+      });
+    }
 
     if (filtered.length === 0) {
       const emptyEl = this.listContainer.createDiv({ cls: 'dnd-map-manager-empty' });
       emptyEl.style.padding = '32px';
       emptyEl.style.textAlign = 'center';
       emptyEl.style.color = 'var(--text-muted)';
-      emptyEl.setText(this.searchQuery ? 'No maps match your search.' : 'No maps created yet. Click "New Map" to get started.');
+      if (this.filterMode === 'templates') {
+        emptyEl.setText(this.searchQuery
+          ? 'No templates match your search.'
+          : 'No templates yet. Mark a map as template to get started.');
+      } else {
+        emptyEl.setText(this.searchQuery ? 'No maps match your search.' : 'No maps created yet. Click "New Map" to get started.');
+      }
       return;
     }
 
@@ -224,6 +305,34 @@ export class MapManagerModal extends Modal {
     nameEl.style.textOverflow = 'ellipsis';
     nameEl.setText(`${typeEmoji} ${map.name || 'Unnamed Map'}`);
 
+    // Template badge
+    if (map.isTemplate) {
+      const badge = nameEl.createSpan({ cls: 'dnd-template-badge' });
+      badge.setText('🏗️ TEMPLATE');
+      badge.style.marginLeft = '8px';
+      badge.style.fontSize = '10px';
+      badge.style.padding = '2px 6px';
+      badge.style.borderRadius = '4px';
+      badge.style.backgroundColor = 'var(--interactive-accent)';
+      badge.style.color = 'var(--text-on-accent)';
+    }
+
+    // Template tags preview
+    if (map.isTemplate && map.templateTags) {
+      const tagPreview = info.createDiv({ cls: 'dnd-map-manager-tags' });
+      tagPreview.style.fontSize = '11px';
+      tagPreview.style.color = 'var(--text-muted)';
+      tagPreview.style.marginTop = '2px';
+      const allTags = [
+        ...map.templateTags.terrain.slice(0, 2),
+        ...map.templateTags.climate.slice(0, 2),
+        ...map.templateTags.location.slice(0, 2),
+      ];
+      if (allTags.length > 0) {
+        tagPreview.setText(`Tags: ${allTags.join(', ')}${allTags.length >= 6 ? '…' : ''}`);
+      }
+    }
+
     const meta = info.createDiv({ cls: 'dnd-map-manager-meta' });
     meta.style.fontSize = '12px';
     meta.style.color = 'var(--text-muted)';
@@ -271,6 +380,50 @@ export class MapManagerModal extends Modal {
     deleteBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.confirmDeleteMap(map);
+    });
+
+    // Template-specific actions
+    if (map.isTemplate) {
+      const tagBtn = actions.createEl('button', { text: '🏷️ Tags', attr: { title: 'Edit template tags' } });
+      tagBtn.style.padding = '4px 10px';
+      tagBtn.style.fontSize = '12px';
+      tagBtn.style.borderRadius = '4px';
+      tagBtn.style.cursor = 'pointer';
+      tagBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.editTemplateTags(map);
+      });
+
+      const unmarkBtn = actions.createEl('button', { text: '❌ Unmark', attr: { title: 'Remove template status' } });
+      unmarkBtn.style.padding = '4px 10px';
+      unmarkBtn.style.fontSize = '12px';
+      unmarkBtn.style.borderRadius = '4px';
+      unmarkBtn.style.cursor = 'pointer';
+      unmarkBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.unmarkAsTemplate(map);
+      });
+    } else {
+      const templateBtn = actions.createEl('button', { text: '🏗️ Make Template', attr: { title: 'Mark as template' } });
+      templateBtn.style.padding = '4px 10px';
+      templateBtn.style.fontSize = '12px';
+      templateBtn.style.borderRadius = '4px';
+      templateBtn.style.cursor = 'pointer';
+      templateBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.markAsTemplate(map);
+      });
+    }
+
+    // Duplicate button (for both)
+    const dupBtn = actions.createEl('button', { text: '📄 Duplicate', attr: { title: 'Create a copy' } });
+    dupBtn.style.padding = '4px 10px';
+    dupBtn.style.fontSize = '12px';
+    dupBtn.style.borderRadius = '4px';
+    dupBtn.style.cursor = 'pointer';
+    dupBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.duplicateMap(map, !!map.isTemplate);
     });
 
     // Hover effect
@@ -371,6 +524,103 @@ export class MapManagerModal extends Modal {
     } catch (err) {
       console.error('[MapManager] Error deleting map:', err);
       new Notice('❌ Failed to delete map');
+    }
+  }
+
+  /**
+   * Mark a map as a template.
+   */
+  private async markAsTemplate(map: StoredMapInfo): Promise<void> {
+    const fullData = await this.plugin.loadMapAnnotations(map.mapId);
+
+    fullData.isTemplate = true;
+    fullData.templateTags = createDefaultTemplateTags();
+
+    await this.plugin.saveMapAnnotations(fullData, document.createElement('div'));
+
+    map.isTemplate = true;
+    map.templateTags = fullData.templateTags;
+
+    new Notice(`✅ "${map.name}" marked as template`);
+
+    // Open tag editor immediately
+    this.editTemplateTags(map);
+  }
+
+  /**
+   * Remove template status from a map.
+   */
+  private async unmarkAsTemplate(map: StoredMapInfo): Promise<void> {
+    const fullData = await this.plugin.loadMapAnnotations(map.mapId);
+
+    fullData.isTemplate = false;
+    delete fullData.templateTags;
+
+    await this.plugin.saveMapAnnotations(fullData, document.createElement('div'));
+
+    map.isTemplate = false;
+    delete map.templateTags;
+
+    new Notice(`✅ "${map.name}" is no longer a template`);
+    this.renderMapList();
+  }
+
+  /**
+   * Open the template tag editor modal.
+   */
+  private editTemplateTags(map: StoredMapInfo): void {
+    new MapTemplateTagModal(
+      this.app,
+      this.plugin,
+      map.mapId,
+      map.name,
+      map.templateTags,
+      async (newTags) => {
+        const fullData = await this.plugin.loadMapAnnotations(map.mapId);
+        fullData.templateTags = newTags;
+        await this.plugin.saveMapAnnotations(fullData, document.createElement('div'));
+
+        map.templateTags = newTags;
+        this.renderMapList();
+      },
+    ).open();
+  }
+
+  /**
+   * Duplicate a map. If duplicating a template, strips tokens/markers
+   * but preserves walls, lights, fog of war — creating a clean copy.
+   */
+  private async duplicateMap(map: StoredMapInfo, asCleanTemplate: boolean): Promise<void> {
+    try {
+      const fullData = await this.plugin.loadMapAnnotations(map.mapId);
+
+      const newId = this.mapManager.generateMapId();
+      const newName = `${map.name} (Copy)`;
+
+      const newData = {
+        ...fullData,
+        mapId: newId,
+        name: newName,
+        lastModified: new Date().toISOString(),
+      };
+
+      // If duplicating a template, strip tokens but keep structural elements
+      if (asCleanTemplate) {
+        newData.markers = [];
+        newData.isTemplate = true;
+        newData.templateTags = fullData.templateTags || createDefaultTemplateTags();
+      }
+
+      await this.plugin.saveMapAnnotations(newData, document.createElement('div'));
+
+      // Reload and refresh
+      await this.loadMaps();
+      this.renderMapList();
+
+      new Notice(`✅ Duplicated as "${newName}"`);
+    } catch (err) {
+      console.error('[MapManager] Error duplicating map:', err);
+      new Notice('❌ Failed to duplicate map');
     }
   }
 
