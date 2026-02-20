@@ -3219,6 +3219,118 @@ export default class DndCampaignHubPlugin extends Plugin {
       })
     );
 
+    // ── Token auto-sync: keep marker library in sync when notes are edited ──
+
+    // Sync token name/size when PC, NPC or Creature frontmatter is modified
+    this.registerEvent(
+      this.app.metadataCache.on('changed', async (file) => {
+        if (!(file instanceof TFile) || file.extension !== 'md') return;
+
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm = cache?.frontmatter;
+        if (!fm || !fm.token_id) return;
+
+        const tokenId: string = fm.token_id;
+        const existing = this.markerLibrary.getMarker(tokenId);
+        if (!existing) return;
+
+        // Determine entity type & new name from frontmatter
+        let entityType: 'player' | 'npc' | 'creature' | null = null;
+        if (fm.type === 'player') entityType = 'player';
+        else if (fm.type === 'npc') entityType = 'npc';
+        else if (fm.statblock === true) entityType = 'creature';
+        if (!entityType) return;
+
+        const newName: string = fm.name || file.basename;
+
+        // For creatures, also detect size changes
+        let newSize = existing.creatureSize;
+        if (entityType === 'creature' && fm.size) {
+          const sizeMap: Record<string, CreatureSize> = {
+            'Tiny': 'tiny', 'Small': 'small', 'Medium': 'medium',
+            'Large': 'large', 'Huge': 'huge', 'Gargantuan': 'gargantuan'
+          };
+          newSize = sizeMap[fm.size] || existing.creatureSize;
+        }
+
+        // Only update if something actually changed
+        if (existing.name === newName && existing.creatureSize === newSize) return;
+
+        console.log(`[Token Sync] Updating token "${existing.name}" → "${newName}" for ${file.path}`);
+        const updated: MarkerDefinition = {
+          ...existing,
+          name: newName,
+          creatureSize: newSize,
+          updatedAt: Date.now()
+        };
+        await this.markerLibrary.setMarker(updated);
+      })
+    );
+
+    // Clean up orphan tokens when a note with a token_id is deleted
+    this.registerEvent(
+      this.app.vault.on('delete', async (file) => {
+        if (!(file instanceof TFile) || file.extension !== 'md') return;
+
+        // We can't read the file anymore, so scan marker library for tokens
+        // whose name matches the deleted basename (best-effort cleanup)
+        // The metadata cache is no longer available for deleted files, so we
+        // rely on the fact that the file was just removed and check if any
+        // token carries the same name and is no longer referenced by another note.
+        const basename = file.basename;
+        const allMarkers = this.markerLibrary.getAllMarkers();
+        for (const marker of allMarkers) {
+          if (marker.name !== basename) continue;
+
+          // Verify no other note still references this token_id
+          const allFiles = this.app.vault.getMarkdownFiles();
+          let stillReferenced = false;
+          for (const f of allFiles) {
+            const c = this.app.metadataCache.getFileCache(f);
+            if (c?.frontmatter?.token_id === marker.id) {
+              stillReferenced = true;
+              break;
+            }
+          }
+
+          if (!stillReferenced) {
+            console.log(`[Token Sync] Deleting orphan token "${marker.name}" (${marker.id})`);
+            await this.markerLibrary.deleteMarker(marker.id);
+          }
+        }
+      })
+    );
+
+    // Sync token name when a note file is renamed
+    this.registerEvent(
+      this.app.vault.on('rename', async (file, oldPath) => {
+        if (!(file instanceof TFile) || file.extension !== 'md') return;
+
+        // Wait briefly for metadata cache to update after rename
+        setTimeout(async () => {
+          const cache = this.app.metadataCache.getFileCache(file);
+          const fm = cache?.frontmatter;
+          if (!fm || !fm.token_id) return;
+
+          const tokenId: string = fm.token_id;
+          const existing = this.markerLibrary.getMarker(tokenId);
+          if (!existing) return;
+
+          // If frontmatter has an explicit name field, use that; otherwise use basename
+          const newName = fm.name || file.basename;
+          if (existing.name === newName) return;
+
+          console.log(`[Token Sync] File renamed ${oldPath} → ${file.path}, updating token "${existing.name}" → "${newName}"`);
+          const updated: MarkerDefinition = {
+            ...existing,
+            name: newName,
+            updatedAt: Date.now()
+          };
+          await this.markerLibrary.setMarker(updated);
+        }, 200);
+      })
+    );
+
     this.addCommand({
       id: "delete-encounter",
       name: "Delete Encounter",
@@ -14450,22 +14562,32 @@ class PCCreationModal extends Modal {
           pcFile = this.app.vault.getAbstractFileByPath(newPath) as TFile;
         }
         
-        // Update the map token
+        // Update the map token, preserving existing fields (imageFile, darkvision, etc.)
         const now = Date.now();
+        const existingMarker = this.plugin.markerLibrary.getMarker(tokenId);
         const tokenDef: MarkerDefinition = {
+          ...(existingMarker || {}),
           id: tokenId,
           name: this.pcName,
           type: 'player',
-          icon: '🛡️',
-          backgroundColor: '#4a90d9',
-          borderColor: '#ffffff',
-          creatureSize: 'medium',
-          createdAt: now,
+          icon: existingMarker?.icon || '🛡️',
+          backgroundColor: existingMarker?.backgroundColor || '#4a90d9',
+          borderColor: existingMarker?.borderColor || '#ffffff',
+          creatureSize: existingMarker?.creatureSize || 'medium',
+          createdAt: existingMarker?.createdAt || now,
           updatedAt: now
         };
         await this.plugin.markerLibrary.setMarker(tokenDef);
       } else {
         // Creating new PC
+        filePath = `${pcPath}/${this.pcName}.md`;
+
+        // Check if PC already exists BEFORE creating token
+        if (await this.app.vault.adapter.exists(filePath)) {
+          new Notice(`A PC named "${this.pcName}" already exists!`);
+          return;
+        }
+
         // Create a map token for this PC
         const now = Date.now();
         tokenId = this.plugin.markerLibrary.generateId();
@@ -14481,14 +14603,6 @@ class PCCreationModal extends Modal {
           updatedAt: now
         };
         await this.plugin.markerLibrary.setMarker(tokenDef);
-
-        filePath = `${pcPath}/${this.pcName}.md`;
-
-        // Check if PC already exists
-        if (await this.app.vault.adapter.exists(filePath)) {
-          new Notice(`A PC named "${this.pcName}" already exists!`);
-          return;
-        }
       }
 
       // Get PC content - use existing file content when editing, template for new PCs
@@ -15043,22 +15157,32 @@ class NPCCreationModal extends Modal {
           npcFile = this.app.vault.getAbstractFileByPath(newPath) as TFile;
         }
         
-        // Update the map token
+        // Update the map token, preserving existing fields (imageFile, darkvision, etc.)
         const now = Date.now();
+        const existingMarker = this.plugin.markerLibrary.getMarker(tokenId);
         const tokenDef: MarkerDefinition = {
+          ...(existingMarker || {}),
           id: tokenId,
           name: this.npcName,
           type: 'npc',
-          icon: '👤',
-          backgroundColor: '#6b8e23',
-          borderColor: '#ffffff',
-          creatureSize: 'medium',
-          createdAt: now,
+          icon: existingMarker?.icon || '👤',
+          backgroundColor: existingMarker?.backgroundColor || '#6b8e23',
+          borderColor: existingMarker?.borderColor || '#ffffff',
+          creatureSize: existingMarker?.creatureSize || 'medium',
+          createdAt: existingMarker?.createdAt || now,
           updatedAt: now
         };
         await this.plugin.markerLibrary.setMarker(tokenDef);
       } else {
         // Creating new NPC
+        filePath = `${npcPath}/${this.npcName}.md`;
+
+        // Check if NPC already exists BEFORE creating token
+        if (await this.app.vault.adapter.exists(filePath)) {
+          new Notice(`An NPC named "${this.npcName}" already exists!`);
+          return;
+        }
+
         // Create a map token for this NPC
         const now = Date.now();
         tokenId = this.plugin.markerLibrary.generateId();
@@ -15074,14 +15198,6 @@ class NPCCreationModal extends Modal {
           updatedAt: now
         };
         await this.plugin.markerLibrary.setMarker(tokenDef);
-
-        filePath = `${npcPath}/${this.npcName}.md`;
-
-        // Check if NPC already exists
-        if (await this.app.vault.adapter.exists(filePath)) {
-          new Notice(`An NPC named "${this.npcName}" already exists!`);
-          return;
-        }
       }
 
       // Get NPC content - use existing file content when editing, template for new NPCs
@@ -25702,15 +25818,18 @@ class CreatureCreationModal extends Modal {
         this.tokenId = this.plugin.markerLibrary.generateId();
       }
       
+      // Preserve existing marker fields (imageFile, darkvision, etc.) on edit
+      const existingMarker = this.plugin.markerLibrary.getMarker(this.tokenId);
       const tokenDef: MarkerDefinition = {
+        ...(existingMarker || {}),
         id: this.tokenId,
         name: this.creatureName,
         type: 'creature',
-        icon: '🐉',
-        backgroundColor: '#8b0000',  // Dark red for creatures
-        borderColor: '#ffffff',
+        icon: existingMarker?.icon || '🐉',
+        backgroundColor: existingMarker?.backgroundColor || '#8b0000',
+        borderColor: existingMarker?.borderColor || '#ffffff',
         creatureSize: mappedSize,
-        createdAt: now,
+        createdAt: existingMarker?.createdAt || now,
         updatedAt: now
       };
       await this.plugin.markerLibrary.setMarker(tokenDef);
