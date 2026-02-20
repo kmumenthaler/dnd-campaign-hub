@@ -2,6 +2,8 @@ import { App, Modal, Setting, TFile, TFolder, Notice } from 'obsidian';
 import { MapManager } from './MapManager';
 import { MAP_PRESETS, MAP_MEDIA_EXTENSIONS, isVideoExtension, isMapMediaExtension } from './types';
 import type DndCampaignHubPlugin from '../main';
+import { CREATURE_SIZE_SQUARES } from '../marker/MarkerTypes';
+import type { MarkerDefinition } from '../marker/MarkerTypes';
 
 /**
  * Modal for creating or editing a map
@@ -17,6 +19,11 @@ export class MapCreationModal extends Modal {
   private scaleValue: number = 5;
   private scaleUnit: 'feet' | 'miles' | 'km' = 'feet';
   private previewContainer: HTMLElement | null = null;
+  private previewCanvas: HTMLCanvasElement | null = null;
+  private previewMediaEl: HTMLImageElement | HTMLVideoElement | null = null;
+  private previewNaturalW = 0;
+  private previewNaturalH = 0;
+  private markerImageCache: Map<string, HTMLImageElement> = new Map();
   private editMode: boolean = false;
   private editConfig: any = null;
   private editElement: HTMLElement | null = null;
@@ -397,6 +404,7 @@ export class MapCreationModal extends Modal {
           .setValue(this.gridType)
           .onChange(value => {
             this.gridType = value as any;
+            this.redrawPreviewOverlay();
           });
       });
 
@@ -411,6 +419,7 @@ export class MapCreationModal extends Modal {
             const parsed = parseInt(value);
             if (!isNaN(parsed) && parsed > 0) {
               this.gridSize = parsed;
+              this.redrawPreviewOverlay();
             }
           });
         text.inputEl.name = 'gridSize';
@@ -436,6 +445,7 @@ export class MapCreationModal extends Modal {
         if (input) {
           input.value = String(this.gridSize);
         }
+        this.redrawPreviewOverlay();
         new Notice(`Grid size set to ${preset.gridSize}px`);
       };
     });
@@ -497,6 +507,8 @@ export class MapCreationModal extends Modal {
     if (!this.previewContainer || !this.selectedFile) return;
 
     this.previewContainer.empty();
+    this.previewCanvas = null;
+    this.previewMediaEl = null;
     this.previewContainer.style.display = 'block';
     this.previewContainer.style.position = 'relative';
     this.previewContainer.style.overflow = 'hidden';
@@ -504,25 +516,45 @@ export class MapCreationModal extends Modal {
     const resourcePath = this.app.vault.getResourcePath(this.selectedFile);
     const isVideo = isVideoExtension(this.selectedFile.extension);
 
+    // Wrapper keeps the media and canvas aligned
+    const wrapper = this.previewContainer.createDiv({ cls: 'map-preview-wrapper' });
+    wrapper.style.position = 'relative';
+    wrapper.style.display = 'inline-block';
+    wrapper.style.width = '100%';
+
     if (isVideo) {
-      const video = this.previewContainer.createEl('video', {
-        attr: { src: resourcePath, controls: '', muted: '' },
+      const video = wrapper.createEl('video', {
+        attr: { src: resourcePath, muted: '' },
       });
       video.style.width = '100%';
       video.style.maxHeight = '350px';
       video.style.objectFit = 'contain';
       video.style.borderRadius = '4px';
+      video.style.display = 'block';
       video.autoplay = true;
       video.loop = true;
       video.muted = true;
+      this.previewMediaEl = video;
+      video.addEventListener('loadedmetadata', () => {
+        this.previewNaturalW = video.videoWidth;
+        this.previewNaturalH = video.videoHeight;
+        this.redrawPreviewOverlay();
+      });
     } else {
-      const img = this.previewContainer.createEl('img', {
+      const img = wrapper.createEl('img', {
         attr: { src: resourcePath, alt: this.mapName || 'Map preview' },
       });
       img.style.width = '100%';
       img.style.maxHeight = '350px';
       img.style.objectFit = 'contain';
       img.style.borderRadius = '4px';
+      img.style.display = 'block';
+      this.previewMediaEl = img;
+      img.addEventListener('load', () => {
+        this.previewNaturalW = img.naturalWidth;
+        this.previewNaturalH = img.naturalHeight;
+        this.redrawPreviewOverlay();
+      });
     }
 
     // Caption
@@ -532,6 +564,375 @@ export class MapCreationModal extends Modal {
     caption.style.color = 'var(--text-muted)';
     caption.style.marginTop = '6px';
     caption.setText(this.selectedFile.name);
+
+    // Annotation legend (edit mode)
+    if (this.editMode && this.editConfig) {
+      const counts = this.getAnnotationCounts();
+      if (counts.length > 0) {
+        const legend = this.previewContainer.createDiv({ cls: 'map-preview-legend' });
+        legend.style.textAlign = 'center';
+        legend.style.fontSize = '11px';
+        legend.style.color = 'var(--text-muted)';
+        legend.style.marginTop = '4px';
+        legend.setText(counts.join(' • '));
+      }
+    }
+  }
+
+  /** Count existing annotations for the legend line */
+  private getAnnotationCounts(): string[] {
+    if (!this.editConfig) return [];
+    const parts: string[] = [];
+    const m = (this.editConfig.markers || []).length;
+    const w = (this.editConfig.walls || []).length;
+    const d = (this.editConfig.drawings || []).length;
+    const l = (this.editConfig.lightSources || []).length;
+    const h = (this.editConfig.highlights || []).length;
+    if (m) parts.push(`${m} token${m !== 1 ? 's' : ''}`);
+    if (w) parts.push(`${w} wall${w !== 1 ? 's' : ''}`);
+    if (d) parts.push(`${d} drawing${d !== 1 ? 's' : ''}`);
+    if (l) parts.push(`${l} light${l !== 1 ? 's' : ''}`);
+    if (h) parts.push(`${h} highlight${h !== 1 ? 's' : ''}`);
+    return parts;
+  }
+
+  // ── Live preview overlay ─────────────────────────────────────────
+
+  /**
+   * Redraw the grid + annotation overlay on the preview.
+   * Called whenever grid type, grid size, or image changes.
+   */
+  private redrawPreviewOverlay(): void {
+    if (!this.previewContainer || !this.previewMediaEl) return;
+    if (this.previewNaturalW === 0 || this.previewNaturalH === 0) return;
+
+    const wrapper = this.previewContainer.querySelector('.map-preview-wrapper') as HTMLElement;
+    if (!wrapper) return;
+
+    // Remove old canvas
+    if (this.previewCanvas) {
+      this.previewCanvas.remove();
+      this.previewCanvas = null;
+    }
+
+    // Compute the displayed size of the media (object-fit:contain)
+    const media = this.previewMediaEl;
+    const containerW = media.clientWidth;
+    const containerH = media.clientHeight;
+    if (containerW === 0 || containerH === 0) return;
+
+    const natW = this.previewNaturalW;
+    const natH = this.previewNaturalH;
+    const displayScale = Math.min(containerW / natW, containerH / natH);
+    const drawW = natW * displayScale;
+    const drawH = natH * displayScale;
+    // Offset caused by object-fit:contain centring
+    const offsetX = (containerW - drawW) / 2;
+    const offsetY = (containerH - drawH) / 2;
+
+    // Create overlay canvas matching the displayed image area
+    const canvas = document.createElement('canvas');
+    canvas.width = drawW;
+    canvas.height = drawH;
+    canvas.style.position = 'absolute';
+    canvas.style.left = `${offsetX}px`;
+    canvas.style.top = `${offsetY}px`;
+    canvas.style.width = `${drawW}px`;
+    canvas.style.height = `${drawH}px`;
+    canvas.style.pointerEvents = 'none';
+    canvas.style.borderRadius = '4px';
+    wrapper.appendChild(canvas);
+    this.previewCanvas = canvas;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Scale factor: canvas-pixel / natural-pixel
+    const s = displayScale;
+
+    // ─── Grid ──────────────────────────────────────────────────
+    this.drawPreviewGrid(ctx, natW, natH, s);
+
+    // ─── Annotations (edit mode only) ──────────────────────────
+    if (this.editMode && this.editConfig) {
+      this.drawPreviewAnnotations(ctx, s);
+    }
+  }
+
+  // ── Grid drawing (mirrors plugin.drawGridOverlay logic) ──────
+
+  private drawPreviewGrid(ctx: CanvasRenderingContext2D, natW: number, natH: number, s: number): void {
+    if (this.gridType === 'none') return;
+
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.lineWidth = Math.max(1, 1.5 * s);
+
+    const gs = this.gridSize; // in natural pixels
+
+    if (this.gridType === 'square') {
+      for (let x = 0; x <= natW; x += gs) {
+        ctx.beginPath();
+        ctx.moveTo(x * s, 0);
+        ctx.lineTo(x * s, natH * s);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= natH; y += gs) {
+        ctx.beginPath();
+        ctx.moveTo(0, y * s);
+        ctx.lineTo(natW * s, y * s);
+        ctx.stroke();
+      }
+    } else if (this.gridType === 'hex-horizontal') {
+      const horiz = gs;
+      const size = (2 / 3) * horiz;
+      const vert = Math.sqrt(3) * size;
+      const startCol = -2;
+      const endCol = Math.ceil(natW / horiz) + 2;
+      const startRow = -2;
+      const endRow = Math.ceil(natH / vert) + 2;
+      for (let row = startRow; row < endRow; row++) {
+        for (let col = startCol; col < endCol; col++) {
+          const colOff = (col & 1) ? vert / 2 : 0;
+          const cx = col * horiz;
+          const cy = row * vert + colOff;
+          this.drawHexFlat(ctx, cx * s, cy * s, size * s);
+        }
+      }
+    } else if (this.gridType === 'hex-vertical') {
+      const vert = gs;
+      const size = (2 / 3) * vert;
+      const horiz = Math.sqrt(3) * size;
+      const startCol = -2;
+      const endCol = Math.ceil(natW / horiz) + 2;
+      const startRow = -2;
+      const endRow = Math.ceil(natH / vert) + 2;
+      for (let row = startRow; row < endRow; row++) {
+        for (let col = startCol; col < endCol; col++) {
+          const rowOff = (row & 1) ? horiz / 2 : 0;
+          const cx = col * horiz + rowOff;
+          const cy = row * vert;
+          this.drawHexPointy(ctx, cx * s, cy * s, size * s);
+        }
+      }
+    }
+  }
+
+  private drawHexFlat(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i;
+      const x = cx + r * Math.cos(a);
+      const y = cy + r * Math.sin(a);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  private drawHexPointy(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 6) + (Math.PI / 3) * i;
+      const x = cx + r * Math.cos(a);
+      const y = cy + r * Math.sin(a);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  // ── Annotation drawing (tokens, walls, drawings, lights) ─────
+
+  private drawPreviewAnnotations(ctx: CanvasRenderingContext2D, s: number): void {
+    const cfg = this.editConfig;
+    if (!cfg) return;
+
+    // Drawings
+    for (const drawing of (cfg.drawings || [])) {
+      if (!drawing.points || drawing.points.length === 0) continue;
+      ctx.strokeStyle = drawing.color || '#ffffff';
+      ctx.lineWidth = Math.max(1, (drawing.strokeWidth || 2) * s);
+      ctx.beginPath();
+      ctx.moveTo(drawing.points[0].x * s, drawing.points[0].y * s);
+      for (let i = 1; i < drawing.points.length; i++) {
+        ctx.lineTo(drawing.points[i].x * s, drawing.points[i].y * s);
+      }
+      ctx.stroke();
+    }
+
+    // Hex highlights
+    for (const hl of (cfg.highlights || [])) {
+      if (!hl.position) continue;
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = hl.color || '#ffff00';
+      const r = (this.gridSize / 2) * s;
+      ctx.beginPath();
+      ctx.arc(hl.position.x * s, hl.position.y * s, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Walls
+    const WALL_COLORS: Record<string, string> = {
+      wall: '#ff4500', door: '#8B4513', window: '#87CEEB',
+      secret: '#666666', invisible: '#cccccc', terrain: '#8B7355',
+    };
+    for (const wall of (cfg.walls || [])) {
+      if (!wall.start || !wall.end) continue;
+      ctx.save();
+      ctx.strokeStyle = WALL_COLORS[wall.type] || '#ff4500';
+      ctx.lineWidth = Math.max(2, 3 * s);
+      ctx.lineCap = 'round';
+      if (wall.type === 'secret' || wall.type === 'invisible') {
+        ctx.setLineDash([6 * s, 4 * s]);
+      }
+      ctx.beginPath();
+      ctx.moveTo(wall.start.x * s, wall.start.y * s);
+      ctx.lineTo(wall.end.x * s, wall.end.y * s);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Door indicator
+      if (wall.type === 'door') {
+        const mx = ((wall.start.x + wall.end.x) / 2) * s;
+        const my = ((wall.start.y + wall.end.y) / 2) * s;
+        ctx.fillStyle = '#8B4513';
+        ctx.beginPath();
+        ctx.arc(mx, my, 4 * s, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // Light sources
+    for (const light of (cfg.lightSources || [])) {
+      if (!light.position) continue;
+      ctx.save();
+      const lx = light.position.x * s;
+      const ly = light.position.y * s;
+      // Draw a glow circle
+      const brightR = ((light.brightRadius || 20) / this.scaleValue) * this.gridSize * s;
+      const dimR = ((light.dimRadius || 40) / this.scaleValue) * this.gridSize * s;
+      const grad = ctx.createRadialGradient(lx, ly, 0, lx, ly, dimR);
+      grad.addColorStop(0, 'rgba(255, 200, 50, 0.4)');
+      grad.addColorStop(brightR / dimR, 'rgba(255, 200, 50, 0.15)');
+      grad.addColorStop(1, 'rgba(255, 200, 50, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(lx, ly, dimR, 0, Math.PI * 2);
+      ctx.fill();
+      // Center dot
+      ctx.fillStyle = '#FFD700';
+      ctx.beginPath();
+      ctx.arc(lx, ly, 3 * s, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Tokens / markers – draw last so they're on top
+    for (const marker of (cfg.markers || [])) {
+      if (!marker.position) continue;
+      const px = marker.position.x * s;
+      const py = marker.position.y * s;
+
+      // Determine radius from marker definition
+      let radius = 15 * s; // fallback
+      let bgColor = '#ff0000';
+      let borderColor = (marker as any).borderColor || '#ffffff';
+      let icon = '';
+      let markerDef: MarkerDefinition | null = null;
+
+      if (marker.markerId && this.plugin.markerLibrary) {
+        markerDef = this.plugin.markerLibrary.getMarker(marker.markerId) || null;
+      }
+
+      if (markerDef) {
+        if (['player', 'npc', 'creature'].includes(markerDef.type) && markerDef.creatureSize && this.gridSize) {
+          const sq = CREATURE_SIZE_SQUARES[markerDef.creatureSize] || 1;
+          radius = (sq * this.gridSize / 2) * s;
+        } else {
+          radius = ((markerDef.pixelSize || 30) / 2) * s;
+        }
+        bgColor = markerDef.backgroundColor || bgColor;
+        borderColor = (marker as any).borderColor || markerDef.borderColor || '#ffffff';
+        icon = markerDef.icon || '';
+      }
+
+      ctx.save();
+
+      // Try to draw image
+      let imageDrawn = false;
+      if (markerDef?.imageFile) {
+        const cached = this.loadPreviewMarkerImage(markerDef.imageFile);
+        if (cached && cached.complete && cached.naturalWidth > 0) {
+          ctx.beginPath();
+          ctx.arc(px, py, radius, 0, Math.PI * 2);
+          ctx.closePath();
+          ctx.clip();
+          const tokenSize = radius * 2;
+          const fit = markerDef.imageFit || 'cover';
+          const imgW = cached.naturalWidth;
+          const imgH = cached.naturalHeight;
+          if (fit === 'contain') {
+            ctx.fillStyle = bgColor;
+            ctx.fill();
+            const sc = Math.min(tokenSize / imgW, tokenSize / imgH);
+            const dw = imgW * sc;
+            const dh = imgH * sc;
+            ctx.drawImage(cached, px - dw / 2, py - dh / 2, dw, dh);
+          } else {
+            const sc = Math.max(tokenSize / imgW, tokenSize / imgH);
+            const dw = imgW * sc;
+            const dh = imgH * sc;
+            ctx.drawImage(cached, px - dw / 2, py - dh / 2, dw, dh);
+          }
+          imageDrawn = true;
+        }
+      }
+
+      ctx.restore();
+      ctx.save();
+
+      if (!imageDrawn) {
+        // Solid coloured circle
+        ctx.fillStyle = bgColor;
+        ctx.beginPath();
+        ctx.arc(px, py, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Border
+      ctx.beginPath();
+      ctx.arc(px, py, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = Math.max(1.5, radius * 0.1);
+      ctx.stroke();
+
+      // Icon / label
+      if (icon && !imageDrawn) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `${Math.max(8, radius * 1.2)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(icon, px, py);
+      }
+
+      ctx.restore();
+    }
+  }
+
+  /** Cache + load a marker image, triggering redraw on load */
+  private loadPreviewMarkerImage(path: string): HTMLImageElement | null {
+    if (this.markerImageCache.has(path)) {
+      return this.markerImageCache.get(path) || null;
+    }
+    const img = new Image();
+    this.markerImageCache.set(path, img);
+    try {
+      img.src = this.app.vault.adapter.getResourcePath(path);
+      img.onload = () => this.redrawPreviewOverlay();
+    } catch { /* skip */ }
+    return null;
   }
 
   private createButtons(container: HTMLElement) {
