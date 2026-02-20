@@ -29487,9 +29487,14 @@ class PlayerMapView extends ItemView {
         return;
       }
       // 3D elevation-aware visibility check for surface tokens (D&D 5e RAW)
-      // A token flying at 80ft directly above a player with 60ft darkvision should NOT be visible
-      // because the true 3D distance (80ft) exceeds the vision range (60ft)
-      if (m.elevation && (m.elevation.height > 0 || m.elevation.depth > 0) && playerTokens.length > 0) {
+      // Only applies when fog of war is enabled (darkness).  In daylight (no fog),
+      // all tokens are visible regardless of elevation — you can always see a
+      // flying creature in broad daylight, no matter how high.
+      // When fog IS enabled, a token flying at 80ft directly above a player with
+      // 60ft darkvision should NOT be visible because the true 3D distance (80ft)
+      // exceeds the vision range (60ft).
+      const hasFog = config.fogOfWar && config.fogOfWar.enabled;
+      if (hasFog && m.elevation && (m.elevation.height > 0 || m.elevation.depth > 0) && playerTokens.length > 0) {
         const tokenElev = (m.elevation.height || 0) - (m.elevation.depth || 0);
         const pixelsPerFootLocal = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
         
