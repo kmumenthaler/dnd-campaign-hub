@@ -4879,9 +4879,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 			config.lightSources = savedData.lightSources || [];
 			console.log('Loaded light sources from savedData:', config.lightSources.length, 'lights');
 			
+			// Load tile elevations (Background layer only)
+			config.tileElevations = savedData.tileElevations || {};
+
 			// Load active layer (defaults to Player)
 			config.activeLayer = savedData.activeLayer || 'Player';
-			
+
 			// Store the source note path for campaign detection
 			const notePath = ctx?.sourcePath || '';
 			
@@ -4930,7 +4933,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' = 'pan';
+    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' = 'pan';
 		let selectedColor = '#ff0000';
       // GM player-view rect drag state
       let gmDragStart: { x: number; y: number } | null = null;
@@ -4962,7 +4965,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let aoePreviewEnd: { x: number; y: number } | null = null;
 			let pendingAoeAnchorMarkerId: string | null = null; // Set when AoE is cast from token context menu
 			let lastPlacedAoeId: string | null = null; // Track last placed AoE for 3rd-click removal
-			// Hexcrawl travel range overlay state
+			// Elevation paint tool state
+			let elevationPaintValue: number = 0;
+			let isPaintingElevation = false;
 			let hexcrawlMoveHoverHex: { col: number; row: number } | null = null;
 
 			// Hex distance helper for offset-coordinate hex grids (used for movement range)
@@ -5428,7 +5433,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const fogBtn = createToolBtn(visionContent, '🌫️', 'Fog');
 		const wallsBtn = createToolBtn(visionContent, '🧱', 'Walls');
 		const lightsBtn = createToolBtn(visionContent, '💡', 'Lights');
-
+		const elevationPaintBtn = createToolBtn(visionContent, '⛰️', 'Tile Elevation');
 		// Toggle vision section visibility based on layer (hidden entirely for hexcrawl maps)
 		visionSectionHeader.toggleClass('hidden', config.activeLayer !== 'Background' || isHexcrawlMap);
 		visionContent.toggleClass('hidden', config.activeLayer !== 'Background' || isHexcrawlMap);
@@ -5658,10 +5663,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 			if (viewport && viewport._syncPlayerView) viewport._syncPlayerView();
 			new Notice('Entire map hidden by fog');
 		});
-		// Only show fog, walls, and lights buttons when on Background layer
+		// Only show fog, walls, lights, and elevation buttons when on Background layer
 		fogBtn.toggleClass('hidden', config.activeLayer !== 'Background');
 		wallsBtn.toggleClass('hidden', config.activeLayer !== 'Background');
 		lightsBtn.toggleClass('hidden', config.activeLayer !== 'Background');
+		elevationPaintBtn.toggleClass('hidden', config.activeLayer !== 'Background');
 
 		// Wall type picker sub-menu (shown when walls tool is active)
 		const wallsPicker = wallsBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
@@ -5738,6 +5744,36 @@ export default class DndCampaignHubPlugin extends Plugin {
 			redrawAnnotations();
 			this.saveMapAnnotations(config, el);
 			new Notice('All light sources removed');
+		});
+
+		// Elevation Paint picker sub-menu (shown when elevation-paint tool is active)
+		const elevationPicker = elevationPaintBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
+		const elevationInputRow = elevationPicker.createDiv({ cls: 'dnd-map-aoe-row' });
+		elevationInputRow.createEl('span', { text: 'Elevation:', cls: 'dnd-map-aoe-label' });
+		const elevationInput = elevationInputRow.createEl('input', {
+			cls: 'dnd-map-darkvision-input',
+			attr: {
+				type: 'number',
+				step: '5',
+				placeholder: '0',
+				value: String(elevationPaintValue || 0)
+			}
+		});
+		elevationInputRow.createEl('span', { text: 'ft' });
+		elevationInput.addEventListener('change', () => {
+			elevationPaintValue = parseInt(elevationInput.value) || 0;
+		});
+		elevationInput.addEventListener('click', (e) => e.stopPropagation());
+		// Clear button (acts as eraser)
+		const clearElevationBtn = elevationPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn dnd-fog-action-btn',
+			attr: { title: 'Clear tile elevation (eraser)' }
+		});
+		clearElevationBtn.createEl('span', { text: '🗑️' });
+		clearElevationBtn.addEventListener('click', () => {
+			elevationPaintValue = 0;
+			elevationInput.value = '0';
+			new Notice('Elevation eraser active (0 ft)');
 		});
 
 		// Player View controls picker sub-menu (shown when player-view tool is active)
@@ -6185,6 +6221,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						fogBtn.removeClass('hidden');
 						wallsBtn.removeClass('hidden');
 						lightsBtn.removeClass('hidden');
+						elevationPaintBtn.removeClass('hidden');
 					}
 					// Show/hide Tunnels section based on layer (only available on Subterranean, hidden for hexcrawl)
 					if (layer !== 'Subterranean' || isHexcrawlMap) {
@@ -6197,7 +6234,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						tunnelsSectionHeader.removeClass('collapsed');
 						tunnelsContent.removeClass('collapsed');
 					}
-					if (layer !== 'Background' && (activeTool === 'fog' || activeTool === 'walls' || activeTool === 'lights')) {
+					if (layer !== 'Background' && (activeTool === 'fog' || activeTool === 'walls' || activeTool === 'lights' || activeTool === 'elevation-paint')) {
 						setActiveTool('pan');
 					}
 					// Terrain/climate canvas follows Background layer visibility
@@ -6364,6 +6401,7 @@ export default class DndCampaignHubPlugin extends Plugin {
             selectedVisionTokenId: selectedVisionTokenId,
             hexTerrains: config.hexTerrains,
             hexClimates: config.hexClimates,
+            tileElevations: config.tileElevations || {},
             hexcrawlState: config.hexcrawlState,
             hexcrawlRangeOverlay: (activeTool === 'hexcrawl-move' && config.hexcrawlState?.enabled && config.hexcrawlState?.partyPosition) ? {
               active: true,
@@ -6413,7 +6451,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let startX = 0;
 		let startY = 0;
 		// Middle mouse button temporary pan state
-		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | null = null;
+		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | null = null;
 		let isTemporaryPan = false;
 		let gridCanvas: HTMLCanvasElement | null = null;
 		let terrainCanvas: HTMLCanvasElement | null = null;
@@ -6678,6 +6716,35 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			};
 
+			// Helper function to get elevation color (height-map coloring)
+			const getElevationColor = (elevation: number, alpha: number = 0.35): string => {
+				if (elevation < 0) {
+					// Underwater/underground: blue shades (deeper = darker)
+					const depth = Math.min(Math.abs(elevation), 100);
+					const t = depth / 100;
+					const r = Math.round(0 + (1 - t) * 100);
+					const g = Math.round(80 + (1 - t) * 100);
+					const b = Math.round(139 + (1 - t) * 116);
+					return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+				} else {
+					// Above ground: green → yellow → orange → red
+					const height = Math.min(elevation, 120);
+					if (height <= 20) {
+						// Green range
+						const t = height / 20;
+						return `rgba(${Math.round(100 + t * 100)}, ${Math.round(200 - t * 0)}, ${Math.round(100 - t * 50)}, ${alpha})`;
+					} else if (height <= 50) {
+						// Yellow → orange
+						const t = (height - 20) / 30;
+						return `rgba(${Math.round(200 + t * 30)}, ${Math.round(200 - t * 50)}, ${Math.round(50 - t * 20)}, ${alpha})`;
+					} else {
+						// Orange → red → dark red
+						const t = (height - 50) / 70;
+						return `rgba(${Math.round(230 - t * 91)}, ${Math.round(150 - t * 150)}, ${Math.round(30 - t * 30)}, ${alpha})`;
+					}
+				}
+			};
+
 			// Function to redraw annotations
 			const redrawAnnotations = () => {
 				console.log('redrawAnnotations called, annotationCanvas exists:', !!annotationCanvas);
@@ -6688,6 +6755,47 @@ export default class DndCampaignHubPlugin extends Plugin {
 				
 				ctx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
 				
+				// Draw tile elevations (Background layer visualization)
+				if (config.tileElevations && Object.keys(config.tileElevations).length > 0) {
+					const gs = config.gridSize || 70;
+					const ox = config.gridOffsetX || 0;
+					const oy = config.gridOffsetY || 0;
+					const isBackgroundLayer = config.activeLayer === 'Background';
+					
+					ctx.save();
+					if (!isBackgroundLayer) ctx.globalAlpha = 0.15; // Very subtle on other layers
+					
+					for (const [key, elevation] of Object.entries(config.tileElevations)) {
+						const parts = key.split(',');
+						const col = parseInt(parts[0] ?? '0');
+						const row = parseInt(parts[1] ?? '0');
+						const cellX = col * gs + ox;
+						const cellY = row * gs + oy;
+						const elev = elevation as number;
+						
+						// Fill tile with elevation color
+						ctx.fillStyle = getElevationColor(elev);
+						ctx.fillRect(cellX, cellY, gs, gs);
+						
+						// Draw border
+						ctx.strokeStyle = getElevationColor(elev, 0.5);
+						ctx.lineWidth = 1.5;
+						ctx.strokeRect(cellX + 0.5, cellY + 0.5, gs - 1, gs - 1);
+						
+						// Draw elevation label at top-right (only on Background layer)
+						if (isBackgroundLayer) {
+							const label = elev > 0 ? `+${elev}` : `${elev}`;
+							ctx.font = 'bold 10px sans-serif';
+							ctx.textAlign = 'right';
+							ctx.textBaseline = 'top';
+							ctx.fillStyle = getElevationColor(elev, 1.0);
+							ctx.fillText(label, cellX + gs - 3, cellY + 2);
+						}
+					}
+					
+					ctx.restore();
+				}
+
 				// Draw highlights
 				if (config.highlights) {
 					config.highlights.forEach((highlight: any) => {
@@ -7942,35 +8050,36 @@ export default class DndCampaignHubPlugin extends Plugin {
 					ctx.save();
 					ctx.globalAlpha = 1.0;
 					
-					const badgeSize = Math.max(16, radius * 0.5);
-					const badgeX = position.x + radius - badgeSize / 2;
-					const badgeY = position.y - radius + badgeSize / 2;
-					
-					// Badge background
-					ctx.fillStyle = elevation.height ? '#4DA6FF' : '#8B4513';
-					ctx.beginPath();
-					ctx.arc(badgeX, badgeY, badgeSize / 2, 0, Math.PI * 2);
-					ctx.fill();
-					
-					// Badge border
-					ctx.strokeStyle = '#ffffff';
-					ctx.lineWidth = 2;
-					ctx.stroke();
-					
-					// Badge text
 					const elevationValue = elevation.height || elevation.depth || 0;
 					const elevationIcon = elevation.height ? '↑' : '↓';
+					const elevationLabel = `${elevationIcon}${elevationValue}ft`;
+					
+					// Measure text to size the pill badge
+					const fontSize = Math.max(9, radius * 0.35);
+					ctx.font = `bold ${fontSize}px sans-serif`;
+					const textWidth = ctx.measureText(elevationLabel).width;
+					const pillW = textWidth + 8;
+					const pillH = fontSize + 6;
+					const pillX = position.x + radius - pillW + 2;  // Anchored at top-right
+					const pillY = position.y - radius - 2;
+					const pillR = pillH / 2; // Corner radius
+					
+					// Pill background
+					ctx.fillStyle = elevation.height ? '#4DA6FF' : '#8B4513';
+					ctx.beginPath();
+					ctx.roundRect(pillX, pillY, pillW, pillH, pillR);
+					ctx.fill();
+					
+					// Pill border
+					ctx.strokeStyle = '#ffffff';
+					ctx.lineWidth = 1.5;
+					ctx.stroke();
+					
+					// Badge text (arrow + value + ft)
 					ctx.fillStyle = '#ffffff';
-					ctx.font = `bold ${Math.max(10, badgeSize * 0.6)}px sans-serif`;
 					ctx.textAlign = 'center';
 					ctx.textBaseline = 'middle';
-					ctx.fillText(elevationIcon, badgeX, badgeY - 1);
-					
-					// Show feet value if there's room
-					if (radius > 25) {
-						ctx.font = `${Math.max(8, badgeSize * 0.4)}px sans-serif`;
-						ctx.fillText(`${elevationValue}`, badgeX, badgeY + badgeSize / 2 + 6);
-					}
+					ctx.fillText(elevationLabel, pillX + pillW / 2, pillY + pillH / 2);
 					
 					ctx.restore();
 				}
@@ -8683,8 +8792,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-				[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, viewBtn, fogBtn, wallsBtn, lightsBtn, moveGridBtn, terrainPaintBtn, climatePaintBtn, setStartHexBtn, hexDescBtn].forEach(btn => btn.removeClass('active'));
-				
+			[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, viewBtn, fogBtn, wallsBtn, lightsBtn, elevationPaintBtn, moveGridBtn, terrainPaintBtn, climatePaintBtn, setStartHexBtn, hexDescBtn].forEach(btn => btn.removeClass('active'));
+
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
 					isCalibrating = false;
@@ -8734,14 +8843,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 				wallsPicker.toggleClass('hidden', tool !== 'walls');
 				// Show/hide Lights picker
 				lightsPicker.toggleClass('hidden', tool !== 'lights');
+				// Show/hide Elevation Paint picker
+				elevationPicker.toggleClass('hidden', tool !== 'elevation-paint');
 				// Show/hide Player View controls picker
 				pvPicker.toggleClass('hidden', tool !== 'player-view');
 				// Show/hide Terrain picker
 				terrainPicker.toggleClass('hidden', tool !== 'terrain-paint');
 				// Show/hide Climate picker
 				climatePicker.toggleClass('hidden', tool !== 'climate-paint');
-
-
 				
 				if (tool === 'pan') {
 					panBtn.addClass('active');
@@ -8786,6 +8895,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'crosshair';
 					viewport.focus();
 					new Notice('Lights Mode: Click to place light source, use picker to select type', 4000);
+				} else if (tool === 'elevation-paint') {
+					elevationPaintBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+					new Notice('Elevation Paint: Click or drag to set tile elevation', 3000);
 				} else if (tool === 'poi') {
 					poiBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
@@ -8919,6 +9032,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 					climatePicker.toggleClass('hidden', !climatePicker.hasClass('hidden'));
 				} else {
 					setActiveTool('climate-paint');
+				}
+			});
+			elevationPaintBtn.addEventListener('click', () => {
+				console.log('Elevation Paint button clicked');
+				if (activeTool === 'elevation-paint') {
+					elevationPicker.toggleClass('hidden', !elevationPicker.hasClass('hidden'));
+				} else {
+					setActiveTool('elevation-paint');
 				}
 			});
 			setStartHexBtn.addEventListener('click', () => {
@@ -9746,6 +9867,25 @@ export default class DndCampaignHubPlugin extends Plugin {
 						},
 						hcLang,
 					).open();
+				} else if (activeTool === 'elevation-paint') {
+					// Paint tile elevation onto clicked grid square
+					const gs = config.gridSize || 70;
+					const ox = config.gridOffsetX || 0;
+					const oy = config.gridOffsetY || 0;
+					const col = Math.floor((mapPos.x - ox) / gs);
+					const row = Math.floor((mapPos.y - oy) / gs);
+					const key = `${col},${row}`;
+					saveToHistory();
+					if (!config.tileElevations) config.tileElevations = {};
+					if (elevationPaintValue === 0) {
+						// Eraser: remove tile elevation
+						delete config.tileElevations[key];
+					} else {
+						config.tileElevations[key] = elevationPaintValue;
+					}
+					isPaintingElevation = true;
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
 				} else if (activeTool === 'hexcrawl-move') {
 					// Travel to clicked hex using per-hex procedure
 					const hex = pixelToHex(mapPos.x, mapPos.y);
@@ -10148,6 +10288,26 @@ export default class DndCampaignHubPlugin extends Plugin {
 					// Update fog drag preview
 					fogDragEnd = { x: mapPos.x, y: mapPos.y };
 					redrawAnnotations();
+				} else if (activeTool === 'elevation-paint' && isPaintingElevation) {
+					// Drag-paint tile elevations
+					const gs = config.gridSize || 70;
+					const ox = config.gridOffsetX || 0;
+					const oy = config.gridOffsetY || 0;
+					const col = Math.floor((mapPos.x - ox) / gs);
+					const row = Math.floor((mapPos.y - oy) / gs);
+					const key = `${col},${row}`;
+					if (!config.tileElevations) config.tileElevations = {};
+					if (elevationPaintValue === 0) {
+						if (config.tileElevations[key] !== undefined) {
+							delete config.tileElevations[key];
+							redrawAnnotations();
+						}
+					} else {
+						if (config.tileElevations[key] !== elevationPaintValue) {
+							config.tileElevations[key] = elevationPaintValue;
+							redrawAnnotations();
+						}
+					}
 				} else if (activeTool === 'walls' && wallPoints.length > 0) {
 					// Update wall preview position
 					wallPreviewPos = { x: mapPos.x, y: mapPos.y };
@@ -10290,6 +10450,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (activeTool === 'pan' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'grab';
+				} else if (activeTool === 'elevation-paint' && isPaintingElevation) {
+					// Finalize elevation painting drag
+					isPaintingElevation = false;
+					this.saveMapAnnotations(config, el);
 				} else if (activeTool === 'fog' && fogDragStart && fogDragEnd) {
 					// Finalize fog region from drag
 					const dx = fogDragEnd.x - fogDragStart.x;
@@ -11105,18 +11269,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 									delete m.elevation.depth;
 									delete m.elevation.isBurrowing;
 									depthInput.value = '';
-								} else {
-									delete m.elevation.height;
-								}
-								
-								// Auto-update layer based on elevation
-								updateTokenLayer(m);
-								redrawAnnotations();
-								this.saveMapAnnotations(config, el);
-								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-								new Notice(value > 0 ? `Token flying at ${value} ft` : 'Token returned to ground');
-							});
+							} else {
+								delete m.elevation.height;
+							}
 							
+							// Auto-update layer based on elevation
+							updateTokenLayer(m);
+							redrawAnnotations();
+							this.saveMapAnnotations(config, el);
+							if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+							new Notice(value > 0 ? `Token flying at ${value} ft` : 'Token returned to ground');
+						});
+
 							heightInput.addEventListener('click', (e) => e.stopPropagation());
 							heightInput.addEventListener('keydown', (e) => {
 								if (e.key === 'Enter') {
@@ -11147,63 +11311,57 @@ export default class DndCampaignHubPlugin extends Plugin {
 								
 								if (value > 0) {
 									m.elevation.depth = value;
-									m.elevation.isBurrowing = true; // Automatically burrow when depth is set
-								m.elevation.leaveTunnel = true; // Enable tunnel path tracking during movement
 								
 								// Clear height when setting depth
 								delete m.elevation.height;
 								heightInput.value = '';
 								
-								// Automatically create tunnel entrance
-								if (!config.tunnels) config.tunnels = [];
-								console.log('[Tunnel Debug] Creating tunnel. Current tunnels:', config.tunnels.length, 'Marker:', m.id);
-								
-								// Check if tunnel already exists for this marker
-								let tunnel = config.tunnels.find((t: any) => t.creatorMarkerId === m.id && t.active);
-								if (!tunnel) {
-									// Snap entrance to grid tile center (same as token placement)
-									const gridSize = config.gridSize || 70;
-									const ox = config.gridOffsetX || 0;
-									const oy = config.gridOffsetY || 0;
+								// If burrowing checkbox is checked, create/update tunnel
+								if (burrowCheckbox.checked) {
+									m.elevation.isBurrowing = true;
+									m.elevation.leaveTunnel = true;
 									
-									// Calculate tunnel width based on creature size (slightly larger than token)
-									const CREATURE_SIZE_SQUARES: Record<string, number> = {
-										'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-									};
-									const creatureSize = mDef.creatureSize || 'medium';
-									const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
-									// Tunnel width = creature size + 0.5 grid squares (slightly larger)
-									const tunnelWidth = (sizeInSquares + 0.5) * gridSize;
-									
-									// Snap to grid tile center (same as token snapping)
-									const halfToken = (sizeInSquares * gridSize) / 2;
-									const col = Math.round((m.position.x - ox - halfToken) / gridSize);
-									const row = Math.round((m.position.y - oy - halfToken) / gridSize);
-									const snappedX = ox + col * gridSize + halfToken;
-									const snappedY = oy + row * gridSize + halfToken;
-									
-									// Create new tunnel with entrance at snapped position
-									tunnel = {
-										id: `tunnel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-										creatorMarkerId: m.id,
-										entrancePosition: { x: snappedX, y: snappedY },
-										path: [{ x: snappedX, y: snappedY, elevation: value }],
-										creatureSize: creatureSize,
-										depth: value,
-										createdAt: Date.now(),
-										visible: true,
-										active: true,
-										tunnelWidth: tunnelWidth,
-										walls: [] // Will be generated when path has multiple points
-									};
-									config.tunnels.push(tunnel);
-									console.log('[Tunnel Debug] Created NEW tunnel with entrance at', tunnel.entrancePosition, 'width:', tunnelWidth, JSON.stringify(tunnel, null, 2));
+									// Create tunnel entrance if one doesn't exist
+									if (!config.tunnels) config.tunnels = [];
+									let tunnel = config.tunnels.find((t: any) => t.creatorMarkerId === m.id && t.active);
+									if (!tunnel) {
+										const gridSize = config.gridSize || 70;
+										const ox = config.gridOffsetX || 0;
+										const oy = config.gridOffsetY || 0;
+										const CREATURE_SIZE_SQUARES: Record<string, number> = {
+											'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+										};
+										const creatureSize = mDef.creatureSize || 'medium';
+										const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
+										const tunnelWidth = (sizeInSquares + 0.5) * gridSize;
+										const halfToken = (sizeInSquares * gridSize) / 2;
+										const col = Math.round((m.position.x - ox - halfToken) / gridSize);
+										const row = Math.round((m.position.y - oy - halfToken) / gridSize);
+										const snappedX = ox + col * gridSize + halfToken;
+										const snappedY = oy + row * gridSize + halfToken;
+										tunnel = {
+											id: `tunnel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+											creatorMarkerId: m.id,
+											entrancePosition: { x: snappedX, y: snappedY },
+											path: [{ x: snappedX, y: snappedY, elevation: value }],
+											creatureSize: creatureSize,
+											depth: value,
+											createdAt: Date.now(),
+											visible: true,
+											active: true,
+											tunnelWidth: tunnelWidth,
+											walls: []
+										};
+										config.tunnels.push(tunnel);
+										console.log('[Tunnel Debug] Created NEW tunnel with entrance at', tunnel.entrancePosition, 'width:', tunnelWidth);
+									}
 								}
 							} else {
 								// Depth set to 0 - surface automatically and mark exit
 								delete m.elevation.depth;
 								delete m.elevation.isBurrowing;
 								delete m.elevation.leaveTunnel;
+								burrowCheckbox.checked = false;
 								
 								// Mark exit position and deactivate tunnel
 								if (config.tunnels) {
@@ -11240,7 +11398,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							redrawAnnotations();
 							this.saveMapAnnotations(config, el);
 							if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-							new Notice(value > 0 ? `Token burrowed ${value} ft underground` : 'Token surfaced');
+							new Notice(value > 0 ? `Token at ${value} ft depth` : 'Token surfaced');
 						});
 							
 							depthInput.addEventListener('click', (e) => e.stopPropagation());
@@ -11249,6 +11407,115 @@ export default class DndCampaignHubPlugin extends Plugin {
 									depthInput.blur();
 								}
 							});
+							
+							// Burrowing checkbox (must be checked to create tunnels)
+							const burrowRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+							const burrowLabel = burrowRow.createEl('label', { cls: 'dnd-map-context-aoe-label' });
+							burrowLabel.style.display = 'flex';
+							burrowLabel.style.alignItems = 'center';
+							burrowLabel.style.gap = '6px';
+							burrowLabel.style.cursor = 'pointer';
+							const burrowCheckbox = burrowLabel.createEl('input', {
+								attr: {
+									type: 'checkbox',
+								}
+							});
+							burrowCheckbox.checked = !!m.elevation?.isBurrowing;
+							burrowCheckbox.style.cursor = 'pointer';
+							burrowLabel.createEl('span', { text: 'Burrowing (creates tunnels)' });
+							
+							burrowCheckbox.addEventListener('change', () => {
+								saveToHistory();
+								if (!m.elevation) m.elevation = {};
+								const depthValue = m.elevation.depth || 0;
+								
+								if (burrowCheckbox.checked && depthValue > 0) {
+									// Enable burrowing — create tunnel entrance
+									m.elevation.isBurrowing = true;
+									m.elevation.leaveTunnel = true;
+									
+									if (!config.tunnels) config.tunnels = [];
+									let tunnel = config.tunnels.find((t: any) => t.creatorMarkerId === m.id && t.active);
+									if (!tunnel) {
+										const gridSize = config.gridSize || 70;
+										const ox = config.gridOffsetX || 0;
+										const oy = config.gridOffsetY || 0;
+										const CREATURE_SIZE_SQUARES: Record<string, number> = {
+											'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+										};
+										const creatureSize = mDef.creatureSize || 'medium';
+										const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
+										const tunnelWidth = (sizeInSquares + 0.5) * gridSize;
+										const halfToken = (sizeInSquares * gridSize) / 2;
+										const col = Math.round((m.position.x - ox - halfToken) / gridSize);
+										const row = Math.round((m.position.y - oy - halfToken) / gridSize);
+										const snappedX = ox + col * gridSize + halfToken;
+										const snappedY = oy + row * gridSize + halfToken;
+										tunnel = {
+											id: `tunnel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+											creatorMarkerId: m.id,
+											entrancePosition: { x: snappedX, y: snappedY },
+											path: [{ x: snappedX, y: snappedY, elevation: depthValue }],
+											creatureSize: creatureSize,
+											depth: depthValue,
+											createdAt: Date.now(),
+											visible: true,
+											active: true,
+											tunnelWidth: tunnelWidth,
+											walls: []
+										};
+										config.tunnels.push(tunnel);
+										console.log('[Tunnel Debug] Burrowing enabled — tunnel created at', tunnel.entrancePosition);
+									}
+									
+									updateTokenLayer(m);
+									redrawAnnotations();
+									this.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									new Notice('Burrowing enabled — tunnel path will be tracked');
+								} else if (burrowCheckbox.checked && depthValue <= 0) {
+									// Can't burrow without depth
+									burrowCheckbox.checked = false;
+									new Notice('Set depth first before enabling burrowing');
+								} else {
+									// Disable burrowing — deactivate tunnel but keep depth
+									delete m.elevation.isBurrowing;
+									delete m.elevation.leaveTunnel;
+									
+									// Deactivate active tunnel for this marker
+									if (config.tunnels) {
+										const gridSize = config.gridSize || 70;
+										const ox = config.gridOffsetX || 0;
+										const oy = config.gridOffsetY || 0;
+										const CREATURE_SIZE_SQUARES: Record<string, number> = {
+											'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+										};
+										const sizeInSquares = mDef?.creatureSize ? CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1 : 1;
+										const halfToken = (sizeInSquares * gridSize) / 2;
+										const col = Math.round((m.position.x - ox - halfToken) / gridSize);
+										const row = Math.round((m.position.y - oy - halfToken) / gridSize);
+										const snappedX = ox + col * gridSize + halfToken;
+										const snappedY = oy + row * gridSize + halfToken;
+										
+										config.tunnels.forEach((t: any) => {
+											if (t.creatorMarkerId === m.id && t.active) {
+												const lastPos = t.path[t.path.length - 1];
+												if (!lastPos || lastPos.x !== snappedX || lastPos.y !== snappedY) {
+													t.path.push({ x: snappedX, y: snappedY, elevation: 0 });
+												}
+												t.active = false;
+											}
+										});
+									}
+									
+									updateTokenLayer(m);
+									redrawAnnotations();
+									this.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									new Notice('Burrowing disabled — depth retained (diving/submerged)');
+								}
+							});
+							burrowCheckbox.addEventListener('click', (e) => e.stopPropagation());
 							
 							// Tunnel Traversal section (for following existing tunnels)
 							const nearEntrance = isNearTunnelEntrance(m.position, config.gridSize);
@@ -12543,6 +12810,7 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 				fogOfWar: config.fogOfWar || { enabled: false, regions: [] },
 				walls: config.walls || [],
 				lightSources: config.lightSources || [],
+				tileElevations: config.tileElevations || {},
 				// Template system
 				isTemplate: config.isTemplate || false,
 				templateTags: config.templateTags || undefined,
@@ -31692,35 +31960,36 @@ class PlayerMapView extends ItemView {
       ctx.save();
       ctx.globalAlpha = 1.0;
       
-      const badgeSize = Math.max(16, radius * 0.5);
-      const badgeX = pos.x + radius - badgeSize / 2;
-      const badgeY = pos.y - radius + badgeSize / 2;
-      
-      // Badge background
-      ctx.fillStyle = elevation.height ? '#4DA6FF' : '#8B4513';
-      ctx.beginPath();
-      ctx.arc(badgeX, badgeY, badgeSize / 2, 0, Math.PI * 2);
-      ctx.fill();
-      
-      // Badge border
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      
-      // Badge text
       const elevationValue = elevation.height || elevation.depth || 0;
       const elevationIcon = elevation.height ? '↑' : '↓';
+      const elevationLabel = `${elevationIcon}${elevationValue}ft`;
+      
+      // Measure text to size the pill badge
+      const fontSize = Math.max(9, radius * 0.35);
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      const textWidth = ctx.measureText(elevationLabel).width;
+      const pillW = textWidth + 8;
+      const pillH = fontSize + 6;
+      const pillX = pos.x + radius - pillW + 2;  // Anchored at top-right
+      const pillY = pos.y - radius - 2;
+      const pillR = pillH / 2; // Corner radius
+      
+      // Pill background
+      ctx.fillStyle = elevation.height ? '#4DA6FF' : '#8B4513';
+      ctx.beginPath();
+      ctx.roundRect(pillX, pillY, pillW, pillH, pillR);
+      ctx.fill();
+      
+      // Pill border
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      
+      // Badge text (arrow + value + ft)
       ctx.fillStyle = '#ffffff';
-      ctx.font = `bold ${Math.max(10, badgeSize * 0.6)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(elevationIcon, badgeX, badgeY - 1);
-      
-      // Show feet value if there's room
-      if (radius > 25) {
-        ctx.font = `${Math.max(8, badgeSize * 0.4)}px sans-serif`;
-        ctx.fillText(`${elevationValue}`, badgeX, badgeY + badgeSize / 2 + 6);
-      }
+      ctx.fillText(elevationLabel, pillX + pillW / 2, pillY + pillH / 2);
       
       ctx.restore();
     }
