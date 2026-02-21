@@ -23,7 +23,7 @@ import { MapManager } from "./map/MapManager";
 import { MapCreationModal } from "./map/MapCreationModal";
 import { MapManagerModal } from "./map/MapManagerModal";
 import { MarkerLibrary } from "./marker/MarkerLibrary";
-import { MarkerReference, MarkerDefinition, CREATURE_SIZE_SQUARES, CreatureSize, Layer } from "./marker/MarkerTypes";
+import { MarkerReference, MarkerDefinition, MarkerType, CREATURE_SIZE_SQUARES, CreatureSize, Layer } from "./marker/MarkerTypes";
 import { MigrationManager, MigrationModal, TEMPLATE_VERSIONS } from "./migration";
 import { MusicPlayer } from "./music/MusicPlayer";
 import { MusicSettingsModal } from "./music/MusicSettingsModal";
@@ -5567,6 +5567,60 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 		// Initial population
 		refreshVisionSelector();
+
+		// === INITIATIVE TRACKER INTEGRATION ===
+		// Sync vision token selection with Initiative Tracker's active combatant.
+		// When the GM advances turns in Initiative Tracker, automatically toggle
+		// the vision to the active player/friendly creature's token on the battlemap.
+		
+		// Use registerEvent for proper Obsidian lifecycle management.
+		// The event listener lives as long as the plugin, but we guard with el.isConnected
+		// to only act when this specific map view is still active.
+		this.registerEvent(
+			this.app.workspace.on('initiative-tracker:save-state' as any, (state: any) => {
+				// Only process if this map view is still in the DOM
+				if (!el.isConnected) return;
+				
+				if (!state || !Array.isArray(state.creatures)) return;
+				
+				// Find the active creature (whose turn it is)
+				const activeCreature = state.creatures.find((c: any) => c.active);
+				if (!activeCreature) return;
+				
+				// Only auto-toggle for player or friendly creatures — skip enemies
+				if (!activeCreature.player && !activeCreature.friendly) return;
+				
+				// Collect vision-eligible tokens from the battlemap (player, npc, creature types)
+				const visionTokens = (config.markers || []).filter((m: any) => {
+					const markerDef = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
+					if (!markerDef) return false;
+					return ['player', 'npc', 'creature'].includes(markerDef.type);
+				});
+				
+				// Match the IT creature to a battlemap marker by name
+				// Try matching against the marker definition name:
+				//   1. Exact match with IT creature's display name
+				//   2. Exact match with IT creature's base name
+				//   3. Display name starts with marker name (handles "Zombie (Red)" matching "Zombie")
+				const matchedMarker = visionTokens.find((m: any) => {
+					const markerDef = this.markerLibrary.getMarker(m.markerId);
+					if (!markerDef) return false;
+					const markerName = markerDef.name.toLowerCase();
+					const displayName = (activeCreature.display || '').toLowerCase();
+					const baseName = (activeCreature.name || '').toLowerCase();
+					return displayName === markerName || baseName === markerName || displayName.startsWith(markerName);
+				});
+				
+				if (matchedMarker && selectedVisionTokenId !== matchedMarker.id) {
+					selectedVisionTokenId = matchedMarker.id;
+					refreshVisionSelector();
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					const markerDef = this.markerLibrary.getMarker(matchedMarker.markerId);
+					const icon = markerDef?.type === 'player' ? '👤' : markerDef?.type === 'creature' ? '👹' : '🧑';
+					new Notice(`Vision synced: ${icon} ${markerDef?.name || matchedMarker.id}`);
+				}
+			})
+		);
 
 		// === TUNNELS SECTION (expandable) ===
 		const tunnelsSectionHeader = toolbarContent.createDiv({ cls: 'dnd-map-section-header' });
@@ -12138,6 +12192,198 @@ export default class DndCampaignHubPlugin extends Plugin {
 					this.saveMapAnnotations(config, el);
 				});
 			}
+
+			// Import tokens from Initiative Tracker encounter
+			const itImportBtn = controls.createEl('button', {
+				text: '⚔️ Import Encounter Tokens',
+				cls: 'dnd-map-toggle-btn'
+			});
+			itImportBtn.addEventListener('click', async () => {
+				// Color name → hex mapping for border colors
+				const COLOR_NAME_TO_HEX: Record<string, string> = {
+					'red': '#ff0000', 'blue': '#3399ff', 'green': '#00cc44', 'yellow': '#ffcc00',
+					'purple': '#9933ff', 'orange': '#ff6600', 'pink': '#ff66cc', 'cyan': '#00cccc',
+					'magenta': '#ff00ff', 'lime': '#88ff00', 'teal': '#009999', 'gold': '#ffd700',
+					'brown': '#8B4513', 'black': '#333333', 'white': '#ffffff', 'gray': '#808080',
+					'grey': '#808080', 'indigo': '#4b0082', 'violet': '#ee82ee', 'silver': '#c0c0c0',
+					'bronze': '#cd7f32', 'crimson': '#dc143c', 'coral': '#ff7f50', 'maroon': '#800000',
+				};
+				// Auto-assign border colors for duplicate creatures (same order as encounter builder)
+				const AUTO_BORDER_COLORS = [
+					'#ff0000', '#3399ff', '#00cc44', '#ffcc00', '#9933ff', '#ff6600',
+					'#ff66cc', '#00cccc', '#ff00ff', '#88ff00', '#009999', '#ffd700',
+				];
+
+				const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+				if (!initiativeTracker) {
+					new Notice('⚠️ Initiative Tracker plugin not found');
+					return;
+				}
+
+				// Get the current encounter state from IT
+				const itState = initiativeTracker.data?.state;
+				if (!itState || !Array.isArray(itState.creatures) || itState.creatures.length === 0) {
+					new Notice('⚠️ No encounter loaded in Initiative Tracker');
+					return;
+				}
+
+				const creatures: any[] = itState.creatures;
+				console.log('[IT-Import] Encounter creatures:', creatures.length, creatures.map((c: any) => ({
+					name: c.name, display: c.display, player: c.player, friendly: c.friendly
+				})));
+
+				// Get existing markers on the map to check for duplicates
+				const existingMarkers = config.markers || [];
+				const existingMarkerNames = new Set<string>();
+				existingMarkers.forEach((m: any) => {
+					const markerDef = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
+					if (markerDef) {
+						// Track both name and borderColor for exact duplicate detection
+						const key = `${markerDef.name.toLowerCase()}|${(m.borderColor || '').toLowerCase()}`;
+						existingMarkerNames.add(key);
+					}
+				});
+
+				// Group IT creatures by base name to detect duplicates
+				const creaturesByName = new Map<string, any[]>();
+				for (const c of creatures) {
+					const baseName = c.name || c.display || 'Unknown';
+					if (!creaturesByName.has(baseName)) {
+						creaturesByName.set(baseName, []);
+					}
+					creaturesByName.get(baseName)!.push(c);
+				}
+
+				// Calculate grid placement starting position
+				const gridPx = config.gridSize || 70;
+				const ox = config.gridOffsetX || 0;
+				const oy = config.gridOffsetY || 0;
+				// Start placing from center-right area of the visible map
+				let placementCol = Math.max(1, Math.floor(((config.dimensions?.width || 1000) / gridPx) * 0.5));
+				let placementRow = Math.max(1, Math.floor(((config.dimensions?.height || 800) / gridPx) * 0.3));
+				const maxCol = Math.floor(((config.dimensions?.width || 1000) / gridPx)) - 2;
+
+				let addedCount = 0;
+				let skippedCount = 0;
+				saveToHistory();
+
+				for (const [baseName, instances] of creaturesByName) {
+					const isMultiple = instances.length > 1;
+
+					for (let i = 0; i < instances.length; i++) {
+						const creature = instances[i];
+						const displayName = creature.display || creature.name || 'Unknown';
+						const isPlayer = creature.player === true;
+						const isFriendly = creature.friendly === true;
+
+						// Determine border color:
+						// 1. If creature display has "(ColorName)" → use that color
+						// 2. If multiple of same creature → auto-assign from color palette
+						let borderColor: string | undefined;
+						const colorMatch = displayName.match(/\((\w+)\)\s*$/);
+						if (colorMatch) {
+							const colorName = colorMatch[1].toLowerCase();
+							borderColor = COLOR_NAME_TO_HEX[colorName] || undefined;
+						}
+						if (!borderColor && isMultiple) {
+							borderColor = AUTO_BORDER_COLORS[i % AUTO_BORDER_COLORS.length];
+						}
+
+						// Check for duplicate: same base name + same border color already on map
+						const dupeKey = `${baseName.toLowerCase()}|${(borderColor || '').toLowerCase()}`;
+						if (existingMarkerNames.has(dupeKey)) {
+							console.log(`[IT-Import] Skipping duplicate: ${displayName}`);
+							skippedCount++;
+							continue;
+						}
+
+						// Find or create a marker definition in the library
+						const markerType: MarkerType = isPlayer ? 'player' : (isFriendly ? 'npc' : 'creature');
+						let markerDef = this.markerLibrary.getAllMarkers().find(
+							(m: MarkerDefinition) => m.name.toLowerCase() === baseName.toLowerCase() && m.type === markerType
+						);
+						// Also try matching against any type (player/npc/creature)
+						if (!markerDef) {
+							markerDef = this.markerLibrary.getAllMarkers().find(
+								(m: MarkerDefinition) => m.name.toLowerCase() === baseName.toLowerCase()
+									&& ['player', 'npc', 'creature'].includes(m.type)
+							);
+						}
+						if (!markerDef) {
+							// Create a new marker definition
+							const icon = isPlayer ? '🛡️' : (isFriendly ? '🧑' : '👹');
+							const bgColor = isPlayer ? '#2563eb' : (isFriendly ? '#16a34a' : '#dc2626');
+							const id = this.markerLibrary.generateId();
+							const now = Date.now();
+							markerDef = {
+								id,
+								name: baseName,
+								type: markerType,
+								icon,
+								backgroundColor: bgColor,
+								borderColor: '#ffffff',
+								creatureSize: 'medium' as CreatureSize,
+								createdAt: now,
+								updatedAt: now,
+							} as MarkerDefinition;
+							await this.markerLibrary.setMarker(markerDef);
+							console.log(`[IT-Import] Created marker definition: ${baseName} (${markerType})`);
+						}
+
+						// Calculate grid-snapped position
+						const sizeSquares = CREATURE_SIZE_SQUARES[markerDef.creatureSize || 'medium'] || 1;
+						const halfToken = (sizeSquares * gridPx) / 2;
+						const posX = ox + placementCol * gridPx + halfToken;
+						const posY = oy + placementRow * gridPx + halfToken;
+
+						// Create marker reference
+						// Enemy creatures go to DM layer (hidden from players), players/friendlies to Player layer
+						const tokenLayer = (!isPlayer && !isFriendly) ? 'DM' : 'Player';
+						const markerRef: any = {
+							id: `marker_inst_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+							markerId: markerDef.id,
+							position: { x: posX, y: posY },
+							placedAt: Date.now(),
+							layer: tokenLayer,
+						};
+
+						// Set per-instance border color
+						if (borderColor) {
+							markerRef.borderColor = borderColor;
+						}
+
+						// Auto-apply darkvision from marker definition
+						if (markerDef.darkvision && markerDef.darkvision > 0) {
+							markerRef.darkvision = markerDef.darkvision;
+						}
+
+						config.markers.push(markerRef);
+						existingMarkerNames.add(dupeKey); // Prevent duplicates within this batch
+						addedCount++;
+
+						// Advance grid placement position
+						placementCol += sizeSquares + 1;
+						if (placementCol + sizeSquares > maxCol) {
+							placementCol = Math.max(1, Math.floor(((config.dimensions?.width || 1000) / gridPx) * 0.5));
+							placementRow += sizeSquares + 1;
+						}
+					}
+				}
+
+				if (addedCount > 0) {
+					redrawAnnotations();
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					this.saveMapAnnotations(config, el);
+					updateGridToolsVisibility();
+					refreshVisionSelector();
+				}
+
+				const msg = addedCount > 0
+					? `✅ Added ${addedCount} token${addedCount > 1 ? 's' : ''} from encounter` + (skippedCount > 0 ? ` (${skippedCount} skipped)` : '')
+					: `ℹ️ All encounter tokens already on the map (${skippedCount} skipped)`;
+				new Notice(msg);
+				console.log(`[IT-Import] Done: ${addedCount} added, ${skippedCount} skipped`);
+			});
 
 			// Clear drawings button
 			const clearBtn = controls.createEl('button', {
