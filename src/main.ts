@@ -4858,7 +4858,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			config.highlights = savedData.highlights || [];
 			config.markers = savedData.markers || [];
 			config.drawings = savedData.drawings || [];
-			config.aoeEffects = savedData.aoeEffects || [];
+			config.aoeEffects = []; // AoE effects are session-only, never persisted
 			config.tunnels = savedData.tunnels || [];
 			config.poiReferences = savedData.poiReferences || [];
 			
@@ -4961,6 +4961,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let aoeOrigin: { x: number; y: number } | null = null;
 			let aoePreviewEnd: { x: number; y: number } | null = null;
 			let pendingAoeAnchorMarkerId: string | null = null; // Set when AoE is cast from token context menu
+			let lastPlacedAoeId: string | null = null; // Track last placed AoE for 3rd-click removal
 			// Hexcrawl travel range overlay state
 			let hexcrawlMoveHoverHex: { col: number; row: number } | null = null;
 
@@ -5820,6 +5821,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 			btn.createEl('span', { text: icon });
 			aoeShapeButtons.set(shape, btn);
 			btn.addEventListener('click', () => {
+				// If there's a last-placed AoE, remove it when selecting any shape
+				if (lastPlacedAoeId && config.aoeEffects) {
+					const idx = config.aoeEffects.findIndex((a: any) => a.id === lastPlacedAoeId);
+					if (idx >= 0) {
+						saveToHistory();
+						config.aoeEffects.splice(idx, 1);
+						redrawAnnotations();
+						this.saveMapAnnotations(config, el);
+						updateGridToolsVisibility();
+						new Notice('AoE effect removed');
+					}
+					lastPlacedAoeId = null;
+				}
 				selectedAoeShape = shape;
 				aoeShapeButtons.forEach((b) => b.removeClass('active'));
 				btn.addClass('active');
@@ -6293,11 +6307,15 @@ export default class DndCampaignHubPlugin extends Plugin {
       (viewport as any)._syncPlayerView = () => {
         if (this._playerMapViews && this._playerMapViews.size > 0) {
           // Build drag ruler data if a marker is being dragged
-          let dragRuler: { origin: { x: number; y: number }; current: { x: number; y: number } } | null = null;
+          let dragRuler: { origin: { x: number; y: number }; current: { x: number; y: number }; pathCells?: { col: number; row: number; dist: number }[]; totalDist?: number } | null = null;
           if (markerDragOrigin && draggingMarkerIndex >= 0 && config.markers[draggingMarkerIndex]) {
+            const currentPos = config.markers[draggingMarkerIndex].position;
+            const pathResult = computeGridMovePath(markerDragOrigin, currentPos);
             dragRuler = {
               origin: { x: markerDragOrigin.x, y: markerDragOrigin.y },
-              current: { x: config.markers[draggingMarkerIndex].position.x, y: config.markers[draggingMarkerIndex].position.y }
+              current: { x: currentPos.x, y: currentPos.y },
+              pathCells: pathResult.cells,
+              totalDist: pathResult.totalDist
             };
           }
           // Build measure ruler data if ruler is active
@@ -7459,38 +7477,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 						}
 					}
 					
-					ctx.strokeStyle = '#ffff00';
-					ctx.lineWidth = 4;
-					ctx.setLineDash([8, 4]);
-					ctx.beginPath();
-					ctx.moveTo(markerDragOrigin.x, markerDragOrigin.y);
-					ctx.lineTo(currentPos.x, currentPos.y);
-					ctx.stroke();
-					ctx.setLineDash([]);
-					
-					// Draw measurement with outline for visibility
-					const distance = Math.sqrt(
-						Math.pow(currentPos.x - markerDragOrigin.x, 2) + 
-						Math.pow(currentPos.y - markerDragOrigin.y, 2)
-					);
-					const gridDistance = distance / config.gridSize;
-					const realDistance = gridDistance * config.scale.value;
-					const textX = (markerDragOrigin.x + currentPos.x) / 2;
-					const textY = (markerDragOrigin.y + currentPos.y) / 2 - 10;
-					const text = `${realDistance.toFixed(1)} ${config.scale.unit}`;
-					
-					ctx.font = 'bold 18px sans-serif';
-					ctx.textAlign = 'center';
-					ctx.textBaseline = 'middle';
-					
-					// Draw text outline (black) for contrast
-					ctx.strokeStyle = '#000000';
-					ctx.lineWidth = 4;
-					ctx.strokeText(text, textX, textY);
-					
-					// Draw text fill (yellow)
-					ctx.fillStyle = '#ffff00';
-					ctx.fillText(text, textX, textY);
+					// Draw grid-based movement path with D&D 5e distance
+					drawMovementPath(ctx, markerDragOrigin, currentPos);
 				}
 				
 				// Draw active ruler
@@ -8113,10 +8101,310 @@ export default class DndCampaignHubPlugin extends Plugin {
 				return { x, y };
 			};
 
+			// Helper: snap a point to the center of the nearest grid cell (2024 rules)
+			const snapToGridCenter = (x: number, y: number): { x: number; y: number } => {
+				const ox = config.gridOffsetX || 0;
+				const oy = config.gridOffsetY || 0;
+				const gs = config.gridSize || 70;
+				if (config.gridType === 'square') {
+					const snappedX = Math.floor((x - ox) / gs) * gs + ox + gs / 2;
+					const snappedY = Math.floor((y - oy) / gs) * gs + oy + gs / 2;
+					return { x: snappedX, y: snappedY };
+				}
+				// For hex grids, snap to nearest cell center (same as intersection helper)
+				const hex = pixelToHex(x, y);
+				if (config.gridType === 'hex-horizontal') {
+					const horiz = gs;
+					const size = (2 / 3) * horiz;
+					const vert = Math.sqrt(3) * size;
+					const colOffsetY = (hex.col & 1) ? vert / 2 : 0;
+					return { x: hex.col * horiz + ox, y: hex.row * vert + colOffsetY + oy };
+				} else if (config.gridType === 'hex-vertical') {
+					const vert = gs;
+					const size = (2 / 3) * vert;
+					const horiz = Math.sqrt(3) * size;
+					const rowOffsetX = (hex.row & 1) ? horiz / 2 : 0;
+					return { x: hex.col * horiz + rowOffsetX + ox, y: hex.row * vert + oy };
+				}
+				return { x, y };
+			};
+
 			// Helper: snap distance to grid multiples
 			const snapDistanceToGrid = (pixelDist: number): number => {
 				const gs = config.gridSize || 70;
 				return Math.max(gs, Math.round(pixelDist / gs) * gs);
+			};
+
+			/**
+			 * Compute grid-based movement path from pixelOrigin to pixelCurrent.
+			 * Returns cell coords traversed + total D&D distance.
+			 * Uses optional 5/10/5/10 diagonal rule (Variant: Diagonals from DMG).
+			 */
+			const computeGridMovePath = (
+				originPx: { x: number; y: number },
+				currentPx: { x: number; y: number },
+			): { cells: { col: number; row: number; dist: number }[]; totalDist: number } => {
+				const gs = config.gridSize || 70;
+				const ox = config.gridOffsetX || 0;
+				const oy = config.gridOffsetY || 0;
+				const scaleVal = config.scale?.value || 5;
+
+				// Convert pixel positions to grid coordinates
+				const startCol = Math.floor((originPx.x - ox) / gs);
+				const startRow = Math.floor((originPx.y - oy) / gs);
+				const endCol = Math.floor((currentPx.x - ox) / gs);
+				const endRow = Math.floor((currentPx.y - oy) / gs);
+
+				if (startCol === endCol && startRow === endRow) {
+					return { cells: [], totalDist: 0 };
+				}
+
+				// Bresenham-like line through grid cells
+				const cells: { col: number; row: number; dist: number }[] = [];
+				let c = startCol;
+				let r = startRow;
+				const dc = endCol - startCol;
+				const dr = endRow - startRow;
+				const absDc = Math.abs(dc);
+				const absDr = Math.abs(dr);
+				const stepC = dc > 0 ? 1 : -1;
+				const stepR = dr > 0 ? 1 : -1;
+
+				let totalDist = 0;
+				let diagCount = 0; // tracks diagonals for 5/10 alternation
+
+				if (absDc >= absDr) {
+					let err = absDc / 2;
+					for (let i = 0; i < absDc; i++) {
+						const prevC = c;
+						const prevR = r;
+						err -= absDr;
+						let movedDiag = false;
+						if (err < 0) {
+							r += stepR;
+							err += absDc;
+							movedDiag = true;
+						}
+						c += stepC;
+						if (movedDiag) {
+							diagCount++;
+							totalDist += (diagCount % 2 === 1) ? scaleVal : scaleVal * 2;
+						} else {
+							totalDist += scaleVal;
+						}
+						cells.push({ col: c, row: r, dist: totalDist });
+					}
+				} else {
+					let err = absDr / 2;
+					for (let i = 0; i < absDr; i++) {
+						const prevC = c;
+						const prevR = r;
+						err -= absDc;
+						let movedDiag = false;
+						if (err < 0) {
+							c += stepC;
+							err += absDr;
+							movedDiag = true;
+						}
+						r += stepR;
+						if (movedDiag) {
+							diagCount++;
+							totalDist += (diagCount % 2 === 1) ? scaleVal : scaleVal * 2;
+						} else {
+							totalDist += scaleVal;
+						}
+						cells.push({ col: c, row: r, dist: totalDist });
+					}
+				}
+
+				return { cells, totalDist };
+			};
+
+			/**
+			 * Draw movement path tile highlighting and distance label.
+			 * Used by both GM view and (via sync) player view.
+			 */
+			const drawMovementPath = (
+				ctx: CanvasRenderingContext2D,
+				originPx: { x: number; y: number },
+				currentPx: { x: number; y: number },
+				pathData?: { cells: { col: number; row: number; dist: number }[]; totalDist: number },
+			) => {
+				const gs = config.gridSize || 70;
+				const ox = config.gridOffsetX || 0;
+				const oy = config.gridOffsetY || 0;
+				const scaleUnit = config.scale?.unit || 'feet';
+
+				const path = pathData || computeGridMovePath(originPx, currentPx);
+				if (path.cells.length === 0) return;
+
+				ctx.save();
+
+				// Highlight traversed cells
+				ctx.fillStyle = 'rgba(255, 255, 0, 0.15)';
+				ctx.strokeStyle = 'rgba(255, 255, 0, 0.35)';
+				ctx.lineWidth = 1.5;
+				for (const cell of path.cells) {
+					const cellX = cell.col * gs + ox;
+					const cellY = cell.row * gs + oy;
+					ctx.fillRect(cellX, cellY, gs, gs);
+					ctx.strokeRect(cellX + 0.5, cellY + 0.5, gs - 1, gs - 1);
+				}
+
+				// Dashed ruler line
+				ctx.strokeStyle = '#ffff00';
+				ctx.lineWidth = 3;
+				ctx.setLineDash([8, 4]);
+				ctx.beginPath();
+				ctx.moveTo(originPx.x, originPx.y);
+				ctx.lineTo(currentPx.x, currentPx.y);
+				ctx.stroke();
+				ctx.setLineDash([]);
+
+				// Distance label — big, near the current position
+				const labelText = `${path.totalDist} ${scaleUnit}`;
+				ctx.font = 'bold 22px sans-serif';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+
+				// Position label above current token position
+				const labelX = currentPx.x;
+				const labelY = currentPx.y - gs * 0.8;
+
+				// Background pill
+				const metrics = ctx.measureText(labelText);
+				const pillPadX = 10;
+				const pillPadY = 5;
+				const pillW = metrics.width + pillPadX * 2;
+				const pillH = 24 + pillPadY * 2;
+				ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+				ctx.beginPath();
+				ctx.roundRect(labelX - pillW / 2, labelY - pillH / 2, pillW, pillH, 8);
+				ctx.fill();
+
+				// Text outline
+				ctx.strokeStyle = '#000000';
+				ctx.lineWidth = 4;
+				ctx.strokeText(labelText, labelX, labelY);
+
+				// Text fill
+				ctx.fillStyle = '#ffff00';
+				ctx.fillText(labelText, labelX, labelY);
+
+				ctx.restore();
+			};
+
+			/**
+			 * Highlight grid squares that are at least 50% covered by an AoE shape.
+			 * Uses an offscreen canvas to render the AoE silhouette, then samples
+			 * each candidate grid cell to measure pixel-level coverage.
+			 * Only applies to square grids (hex grids skip this).
+			 */
+			const drawAoeAffectedSquares = (
+				ctx: CanvasRenderingContext2D,
+				origin: { x: number; y: number },
+				snappedDist: number,
+				angle: number,
+				shape: string,
+				color: string,
+				isPreview: boolean,
+				centered: boolean,
+			) => {
+				if (config.gridType !== 'square') return;
+				const gs = config.gridSize || 70;
+				const gw = config.gridSizeW || gs;
+				const gh = config.gridSizeH || gs;
+				const ox = config.gridOffsetX || 0;
+				const oy = config.gridOffsetY || 0;
+
+				// Determine bounding box of the AoE in map-space (generous)
+				const reach = snappedDist + gs;
+				const minX = origin.x - reach;
+				const minY = origin.y - reach;
+				const maxX = origin.x + reach * 2;
+				const maxY = origin.y + reach * 2;
+
+				// Grid column/row range that could be affected
+				const colStart = Math.floor((minX - ox) / gw) - 1;
+				const colEnd = Math.ceil((maxX - ox) / gw) + 1;
+				const rowStart = Math.floor((minY - oy) / gh) - 1;
+				const rowEnd = Math.ceil((maxY - oy) / gh) + 1;
+
+				// Create a small offscreen canvas just for the AoE silhouette.
+				// We map the candidate grid region into a compact pixel buffer.
+				const sampleRes = 8; // sample points per cell axis (8×8 = 64 samples per cell)
+
+				// Build the AoE path in a reusable way
+				const buildAoePath = (pctx: CanvasRenderingContext2D, ox2: number, oy2: number) => {
+					pctx.beginPath();
+					if (shape === 'circle') {
+						pctx.arc(ox2, oy2, snappedDist, 0, Math.PI * 2);
+					} else if (shape === 'cone') {
+						const halfAngle = (53 / 2) * (Math.PI / 180);
+						pctx.moveTo(ox2, oy2);
+						pctx.arc(ox2, oy2, snappedDist, angle - halfAngle, angle + halfAngle);
+						pctx.closePath();
+					} else if (shape === 'square') {
+						// Squares are always axis-aligned (no rotation)
+						const half = snappedDist;
+						pctx.rect(ox2 - half, oy2 - half, half * 2, half * 2);
+					} else if (shape === 'line') {
+						const halfWidth = gs / 2;
+						pctx.save();
+						pctx.translate(ox2, oy2);
+						pctx.rotate(angle);
+						pctx.rect(0, -halfWidth, snappedDist, halfWidth * 2);
+						pctx.restore();
+					}
+				};
+
+				// For each candidate grid cell, sample coverage using isPointInPath
+				const osc = document.createElement('canvas');
+				osc.width = 1;
+				osc.height = 1;
+				const oCtx = osc.getContext('2d');
+				if (!oCtx) return;
+
+				// Build path once on the offscreen context (we only need isPointInPath)
+				buildAoePath(oCtx, origin.x, origin.y);
+
+				ctx.save();
+				const baseAlpha = isPreview ? 0.18 : 0.25;
+
+				for (let col = colStart; col <= colEnd; col++) {
+					for (let row = rowStart; row <= rowEnd; row++) {
+						const cellLeft = col * gw + ox;
+						const cellTop = row * gh + oy;
+
+						// Sample grid of points inside this cell
+						let hits = 0;
+						const total = sampleRes * sampleRes;
+						for (let sy = 0; sy < sampleRes; sy++) {
+							for (let sx = 0; sx < sampleRes; sx++) {
+								const px = cellLeft + (sx + 0.5) * (gw / sampleRes);
+								const py = cellTop + (sy + 0.5) * (gh / sampleRes);
+								if (oCtx.isPointInPath(px, py)) {
+									hits++;
+								}
+							}
+						}
+
+						if (hits >= total * 0.5) {
+							// This cell is at least 50% covered — highlight it
+							ctx.fillStyle = color;
+							ctx.globalAlpha = baseAlpha;
+							ctx.fillRect(cellLeft, cellTop, gw, gh);
+
+							// Draw a subtle border
+							ctx.globalAlpha = baseAlpha + 0.15;
+							ctx.strokeStyle = color;
+							ctx.lineWidth = 1.5;
+							ctx.strokeRect(cellLeft + 0.5, cellTop + 0.5, gw - 1, gh - 1);
+						}
+					}
+				}
+
+				ctx.restore();
 			};
 
 			// Draw an AoE shape (used for both preview and saved effects)
@@ -8159,22 +8447,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 					ctx.globalAlpha = isPreview ? 0.7 : 0.8;
 					ctx.stroke();
 				} else if (shape === 'square') {
+					// Squares are always axis-aligned (no rotation per DMG rules)
 					const half = snappedDist;
-					ctx.save();
-					ctx.translate(origin.x, origin.y);
-					ctx.rotate(angle);
 					if (centered) {
 						// Token-centered: square centered on origin
-						ctx.fillRect(-half, -half, half * 2, half * 2);
+						ctx.fillRect(origin.x - half, origin.y - half, half * 2, half * 2);
 						ctx.globalAlpha = isPreview ? 0.7 : 0.8;
-						ctx.strokeRect(-half, -half, half * 2, half * 2);
+						ctx.strokeRect(origin.x - half, origin.y - half, half * 2, half * 2);
 					} else {
-						// Intersection-origin: square extends from origin outward
-						ctx.fillRect(0, -half, half * 2, half * 2);
+						// Intersection-origin: square centered on origin
+						ctx.fillRect(origin.x - half, origin.y - half, half * 2, half * 2);
 						ctx.globalAlpha = isPreview ? 0.7 : 0.8;
-						ctx.strokeRect(0, -half, half * 2, half * 2);
+						ctx.strokeRect(origin.x - half, origin.y - half, half * 2, half * 2);
 					}
-					ctx.restore();
 				} else if (shape === 'line') {
 					// Line: 5ft (1 grid cell) wide, snappedDist long
 					const halfWidth = gs / 2;
@@ -8186,8 +8471,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 					ctx.strokeRect(0, -halfWidth, snappedDist, halfWidth * 2);
 					ctx.restore();
 				}
+
+				ctx.restore();
+
+				// Highlight affected grid squares (≥50% coverage per DMG rules)
+				drawAoeAffectedSquares(ctx, origin, snappedDist, angle, shape, color, isPreview, centered);
 				
 				// Draw size label
+				ctx.save();
 				ctx.globalAlpha = 1.0;
 				const gridUnits = snappedDist / gs;
 				const realSize = gridUnits * (config.scale?.value || 5);
@@ -8407,6 +8698,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (tool !== 'aoe') {
 					aoeOrigin = null;
 					aoePreviewEnd = null;
+					lastPlacedAoeId = null;
 				}
 
 				// Cancel target distance measurement when switching away
@@ -9143,8 +9435,21 @@ export default class DndCampaignHubPlugin extends Plugin {
 					refreshVisionSelector();
 					new Notice('Marker placed');
 				} else if (activeTool === 'aoe') {
-					if (!aoeOrigin) {
-						// First click: set origin snapped to grid intersection
+					if (!aoeOrigin && lastPlacedAoeId) {
+						// Third click: remove the last placed AoE
+						const idx = config.aoeEffects.findIndex((a: any) => a.id === lastPlacedAoeId);
+						if (idx >= 0) {
+							saveToHistory();
+							config.aoeEffects.splice(idx, 1);
+							redrawAnnotations();
+							this.saveMapAnnotations(config, el);
+							updateGridToolsVisibility();
+							if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+							new Notice('AoE effect removed');
+						}
+						lastPlacedAoeId = null;
+					} else if (!aoeOrigin) {
+						// First click: set origin snapped to grid intersection (DMG rules)
 						aoeOrigin = snapToGridIntersection(mapPos.x, mapPos.y);
 						aoePreviewEnd = aoeOrigin;
 					} else {
@@ -9163,13 +9468,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 							aoeEffect.anchorMarkerId = pendingAoeAnchorMarkerId;
 							pendingAoeAnchorMarkerId = null;
 						}
+						lastPlacedAoeId = aoeEffect.id;
 						config.aoeEffects.push(aoeEffect);
 						aoeOrigin = null;
 						aoePreviewEnd = null;
 						redrawAnnotations();
 						this.saveMapAnnotations(config, el);
 						updateGridToolsVisibility();
-						new Notice('AoE effect placed');
+						new Notice('AoE effect placed (click again to remove)');
 					}
 				} else if (activeTool === 'eraser') {
 					console.log('Eraser tool: looking for annotations to remove');
@@ -9794,6 +10100,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 						});
 					}
 					redrawAnnotations();
+					// Sync marker position + drag ruler to player view in real-time
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
 					// Dragging a light
 					const draggedLight = config.lightSources[draggingLightIndex];
@@ -12225,7 +12533,7 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 				highlights: config.highlights || [],
 				markers: config.markers || [],
 				drawings: config.drawings || [],
-				aoeEffects: config.aoeEffects || [],
+				// aoeEffects intentionally omitted — session-only, not persisted
 				tunnels: config.tunnels || [],
 				poiReferences: config.poiReferences || [],
 				hexTerrains: config.hexTerrains || [],
@@ -30840,11 +31148,72 @@ class PlayerMapView extends ItemView {
   private drawDragRuler(ctx: CanvasRenderingContext2D, config: any) {
     const origin = config.dragRuler.origin;
     const current = config.dragRuler.current;
+    const gs = config.gridSize || 70;
+    const ox = config.gridOffsetX || 0;
+    const oy = config.gridOffsetY || 0;
+    const scaleUnit = config.scale?.unit || 'feet';
 
-    // Yellow dashed line
+    // Use pre-computed path data from sync payload, or compute locally
+    let pathCells: { col: number; row: number; dist: number }[] = config.dragRuler.pathCells || [];
+    let totalDist: number = config.dragRuler.totalDist ?? 0;
+
+    // If no pre-computed path, compute locally (fallback)
+    if (pathCells.length === 0 && (origin.x !== current.x || origin.y !== current.y)) {
+      const scaleVal = config.scale?.value || 5;
+      const startCol = Math.floor((origin.x - ox) / gs);
+      const startRow = Math.floor((origin.y - oy) / gs);
+      const endCol = Math.floor((current.x - ox) / gs);
+      const endRow = Math.floor((current.y - oy) / gs);
+      if (startCol !== endCol || startRow !== endRow) {
+        let c = startCol, r = startRow;
+        const dc = endCol - startCol, dr = endRow - startRow;
+        const absDc = Math.abs(dc), absDr = Math.abs(dr);
+        const stepC = dc > 0 ? 1 : -1, stepR = dr > 0 ? 1 : -1;
+        let diagCount = 0;
+        if (absDc >= absDr) {
+          let err = absDc / 2;
+          for (let i = 0; i < absDc; i++) {
+            err -= absDr;
+            let movedDiag = false;
+            if (err < 0) { r += stepR; err += absDc; movedDiag = true; }
+            c += stepC;
+            if (movedDiag) { diagCount++; totalDist += (diagCount % 2 === 1) ? scaleVal : scaleVal * 2; }
+            else { totalDist += scaleVal; }
+            pathCells.push({ col: c, row: r, dist: totalDist });
+          }
+        } else {
+          let err = absDr / 2;
+          for (let i = 0; i < absDr; i++) {
+            err -= absDc;
+            let movedDiag = false;
+            if (err < 0) { c += stepC; err += absDr; movedDiag = true; }
+            r += stepR;
+            if (movedDiag) { diagCount++; totalDist += (diagCount % 2 === 1) ? scaleVal : scaleVal * 2; }
+            else { totalDist += scaleVal; }
+            pathCells.push({ col: c, row: r, dist: totalDist });
+          }
+        }
+      }
+    }
+
+    if (pathCells.length === 0) return;
+
     ctx.save();
+
+    // Highlight traversed cells
+    ctx.fillStyle = 'rgba(255, 255, 0, 0.15)';
+    ctx.strokeStyle = 'rgba(255, 255, 0, 0.35)';
+    ctx.lineWidth = 1.5;
+    for (const cell of pathCells) {
+      const cellX = cell.col * gs + ox;
+      const cellY = cell.row * gs + oy;
+      ctx.fillRect(cellX, cellY, gs, gs);
+      ctx.strokeRect(cellX + 0.5, cellY + 0.5, gs - 1, gs - 1);
+    }
+
+    // Dashed ruler line
     ctx.strokeStyle = '#ffff00';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3;
     ctx.setLineDash([8, 4]);
     ctx.beginPath();
     ctx.moveTo(origin.x, origin.y);
@@ -30852,29 +31221,32 @@ class PlayerMapView extends ItemView {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Distance text
-    const distance = Math.sqrt(
-      Math.pow(current.x - origin.x, 2) +
-      Math.pow(current.y - origin.y, 2)
-    );
-    const gridDistance = distance / config.gridSize;
-    const realDistance = gridDistance * config.scale.value;
-    const textX = (origin.x + current.x) / 2;
-    const textY = (origin.y + current.y) / 2 - 10;
-    const text = `${realDistance.toFixed(1)} ${config.scale.unit}`;
-
-    ctx.font = 'bold 18px sans-serif';
+    // Distance label — big pill above current position
+    const labelText = `${totalDist} ${scaleUnit}`;
+    ctx.font = 'bold 22px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // Black outline for contrast
+    const labelX = current.x;
+    const labelY = current.y - gs * 0.8;
+
+    const metrics = ctx.measureText(labelText);
+    const pillPadX = 10;
+    const pillPadY = 5;
+    const pillW = metrics.width + pillPadX * 2;
+    const pillH = 24 + pillPadY * 2;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.beginPath();
+    ctx.roundRect(labelX - pillW / 2, labelY - pillH / 2, pillW, pillH, 8);
+    ctx.fill();
+
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 4;
-    ctx.strokeText(text, textX, textY);
+    ctx.strokeText(labelText, labelX, labelY);
 
-    // Yellow fill
     ctx.fillStyle = '#ffff00';
-    ctx.fillText(text, textX, textY);
+    ctx.fillText(labelText, labelX, labelY);
+
     ctx.restore();
   }
 
@@ -30910,21 +31282,11 @@ class PlayerMapView extends ItemView {
       ctx.globalAlpha = 0.8;
       ctx.stroke();
     } else if (aoe.shape === 'square') {
+      // Squares are always axis-aligned (no rotation per DMG rules)
       const half = snappedDist;
-      const centered = !!aoe.anchorMarkerId;
-      ctx.save();
-      ctx.translate(origin.x, origin.y);
-      ctx.rotate(angle);
-      if (centered) {
-        ctx.fillRect(-half, -half, half * 2, half * 2);
-        ctx.globalAlpha = 0.8;
-        ctx.strokeRect(-half, -half, half * 2, half * 2);
-      } else {
-        ctx.fillRect(0, -half, half * 2, half * 2);
-        ctx.globalAlpha = 0.8;
-        ctx.strokeRect(0, -half, half * 2, half * 2);
-      }
-      ctx.restore();
+      ctx.fillRect(origin.x - half, origin.y - half, half * 2, half * 2);
+      ctx.globalAlpha = 0.8;
+      ctx.strokeRect(origin.x - half, origin.y - half, half * 2, half * 2);
     } else if (aoe.shape === 'line') {
       const halfWidth = gs / 2;
       ctx.save();
@@ -30934,6 +31296,75 @@ class PlayerMapView extends ItemView {
       ctx.globalAlpha = 0.8;
       ctx.strokeRect(0, -halfWidth, snappedDist, halfWidth * 2);
       ctx.restore();
+    }
+
+    // Highlight affected grid squares (≥50% coverage per DMG rules)
+    if (config.gridType === 'square') {
+      ctx.restore(); // restore the AoE shape context first
+      const gw = config.gridSizeW || gs;
+      const gh = config.gridSizeH || gs;
+      const gox = config.gridOffsetX || 0;
+      const goy = config.gridOffsetY || 0;
+      const reach = snappedDist + gs;
+      const colStart = Math.floor((origin.x - reach - gox) / gw) - 1;
+      const colEnd = Math.ceil((origin.x + reach * 2 - gox) / gw) + 1;
+      const rowStart = Math.floor((origin.y - reach - goy) / gh) - 1;
+      const rowEnd = Math.ceil((origin.y + reach * 2 - goy) / gh) + 1;
+      const sampleRes = 8;
+      const centered = !!aoe.anchorMarkerId;
+
+      // Build AoE path on a tiny offscreen canvas for isPointInPath
+      const osc = document.createElement('canvas');
+      osc.width = 1; osc.height = 1;
+      const oCtx = osc.getContext('2d');
+      if (oCtx) {
+        oCtx.beginPath();
+        if (aoe.shape === 'circle') {
+          oCtx.arc(origin.x, origin.y, snappedDist, 0, Math.PI * 2);
+        } else if (aoe.shape === 'cone') {
+          const ha = (53 / 2) * (Math.PI / 180);
+          oCtx.moveTo(origin.x, origin.y);
+          oCtx.arc(origin.x, origin.y, snappedDist, angle - ha, angle + ha);
+          oCtx.closePath();
+        } else if (aoe.shape === 'square') {
+          // Squares are always axis-aligned (no rotation)
+          const half = snappedDist;
+          oCtx.rect(origin.x - half, origin.y - half, half * 2, half * 2);
+        } else if (aoe.shape === 'line') {
+          const hw = gs / 2;
+          oCtx.save(); oCtx.translate(origin.x, origin.y); oCtx.rotate(angle);
+          oCtx.rect(0, -hw, snappedDist, hw * 2);
+          oCtx.restore();
+        }
+
+        ctx.save();
+        for (let col = colStart; col <= colEnd; col++) {
+          for (let row = rowStart; row <= rowEnd; row++) {
+            const cellLeft = col * gw + gox;
+            const cellTop = row * gh + goy;
+            let hits = 0;
+            const total = sampleRes * sampleRes;
+            for (let sy = 0; sy < sampleRes; sy++) {
+              for (let sx = 0; sx < sampleRes; sx++) {
+                const px = cellLeft + (sx + 0.5) * (gw / sampleRes);
+                const py = cellTop + (sy + 0.5) * (gh / sampleRes);
+                if (oCtx.isPointInPath(px, py)) hits++;
+              }
+            }
+            if (hits >= total * 0.5) {
+              ctx.fillStyle = aoe.color;
+              ctx.globalAlpha = 0.25;
+              ctx.fillRect(cellLeft, cellTop, gw, gh);
+              ctx.globalAlpha = 0.4;
+              ctx.strokeStyle = aoe.color;
+              ctx.lineWidth = 1.5;
+              ctx.strokeRect(cellLeft + 0.5, cellTop + 0.5, gw - 1, gh - 1);
+            }
+          }
+        }
+        ctx.restore();
+      }
+      ctx.save(); // re-open save for the label section below
     }
 
     // Size label
