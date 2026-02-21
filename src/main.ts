@@ -30043,249 +30043,24 @@ class PlayerMapView extends ItemView {
       });
     }
 
-    // Draw tunnel paths if a player token is in any tunnel or created it
-    // Check if any player token is in a tunnel or is the creator
-    if (config.tunnels && config.tunnels.length > 0 && playerTokens.length > 0) {
-      const CREATURE_SIZE_SQUARES: Record<string, number> = {
-        'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-      };
-      
-      // Calculate pixels per foot for vision range calculations
-      const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
-      
-      // Helper function to calculate vision range for a player token
-      const getVisionRange = (marker: any): number => {
-        let visionRange = 0;
-        
-        // Check darkvision
-        if (marker.darkvision && marker.darkvision > 0) {
-          visionRange = Math.max(visionRange, marker.darkvision);
-        }
-        
-        // Check attached light source
-        if (marker.light && marker.light.bright !== undefined) {
-          const totalLightRange = (marker.light.bright || 0) + (marker.light.dim || 0);
-          visionRange = Math.max(visionRange, totalLightRange);
-        }
-        
-        const pixelRange = visionRange * pixelsPerFoot;
-        console.log('[Tunnel Vision Debug PATH] Marker vision:', {
-          id: marker.id,
-          darkvision: marker.darkvision,
-          lightBright: marker.light?.bright,
-          lightDim: marker.light?.dim,
-          visionRangeFeet: visionRange,
-          visionRangePx: pixelRange
-        });
-        
-        return pixelRange;
-      };
-      
-      // Helper function to check if a point is within vision range and line of sight
-      // Uses 3D distance when elevation data is available (D&D 5e RAW: elevation counts toward distance)
-      const isPointVisible = (point: { x: number; y: number; elevation?: any }, playerMarker: any, tunnel: any): boolean => {
-        const visionRangePx = getVisionRange(playerMarker);
-        if (visionRangePx === 0) return false; // No vision = can't see
-        
-        const dx = point.x - playerMarker.position.x;
-        const dy = point.y - playerMarker.position.y;
-        const horizontalDistSq = dx * dx + dy * dy;
-        
-        // Calculate vertical distance in pixels if elevation data exists
-        const pointElev = point.elevation ? ((point.elevation.height || 0) - (point.elevation.depth || 0)) : 0;
-        const playerElev = playerMarker.elevation ? ((playerMarker.elevation.height || 0) - (playerMarker.elevation.depth || 0)) : 0;
-        const verticalFeet = Math.abs(pointElev - playerElev);
-        const verticalPx = verticalFeet * pixelsPerFoot;
-        
-        // 3D distance (Pythagorean: horizontal² + vertical² = total²)
-        const distance = Math.sqrt(horizontalDistSq + verticalPx * verticalPx);
-        
-        return distance <= visionRangePx;
-      };
-      
-      // Helper function to find visible segments of a tunnel path from a player's position using raycasting
-      const getVisiblePathSegments = (tunnel: any, playerMarker: any): Array<Array<{x: number, y: number}>> => {
-        if (!tunnel.path || tunnel.path.length < 2) return [];
-        if (!playerMarker.position) return [];
-        if (!tunnel.walls || tunnel.walls.length === 0) {
-          console.log('[Tunnel Vision] No tunnel walls generated yet, skipping visibility');
-          return [];
-        }
-        
-        const visionRangePx = getVisionRange(playerMarker);
-        if (visionRangePx === 0) return [];
-        
-        // Use raycasting to determine which parts of the tunnel path are visible
-        // Compute visibility polygon using tunnel walls as obstacles
-        const visibilityPolygon = this.computeVisibilityPolygon(
-          playerMarker.position.x,
-          playerMarker.position.y,
-          visionRangePx,
-          tunnel.walls
-        );
-        
-        if (visibilityPolygon.length < 3) {
-          console.log('[Tunnel Vision] Failed to compute visibility polygon');
-          return [];
-        }
-        
-        // Now determine which path segments are visible by checking if path points are inside visibility polygon
-        const visibleSegments: Array<Array<{x: number, y: number}>> = [];
-        let currentSegment: Array<{x: number, y: number}> | null = null;
-        
-        for (let i = 0; i < tunnel.path.length; i++) {
-          const pathPoint = tunnel.path[i];
-          if (!pathPoint) continue;
-          
-          const isVisible = this.pointInPolygon(pathPoint.x, pathPoint.y, visibilityPolygon);
-          
-          if (isVisible) {
-            if (!currentSegment) {
-              currentSegment = [];
-              // If not the first point, include the previous point for continuity
-              if (i > 0 && tunnel.path[i - 1]) {
-                currentSegment.push(tunnel.path[i - 1]);
-              }
-            }
-            currentSegment.push(pathPoint);
-          } else {
-            // Point not visible - end current segment
-            if (currentSegment && currentSegment.length >= 2) {
-              // Include this point for continuity (edge of visibility)
-              currentSegment.push(pathPoint);
-              visibleSegments.push(currentSegment);
-              currentSegment = null;
-            } else {
-              currentSegment = null;
-            }
-          }
-        }
-        
-        // Add final segment if exists
-        if (currentSegment && currentSegment.length >= 2) {
-          visibleSegments.push(currentSegment);
-        }
-        
-        console.log('[Tunnel Vision Debug RAYCASTING]', {
-          tunnelId: tunnel.id,
-          playerPos: { x: playerMarker.position.x.toFixed(1), y: playerMarker.position.y.toFixed(1) },
-          visionRange: visionRangePx.toFixed(1),
-          wallCount: tunnel.walls.length,
-          pathPointCount: tunnel.path.length,
-          visibleSegmentCount: visibleSegments.length,
-          totalVisiblePoints: visibleSegments.reduce((sum, seg) => sum + seg.length, 0)
-        });
-        
-        return visibleSegments;
-      };
-      
-      // Find tunnels that should be visible to players
-      const visibleTunnelSegments = new Map<string, Array<Array<{x: number, y: number}>>>();
-      
-      // Build a map of tunnel ID -> player marker for tunnels that need visibility calculation
-      // This ensures we only calculate ONCE per tunnel, using the first player's vision
-      const tunnelPlayerMap = new Map<string, any>();
-      
-      config.tunnels.forEach((tunnel: any) => {
-        // Find the first player token that's in this tunnel or created it
-        const playerInTunnel = playerTokens.find((playerMarker: any) => {
-          const isInTunnel = playerMarker.tunnelState?.tunnelId === tunnel.id;
-          const isCreator = tunnel.creatorMarkerId === playerMarker.id;
-          return isInTunnel || isCreator;
-        });
-        
-        if (playerInTunnel) {
-          tunnelPlayerMap.set(tunnel.id, playerInTunnel);
-        }
-      });
-      
-      // Now calculate segments ONCE per tunnel
-      tunnelPlayerMap.forEach((playerMarker: any, tunnelId: string) => {
-        const tunnel = config.tunnels.find((t: any) => t.id === tunnelId);
-        if (!tunnel) return;
-        
-        const segments = getVisiblePathSegments(tunnel, playerMarker);
-        console.log('[Tunnel Vision Debug] Calculated segments for tunnel:', {
-          tunnelId: tunnel.id,
-          playerMarkerId: playerMarker.id,
-          segmentCount: segments.length,
-          totalSegmentPoints: segments.reduce((sum, seg) => sum + seg.length, 0)
-        });
-        
-        if (segments.length > 0) {
-          visibleTunnelSegments.set(tunnel.id, segments);
-        }
-      });
-      
-      // Draw paths for visible tunnel segments
-      config.tunnels.forEach((tunnel: any) => {
-        const segments = visibleTunnelSegments.get(tunnel.id);
-        if (!segments || segments.length === 0) return;
-        
-        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
-        const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
-        
-        // Draw each visible segment
-        segments.forEach((segment: Array<{x: number, y: number}>, segIdx: number) => {
-          if (segment.length < 2 || !segment[0]) return;
-          
-          console.log('[Tunnel Debug DRAW]', {
-            tunnelId: tunnel.id,
-            segmentIndex: segIdx,
-            segmentPointCount: segment.length,
-            firstPoint: segment[0],
-            lastPoint: segment[segment.length - 1]
-          });
-          
-          ctx.save();
-          ctx.globalAlpha = 0.3;
-          ctx.strokeStyle = '#2a2a2a';
-          ctx.lineWidth = tunnelWidth;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          
-          // Draw tunnel path
-          ctx.beginPath();
-          ctx.moveTo(segment[0].x, segment[0].y);
-          for (let i = 1; i < segment.length; i++) {
-            const point = segment[i];
-            if (point) ctx.lineTo(point.x, point.y);
-          }
-          ctx.stroke();
-          
-          // Draw border
-          ctx.globalAlpha = 0.5;
-          ctx.strokeStyle = '#654321';
-          ctx.lineWidth = tunnelWidth + 4;
-          ctx.beginPath();
-          ctx.moveTo(segment[0].x, segment[0].y);
-          for (let i = 1; i < segment.length; i++) {
-            const point = segment[i];
-            if (point) ctx.lineTo(point.x, point.y);
-          }
-          ctx.stroke();
-          
-          // Draw inner path
-          ctx.globalAlpha = 0.6;
-          ctx.strokeStyle = '#1a1a1a';
-          ctx.lineWidth = tunnelWidth * 0.7;
-          ctx.beginPath();
-          ctx.moveTo(segment[0].x, segment[0].y);
-          for (let i = 1; i < segment.length; i++) {
-            const point = segment[i];
-            if (point) ctx.lineTo(point.x, point.y);
-          }
-          ctx.stroke();
-          
-          ctx.restore();
-        });
-        
-        console.log('[Tunnel Debug Player Render] Drew tunnel path with vision restrictions, tunnel:', tunnel.id, 'segments:', segments.length);
-      });
-    }
+    // NOTE: Tunnel path pre-fog rendering was removed.
+    // Tunnel paths are underground and invisible from the surface.
+    // Surface tokens can only see tunnel entrances/exits (drawn above, occluded by fog normally).
+    // The actual visible tunnel rendering happens ON TOP of fog (second pass below).
 
     // Calculate pixelsPerFoot for vision range calculations
     const pixelsPerFootForVision = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+
+    // Determine which player tokens are vision-relevant for tunnel visibility checks.
+    // When a specific vision token is selected, ONLY that token can "see" into tunnels.
+    // A surface token should never see underground tokens, and vice versa.
+    const selectedVisionToken = config.selectedVisionTokenId
+      ? playerTokens.find((m: any) => m.id === config.selectedVisionTokenId)
+      : null;
+    const selectedVisionIsInTunnel = !!(selectedVisionToken && selectedVisionToken.tunnelState);
+    const visionRelevantTokens: any[] = config.selectedVisionTokenId
+      ? (selectedVisionToken ? [selectedVisionToken] : [])
+      : playerTokens; // Default: all player tokens contribute to vision
 
     // Draw non-player markers (these will be obscured by fog)
     // Filter out burrowed tokens unless they're marked as visible to players OR visible to a player in the same tunnel
@@ -30353,16 +30128,24 @@ class PlayerMapView extends ItemView {
           return visionRangePx;
         };
         
-        if (playerTokens.length > 0) {
+        // If a specific vision token is selected and it's NOT in a tunnel,
+        // underground tokens are NEVER visible (surface can't see underground)
+        if (config.selectedVisionTokenId && !selectedVisionIsInTunnel) {
+          console.log('[Burrowed Token Visibility] Selected vision token is on surface — underground tokens invisible');
+          m._visibleToTunnelPlayer = false;
+          return;
+        }
+
+        if (visionRelevantTokens.length > 0) {
           // Case 1: Burrowed token is in an explicit tunnel with a player
           if (m.tunnelState && config.tunnels) {
             const tunnel = config.tunnels.find((t: any) => t.id === m.tunnelState.tunnelId);
             
-            console.log('[Burrowed Token Visibility] Token in explicit tunnel:', !!tunnel, 'Player tokens:', playerTokens.length);
+            console.log('[Burrowed Token Visibility] Token in explicit tunnel:', !!tunnel, 'Vision-relevant tokens:', visionRelevantTokens.length);
             
             if (tunnel && tunnel.path) {
-            // Check each player token in the same tunnel
-            for (const playerMarker of playerTokens) {
+            // Check each vision-relevant player token in the same tunnel
+            for (const playerMarker of visionRelevantTokens) {
               console.log('[Burrowed Token Visibility] Checking player:', {
                 playerId: playerMarker.id,
                 playerTunnelId: playerMarker.tunnelState?.tunnelId,
@@ -30437,7 +30220,7 @@ class PlayerMapView extends ItemView {
           if (!visibleToPlayerInTunnel && !m.tunnelState) {
             console.log('[Burrowed Token Visibility] Token NOT in explicit tunnel - checking tunnel path-based visibility');
             
-            for (const playerMarker of playerTokens) {
+            for (const playerMarker of visionRelevantTokens) {
               // Check if player is in a tunnel
               const playerTunnelId = playerMarker.tunnelState?.tunnelId;
               
@@ -30604,6 +30387,13 @@ class PlayerMapView extends ItemView {
         // Always skip rendering burrowed tokens here - they'll be drawn on top of fog later if visible
         return;
       }
+      // Underground vision cannot see surface tokens — earth blocks all vision.
+      // When viewing through a tunnel token, ALL non-underground markers are invisible.
+      if (config.selectedVisionTokenId && selectedVisionIsInTunnel) {
+        console.log('[Underground Vision] Surface marker hidden from tunnel viewer:', m.id);
+        return;
+      }
+
       // 3D elevation-aware visibility check for surface tokens (D&D 5e RAW)
       // Only applies when fog of war is enabled (darkness).  In daylight (no fog),
       // all tokens are visible regardless of elevation — you can always see a
@@ -30677,7 +30467,11 @@ class PlayerMapView extends ItemView {
 
     // Redraw tunnel paths ON TOP of fog for underground players
     // This allows them to see the tunnel while surface is covered in fog
-    if (config.tunnels && config.tunnels.length > 0 && tunnelPlayersInMarkers.length > 0) {
+    // Only render when viewing through a tunnel token's vision (or default all-players mode with tunnel players)
+    const tunnelPlayersForVision = config.selectedVisionTokenId
+      ? tunnelPlayersInMarkers.filter((m: any) => m.id === config.selectedVisionTokenId)
+      : tunnelPlayersInMarkers;
+    if (config.tunnels && config.tunnels.length > 0 && tunnelPlayersForVision.length > 0) {
       const CREATURE_SIZE_SQUARES: Record<string, number> = {
         'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
       };
@@ -30686,8 +30480,8 @@ class PlayerMapView extends ItemView {
       for (const tunnel of config.tunnels) {
         if (!tunnel.visible || !tunnel.active || !tunnel.path || tunnel.path.length < 2) continue;
         
-        // Check if any tunnel player is in this tunnel
-        const playersInThisTunnel = tunnelPlayersInMarkers.filter((p: any) => 
+        // Check if any tunnel player (respecting vision selection) is in this tunnel
+        const playersInThisTunnel = tunnelPlayersForVision.filter((p: any) => 
           p.tunnelState?.tunnelId === tunnel.id
         );
         
@@ -30811,16 +30605,103 @@ class PlayerMapView extends ItemView {
     const tunnelPlayerTokens = playerTokens.filter((m: any) => m.tunnelState);
     const surfacePlayerTokens = playerTokens.filter((m: any) => !m.tunnelState);
     
-    // Draw surface players first
-    surfacePlayerTokens.forEach((m: any) => this.drawMarker(ctx, m));
+    // Draw surface players first — but NOT when viewing from underground
+    // A token in a tunnel cannot see through the earth to the surface
+    if (!config.selectedVisionTokenId || !selectedVisionIsInTunnel) {
+      surfacePlayerTokens.forEach((m: any) => this.drawMarker(ctx, m));
+    }
     
     // Draw tunnel players on top (after tunnel paths are rendered)
-    tunnelPlayerTokens.forEach((m: any) => {
-      ctx.save();
-      ctx.globalAlpha = 0.85; // Mostly visible but slightly transparent to show underground
-      this.drawMarker(ctx, m);
-      ctx.restore();
-    });
+    // BUT: if a specific vision token is selected and it's NOT in a tunnel,
+    // don't draw tunnel players — surface vision can't see underground
+    // When viewing through a specific tunnel token's vision, other tunnel tokens
+    // are only visible if they're in the same tunnel, within darkvision/light range,
+    // and have unobstructed line of sight through tunnel walls.
+    if (!config.selectedVisionTokenId || selectedVisionIsInTunnel) {
+      tunnelPlayerTokens.forEach((m: any) => {
+        // Always draw the selected vision token itself
+        if (config.selectedVisionTokenId && m.id === config.selectedVisionTokenId) {
+          ctx.save();
+          ctx.globalAlpha = 0.85;
+          this.drawMarker(ctx, m);
+          ctx.restore();
+          return;
+        }
+
+        // When a specific tunnel vision token is selected, check if this other
+        // tunnel token is actually visible to it (range + line of sight)
+        if (config.selectedVisionTokenId && selectedVisionToken) {
+          // Must be in the same tunnel
+          if (m.tunnelState?.tunnelId !== selectedVisionToken.tunnelState?.tunnelId) {
+            console.log('[Tunnel Player Visibility] Different tunnel — not visible:', m.id);
+            return;
+          }
+
+          // Calculate vision range (darkvision + light sources)
+          let visionRange = 0;
+          if (selectedVisionToken.darkvision && selectedVisionToken.darkvision > 0) {
+            visionRange = Math.max(visionRange, selectedVisionToken.darkvision);
+          }
+          let lightBright = 0;
+          let lightDim = 0;
+          if (selectedVisionToken.light) {
+            lightBright = selectedVisionToken.light.bright || 0;
+            lightDim = selectedVisionToken.light.dim || 0;
+          } else if (selectedVisionToken.lightBright !== undefined || selectedVisionToken.lightDim !== undefined) {
+            lightBright = selectedVisionToken.lightBright || 0;
+            lightDim = selectedVisionToken.lightDim || 0;
+          }
+          if (lightBright > 0 || lightDim > 0) {
+            visionRange = Math.max(visionRange, lightBright + lightDim);
+          }
+          const visionRangePx = visionRange * pixelsPerFootForVision;
+
+          if (visionRangePx <= 0) {
+            console.log('[Tunnel Player Visibility] No vision range — not visible:', m.id);
+            return; // No darkvision or light = can't see anything
+          }
+
+          // 3D distance check
+          const dx = m.position.x - selectedVisionToken.position.x;
+          const dy = m.position.y - selectedVisionToken.position.y;
+          const horizontalDistSq = dx * dx + dy * dy;
+          const mElev = (m.elevation?.height || 0) - (m.elevation?.depth || 0);
+          const pElev = (selectedVisionToken.elevation?.height || 0) - (selectedVisionToken.elevation?.depth || 0);
+          const verticalPx = Math.abs(mElev - pElev) * pixelsPerFootForVision;
+          const distance = Math.sqrt(horizontalDistSq + verticalPx * verticalPx);
+
+          if (distance > visionRangePx) {
+            console.log('[Tunnel Player Visibility] Out of range — not visible:', m.id, 
+              'dist:', distance.toFixed(1), 'range:', visionRangePx.toFixed(1));
+            return;
+          }
+
+          // Line of sight check through tunnel walls
+          const tunnel = config.tunnels?.find((t: any) => t.id === m.tunnelState?.tunnelId);
+          if (tunnel && tunnel.walls && tunnel.walls.length > 0) {
+            // Exclude end-cap walls (last 2) for intra-tunnel vision
+            const sideWalls = tunnel.walls.length > 2 ? tunnel.walls.slice(0, -2) : tunnel.walls;
+            const canSee = this.hasLineOfSight(
+              selectedVisionToken.position.x, selectedVisionToken.position.y,
+              m.position.x, m.position.y,
+              sideWalls
+            );
+            if (!canSee) {
+              console.log('[Tunnel Player Visibility] Blocked by tunnel wall — not visible:', m.id);
+              return;
+            }
+          }
+
+          console.log('[Tunnel Player Visibility] VISIBLE:', m.id,
+            'dist:', distance.toFixed(1), 'range:', visionRangePx.toFixed(1));
+        }
+
+        ctx.save();
+        ctx.globalAlpha = 0.85; // Mostly visible but slightly transparent to show underground
+        this.drawMarker(ctx, m);
+        ctx.restore();
+      });
+    }
 
     // Draw visible burrowed tokens on top of fog (they were marked visible earlier)
     // These are creature/NPC tokens that were determined visible to tunnel players
