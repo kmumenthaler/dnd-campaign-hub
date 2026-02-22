@@ -1,7 +1,8 @@
 import { App, Modal, Setting, Notice, TFile } from 'obsidian';
 import { MapManager } from './MapManager';
-import { MapCreationModal } from './MapCreationModal';
+import { MapCreationModal, BATTLEMAP_TEMPLATE_FOLDER } from './MapCreationModal';
 import { MapTemplateTagModal } from './MapTemplateTagModal';
+import { TemplatePickerModal } from './TemplatePickerModal';
 import { MapTemplateTags, createDefaultTemplateTags } from './types';
 import type DndCampaignHubPlugin from '../main';
 
@@ -118,7 +119,7 @@ export class MapManagerModal extends Modal {
       });
     });
 
-    const createBtn = topBar.createEl('button', { text: '➕ New Map' });
+    const createBtn = topBar.createEl('button', { text: '🏗️ New Template' });
     createBtn.style.padding = '8px 16px';
     createBtn.style.backgroundColor = 'var(--interactive-accent)';
     createBtn.style.color = 'var(--text-on-accent)';
@@ -127,7 +128,18 @@ export class MapManagerModal extends Modal {
     createBtn.style.whiteSpace = 'nowrap';
     createBtn.addEventListener('click', () => {
       this.close();
-      new MapCreationModal(this.app, this.plugin, this.mapManager, undefined, undefined, false).open();
+      new MapCreationModal(this.app, this.plugin, this.mapManager, undefined, undefined, false, true).open();
+    });
+
+    const newMapBtn = topBar.createEl('button', { text: '⚔️ New Map' });
+    newMapBtn.style.padding = '8px 16px';
+    newMapBtn.style.borderRadius = '6px';
+    newMapBtn.style.cursor = 'pointer';
+    newMapBtn.style.whiteSpace = 'nowrap';
+    newMapBtn.style.border = '1px solid var(--background-modifier-border)';
+    newMapBtn.addEventListener('click', () => {
+      this.close();
+      new TemplatePickerModal(this.app, this.plugin, this.mapManager, false).open();
     });
 
     // ── Summary line ────────────────────────────────────────────────
@@ -528,7 +540,7 @@ export class MapManagerModal extends Modal {
   }
 
   /**
-   * Mark a map as a template.
+   * Mark a map as a template and create a template note in z_BattlemapTemplates/.
    */
   private async markAsTemplate(map: StoredMapInfo): Promise<void> {
     const fullData = await this.plugin.loadMapAnnotations(map.mapId);
@@ -541,10 +553,63 @@ export class MapManagerModal extends Modal {
     map.isTemplate = true;
     map.templateTags = fullData.templateTags;
 
+    // Create a template note in z_BattlemapTemplates/ if one doesn't exist
+    await this.ensureTemplateNote(map);
+
     new Notice(`✅ "${map.name}" marked as template`);
 
     // Open tag editor immediately
     this.editTemplateTags(map);
+  }
+
+  /**
+   * Ensure a template note exists in z_BattlemapTemplates/ for this map.
+   */
+  private async ensureTemplateNote(map: StoredMapInfo): Promise<void> {
+    const folder = BATTLEMAP_TEMPLATE_FOLDER;
+
+    // Check if a note already references this mapId
+    const existingNote = await this.findTemplateNote(map.mapId);
+    if (existingNote) return; // Already has a note
+
+    // Ensure folder exists
+    if (!(await this.app.vault.adapter.exists(folder))) {
+      await this.app.vault.createFolder(folder);
+    }
+
+    const safeName = (map.name || 'Template').replace(/[\\/:*?"<>|]/g, '_').trim();
+    let notePath = `${folder}/${safeName}.md`;
+    let counter = 1;
+    while (await this.app.vault.adapter.exists(notePath)) {
+      notePath = `${folder}/${safeName} (${counter}).md`;
+      counter++;
+    }
+
+    const codeBlock = `\`\`\`dnd-map\n${JSON.stringify({ mapId: map.mapId }, null, 2)}\n\`\`\``;
+    const content = `---\ntags:\n  - battlemap-template\ntemplate_name: "${map.name || 'Template'}"\n---\n# ${map.name || 'Template'}\n\n${codeBlock}\n`;
+    await this.app.vault.create(notePath, content);
+  }
+
+  /**
+   * Find an existing template note that references the given mapId.
+   */
+  private async findTemplateNote(mapId: string): Promise<TFile | null> {
+    const folder = BATTLEMAP_TEMPLATE_FOLDER;
+    if (!(await this.app.vault.adapter.exists(folder))) return null;
+
+    const files = this.app.vault.getMarkdownFiles().filter(f =>
+      f.path.startsWith(folder + '/')
+    );
+
+    for (const file of files) {
+      try {
+        const content = await this.app.vault.read(file);
+        if (content.includes(`"mapId": "${mapId}"`)) {
+          return file;
+        }
+      } catch { /* skip */ }
+    }
+    return null;
   }
 
   /**

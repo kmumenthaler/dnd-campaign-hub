@@ -1,9 +1,12 @@
 import { App, Modal, Setting, TFile, TFolder, Notice } from 'obsidian';
 import { MapManager } from './MapManager';
-import { MAP_PRESETS, MAP_MEDIA_EXTENSIONS, isVideoExtension, isMapMediaExtension } from './types';
+import { MAP_PRESETS, MAP_MEDIA_EXTENSIONS, isVideoExtension, isMapMediaExtension, createDefaultTemplateTags } from './types';
 import type DndCampaignHubPlugin from '../main';
 import { CREATURE_SIZE_SQUARES } from '../marker/MarkerTypes';
 import type { MarkerDefinition } from '../marker/MarkerTypes';
+
+/** Folder where battlemap template notes are stored */
+export const BATTLEMAP_TEMPLATE_FOLDER = 'z_BattlemapTemplates';
 
 /**
  * Modal for creating or editing a map
@@ -30,12 +33,15 @@ export class MapCreationModal extends Modal {
   private importMode: boolean = false;
   private selectedExistingMapId: string | null = null;
   private insertCodeBlock: boolean = true;
+  /** When true the modal creates a battlemap template note in z_BattlemapTemplates/ */
+  private templateMode: boolean = false;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, mapManager: MapManager, editConfig?: any, editElement?: HTMLElement, insertCodeBlock: boolean = true) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, mapManager: MapManager, editConfig?: any, editElement?: HTMLElement, insertCodeBlock: boolean = true, templateMode: boolean = false) {
     super(app);
     this.plugin = plugin;
     this.mapManager = mapManager;
     this.insertCodeBlock = insertCodeBlock;
+    this.templateMode = templateMode;
     if (editConfig) {
       this.editMode = true;
       // Normalize editConfig to match MapData interface (mapId -> id)
@@ -67,6 +73,11 @@ export class MapCreationModal extends Modal {
     if (this.editMode) {
       // Edit mode: go directly to form
       contentEl.createEl('h2', { text: '🗺️ Edit Battle Map' });
+      this.buildMapForm(contentEl);
+    } else if (this.templateMode) {
+      // Template creation mode: go straight to form
+      contentEl.createEl('h2', { text: '🏗️ Create Battlemap Template' });
+      this.mapType = 'battlemap';
       this.buildMapForm(contentEl);
     } else if (this.importMode) {
       // Import mode: show form pre-filled
@@ -349,14 +360,14 @@ export class MapCreationModal extends Modal {
 
   private createConfigSection(container: HTMLElement) {
     const section = container.createDiv({ cls: 'dnd-map-section' });
-    section.createEl('h3', { text: 'Step 2: Map Configuration' });
+    section.createEl('h3', { text: this.templateMode ? 'Step 2: Template Configuration' : 'Step 2: Map Configuration' });
 
     new Setting(section)
-      .setName('Map name')
-      .setDesc('Name for this map')
+      .setName(this.templateMode ? 'Template name' : 'Map name')
+      .setDesc(this.templateMode ? 'Descriptive name for this template' : 'Name for this map')
       .addText(text => {
         text
-          .setPlaceholder('Tavern Brawl')
+          .setPlaceholder(this.templateMode ? 'Forest Clearing (Day)' : 'Tavern Brawl')
           .setValue(this.mapName)
           .onChange(value => {
             this.mapName = value;
@@ -364,32 +375,35 @@ export class MapCreationModal extends Modal {
         text.inputEl.name = 'mapName';
       });
 
-    new Setting(section)
-      .setName('Map type')
-      .setDesc('Type of map')
-      .addDropdown(dropdown => {
-        dropdown
-          .addOption('battlemap', '⚔️ Battle Map (tactical combat)')
-          .addOption('world', '🌍 World Map (exploration)')
-          .addOption('regional', '🗺️ Regional Map (travel)')
-          .setValue(this.mapType)
-          .onChange(value => {
-            this.mapType = value as 'battlemap' | 'world' | 'regional';
-            
-            // Update scale defaults based on type
-            if (this.mapType === 'battlemap') {
-              this.scaleValue = 5;
-              this.scaleUnit = 'feet';
-              this.gridType = 'square';
-            } else {
-              this.scaleValue = 6;
-              this.scaleUnit = 'miles';
-              this.gridType = 'hex-horizontal';
-            }
-            
-            this.refresh();
-          });
-      });
+    // Hide map type in template mode – always battlemap
+    if (!this.templateMode) {
+      new Setting(section)
+        .setName('Map type')
+        .setDesc('Type of map')
+        .addDropdown(dropdown => {
+          dropdown
+            .addOption('battlemap', '⚔️ Battle Map (tactical combat)')
+            .addOption('world', '🌍 World Map (exploration)')
+            .addOption('regional', '🗺️ Regional Map (travel)')
+            .setValue(this.mapType)
+            .onChange(value => {
+              this.mapType = value as 'battlemap' | 'world' | 'regional';
+              
+              // Update scale defaults based on type
+              if (this.mapType === 'battlemap') {
+                this.scaleValue = 5;
+                this.scaleUnit = 'feet';
+                this.gridType = 'square';
+              } else {
+                this.scaleValue = 6;
+                this.scaleUnit = 'miles';
+                this.gridType = 'hex-horizontal';
+              }
+              
+              this.refresh();
+            });
+        });
+    }
   }
 
   private createGridSection(container: HTMLElement) {
@@ -949,7 +963,7 @@ export class MapCreationModal extends Modal {
     const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
     cancelBtn.onclick = () => this.close();
 
-    const createBtn = buttonContainer.createEl('button', { text: this.editMode ? 'Save Changes' : 'Create Map' });
+    const createBtn = buttonContainer.createEl('button', { text: this.editMode ? 'Save Changes' : this.templateMode ? '🏗️ Create Template' : 'Create Map' });
     createBtn.style.backgroundColor = 'var(--interactive-accent)';
     createBtn.style.color = 'var(--text-on-accent)';
     createBtn.onclick = async () => {
@@ -1007,6 +1021,29 @@ export class MapCreationModal extends Modal {
           gridSize: mapData.gridSize,
           scale: mapData.scale,
         };
+      } else if (this.templateMode) {
+        // Template mode: create with isTemplate flag and default tags
+        fullConfig = {
+          mapId: mapData.id,
+          name: mapData.name,
+          imageFile: mapData.imageFile,
+          isVideo: mapData.isVideo || false,
+          type: 'battlemap',
+          dimensions: mapData.dimensions,
+          gridType: mapData.gridType,
+          gridSize: mapData.gridSize,
+          scale: mapData.scale,
+          highlights: [],
+          markers: [],
+          drawings: [],
+          walls: [],
+          lightSources: [],
+          fogOfWar: { enabled: false, regions: [] },
+          tileElevations: {},
+          tunnels: [],
+          isTemplate: true,
+          templateTags: createDefaultTemplateTags(),
+        };
       } else {
         // Create mode: start with empty annotations
         fullConfig = {
@@ -1028,7 +1065,10 @@ export class MapCreationModal extends Modal {
       // Use a dummy element since we don't have a rendered map yet
       await this.plugin.saveMapAnnotations(fullConfig, document.createElement('div'));
 
-      if (this.editMode && this.editConfig) {
+      if (this.templateMode) {
+        // Template mode: create a note in z_BattlemapTemplates/ with a dnd-map code block
+        await this.createTemplateNote(mapData);
+      } else if (this.editMode && this.editConfig) {
         // Edit mode: code block already has mapId, just update the JSON
         new Notice(`✅ Map "${this.mapName}" updated`);
       } else if (this.insertCodeBlock) {
@@ -1059,9 +1099,49 @@ export class MapCreationModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('dnd-map-creation-modal');
-    const title = this.editMode ? 'Edit Battle Map' : 'Create Battle Map';
-    contentEl.createEl('h2', { text: `🗺️ ${title}` });
+    if (this.templateMode) {
+      contentEl.createEl('h2', { text: '🏗️ Create Battlemap Template' });
+    } else {
+      const title = this.editMode ? 'Edit Battle Map' : 'Create Battle Map';
+      contentEl.createEl('h2', { text: `🗺️ ${title}` });
+    }
     this.buildMapForm(contentEl);
+  }
+
+  /**
+   * Create a template note in z_BattlemapTemplates/ with a dnd-map code block
+   * and open it so the GM can configure walls, fog, etc.
+   */
+  private async createTemplateNote(mapData: any): Promise<void> {
+    const folder = BATTLEMAP_TEMPLATE_FOLDER;
+
+    // Ensure folder exists
+    if (!(await this.app.vault.adapter.exists(folder))) {
+      await this.app.vault.createFolder(folder);
+    }
+
+    // Build a safe filename
+    const safeName = this.mapName.replace(/[\\/:*?"<>|]/g, '_').trim() || 'Template';
+    let notePath = `${folder}/${safeName}.md`;
+    let counter = 1;
+    while (await this.app.vault.adapter.exists(notePath)) {
+      notePath = `${folder}/${safeName} (${counter}).md`;
+      counter++;
+    }
+
+    // Build the note content
+    const codeBlock = this.mapManager.generateMapCodeBlock(mapData);
+    const content = `---\ntags:\n  - battlemap-template\ntemplate_name: "${this.mapName}"\n---\n# ${this.mapName}\n\n${codeBlock}\n`;
+
+    // Create the note
+    const file = await this.app.vault.create(notePath, content);
+
+    new Notice(`✅ Template "${this.mapName}" created — opening for configuration…`);
+
+    // Open the note so the GM can configure walls, fog, lights, etc.
+    await this.app.workspace.getLeaf(false).openFile(file);
+
+    this.close();
   }
 
   onClose() {

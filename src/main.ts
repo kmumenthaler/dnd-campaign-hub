@@ -20,8 +20,10 @@ import {
   SESSION_DEFAULT_TEMPLATE
 } from "./templates";
 import { MapManager } from "./map/MapManager";
-import { MapCreationModal } from "./map/MapCreationModal";
+import { MapCreationModal, BATTLEMAP_TEMPLATE_FOLDER } from "./map/MapCreationModal";
 import { MapManagerModal } from "./map/MapManagerModal";
+import { TemplatePickerModal } from "./map/TemplatePickerModal";
+import { magicWandDetect } from "./map/MagicWandWallModal";
 import { MarkerLibrary } from "./marker/MarkerLibrary";
 import { MarkerReference, MarkerDefinition, MarkerType, CREATURE_SIZE_SQUARES, CreatureSize, Layer } from "./marker/MarkerTypes";
 import { MigrationManager, MigrationModal, TEMPLATE_VERSIONS } from "./migration";
@@ -2741,6 +2743,9 @@ export default class DndCampaignHubPlugin extends Plugin {
     // Initialize the migration manager (after marker library)
     this.migrationManager = new MigrationManager(this.app, this.markerLibrary);
 
+    // Migrate existing isTemplate maps to z_BattlemapTemplates notes (one-time)
+    this.migrateExistingTemplatesToNotes();
+
     // Initialize the music player
     this.musicPlayer = new MusicPlayer(this.app, this.settings.musicSettings);
 
@@ -3086,8 +3091,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "create-map",
-      name: "🗺️ Create Battle Map",
+      name: "🗺️ Create Battle Map (from template)",
       callback: () => this.createMap(),
+    });
+
+    this.addCommand({
+      id: "create-battlemap-template",
+      name: "🏗️ Create Battlemap Template",
+      callback: () => this.createBattlemapTemplate(),
     });
 
     this.addCommand({
@@ -4811,8 +4822,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	async createMap() {
-		// Open Map creation modal
-		new MapCreationModal(this.app, this, this.mapManager).open();
+		// Open Template Picker – battlemaps are always created from templates
+		new TemplatePickerModal(this.app, this, this.mapManager).open();
+	}
+
+	/**
+	 * Open the MapCreationModal in template mode to create a new battlemap template.
+	 * Creates a note in z_BattlemapTemplates/ with a dnd-map code block
+	 * that the GM can then configure (walls, fog, lights, etc.).
+	 */
+	async createBattlemapTemplate() {
+		new MapCreationModal(this.app, this, this.mapManager, undefined, undefined, false, true).open();
 	}
 
 	/**
@@ -4933,7 +4953,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' = 'pan';
+    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' = 'pan';
 		let selectedColor = '#ff0000';
       // GM player-view rect drag state
       let gmDragStart: { x: number; y: number } | null = null;
@@ -4959,6 +4979,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let targetDistState: 'selecting-origin' | 'selecting-target' | 'showing' = 'selecting-origin';
 			let isDrawing = false;
 			let currentPath: { x: number; y: number }[] = [];
+			// Eraser brush state
+			let isErasing = false;
+			let eraserCursorPos: { x: number; y: number } | null = null;
+			let eraserHadRemoval = false;
 			// AoE tool state
 			let selectedAoeShape: 'circle' | 'cone' | 'square' | 'line' = 'circle';
 			let aoeOrigin: { x: number; y: number } | null = null;
@@ -5019,6 +5043,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let wallPoints: { x: number; y: number }[] = [];
 			let wallPreviewPos: { x: number; y: number } | null = null;
 			if (!config.walls) config.walls = [];
+			// Magic Wand tool state
+			let mwThreshold = 60;           // Brightness cutoff (0-255)
+			let mwTolerance = 35;           // Flood-fill tolerance
+			let mwSimplifyEps = 4;          // RDP simplification epsilon
+			let mwMinSegLen = 8;            // Minimum wall segment length
+			let mwInvert = false;           // Swap light/dark detection
+			let mwMask: Uint8Array | null = null;  // Last flood-fill mask for overlay
+			let mwMaskW = 0;
+			let mwMaskH = 0;
+			let mwImageDataCache: ImageData | null = null; // Cached image pixel data
 			// Vision token selection state (for player view)
 			// null = show all player tokens' vision (current default behavior)
 			// string = marker id - show only that specific token's vision
@@ -5656,7 +5690,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			attr: { title: 'Mode: Reveal' }
 		});
 		fogModeBtn.createEl('span', { text: '👁️' });
-		fogModeBtn.addEventListener('click', () => {
+		fogModeBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
 			fogMode = fogMode === 'reveal' ? 'hide' : 'reveal';
 			fogModeBtn.setAttribute('title', fogMode === 'reveal' ? 'Mode: Reveal' : 'Mode: Hide');
 			const iconEl = fogModeBtn.querySelector('span');
@@ -5680,10 +5715,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 			});
 			btn.createEl('span', { text: icon });
 			fogShapeButtons.set(shape, btn);
-			btn.addEventListener('click', () => {
+			btn.addEventListener('click', (e) => {
+				e.stopPropagation();
 				selectedFogShape = shape;
 				fogShapeButtons.forEach((b) => b.removeClass('active'));
 				btn.addClass('active');
+				fogPicker.addClass('hidden');
 			});
 		});
 		// Reveal All / Hide All buttons
@@ -5692,7 +5729,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			attr: { title: 'Reveal All' }
 		});
 		fogRevealAllBtn.createEl('span', { text: '☀️' });
-		fogRevealAllBtn.addEventListener('click', () => {
+		fogRevealAllBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
 			config.fogOfWar.regions = [];
 			config.fogOfWar.enabled = false;
 			redrawAnnotations();
@@ -5707,7 +5745,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			attr: { title: 'Hide All' }
 		});
 		fogHideAllBtn.createEl('span', { text: '🌑' });
-		fogHideAllBtn.addEventListener('click', () => {
+		fogHideAllBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
 			config.fogOfWar.regions = [];
 			config.fogOfWar.enabled = true;
 			redrawAnnotations();
@@ -5733,21 +5772,83 @@ export default class DndCampaignHubPlugin extends Plugin {
 			});
 			btn.createEl('span', { text: wallDef.icon });
 			wallTypeButtons.set(type, btn);
-			btn.addEventListener('click', () => {
+			btn.addEventListener('click', (e) => {
+				e.stopPropagation(); // Prevent bubbling to wallsBtn which would re-show the picker
 				selectedWallType = type;
 				wallTypeButtons.forEach((b) => b.removeClass('active'));
 				btn.addClass('active');
+				// Collapse the picker after selecting a wall type so the map is not obstructed
+				wallsPicker.addClass('hidden');
 			});
 		});
 		// Separator
 		wallsPicker.createDiv({ cls: 'dnd-fog-picker-sep' });
+		// Magic Wand — auto-detect walls from image (interactive tool)
+		const magicWandBtn = wallsPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn dnd-fog-action-btn',
+			attr: { title: 'Magic Wand — Click dark areas to auto-detect walls' }
+		});
+		magicWandBtn.createEl('span', { text: '🪄' });
+		magicWandBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			setActiveTool('magic-wand');
+			// Collapse the picker after activating magic wand so the map is not obstructed
+			wallsPicker.addClass('hidden');
+		});
+
+		// Magic Wand inline settings (shown when magic-wand tool is active)
+		const mwSettingsDiv = wallsPicker.createDiv({ cls: 'dnd-mw-settings hidden' });
+		mwSettingsDiv.style.cssText = 'padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; min-width: 180px;';
+		mwSettingsDiv.addEventListener('click', (e) => e.stopPropagation()); // Prevent slider/checkbox clicks from bubbling to wallsBtn
+
+		const mwInfo = mwSettingsDiv.createEl('div', { text: '🪄 Click dark areas on the map to generate walls', cls: 'setting-item-description' });
+		mwInfo.style.cssText = 'margin: 0; padding: 0; font-size: 11px; line-height: 1.3;';
+
+		// Threshold slider
+		const mwThreshRow = mwSettingsDiv.createDiv({ cls: 'dnd-mw-row' });
+		mwThreshRow.style.cssText = 'display: flex; align-items: center; gap: 6px;';
+		mwThreshRow.createEl('span', { text: 'Threshold' }).style.cssText = 'flex: 0 0 auto; font-size: 11px; color: var(--text-muted);';
+		const mwThreshSlider = mwThreshRow.createEl('input', { attr: { type: 'range', min: '10', max: '200', value: String(mwThreshold) } });
+		mwThreshSlider.style.cssText = 'flex: 1; height: 16px;';
+		const mwThreshLabel = mwThreshRow.createEl('span', { text: String(mwThreshold) });
+		mwThreshLabel.style.cssText = 'flex: 0 0 28px; text-align: right; font-size: 11px; color: var(--text-muted);';
+		mwThreshSlider.addEventListener('input', () => { mwThreshold = Number(mwThreshSlider.value); mwThreshLabel.textContent = mwThreshSlider.value; });
+
+		// Tolerance slider
+		const mwTolRow = mwSettingsDiv.createDiv({ cls: 'dnd-mw-row' });
+		mwTolRow.style.cssText = 'display: flex; align-items: center; gap: 6px;';
+		mwTolRow.createEl('span', { text: 'Tolerance' }).style.cssText = 'flex: 0 0 auto; font-size: 11px; color: var(--text-muted);';
+		const mwTolSlider = mwTolRow.createEl('input', { attr: { type: 'range', min: '5', max: '100', value: String(mwTolerance) } });
+		mwTolSlider.style.cssText = 'flex: 1; height: 16px;';
+		const mwTolLabel = mwTolRow.createEl('span', { text: String(mwTolerance) });
+		mwTolLabel.style.cssText = 'flex: 0 0 28px; text-align: right; font-size: 11px; color: var(--text-muted);';
+		mwTolSlider.addEventListener('input', () => { mwTolerance = Number(mwTolSlider.value); mwTolLabel.textContent = mwTolSlider.value; });
+
+		// Simplification slider
+		const mwSimpRow = mwSettingsDiv.createDiv({ cls: 'dnd-mw-row' });
+		mwSimpRow.style.cssText = 'display: flex; align-items: center; gap: 6px;';
+		mwSimpRow.createEl('span', { text: 'Simplify' }).style.cssText = 'flex: 0 0 auto; font-size: 11px; color: var(--text-muted);';
+		const mwSimpSlider = mwSimpRow.createEl('input', { attr: { type: 'range', min: '1', max: '20', value: String(mwSimplifyEps) } });
+		mwSimpSlider.style.cssText = 'flex: 1; height: 16px;';
+		const mwSimpLabel = mwSimpRow.createEl('span', { text: String(mwSimplifyEps) });
+		mwSimpLabel.style.cssText = 'flex: 0 0 28px; text-align: right; font-size: 11px; color: var(--text-muted);';
+		mwSimpSlider.addEventListener('input', () => { mwSimplifyEps = Number(mwSimpSlider.value); mwSimpLabel.textContent = mwSimpSlider.value; });
+
+		// Invert toggle
+		const mwInvertRow = mwSettingsDiv.createDiv({ cls: 'dnd-mw-row' });
+		mwInvertRow.style.cssText = 'display: flex; align-items: center; gap: 6px;';
+		const mwInvertCb = mwInvertRow.createEl('input', { attr: { type: 'checkbox' } });
+		mwInvertCb.checked = mwInvert;
+		mwInvertRow.createEl('span', { text: 'Invert (select light areas)' }).style.cssText = 'font-size: 11px; color: var(--text-muted);';
+		mwInvertCb.addEventListener('change', () => { mwInvert = mwInvertCb.checked; });
 		// Delete all walls button
 		const clearWallsBtn = wallsPicker.createEl('button', {
 			cls: 'dnd-map-aoe-shape-btn dnd-fog-action-btn',
 			attr: { title: 'Delete All Walls' }
 		});
 		clearWallsBtn.createEl('span', { text: '🗑️' });
-		clearWallsBtn.addEventListener('click', () => {
+		clearWallsBtn.addEventListener('click', (e) => {
+			e.stopPropagation(); // Prevent bubbling to wallsBtn
 			if (config.walls && config.walls.length > 0) {
 				saveToHistory();
 				config.walls = [];
@@ -5781,10 +5882,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 			});
 			btn.createEl('span', { text: source.icon });
 			lightTypeButtons.set(type, btn);
-			btn.addEventListener('click', () => {
+			btn.addEventListener('click', (e) => {
+				e.stopPropagation();
 				selectedLightSource = type as LightSourceType;
 				lightTypeButtons.forEach((b) => b.removeClass('active'));
 				btn.addClass('active');
+				lightsPicker.addClass('hidden');
 			});
 		});
 		// Clear All Lights button
@@ -5793,7 +5896,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			attr: { title: 'Clear All Lights' }
 		});
 		clearLightsBtn.createEl('span', { text: '🌑' });
-		clearLightsBtn.addEventListener('click', () => {
+		clearLightsBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
 			config.lightSources = [];
 			redrawAnnotations();
 			this.saveMapAnnotations(config, el);
@@ -5814,7 +5918,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 		});
 		elevationInputRow.createEl('span', { text: 'ft' });
-		elevationInput.addEventListener('change', () => {
+		elevationInput.addEventListener('change', (e) => {
+			e.stopPropagation();
 			elevationPaintValue = parseInt(elevationInput.value) || 0;
 		});
 		elevationInput.addEventListener('click', (e) => e.stopPropagation());
@@ -5824,7 +5929,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			attr: { title: 'Clear tile elevation (eraser)' }
 		});
 		clearElevationBtn.createEl('span', { text: '🗑️' });
-		clearElevationBtn.addEventListener('click', () => {
+		clearElevationBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
 			elevationPaintValue = 0;
 			elevationInput.value = '0';
 			new Notice('Elevation eraser active (0 ft)');
@@ -5837,7 +5943,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			attr: { title: 'Toggle Fullscreen on Player View' }
 		});
 		pvFullscreenBtn.createEl('span', { text: '🖵' });
-		pvFullscreenBtn.addEventListener('click', () => {
+		pvFullscreenBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			pvPicker.addClass('hidden');
 			if ((this as any)._playerMapViews) {
 				const mapId = config.mapId || resourcePath;
 				(this as any)._playerMapViews.forEach((pv: any) => {
@@ -5852,7 +5960,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			attr: { title: 'Calibrate Player View for Physical Miniatures' }
 		});
 		pvCalibrateBtn.createEl('span', { text: '🎯' });
-		pvCalibrateBtn.addEventListener('click', () => {
+		pvCalibrateBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			pvPicker.addClass('hidden');
 			const popoutWin = window;
 			new TabletopCalibrationModal(this.app, this, popoutWin, () => {
 				// After calibration, compute and send scale to player views based on current gm rect
@@ -5910,7 +6020,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			});
 			btn.createEl('span', { text: icon });
 			aoeShapeButtons.set(shape, btn);
-			btn.addEventListener('click', () => {
+			btn.addEventListener('click', (e) => {
+				e.stopPropagation();
 				// If there's a last-placed AoE, remove it when selecting any shape
 				if (lastPlacedAoeId && config.aoeEffects) {
 					const idx = config.aoeEffects.findIndex((a: any) => a.id === lastPlacedAoeId);
@@ -5927,6 +6038,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				selectedAoeShape = shape;
 				aoeShapeButtons.forEach((b) => b.removeClass('active'));
 				btn.addClass('active');
+				aoePicker.addClass('hidden');
 			});
 		});
 		
@@ -6505,7 +6617,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let startX = 0;
 		let startY = 0;
 		// Middle mouse button temporary pan state
-		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | null = null;
+		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | null = null;
 		let isTemporaryPan = false;
 		let gridCanvas: HTMLCanvasElement | null = null;
 		let terrainCanvas: HTMLCanvasElement | null = null;
@@ -6644,6 +6756,120 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const dx = px - xx;
 			const dy = py - yy;
 			return Math.sqrt(dx * dx + dy * dy);
+		};
+
+		// Erase all annotations within radius of a point. Returns true if anything was removed.
+		const eraseAtPoint = (px: number, py: number): boolean => {
+			const eraserRadius = 20; // pixels
+			let removed = false;
+
+			// Erase AoE effects near the point
+			if (config.aoeEffects && config.aoeEffects.length > 0) {
+				for (let i = config.aoeEffects.length - 1; i >= 0; i--) {
+					const aoe = config.aoeEffects[i];
+					const dist = Math.sqrt(
+						Math.pow(aoe.origin.x - px, 2) +
+						Math.pow(aoe.origin.y - py, 2)
+					);
+					if (dist < (config.gridSize || 70)) {
+						config.aoeEffects.splice(i, 1);
+						removed = true;
+					}
+				}
+			}
+
+			// Erase highlights at the hovered hex
+			{
+				const hex = pixelToHex(px, py);
+				const highlightIndex = config.highlights.findIndex(
+					(h: any) => h.col === hex.col && h.row === hex.row
+				);
+				if (highlightIndex >= 0) {
+					config.highlights.splice(highlightIndex, 1);
+					removed = true;
+				}
+			}
+
+			// Erase PoI references at the hovered hex
+			if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.poiReferences && config.poiReferences.length > 0) {
+				const hex = pixelToHex(px, py);
+				const poiIndex = config.poiReferences.findIndex(
+					(ref: any) => ref.col === hex.col && ref.row === hex.row
+				);
+				if (poiIndex >= 0) {
+					config.poiReferences.splice(poiIndex, 1);
+					removed = true;
+				}
+			}
+
+			// Erase drawings near the point
+			if (config.drawings.length > 0) {
+				for (let i = config.drawings.length - 1; i >= 0; i--) {
+					const drawing = config.drawings[i];
+					for (const point of drawing.points) {
+						const dist = Math.sqrt(
+							Math.pow(point.x - px, 2) +
+							Math.pow(point.y - py, 2)
+						);
+						if (dist < eraserRadius) {
+							config.drawings.splice(i, 1);
+							removed = true;
+							break;
+						}
+					}
+				}
+			}
+
+			// Erase walls near the point
+			if (config.walls && config.walls.length > 0) {
+				for (let i = config.walls.length - 1; i >= 0; i--) {
+					const wall = config.walls[i];
+					const dist = distanceToLineSegment(
+						px, py,
+						wall.start.x, wall.start.y,
+						wall.end.x, wall.end.y
+					);
+					if (dist < eraserRadius) {
+						config.walls.splice(i, 1);
+						removed = true;
+					}
+				}
+			}
+
+			// Erase light sources near the point
+			if (config.lightSources && config.lightSources.length > 0) {
+				for (let i = config.lightSources.length - 1; i >= 0; i--) {
+					const light = config.lightSources[i];
+					const dist = Math.sqrt(
+						Math.pow(light.x - px, 2) +
+						Math.pow(light.y - py, 2)
+					);
+					if (dist < eraserRadius) {
+						config.lightSources.splice(i, 1);
+						removed = true;
+					}
+				}
+			}
+
+			// Erase markers near the point
+			if (config.markers.length > 0) {
+				for (let i = config.markers.length - 1; i >= 0; i--) {
+					const marker = config.markers[i];
+					const mDef = marker.markerId ? this.markerLibrary.getMarker(marker.markerId) : null;
+					const mRadius = mDef ? getMarkerRadius(mDef) : 15;
+					const dist = Math.sqrt(
+						Math.pow(marker.position.x - px, 2) +
+						Math.pow(marker.position.y - py, 2)
+					);
+					if (dist < mRadius) {
+						config.markers.splice(i, 1);
+						removed = true;
+						refreshVisionSelector();
+					}
+				}
+			}
+
+			return removed;
 		};
 
 			// Helper: Get effective grid size (fixed single grid — no pace scaling)
@@ -7296,6 +7522,48 @@ export default class DndCampaignHubPlugin extends Plugin {
 						ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
 						ctx.fill();
 					});
+				}
+
+				// Draw Magic Wand selection overlay
+				if (activeTool === 'magic-wand' && mwMask && mwMaskW > 0 && mwMaskH > 0) {
+					// Draw a semi-transparent tint over the selected (flood-filled) region
+					const overlayCanvas = document.createElement('canvas');
+					overlayCanvas.width = mwMaskW;
+					overlayCanvas.height = mwMaskH;
+					const oCtx = overlayCanvas.getContext('2d');
+					if (oCtx) {
+						const oData = oCtx.createImageData(mwMaskW, mwMaskH);
+						for (let i = 0; i < mwMask.length; i++) {
+							if (mwMask[i]) {
+								oData.data[i * 4] = 0;       // R
+								oData.data[i * 4 + 1] = 200; // G
+								oData.data[i * 4 + 2] = 100; // B
+								oData.data[i * 4 + 3] = 60;  // A — subtle tint
+							}
+						}
+						oCtx.putImageData(oData, 0, 0);
+						ctx.globalAlpha = 0.6;
+						ctx.drawImage(overlayCanvas, 0, 0);
+						ctx.globalAlpha = 1.0;
+					}
+				}
+
+				// Draw Eraser brush cursor
+				if (activeTool === 'eraser' && eraserCursorPos) {
+					const eraserRadius = 20;
+					ctx.save();
+					ctx.strokeStyle = isErasing ? 'rgba(255, 80, 80, 0.9)' : 'rgba(255, 255, 255, 0.7)';
+					ctx.lineWidth = 2;
+					ctx.setLineDash([4, 4]);
+					ctx.beginPath();
+					ctx.arc(eraserCursorPos.x, eraserCursorPos.y, eraserRadius, 0, Math.PI * 2);
+					ctx.stroke();
+					if (isErasing) {
+						ctx.fillStyle = 'rgba(255, 80, 80, 0.15)';
+						ctx.fill();
+					}
+					ctx.setLineDash([]);
+					ctx.restore();
 				}
 
 				// Draw Dynamic Lighting (only on Background layer)
@@ -8877,11 +9145,24 @@ export default class DndCampaignHubPlugin extends Plugin {
 					fogDragEnd = null;
 					fogPolygonPoints = [];
 				}
+
+				// Cancel eraser brush when switching away
+				if (tool !== 'eraser') {
+					isErasing = false;
+					eraserCursorPos = null;
+					eraserHadRemoval = false;
+				}
 				
 				// Cancel wall drawing when switching away
-				if (tool !== 'walls') {
+				if (tool !== 'walls' && tool !== 'magic-wand') {
 					wallPoints = [];
 					wallPreviewPos = null;
+				}
+
+				// Clear magic wand overlay when switching away
+				if (tool !== 'magic-wand') {
+					mwMask = null;
+					mwImageDataCache = null;
 				}
 				
 				// Show/hide color picker based on tool (with animation)
@@ -8894,7 +9175,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 				// Show/hide Fog shape picker
 				fogPicker.toggleClass('hidden', tool !== 'fog');
 				// Show/hide Walls type picker
-				wallsPicker.toggleClass('hidden', tool !== 'walls');
+				wallsPicker.toggleClass('hidden', tool !== 'walls' && tool !== 'magic-wand');
+				// Show/hide Magic Wand settings inside walls picker
+				mwSettingsDiv.toggleClass('hidden', tool !== 'magic-wand');
 				// Show/hide Lights picker
 				lightsPicker.toggleClass('hidden', tool !== 'lights');
 				// Show/hide Elevation Paint picker
@@ -8905,6 +9188,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 				terrainPicker.toggleClass('hidden', tool !== 'terrain-paint');
 				// Show/hide Climate picker
 				climatePicker.toggleClass('hidden', tool !== 'climate-paint');
+
+
 				
 				if (tool === 'pan') {
 					panBtn.addClass('active');
@@ -8936,6 +9221,11 @@ export default class DndCampaignHubPlugin extends Plugin {
           viewport.style.cursor = 'crosshair';
           viewport.focus(); // Focus viewport so keyboard events work
           new Notice('Player View Mode: Drag to position, Q/E or [/] to rotate 90°', 4000);
+        } else if (tool === 'eraser') {
+					eraserBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+					eraserCursorPos = null;
+					new Notice('Eraser: Click or drag to erase annotations', 3000);
         } else if (tool === 'fog') {
 					fogBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
@@ -8944,6 +9234,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'crosshair';
 					viewport.focus();
 					new Notice('Walls Mode: Click to add points, Double-click to finish, Escape to cancel', 4000);
+				} else if (tool === 'magic-wand') {
+					wallsBtn.addClass('active');
+					magicWandBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+					viewport.focus();
+					new Notice('Magic Wand: Click on dark areas to auto-detect and create walls. Adjust threshold/tolerance in the picker.', 5000);
 				} else if (tool === 'lights') {
 					lightsBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
@@ -9050,7 +9346,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 			});
 			aoeBtn.addEventListener('click', () => {
 				console.log('AoE button clicked');
-				setActiveTool('aoe');
+				if (activeTool === 'aoe') {
+					aoePicker.toggleClass('hidden', !aoePicker.hasClass('hidden'));
+				} else {
+					setActiveTool('aoe');
+				}
 			});
 			eraserBtn.addEventListener('click', () => {
 				console.log('Eraser button clicked');
@@ -9058,15 +9358,28 @@ export default class DndCampaignHubPlugin extends Plugin {
 			});
 			fogBtn.addEventListener('click', () => {
 				console.log('Fog button clicked');
-				setActiveTool('fog');
+				if (activeTool === 'fog') {
+					fogPicker.toggleClass('hidden', !fogPicker.hasClass('hidden'));
+				} else {
+					setActiveTool('fog');
+				}
 			});
 			wallsBtn.addEventListener('click', () => {
 				console.log('Walls button clicked');
-				setActiveTool('walls');
+				if (activeTool === 'walls') {
+					// Toggle picker visibility if walls tool is already active
+					wallsPicker.toggleClass('hidden', !wallsPicker.hasClass('hidden'));
+				} else {
+					setActiveTool('walls');
+				}
 			});
 			lightsBtn.addEventListener('click', () => {
 				console.log('Lights button clicked');
-				setActiveTool('lights');
+				if (activeTool === 'lights') {
+					lightsPicker.toggleClass('hidden', !lightsPicker.hasClass('hidden'));
+				} else {
+					setActiveTool('lights');
+				}
 			});
 			moveGridBtn.addEventListener('click', () => {
 				console.log('Move Grid button clicked');
@@ -9107,7 +9420,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 		viewBtn.addEventListener('click', () => {
 			console.log('Player View button clicked');
-			setActiveTool('player-view');
+			if (activeTool === 'player-view') {
+				pvPicker.toggleClass('hidden', !pvPicker.hasClass('hidden'));
+			} else {
+				setActiveTool('player-view');
+			}
 		});
 			// Hide move-grid if no grid
 			if (!hasGrid) moveGridBtn.addClass('hidden');
@@ -9653,145 +9970,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 						new Notice('AoE effect placed (click again to remove)');
 					}
 				} else if (activeTool === 'eraser') {
-					console.log('Eraser tool: looking for annotations to remove');
-					let removed = false;
-
-					// Try to erase an AoE effect near the click point
-					if (!removed && config.aoeEffects && config.aoeEffects.length > 0) {
-						for (let i = config.aoeEffects.length - 1; i >= 0; i--) {
-							const aoe = config.aoeEffects[i];
-							// Check if click is near the origin
-							const dist = Math.sqrt(
-								Math.pow(aoe.origin.x - mapPos.x, 2) +
-								Math.pow(aoe.origin.y - mapPos.y, 2)
-							);
-							if (dist < (config.gridSize || 70)) {
-								saveToHistory();
-								config.aoeEffects.splice(i, 1);
-								console.log('Removed AoE effect');
-								removed = true;
-								break;
-							}
-						}
-					}
-					
-					// Try to erase a highlight at the clicked hex
-					if (!removed) {
-						const hex = pixelToHex(mapPos.x, mapPos.y);
-						const highlightIndex = config.highlights.findIndex(
-							(h: any) => h.col === hex.col && h.row === hex.row
-						);
-						if (highlightIndex >= 0) {
-							saveToHistory();
-							config.highlights.splice(highlightIndex, 1);
-							console.log('Removed highlight at', hex);
-							removed = true;
-						}
-					}
-					
-					// Try to erase a PoI reference at the clicked hex
-					if (!removed && (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.poiReferences && config.poiReferences.length > 0) {
-						const hex = pixelToHex(mapPos.x, mapPos.y);
-						const poiIndex = config.poiReferences.findIndex(
-							(ref: any) => ref.col === hex.col && ref.row === hex.row
-						);
-						if (poiIndex >= 0) {
-							saveToHistory();
-							const poiName = config.poiReferences[poiIndex].poiFile.split('/').pop()?.replace('.md', '') || 'PoI';
-							config.poiReferences.splice(poiIndex, 1);
-							console.log('Removed PoI reference at', hex);
-							redrawAnnotations();
-							this.saveMapAnnotations(config, el);
-							updateGridToolsVisibility();
-							new Notice(hLoc(hcLang, 'poiRemoved', { name: poiName }));
-							return; // Skip generic notice
-						}
-					}
-					
-					// Try to erase a drawing near the click point
-					if (!removed && config.drawings.length > 0) {
-						const eraserRadius = 20; // pixels
-						for (let i = config.drawings.length - 1; i >= 0; i--) {
-							const drawing = config.drawings[i];
-							for (const point of drawing.points) {
-								const dist = Math.sqrt(
-									Math.pow(point.x - mapPos.x, 2) + 
-									Math.pow(point.y - mapPos.y, 2)
-								);
-								if (dist < eraserRadius) {
-									config.drawings.splice(i, 1);
-									console.log('Removed drawing');
-									removed = true;
-									break;
-								}
-							}
-							if (removed) break;
-						}
-					}
-					
-					// Try to erase a wall near the click point
-					if (!removed && config.walls && config.walls.length > 0) {
-						const eraserRadius = 20; // pixels
-						for (let i = config.walls.length - 1; i >= 0; i--) {
-							const wall = config.walls[i];
-							// Check distance from click to wall line segment
-							const dist = distanceToLineSegment(
-								mapPos.x, mapPos.y,
-								wall.start.x, wall.start.y,
-								wall.end.x, wall.end.y
-							);
-							if (dist < eraserRadius) {
-								config.walls.splice(i, 1);
-								console.log('Removed wall');
-								removed = true;
-								break;
-							}
-						}
-					}
-					
-					// Try to erase a light source near the click point
-					if (!removed && config.lightSources && config.lightSources.length > 0) {
-						const eraserRadius = 20; // pixels
-						for (let i = config.lightSources.length - 1; i >= 0; i--) {
-							const light = config.lightSources[i];
-							const dist = Math.sqrt(
-								Math.pow(light.x - mapPos.x, 2) +
-								Math.pow(light.y - mapPos.y, 2)
-							);
-							if (dist < eraserRadius) {
-								config.lightSources.splice(i, 1);
-								console.log('Removed light source');
-								removed = true;
-								break;
-							}
-						}
-					}
-					
-					// Try to erase a marker near the click point
-					if (!removed && config.markers.length > 0) {
-						for (let i = config.markers.length - 1; i >= 0; i--) {
-							const marker = config.markers[i];
-							const mDef = marker.markerId ? this.markerLibrary.getMarker(marker.markerId) : null;
-							const mRadius = mDef ? getMarkerRadius(mDef) : 15;
-							const dist = Math.sqrt(
-								Math.pow(marker.position.x - mapPos.x, 2) + 
-								Math.pow(marker.position.y - mapPos.y, 2)
-							);
-							if (dist < mRadius) {
-								config.markers.splice(i, 1);
-								console.log('Removed marker');
-								removed = true;
-								refreshVisionSelector();
-								break;
-							}
-						}
-					}
-					
-					if (removed) {
+					// Start brush-style erasing (click + drag)
+					isErasing = true;
+					eraserHadRemoval = false;
+					saveToHistory();
+					const removedHere = eraseAtPoint(mapPos.x, mapPos.y);
+					if (removedHere) {
+						eraserHadRemoval = true;
 						redrawAnnotations();
-						this.saveMapAnnotations(config, el);
-						updateGridToolsVisibility();
-						new Notice('Annotation removed');
 					}
 				} else if (activeTool === 'fog') {
 					if (selectedFogShape === 'polygon') {
@@ -9808,6 +9994,46 @@ export default class DndCampaignHubPlugin extends Plugin {
 					wallPoints.push({ x: mapPos.x, y: mapPos.y });
 					wallPreviewPos = { x: mapPos.x, y: mapPos.y };
 					redrawAnnotations();
+				} else if (activeTool === 'magic-wand') {
+					// Magic Wand: flood-fill from click, trace boundary, generate walls
+					try {
+						// Cache image data on first use (expensive to read every click)
+						if (!mwImageDataCache) {
+							const offCanvas = document.createElement('canvas');
+							offCanvas.width = img.naturalWidth;
+							offCanvas.height = img.naturalHeight;
+							const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+							if (!offCtx) throw new Error('No 2D context');
+							offCtx.drawImage(img as HTMLImageElement, 0, 0);
+							mwImageDataCache = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height);
+						}
+
+						const result = magicWandDetect(
+							mwImageDataCache,
+							mapPos.x, mapPos.y,
+							mwThreshold, mwTolerance, mwSimplifyEps, mwMinSegLen, mwInvert,
+						);
+
+						// Store mask for overlay preview
+						mwMask = result.mask;
+						mwMaskW = mwImageDataCache.width;
+						mwMaskH = mwImageDataCache.height;
+
+						if (result.walls.length > 0) {
+							saveToHistory();
+							if (!config.walls) config.walls = [];
+							config.walls.push(...result.walls);
+							this.saveMapAnnotations(config, el);
+							if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+							new Notice(`🪄 ${result.walls.length} wall segments created`);
+						} else {
+							new Notice('No walls detected — try clicking a dark area or adjusting threshold');
+						}
+						redrawAnnotations();
+					} catch (err) {
+						console.error('[MagicWand] Detection failed:', err);
+						new Notice('Magic wand detection failed — see console for details');
+					}
 				} else if (activeTool === 'lights') {
 					// Place light source at clicked position
 					if (selectedLightSource) {
@@ -10330,6 +10556,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 							}
 						}
 					}
+				} else if (activeTool === 'eraser' && isErasing) {
+					// Brush-style eraser: continuously delete annotations under cursor while dragging
+					eraserCursorPos = { x: mapPos.x, y: mapPos.y };
+					const removedHere = eraseAtPoint(mapPos.x, mapPos.y);
+					if (removedHere) eraserHadRemoval = true;
+					redrawAnnotations();
+				} else if (activeTool === 'eraser' && !isErasing) {
+					// Show eraser cursor preview even when not dragging
+					eraserCursorPos = { x: mapPos.x, y: mapPos.y };
+					redrawAnnotations();
 				} else if (activeTool === 'ruler' && rulerStart && !rulerComplete) {
 					// Show temporary ruler line (preview)
 					rulerEnd = { x: mapPos.x, y: mapPos.y };
@@ -10711,6 +10947,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 					}
 					currentPath = [];
 					redrawAnnotations();
+				} else if (activeTool === 'eraser' && isErasing) {
+					// Finalize brush eraser drag
+					isErasing = false;
+					if (eraserHadRemoval) {
+						this.saveMapAnnotations(config, el);
+						updateGridToolsVisibility();
+						new Notice('Annotations erased');
+					}
+					eraserHadRemoval = false;
 				}
 			});
 
@@ -10742,6 +10987,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (activeTool === 'draw' && isDrawing) {
 					isDrawing = false;
 					currentPath = [];
+					redrawAnnotations();
+				} else if (activeTool === 'eraser' && isErasing) {
+					// Finalize eraser on mouseleave
+					isErasing = false;
+					eraserCursorPos = null;
+					if (eraserHadRemoval) {
+						this.saveMapAnnotations(config, el);
+						updateGridToolsVisibility();
+					}
+					eraserHadRemoval = false;
 					redrawAnnotations();
 				} else if (activeTool === 'ruler') {
 					// Clear preview line on mouseup if ruler not complete
@@ -13219,6 +13474,76 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 		} catch (err) {
 			console.error('[Plugin] Error querying templates:', err);
 			return results;
+		}
+	}
+
+	/**
+	 * One-time migration: find existing annotation JSONs with isTemplate === true
+	 * that don't yet have a corresponding note in z_BattlemapTemplates/,
+	 * and create one so the GM can open and configure them.
+	 */
+	private async migrateExistingTemplatesToNotes(): Promise<void> {
+		try {
+			const annotationDir = `${this.app.vault.configDir}/plugins/${this.manifest.id}/map-annotations`;
+			if (!(await this.app.vault.adapter.exists(annotationDir))) return;
+
+			const listing = await this.app.vault.adapter.list(annotationDir);
+			const templateMaps: Array<{ mapId: string; name: string }> = [];
+
+			for (const filePath of listing.files) {
+				if (!filePath.endsWith('.json')) continue;
+				try {
+					const raw = await this.app.vault.adapter.read(filePath);
+					const data = JSON.parse(raw);
+					if (data.isTemplate && data.mapId) {
+						templateMaps.push({ mapId: data.mapId, name: data.name || 'Template' });
+					}
+				} catch { /* skip */ }
+			}
+
+			if (templateMaps.length === 0) return;
+
+			const folder = BATTLEMAP_TEMPLATE_FOLDER;
+			if (!(await this.app.vault.adapter.exists(folder))) {
+				await this.app.vault.createFolder(folder);
+			}
+
+			// Collect existing template notes' mapIds
+			const existingMapIds = new Set<string>();
+			const mdFiles = this.app.vault.getMarkdownFiles().filter(f =>
+				f.path.startsWith(folder + '/')
+			);
+			for (const file of mdFiles) {
+				try {
+					const content = await this.app.vault.read(file);
+					const match = content.match(/"mapId"\s*:\s*"([^"]+)"/);
+					if (match && match[1]) existingMapIds.add(match[1]);
+				} catch { /* skip */ }
+			}
+
+			let migrated = 0;
+			for (const tpl of templateMaps) {
+				if (existingMapIds.has(tpl.mapId)) continue;
+
+				const safeName = tpl.name.replace(/[\\/:*?"<>|]/g, '_').trim() || 'Template';
+				let notePath = `${folder}/${safeName}.md`;
+				let counter = 1;
+				while (await this.app.vault.adapter.exists(notePath)) {
+					notePath = `${folder}/${safeName} (${counter}).md`;
+					counter++;
+				}
+
+				const codeBlock = `\`\`\`dnd-map\n${JSON.stringify({ mapId: tpl.mapId }, null, 2)}\n\`\`\``;
+				const content = `---\ntags:\n  - battlemap-template\ntemplate_name: "${tpl.name}"\n---\n# ${tpl.name}\n\n${codeBlock}\n`;
+				await this.app.vault.create(notePath, content);
+				migrated++;
+			}
+
+			if (migrated > 0) {
+				new Notice(`🏗️ Migrated ${migrated} battlemap template${migrated > 1 ? 's' : ''} to ${folder}/`);
+			}
+		} catch (err) {
+			console.warn('[Plugin] Template migration error:', err);
 		}
 	}
 

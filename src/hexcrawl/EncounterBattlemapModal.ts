@@ -114,6 +114,8 @@ export class EncounterBattlemapModal extends Modal {
   private showTemplates = true;
   private templatesLoading = true;
   private currentHexClimate: ClimateType | null = null;
+  /** Show all templates (unfiltered) instead of only terrain/climate matches */
+  private showAllTemplates = false;
 
   constructor(
     app: App,
@@ -210,103 +212,91 @@ export class EncounterBattlemapModal extends Modal {
       });
     }
 
-    // ── Image selector ──────────────────────────────────
-    contentEl.createEl('h4', { text: hLoc(L, 'selectMapImage') });
-    const imageRow = contentEl.createDiv({ cls: 'ebm-image-row' });
+    // ── Template Selection (templates only) ────────────
+    const templateSection = contentEl.createDiv({ cls: 'ebm-template-section' });
+    templateSection.createEl('h4', { text: `🏗️ ${hLoc(L, 'suggestedTemplates')}` });
 
-    if (this.selectedFile) {
-      const preview = imageRow.createDiv({ cls: 'ebm-image-preview' });
-      preview.createEl('img', {
-        attr: { src: this.app.vault.getResourcePath(this.selectedFile) },
-      });
-      const info = imageRow.createDiv({ cls: 'ebm-image-info' });
-      info.createEl('div', { text: this.selectedFile.name, cls: 'ebm-image-name' });
-      info.createEl('div', { text: this.selectedFile.parent?.path || '/', cls: 'ebm-image-path' });
-      const changeBtn = info.createEl('button', {
-        text: hLoc(L, 'changeImage'),
-        cls: 'ebm-btn secondary',
-      });
-      changeBtn.addEventListener('click', () => this.selectImage());
-    } else {
-      const selectBtn = imageRow.createEl('button', {
-        text: `🖼️ ${hLoc(L, 'selectMapImage')}`,
-        cls: 'ebm-btn primary ebm-select-image-btn',
-      });
-      selectBtn.addEventListener('click', () => this.selectImage());
-    }
-
-    // ── Template Suggestions ────────────────────────────
-    if (this.showTemplates) {
-      const templateSection = contentEl.createDiv({ cls: 'ebm-template-section' });
-      templateSection.createEl('h4', { text: `🏗️ ${hLoc(L, 'suggestedTemplates')}` });
-
-      if (this.templatesLoading) {
-        templateSection.createDiv({ text: '⌛ Loading templates…', cls: 'ebm-template-loading' });
-      } else if (this.suggestedTemplates.length === 0) {
-        const emptyDiv = templateSection.createDiv({ cls: 'ebm-template-empty' });
-        const terrain = getTerrainDefinition(this.terrainType);
+    if (this.templatesLoading) {
+      templateSection.createDiv({ text: '⌛ Loading templates…', cls: 'ebm-template-loading' });
+    } else if (this.suggestedTemplates.length === 0) {
+      const emptyDiv = templateSection.createDiv({ cls: 'ebm-template-empty' });
+      const terrain = getTerrainDefinition(this.terrainType);
+      if (this.showAllTemplates) {
+        emptyDiv.createSpan({ text: 'No battlemap templates found. Create one with the "Create Battlemap Template" command first.' });
+      } else {
         emptyDiv.createSpan({ text: `No templates match "${terrain.name}". ` });
-        const manualLink = emptyDiv.createEl('a', { text: 'Select image manually ↓', href: '#' });
-        manualLink.addEventListener('click', (e) => {
+        const showAllLink = emptyDiv.createEl('a', { text: 'Show all templates', href: '#' });
+        showAllLink.addEventListener('click', (e) => {
           e.preventDefault();
-          this.showTemplates = false;
+          this.showAllTemplates = true;
+          this.loadSuggestedTemplates();
+        });
+      }
+    } else {
+      const templateGrid = templateSection.createDiv({ cls: 'ebm-template-grid' });
+
+      for (const template of this.suggestedTemplates.slice(0, 12)) {
+        const isSelected = this.selectedTemplate === template.mapId;
+        const card = templateGrid.createDiv({
+          cls: `ebm-template-card ${isSelected ? 'selected' : ''}`,
+        });
+
+        // Thumbnail
+        const thumb = card.createDiv({ cls: 'ebm-template-thumb' });
+        const imgFile = this.app.vault.getAbstractFileByPath(template.imageFile);
+        if (imgFile instanceof TFile) {
+          const img = thumb.createEl('img');
+          img.src = this.app.vault.getResourcePath(imgFile);
+        } else {
+          thumb.createSpan({ text: '🗺️' });
+        }
+
+        // Info
+        const info = card.createDiv({ cls: 'ebm-template-info' });
+        info.createEl('div', { text: template.name, cls: 'ebm-template-name' });
+
+        const tagPreview = info.createDiv({ cls: 'ebm-template-tags' });
+        const tagIcons = [
+          ...template.tags.terrain.slice(0, 2),
+          ...template.tags.location.slice(0, 1),
+        ].join(', ');
+        tagPreview.setText(tagIcons || 'No tags');
+
+        // Match score indicator
+        if (template.matchScore > 2) {
+          card.createDiv({ text: '⭐ Best Match', cls: 'ebm-template-match' });
+        }
+
+        card.addEventListener('click', () => {
+          this.selectedTemplate = template.mapId;
           this.render();
         });
-      } else {
-        const templateGrid = templateSection.createDiv({ cls: 'ebm-template-grid' });
-
-        for (const template of this.suggestedTemplates.slice(0, 6)) {
-          const isSelected = this.selectedTemplate === template.mapId;
-          const card = templateGrid.createDiv({
-            cls: `ebm-template-card ${isSelected ? 'selected' : ''}`,
-          });
-
-          // Thumbnail
-          const thumb = card.createDiv({ cls: 'ebm-template-thumb' });
-          const imgFile = this.app.vault.getAbstractFileByPath(template.imageFile);
-          if (imgFile instanceof TFile) {
-            const img = thumb.createEl('img');
-            img.src = this.app.vault.getResourcePath(imgFile);
-          } else {
-            thumb.createSpan({ text: '🗺️' });
-          }
-
-          // Info
-          const info = card.createDiv({ cls: 'ebm-template-info' });
-          info.createEl('div', { text: template.name, cls: 'ebm-template-name' });
-
-          const tagPreview = info.createDiv({ cls: 'ebm-template-tags' });
-          const tagIcons = [
-            ...template.tags.terrain.slice(0, 2),
-            ...template.tags.location.slice(0, 1),
-          ].join(', ');
-          tagPreview.setText(tagIcons || 'No tags');
-
-          // Match score indicator
-          if (template.matchScore > 2) {
-            card.createDiv({ text: '⭐ Best Match', cls: 'ebm-template-match' });
-          }
-
-          card.addEventListener('click', () => {
-            this.selectedTemplate = template.mapId;
-            this.selectedFile = null;
-            this.render();
-          });
-        }
       }
 
-      // Toggle to manual mode
-      if (this.suggestedTemplates.length > 0) {
-        const orDiv = templateSection.createDiv({ cls: 'ebm-or-divider' });
-        orDiv.setText('— or select an image manually —');
-        orDiv.style.textAlign = 'center';
-        orDiv.style.color = 'var(--text-muted)';
-        orDiv.style.margin = '12px 0';
-        orDiv.style.cursor = 'pointer';
-        orDiv.addEventListener('click', () => {
-          this.showTemplates = false;
-          this.selectedTemplate = null;
-          this.render();
+      // Show all / show filtered toggle
+      if (!this.showAllTemplates) {
+        const showAllDiv = templateSection.createDiv({ cls: 'ebm-show-all' });
+        showAllDiv.style.textAlign = 'center';
+        showAllDiv.style.color = 'var(--text-muted)';
+        showAllDiv.style.margin = '8px 0';
+        showAllDiv.style.cursor = 'pointer';
+        showAllDiv.style.fontSize = '12px';
+        showAllDiv.setText('Show all templates →');
+        showAllDiv.addEventListener('click', () => {
+          this.showAllTemplates = true;
+          this.loadSuggestedTemplates();
+        });
+      } else {
+        const showFilteredDiv = templateSection.createDiv({ cls: 'ebm-show-filtered' });
+        showFilteredDiv.style.textAlign = 'center';
+        showFilteredDiv.style.color = 'var(--text-muted)';
+        showFilteredDiv.style.margin = '8px 0';
+        showFilteredDiv.style.cursor = 'pointer';
+        showFilteredDiv.style.fontSize = '12px';
+        showFilteredDiv.setText('← Show only matching templates');
+        showFilteredDiv.addEventListener('click', () => {
+          this.showAllTemplates = false;
+          this.loadSuggestedTemplates();
         });
       }
     }
@@ -446,7 +436,7 @@ export class EncounterBattlemapModal extends Modal {
   // ── Create the battlemap ───────────────────────────────────────────
 
   private async createBattlemap() {
-    if (!this.selectedTemplate && !this.selectedFile) {
+    if (!this.selectedTemplate) {
       new Notice(hLoc(this.lang, 'selectImageFirst'));
       return;
     }
@@ -458,65 +448,47 @@ export class EncounterBattlemapModal extends Modal {
     try {
       let fullConfig: any;
 
-      if (this.selectedTemplate) {
-        // ── Template-based creation ─────────────────────
-        const templateData = await this.plugin.loadMapAnnotations(this.selectedTemplate);
-        const mapManager = this.plugin.mapManager;
-        const newId = mapManager.generateMapId();
+      // ── Template-based creation (always) ──────────────
+      const templateData = await this.plugin.loadMapAnnotations(this.selectedTemplate);
+      const mapManager = this.plugin.mapManager;
+      const newId = mapManager.generateMapId();
 
-        fullConfig = {
-          mapId: newId,
-          name: this.mapName,
-          imageFile: templateData.imageFile,
-          isVideo: templateData.isVideo || false,
-          type: 'battlemap',
-          dimensions: templateData.dimensions,
-          gridType: templateData.gridType || this.gridType,
-          gridSize: templateData.gridSize || this.gridSize,
-          scale: templateData.scale || { value: this.scaleValue, unit: this.scaleUnit },
-          // Carry over walls, lights, fog from template
-          walls: templateData.walls || [],
-          lightSources: templateData.lightSources || [],
-          fogOfWar: templateData.fogOfWar || { enabled: false, regions: [] },
-          drawings: templateData.drawings || [],
-          highlights: [],
-          markers: [],
-          // NOT a template — it's an active encounter map
-          isTemplate: false,
-          templateTags: undefined,
-          linkedEncounter: '',
-        };
-      } else {
-        // ── Manual image selection (existing logic) ─────
-        const mapManager = this.plugin.mapManager;
-        const mapData = await mapManager.createMap(
-          this.mapName,
-          this.selectedFile!.path,
-          'battlemap',
-          this.gridType,
-          this.gridSize,
-          this.scaleValue,
-          this.scaleUnit,
-        );
+      // Deep-copy ALL annotation data from the template
+      fullConfig = {
+        mapId: newId,
+        name: this.mapName,
+        imageFile: templateData.imageFile,
+        isVideo: templateData.isVideo || false,
+        type: 'battlemap',
+        dimensions: templateData.dimensions,
+        gridType: templateData.gridType || this.gridType,
+        gridSize: templateData.gridSize || this.gridSize,
+        gridOffsetX: templateData.gridOffsetX || 0,
+        gridOffsetY: templateData.gridOffsetY || 0,
+        gridSizeW: templateData.gridSizeW || undefined,
+        gridSizeH: templateData.gridSizeH || undefined,
+        gridVisible: templateData.gridVisible !== undefined ? templateData.gridVisible : true,
+        scale: templateData.scale || { value: this.scaleValue, unit: this.scaleUnit },
+        // Structural annotations – FULLY COPIED from template
+        walls: JSON.parse(JSON.stringify(templateData.walls || [])),
+        lightSources: JSON.parse(JSON.stringify(templateData.lightSources || [])),
+        fogOfWar: JSON.parse(JSON.stringify(templateData.fogOfWar || { enabled: false, regions: [] })),
+        drawings: JSON.parse(JSON.stringify(templateData.drawings || [])),
+        tileElevations: JSON.parse(JSON.stringify(templateData.tileElevations || {})),
+        tunnels: JSON.parse(JSON.stringify(templateData.tunnels || [])),
+        // Markers (furniture, traps, etc.) – FULLY COPIED from template
+        markers: JSON.parse(JSON.stringify(templateData.markers || [])),
+        highlights: [],
+        // NOT a template — it's an active encounter map
+        isTemplate: false,
+        templateTags: undefined,
+        linkedEncounter: '',
+        activeLayer: 'Player',
+      };
 
-        fullConfig = {
-          mapId: mapData.id,
-          name: mapData.name,
-          imageFile: mapData.imageFile,
-          isVideo: mapData.isVideo || false,
-          type: mapData.type,
-          dimensions: mapData.dimensions,
-          gridType: mapData.gridType,
-          gridSize: mapData.gridSize,
-          scale: mapData.scale,
-          highlights: [],
-          markers: [],
-          drawings: [],
-          walls: [],
-          lightSources: [],
-          fogOfWar: { enabled: false, regions: [] },
-          linkedEncounter: '',
-        };
+      // Re-generate marker instance IDs so they're unique
+      for (const marker of fullConfig.markers) {
+        marker.id = `marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       }
 
       // 2. Create marker definitions & references for creatures
@@ -528,8 +500,8 @@ export class EncounterBattlemapModal extends Modal {
         markerRefs.push(...partyRefs);
       }
 
-      // 3. Save map annotations with markers
-      fullConfig.markers = markerRefs;
+      // 3. Append creature/party markers to template markers
+      fullConfig.markers = [...fullConfig.markers, ...markerRefs];
       await this.plugin.saveMapAnnotations(fullConfig, document.createElement('div'));
 
       // 4. Create encounter note in z_Encounters
@@ -807,10 +779,14 @@ export class EncounterBattlemapModal extends Modal {
     this.templatesLoading = true;
 
     try {
-      const templates = await this.plugin.queryMapTemplates({
-        terrain: this.terrainType,
-        climate: this.currentHexClimate || undefined,
-      });
+      const criteria = this.showAllTemplates
+        ? {}
+        : {
+            terrain: this.terrainType,
+            climate: this.currentHexClimate || undefined,
+          };
+
+      const templates = await this.plugin.queryMapTemplates(criteria);
 
       this.suggestedTemplates = templates;
       this.templatesLoading = false;
