@@ -84,6 +84,8 @@ export interface MusicSettings {
   duckingFadeDownMs: number;
   /** Ramp-up time in ms when ducking ends */
   duckingFadeUpMs: number;
+  /** Freesound.org API key for sound search & preview */
+  freesoundApiKey?: string;
 }
 
 /** Default music settings */

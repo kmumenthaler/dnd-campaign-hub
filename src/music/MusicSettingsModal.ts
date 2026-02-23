@@ -4,6 +4,7 @@
 import { App, AbstractInputSuggest, Modal, Notice, Setting, TFile, TFolder } from 'obsidian';
 import type { MusicSettings, Playlist, SoundEffect } from './types';
 import { AUDIO_EXTENSIONS, DEFAULT_SOUNDBOARD_ICONS, isAudioExtension } from './types';
+import { FreesoundSearchModal } from './FreesoundSearchModal';
 
 /** Generate a short unique ID */
 function uid(): string {
@@ -255,6 +256,12 @@ export class MusicSettingsModal extends Modal {
         this.render();
       }).open();
     });
+
+    // Freesound search – download CC sounds as playlist tracks
+    const fsTrackBtn = trackActions.createEl('button', { text: '🔍 Search Freesound', cls: 'music-add-track-btn music-freesound-btn' });
+    fsTrackBtn.addEventListener('click', () => {
+      this.openFreesoundForPlaylist(playlist);
+    });
   }
 
   // ─── Soundboard Tab ───────────────────────────────────────
@@ -278,6 +285,12 @@ export class MusicSettingsModal extends Modal {
     const scanBtn = btnRow.createEl('button', { text: '📂 Scan Folder for SFX', cls: 'music-add-btn music-scan-btn' });
     scanBtn.addEventListener('click', () => {
       this.importSfxFromFolder();
+    });
+
+    // Freesound search – download CC sounds as SFX
+    const fsBtn = btnRow.createEl('button', { text: '🔍 Search Freesound', cls: 'music-add-btn music-freesound-btn' });
+    fsBtn.addEventListener('click', () => {
+      this.openFreesoundForSfx();
     });
 
     if (this.settings.soundEffects.length === 0) {
@@ -476,6 +489,81 @@ export class MusicSettingsModal extends Modal {
           });
       });
 
+    // ─── Freesound Integration ───
+    container.createEl('h4', { text: 'Freesound Integration' });
+
+    new Setting(container)
+      .setName('Freesound API Key')
+      .setDesc('Get a free key at freesound.org/apiv2/apply')
+      .addText(text => {
+        text.setPlaceholder('Enter your API key…')
+          .setValue(this.settings.freesoundApiKey ?? '')
+          .onChange(val => {
+            this.settings.freesoundApiKey = val.trim() || undefined;
+          });
+        text.inputEl.type = 'password';
+        text.inputEl.style.width = '260px';
+      });
+
+  }
+
+  // ─── Freesound Helpers ────────────────────────────────────
+
+  private checkFreesoundKey(): boolean {
+    if (!this.settings.freesoundApiKey) {
+      new Notice('Set a Freesound API Key in the General tab first');
+      return false;
+    }
+    return true;
+  }
+
+  /** Open Freesound search and import downloaded sounds as SFX entries */
+  private openFreesoundForSfx() {
+    if (!this.checkFreesoundKey()) return;
+    new FreesoundSearchModal(
+      this.app,
+      this.settings.freesoundApiKey!,
+      this.settings.audioFolderPath,
+      (paths) => {
+        for (const p of paths) {
+          const baseName = p.split('/').pop()?.replace(/\.[^.]+$/, '') ?? 'Freesound SFX';
+          const { name, icon } = MusicSettingsModal.filenameToSfx(baseName);
+          this.settings.soundEffects.push({
+            id: uid(),
+            name,
+            filePath: p,
+            icon,
+          });
+        }
+        if (paths.length > 0) {
+          new Notice(`Added ${paths.length} sound effect(s) from Freesound`);
+          this.render();
+        }
+      },
+    ).open();
+  }
+
+  /** Open Freesound search and add downloaded tracks to a playlist */
+  private openFreesoundForPlaylist(playlist: Playlist) {
+    if (!this.checkFreesoundKey()) return;
+    new FreesoundSearchModal(
+      this.app,
+      this.settings.freesoundApiKey!,
+      this.settings.audioFolderPath,
+      (paths) => {
+        let added = 0;
+        for (const p of paths) {
+          if (!playlist.trackPaths.includes(p)) {
+            playlist.trackPaths.push(p);
+            added++;
+          }
+        }
+        if (added > 0) {
+          new Notice(`Added ${added} track(s) from Freesound`);
+          this.render();
+        }
+      },
+    ).open();
   }
 
   // ─── Helpers ──────────────────────────────────────────────

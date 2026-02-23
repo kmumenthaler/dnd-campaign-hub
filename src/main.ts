@@ -29,6 +29,7 @@ import { MarkerReference, MarkerDefinition, MarkerType, CREATURE_SIZE_SQUARES, C
 import { MigrationManager, MigrationModal, TEMPLATE_VERSIONS } from "./migration";
 import { MusicPlayer } from "./music/MusicPlayer";
 import { MusicSettingsModal } from "./music/MusicSettingsModal";
+import { FreesoundSearchModal } from "./music/FreesoundSearchModal";
 import { DEFAULT_PLAYBACK_STATE } from "./music/types";
 import type { MusicSettings, SceneMusicConfig, MusicPlaybackState } from "./music/types";
 import { DEFAULT_MUSIC_SETTINGS, AUDIO_EXTENSIONS } from "./music/types";
@@ -3656,6 +3657,24 @@ export default class DndCampaignHubPlugin extends Plugin {
           await this.saveSettings();
           new Notice("Music settings saved");
         }).open();
+      },
+    });
+
+    this.addCommand({
+      id: "search-freesound",
+      name: "🔍 Search Freesound",
+      callback: () => {
+        const key = this.settings.musicSettings.freesoundApiKey;
+        if (!key) {
+          new Notice("Set a Freesound API Key in Music Settings → General first");
+          return;
+        }
+        new FreesoundSearchModal(
+          this.app,
+          key,
+          this.settings.musicSettings.audioFolderPath,
+          (_paths) => { /* standalone mode – no auto-import */ },
+        ).open();
       },
     });
 

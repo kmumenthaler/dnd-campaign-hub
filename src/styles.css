@@ -8656,3 +8656,181 @@
   color: var(--text-normal);
   text-decoration: underline;
 }
+
+/* ─── Freesound Search Modal ─────────────────────────────── */
+
+.freesound-search-modal {
+  width: 680px;
+  max-width: 90vw;
+}
+
+.freesound-search-modal .modal-content {
+  padding: 16px;
+}
+
+.freesound-search-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.freesound-search-input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.freesound-filter-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.freesound-filter-item {
+  border: none;
+  padding: 0;
+}
+
+.freesound-filter-item .setting-item-name {
+  font-size: 12px;
+  min-width: auto;
+}
+
+.freesound-results {
+  max-height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.freesound-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--background-secondary);
+}
+
+.freesound-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.freesound-card-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 350px;
+}
+
+.freesound-card-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.freesound-card-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.freesound-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.freesound-card-bottom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.freesound-card-author {
+  flex-shrink: 0;
+}
+
+.freesound-card-license {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.freesound-card-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.freesound-preview-btn,
+.freesound-download-btn {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.freesound-preview-btn:hover,
+.freesound-download-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.freesound-preview-btn.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.freesound-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.freesound-page-info {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.freesound-loading,
+.freesound-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 24px 0;
+}
+
+.music-freesound-btn {
+  background: var(--background-primary);
+  border: 1px solid var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+.music-freesound-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
