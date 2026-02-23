@@ -8834,3 +8834,78 @@
   background: var(--interactive-accent);
   color: var(--text-on-accent);
 }
+
+/* ─── Scene Snippet Slash Commands (/dnd) ────────────────── */
+
+.dnd-snippet-suggestion {
+  padding: 4px 8px !important;
+}
+
+.dnd-snippet-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dnd-snippet-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  width: 24px;
+  text-align: center;
+}
+
+.dnd-snippet-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.dnd-snippet-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+.dnd-snippet-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dnd-snippet-badge {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+.dnd-snippet-badge--narrative {
+  background: #4a90d9;
+  color: #fff;
+}
+
+.dnd-snippet-badge--mechanics {
+  background: #e5a100;
+  color: #fff;
+}
+
+.dnd-snippet-badge--combat {
+  background: #d94444;
+  color: #fff;
+}
+
+.dnd-snippet-badge--planning {
+  background: #6b9b37;
+  color: #fff;
+}
+
+.dnd-snippet-badge--reference {
+  background: #8b5cf6;
+  color: #fff;
+}

@@ -36,6 +36,7 @@ import { DEFAULT_MUSIC_SETTINGS, AUDIO_EXTENSIONS } from "./music/types";
 import { MusicPlayerLeafView, MUSIC_PLAYER_VIEW_TYPE } from "./music/MusicPlayerView";
 import { SceneMusicModal, renderSceneMusicBlock, buildSceneMusicCodeblock } from "./music/SceneMusicBlock";
 import { SoundEffectModal, renderSoundEffectBlock, buildSoundEffectCodeblock } from "./music/SoundEffectBlock";
+import { SceneSnippetSuggest } from "./scene/SceneSnippets";
 import { RandomEncounterTableModal } from "./encounter/RandomEncounterTableModal";
 import {
   HexcrawlTracker,
@@ -2803,6 +2804,9 @@ export default class DndCampaignHubPlugin extends Plugin {
         renderEncounterTableBlock(source, el, ctx, this.app, this);
       });
     });
+
+    // Register /dnd slash-command snippets for quick scene authoring
+    this.registerEditorSuggest(new SceneSnippetSuggest(this.app));
 
     console.log("D&D Campaign Hub: Plugin loaded");
 
