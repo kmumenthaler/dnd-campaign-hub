@@ -5108,6 +5108,46 @@
   text-align: center;
 }
 
+/* ─── Music Player Leaf View ───────────────────────────────── */
+
+/* Now Playing status bar */
+.dnd-music-status-bar {
+  font-size: 11px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dnd-music-player-leaf {
+  padding: 12px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.dnd-music-player-leaf .dashboard-section {
+  margin-bottom: 12px;
+}
+
+.dnd-music-player-leaf .music-player-section {
+  padding: 0 !important;
+  border: none;
+  box-shadow: none;
+}
+
+.dnd-music-player-leaf .music-header h3 {
+  font-size: 14px;
+}
+
+.dnd-music-player-leaf .soundboard-grid {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.dnd-music-player-leaf .soundboard-section h3 {
+  font-size: 14px;
+}
+
 /* ─── Music Player ─────────────────────────────────────────── */
 
 .music-player-section {
@@ -5570,6 +5610,27 @@
   color: var(--text-normal);
 }
 
+.music-bg-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.music-bg-toggle-label {
+  font-size: 12px;
+  color: var(--text-normal);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.music-bg-toggle-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .music-delete-btn {
   background: none;
   border: none;
@@ -5596,9 +5657,42 @@
   padding: 3px 6px;
   border-radius: 4px;
   font-size: 12px;
+  transition: background-color 0.15s, opacity 0.15s, border-color 0.15s;
+  border: 1px solid transparent;
 }
 
 .music-track-row:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+/* Drag handle */
+.music-track-drag-handle {
+  cursor: grab;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-muted);
+  opacity: 0.5;
+  user-select: none;
+  flex-shrink: 0;
+  padding: 0 2px;
+  transition: opacity 0.15s;
+}
+
+.music-track-row:hover .music-track-drag-handle {
+  opacity: 1;
+}
+
+.music-track-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Drag states */
+.music-track-row.dragging {
+  opacity: 0.4;
+}
+
+.music-track-row.drag-over {
+  border-color: var(--interactive-accent);
   background-color: var(--background-modifier-hover);
 }
 
@@ -5646,6 +5740,59 @@
   border-color: var(--interactive-accent);
   color: var(--interactive-accent);
   background-color: var(--background-modifier-hover);
+}
+
+/* Track action buttons row */
+.music-track-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.music-track-actions .music-add-track-btn {
+  flex: 1;
+}
+
+/* Playlist button row (new + scan) */
+.music-playlist-btn-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.music-scan-btn {
+  font-size: 12px;
+}
+
+/* Folder picker modal */
+.folder-picker-modal {
+  width: 480px;
+}
+
+.folder-picker-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.folder-picker-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.folder-picker-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.folder-picker-name {
+  font-weight: 500;
+}
+
+.folder-picker-count {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 /* SFX grid in settings */
@@ -5811,6 +5958,23 @@
 .scene-music-block-title {
   font-weight: 600;
   font-size: 14px;
+  flex: 1;
+}
+
+.scene-music-edit-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.4;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.scene-music-edit-btn:hover {
+  opacity: 1;
+  background: var(--background-modifier-hover);
 }
 
 .scene-music-block-body {
@@ -5850,6 +6014,18 @@
 .scene-music-play-btn {
   font-size: 13px;
   padding: 4px 14px;
+  transition: box-shadow 0.3s ease;
+}
+
+/* Pulsing glow while scene music is active */
+@keyframes scene-music-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(var(--interactive-accent-rgb, 72, 54, 153), 0.55); }
+  70% { box-shadow: 0 0 0 8px rgba(var(--interactive-accent-rgb, 72, 54, 153), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--interactive-accent-rgb, 72, 54, 153), 0); }
+}
+
+.scene-music-play-btn.scene-music-playing {
+  animation: scene-music-pulse 1.8s ease-in-out infinite;
 }
 
 .scene-music-autoplay-badge {
@@ -5905,6 +6081,24 @@
   border-radius: 8px;
   padding: 8px 14px;
   margin: 6px 0;
+  position: relative;
+}
+
+.dnd-sfx-edit-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.4;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: auto;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.dnd-sfx-edit-btn:hover {
+  opacity: 1;
+  background: var(--background-modifier-hover);
 }
 
 .dnd-sfx-play-btn {

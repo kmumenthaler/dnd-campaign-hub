@@ -28,6 +28,8 @@ export interface Playlist {
   mood: string;
   /** Vault paths of audio files in order */
   trackPaths: string[];
+  /** If true, this playlist is eligible for the ambient / background layer */
+  isBackgroundSound?: boolean;
 }
 
 /** A soundboard sound effect */
@@ -66,18 +68,22 @@ export interface MusicSettings {
   playlists: Playlist[];
   /** Soundboard buttons */
   soundEffects: SoundEffect[];
-  /** Scene type → mood mapping for auto-play */
-  sceneTypeMoodMap: Record<string, string>;
   /** Default volume 0-100 */
   defaultVolume: number;
   /** Crossfade duration in ms */
   crossfadeDurationMs: number;
   /** Fade in/out duration in ms for play/pause/stop (0 = instant) */
   fadeDurationMs: number;
-  /** Auto-play music when scene changes */
-  autoPlayOnSceneChange: boolean;
   /** Default volume for ambient layer 0-100 */
   ambientVolume: number;
+  /** Whether to duck music/ambient volume during sound effects */
+  duckingEnabled: boolean;
+  /** How much to reduce volume when ducking (percentage, e.g. 50 = reduce by 50%) */
+  duckingAmount: number;
+  /** Ramp-down time in ms when ducking starts */
+  duckingFadeDownMs: number;
+  /** Ramp-up time in ms when ducking ends */
+  duckingFadeUpMs: number;
 }
 
 /** Default music settings */
@@ -85,18 +91,14 @@ export const DEFAULT_MUSIC_SETTINGS: MusicSettings = {
   audioFolderPath: '',
   playlists: [],
   soundEffects: [],
-  sceneTypeMoodMap: {
-    combat: 'combat',
-    social: 'ambient',
-    exploration: 'exploration',
-    puzzle: 'mysterious',
-    montage: 'epic'
-  },
   defaultVolume: 70,
   crossfadeDurationMs: 2000,
   fadeDurationMs: 1500,
-  autoPlayOnSceneChange: true,
-  ambientVolume: 50
+  ambientVolume: 50,
+  duckingEnabled: true,
+  duckingAmount: 50,
+  duckingFadeDownMs: 100,
+  duckingFadeUpMs: 400
 };
 
 /**
@@ -123,6 +125,44 @@ export const DEFAULT_SCENE_MUSIC_CONFIG: SceneMusicConfig = {
   ambientPlaylistId: null,
   ambientTrackPath: null,
   autoPlay: true,
+};
+
+/** Persisted playback state – saved to data.json so volumes/playlists survive reload */
+export interface MusicPlaybackState {
+  /** Primary layer volume 0-100 */
+  primaryVolume: number;
+  /** Ambient layer volume 0-100 */
+  ambientVolume: number;
+  /** Primary layer muted */
+  primaryMuted: boolean;
+  /** Ambient layer muted */
+  ambientMuted: boolean;
+  /** Primary layer loaded playlist ID */
+  primaryPlaylistId: string | null;
+  /** Ambient layer loaded playlist ID */
+  ambientPlaylistId: string | null;
+  /** Primary shuffle */
+  primaryShuffled: boolean;
+  /** Ambient shuffle */
+  ambientShuffled: boolean;
+  /** Primary repeat mode */
+  primaryRepeatMode: RepeatMode;
+  /** Ambient repeat mode */
+  ambientRepeatMode: RepeatMode;
+}
+
+/** Default (empty) playback state */
+export const DEFAULT_PLAYBACK_STATE: MusicPlaybackState = {
+  primaryVolume: 70,
+  ambientVolume: 50,
+  primaryMuted: false,
+  ambientMuted: false,
+  primaryPlaylistId: null,
+  ambientPlaylistId: null,
+  primaryShuffled: false,
+  ambientShuffled: false,
+  primaryRepeatMode: 'playlist',
+  ambientRepeatMode: 'playlist',
 };
 
 /** Default sound effect presets for new installs */

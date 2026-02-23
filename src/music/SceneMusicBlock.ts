@@ -7,7 +7,7 @@
  *  2.  renderSceneMusicBlock – registered as a Markdown code-block processor;
  *                             renders a compact card with a ▶ Play button.
  */
-import { App, Modal, Setting, Notice, MarkdownPostProcessorContext, Editor, TFile } from 'obsidian';
+import { App, Modal, Setting, Notice, MarkdownPostProcessorContext, Editor, TFile, TFolder } from 'obsidian';
 import { MusicPlayer } from './MusicPlayer';
 import type { MusicSettings, Playlist, SceneMusicConfig } from './types';
 import { DEFAULT_SCENE_MUSIC_CONFIG } from './types';
@@ -96,7 +96,7 @@ export class SceneMusicModal extends Modal {
     // ── Ambient layer ──────────────────────────────────────
     contentEl.createEl('h4', { text: '🌊 Ambient Layer' });
 
-    const ambientPlaylists = playlists.filter(p => p.mood === 'ambient');
+    const ambientPlaylists = playlists.filter(p => p.isBackgroundSound);
     new Setting(contentEl)
       .setName('Playlist')
       .setDesc('Select a playlist for the ambient (background) layer')
@@ -172,7 +172,9 @@ export function renderSceneMusicBlock(
   el: HTMLElement,
   ctx: MarkdownPostProcessorContext,
   musicPlayer: MusicPlayer,
-  settings: MusicSettings
+  settings: MusicSettings,
+  onPlayTriggered?: () => void,
+  app?: App
 ) {
   // ── Parse config ────────────────────────────────────────
   let config: SceneMusicConfig;
@@ -191,6 +193,31 @@ export function renderSceneMusicBlock(
   // ── Header ──────────────────────────────────────────────
   const header = container.createEl('div', { cls: 'scene-music-block-header' });
   header.createEl('span', { text: '🎵 Scene Music', cls: 'scene-music-block-title' });
+
+  // Edit button – reopens the SceneMusicModal and writes the updated
+  // config back into the code block.
+  if (app) {
+    const editBtn = header.createEl('button', {
+      text: '✏️',
+      cls: 'scene-music-edit-btn',
+      attr: { 'aria-label': 'Edit scene music' },
+    });
+    editBtn.addEventListener('click', () => {
+      new SceneMusicModal(app, settings, config, async (updated) => {
+        const file = app.vault.getAbstractFileByPath(ctx.sourcePath);
+        if (!(file instanceof TFile)) return;
+        const content = await app.vault.read(file);
+        const oldBlock = '```dnd-music\n' + source.trim() + '\n```';
+        const newBlock = buildSceneMusicCodeblock(updated);
+        if (content.includes(oldBlock)) {
+          await app.vault.modify(file, content.replace(oldBlock, newBlock));
+          new Notice('Scene music block updated');
+        } else {
+          new Notice('Could not locate code block to update');
+        }
+      }).open();
+    });
+  }
 
   // ── Summary rows ────────────────────────────────────────
   const body = container.createEl('div', { cls: 'scene-music-block-body' });
@@ -237,10 +264,12 @@ export function renderSceneMusicBlock(
       playBtn.textContent = '⏹ Stop';
       playBtn.classList.remove('mod-cta');
       playBtn.classList.add('mod-warning');
+      playBtn.classList.add('scene-music-playing');
     } else {
       playBtn.textContent = '▶ Load & Play';
       playBtn.classList.add('mod-cta');
       playBtn.classList.remove('mod-warning');
+      playBtn.classList.remove('scene-music-playing');
     }
   };
 
@@ -257,6 +286,8 @@ export function renderSceneMusicBlock(
       // This scene is active → stop everything
       musicPlayer.stopAll();
     } else {
+      // Ensure the music player leaf is open before loading
+      if (onPlayTriggered) onPlayTriggered();
       // Load & play this scene (stops any previous scene first)
       musicPlayer.loadSceneMusic(config, config.autoPlay);
       new Notice('🎵 Scene music loaded' + (config.autoPlay ? ' & playing' : ''));

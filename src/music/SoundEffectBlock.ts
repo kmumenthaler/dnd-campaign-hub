@@ -8,7 +8,7 @@
  *                              renders a compact card with a ▶ Play button that
  *                              plays the SFX overlaid on any current music.
  */
-import { App, Modal, Setting, Notice, MarkdownPostProcessorContext, Editor, TFile, TFolder } from 'obsidian';
+import { App, Modal, Notice, Setting, MarkdownPostProcessorContext, Editor, TFile, TFolder } from 'obsidian';
 import { MusicPlayer } from './MusicPlayer';
 import type { MusicSettings, SoundEffect } from './types';
 import { AUDIO_EXTENSIONS, isAudioExtension } from './types';
@@ -273,9 +273,11 @@ export class SoundEffectModal extends Modal {
 export function renderSoundEffectBlock(
   source: string,
   el: HTMLElement,
-  _ctx: MarkdownPostProcessorContext,
+  ctx: MarkdownPostProcessorContext,
   musicPlayer: MusicPlayer,
   settings: MusicSettings,
+  onPlayTriggered?: () => void,
+  app?: App
 ) {
   // ── Parse config ────────────────────────────────────────
   let config: SoundEffectConfig;
@@ -310,8 +312,34 @@ export function renderSoundEffectBlock(
   const fileName = config.filePath.split('/').pop() || config.filePath;
   info.createEl('span', { text: fileName, cls: 'dnd-sfx-file' });
 
+  // ── Edit button ────────────────────────────────────────
+  if (app) {
+    const editBtn = container.createEl('button', {
+      text: '✏️',
+      cls: 'dnd-sfx-edit-btn',
+      attr: { 'aria-label': 'Edit sound effect' },
+    });
+    editBtn.addEventListener('click', () => {
+      new SoundEffectModal(app, settings, config, async (updated) => {
+        const file = app.vault.getAbstractFileByPath(ctx.sourcePath);
+        if (!(file instanceof TFile)) return;
+        const content = await app.vault.read(file);
+        const oldBlock = '```dnd-sfx\n' + source.trim() + '\n```';
+        const newBlock = buildSoundEffectCodeblock(updated);
+        if (content.includes(oldBlock)) {
+          await app.vault.modify(file, content.replace(oldBlock, newBlock));
+          new Notice('Sound effect block updated');
+        } else {
+          new Notice('Could not locate code block to update');
+        }
+      }).open();
+    });
+  }
+
   // ── Click handler — plays SFX without stopping music ───
   playBtn.addEventListener('click', () => {
+    // Ensure the music player leaf is open
+    if (onPlayTriggered) onPlayTriggered();
     const sfx: SoundEffect = {
       id: 'inline-sfx',
       name: config.name || 'Sound Effect',

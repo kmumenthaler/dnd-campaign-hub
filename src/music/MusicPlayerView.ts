@@ -1,12 +1,98 @@
 /**
- * Music Player UI section rendered inside the Session Run Dashboard.
+ * Music Player UI – standalone leaf view **and** reusable render helpers.
  * Supports dual-layer playback (Primary + Ambient) with independent
  * transport controls, volume, playlist selection, and track lists.
  */
-import { App, Notice, TFile } from 'obsidian';
+import { App, ItemView, Notice, TFile, WorkspaceLeaf } from 'obsidian';
 import { MusicPlayer } from './MusicPlayer';
+import { MusicSettingsModal } from './MusicSettingsModal';
 import { AudioLayer } from './AudioLayer';
 import type { MusicSettings, MusicPlayerState, Track, SoundEffect } from './types';
+
+// ─── View Type Constant ──────────────────────────────────────────
+export const MUSIC_PLAYER_VIEW_TYPE = 'dnd-music-player';
+
+// ─── Standalone Leaf View ────────────────────────────────────────
+
+/**
+ * An ItemView that hosts the full music player + soundboard
+ * in its own sidebar leaf.
+ */
+export class MusicPlayerLeafView extends ItemView {
+  private plugin: any; // DndCampaignHubPlugin (avoid circular import)
+  private cleanup: (() => void) | null = null;
+
+  constructor(leaf: WorkspaceLeaf, plugin: any) {
+    super(leaf);
+    this.plugin = plugin;
+  }
+
+  getViewType(): string {
+    return MUSIC_PLAYER_VIEW_TYPE;
+  }
+
+  getDisplayText(): string {
+    return '🎵 Music Player';
+  }
+
+  getIcon(): string {
+    return 'music';
+  }
+
+  async onOpen() {
+    this.render();
+  }
+
+  render() {
+    const container = this.containerEl.children[1] as HTMLElement;
+    if (!container) return;
+
+    // Teardown previous UI
+    if (this.cleanup) {
+      this.cleanup();
+      this.cleanup = null;
+    }
+    container.empty();
+    container.addClass('dnd-music-player-leaf');
+
+    // Music player controls (primary + ambient layers)
+    this.cleanup = renderMusicPlayer(
+      container,
+      this.app,
+      this.plugin.musicPlayer,
+      this.plugin.settings.musicSettings,
+      () => {
+        // Open settings modal
+        new MusicSettingsModal(
+          this.app,
+          this.plugin.settings.musicSettings,
+          async (updated: MusicSettings) => {
+            this.plugin.settings.musicSettings = updated;
+            this.plugin.musicPlayer.reloadSettings(updated);
+            await this.plugin.saveSettings();
+            new Notice('Music settings saved');
+            this.render();
+          }
+        ).open();
+      }
+    );
+
+    // Soundboard section
+    renderSoundboard(
+      container,
+      this.app,
+      this.plugin.musicPlayer,
+      this.plugin.settings.musicSettings
+    );
+  }
+
+  async onClose() {
+    if (this.cleanup) {
+      this.cleanup();
+      this.cleanup = null;
+    }
+  }
+}
 
 /**
  * Render the full music player section (header + two layers) into the container.
@@ -127,7 +213,7 @@ function renderLayerControls(
 
   // ── Playlist Selector ──────────────────────────────────
   const availablePlaylists = isAmbient
-    ? settings.playlists.filter(p => p.mood === 'ambient')
+    ? settings.playlists.filter(p => p.isBackgroundSound)
     : settings.playlists;
   if (availablePlaylists.length > 0) {
     const playlistRow = layerSection.createEl('div', { cls: 'music-playlist-row' });

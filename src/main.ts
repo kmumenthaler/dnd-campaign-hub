@@ -29,9 +29,10 @@ import { MarkerReference, MarkerDefinition, MarkerType, CREATURE_SIZE_SQUARES, C
 import { MigrationManager, MigrationModal, TEMPLATE_VERSIONS } from "./migration";
 import { MusicPlayer } from "./music/MusicPlayer";
 import { MusicSettingsModal } from "./music/MusicSettingsModal";
-import type { MusicSettings, SceneMusicConfig } from "./music/types";
+import { DEFAULT_PLAYBACK_STATE } from "./music/types";
+import type { MusicSettings, SceneMusicConfig, MusicPlaybackState } from "./music/types";
 import { DEFAULT_MUSIC_SETTINGS, AUDIO_EXTENSIONS } from "./music/types";
-import { renderMusicPlayer, renderSoundboard } from "./music/MusicPlayerView";
+import { MusicPlayerLeafView, MUSIC_PLAYER_VIEW_TYPE } from "./music/MusicPlayerView";
 import { SceneMusicModal, renderSceneMusicBlock, buildSceneMusicCodeblock } from "./music/SceneMusicBlock";
 import { SoundEffectModal, renderSoundEffectBlock, buildSoundEffectCodeblock } from "./music/SoundEffectBlock";
 import { RandomEncounterTableModal } from "./encounter/RandomEncounterTableModal";
@@ -81,6 +82,7 @@ interface DndCampaignHubSettings {
   pluginVersion: string;
   tabletopCalibration: TabletopCalibration | null;
   musicSettings: MusicSettings;
+  musicPlaybackState: MusicPlaybackState;
 }
 
 const DEFAULT_SETTINGS: DndCampaignHubSettings = {
@@ -88,6 +90,7 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   pluginVersion: "0.0.0",
   tabletopCalibration: null,
   musicSettings: { ...DEFAULT_MUSIC_SETTINGS },
+  musicPlaybackState: { ...DEFAULT_PLAYBACK_STATE },
 };
 
 /**
@@ -2690,6 +2693,8 @@ export default class DndCampaignHubPlugin extends Plugin {
   mapManager!: MapManager;
   markerLibrary!: MarkerLibrary;
   musicPlayer!: MusicPlayer;
+  private _musicStatusBarEl: HTMLElement | null = null;
+  private _musicStatusBarCleanup: (() => void) | null = null;
   _playerMapViews: Set<PlayerMapView> = new Set();
   _hexcrawlBridge: HexcrawlBridge | null = null;
 
@@ -2730,6 +2735,12 @@ export default class DndCampaignHubPlugin extends Plugin {
       (leaf) => new HexcrawlView(leaf, this)
     );
 
+    // Register the Music Player View (standalone left sidebar panel)
+    this.registerView(
+      MUSIC_PLAYER_VIEW_TYPE,
+      (leaf) => new MusicPlayerLeafView(leaf, this)
+    );
+
     // Initialize the encounter builder
     this.encounterBuilder = new EncounterBuilder(this.app, this);
 
@@ -2748,6 +2759,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     // Initialize the music player
     this.musicPlayer = new MusicPlayer(this.app, this.settings.musicSettings);
+
+    // Restore persisted playback state (volumes, playlists, etc.)
+    this.restoreMusicPlaybackState();
+
+    // Set up "Now Playing" status bar indicator
+    this.initMusicStatusBar();
 
     // Register markdown code block processor for rendering maps
     this.registerMarkdownCodeBlockProcessor('dnd-map', (source, el, ctx) => {
@@ -2771,12 +2788,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     // Register markdown code block processor for scene music cards
     this.registerMarkdownCodeBlockProcessor('dnd-music', (source, el, ctx) => {
-      renderSceneMusicBlock(source, el, ctx, this.musicPlayer, this.settings.musicSettings);
+      renderSceneMusicBlock(source, el, ctx, this.musicPlayer, this.settings.musicSettings, () => this.ensureMusicPlayerOpen(), this.app);
     });
 
     // Register markdown code block processor for inline sound effect buttons
     this.registerMarkdownCodeBlockProcessor('dnd-sfx', (source, el, ctx) => {
-      renderSoundEffectBlock(source, el, ctx, this.musicPlayer, this.settings.musicSettings);
+      renderSoundEffectBlock(source, el, ctx, this.musicPlayer, this.settings.musicSettings, () => this.ensureMusicPlayerOpen(), this.app);
     });
 
     // Register markdown code block processor for encounter table cards
@@ -3525,6 +3542,14 @@ export default class DndCampaignHubPlugin extends Plugin {
     // ─── Music Player Commands ──────────────────────────────
 
     this.addCommand({
+      id: "open-music-player",
+      name: "🎵 Open Music Player",
+      callback: () => {
+        this.ensureMusicPlayerOpen();
+      },
+    });
+
+    this.addCommand({
       id: "toggle-music-playback",
       name: "Toggle Music Play / Pause",
       callback: () => {
@@ -3587,6 +3612,37 @@ export default class DndCampaignHubPlugin extends Plugin {
             new Notice('Sound effect block inserted');
           }
         ).open();
+      },
+    });
+
+    this.addCommand({
+      id: "music-volume-up",
+      name: "🔊 Volume Up (+10)",
+      callback: () => {
+        const vol = Math.min(100, this.musicPlayer.primary.state.volume + 10);
+        this.musicPlayer.primary.setVolume(vol);
+        new Notice(`🔊 Volume: ${vol}%`);
+      },
+    });
+
+    this.addCommand({
+      id: "music-volume-down",
+      name: "🔉 Volume Down (-10)",
+      callback: () => {
+        const vol = Math.max(0, this.musicPlayer.primary.state.volume - 10);
+        this.musicPlayer.primary.setVolume(vol);
+        new Notice(`🔉 Volume: ${vol}%`);
+      },
+    });
+
+    this.addCommand({
+      id: "toggle-music-mute",
+      name: "🔇 Toggle Mute",
+      callback: () => {
+        this.musicPlayer.primary.toggleMute();
+        this.musicPlayer.ambient.toggleMute();
+        const muted = this.musicPlayer.primary.state.isMuted;
+        new Notice(muted ? '🔇 Muted' : '🔊 Unmuted');
       },
     });
 
@@ -3707,6 +3763,9 @@ export default class DndCampaignHubPlugin extends Plugin {
   }
 
   onunload() {
+    // Persist playback state before shutdown
+    this.saveMusicPlaybackState();
+    if (this._musicStatusBarCleanup) this._musicStatusBarCleanup();
     this.musicPlayer?.destroy();
     // Close all player-view popout windows to prevent orphaned Electron windows
     if (this._playerMapViews) {
@@ -3726,6 +3785,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 				{},
 				DEFAULT_MUSIC_SETTINGS,
 				saved.musicSettings
+			);
+		}
+		// Deep-merge playback state
+		if (saved?.musicPlaybackState) {
+			this.settings.musicPlaybackState = Object.assign(
+				{},
+				DEFAULT_PLAYBACK_STATE,
+				saved.musicPlaybackState
 			);
 		}
 	}
@@ -4762,6 +4829,163 @@ export default class DndCampaignHubPlugin extends Plugin {
 				active: true,
 			});
 			this.app.workspace.revealLeaf(dmScreenLeaf);
+		}
+	}
+
+	/**
+	 * Ensure the standalone Music Player leaf is open in the left sidebar.
+	 * Creates a split below any existing left-sidebar leaf (bottom-left).
+	 * If already open, just reveals it.
+	 */
+	async ensureMusicPlayerOpen(): Promise<void> {
+		const existing = this.app.workspace.getLeavesOfType(MUSIC_PLAYER_VIEW_TYPE);
+		if (existing.length > 0 && existing[0]) {
+			this.app.workspace.revealLeaf(existing[0]);
+			return;
+		}
+
+		// getLeftLeaf(true) creates a new split in the left sidebar
+		const leaf = this.app.workspace.getLeftLeaf(true);
+		if (leaf) {
+			await leaf.setViewState({
+				type: MUSIC_PLAYER_VIEW_TYPE,
+				active: true,
+			});
+			this.app.workspace.revealLeaf(leaf);
+		}
+	}
+
+	// ─── Music: Status Bar ────────────────────────────────────
+
+	/**
+	 * Create a status bar item that shows the currently playing track.
+	 * Clicking it toggles the music player leaf.
+	 */
+	private initMusicStatusBar() {
+		this._musicStatusBarEl = this.addStatusBarItem();
+		this._musicStatusBarEl.addClass('dnd-music-status-bar');
+		this._musicStatusBarEl.setText('');
+		this._musicStatusBarEl.style.cursor = 'pointer';
+		this._musicStatusBarEl.addEventListener('click', () => {
+			const existing = this.app.workspace.getLeavesOfType(MUSIC_PLAYER_VIEW_TYPE);
+			if (existing.length > 0 && existing[0]) {
+				// Already open → close it
+				existing[0].detach();
+			} else {
+				this.ensureMusicPlayerOpen();
+			}
+		});
+
+		// Listen to track & state changes on primary layer
+		const origPrimaryTrackCb = this.musicPlayer.primary.onTrackChange;
+		const origPrimaryStateCb = this.musicPlayer.primary.onStateChange;
+
+		const updateStatusBar = () => {
+			if (!this._musicStatusBarEl) return;
+			const track = this.musicPlayer.primary.getCurrentTrack();
+			const playing = this.musicPlayer.primary.state.isPlaying;
+			if (playing && track) {
+				this._musicStatusBarEl.setText(`🎵 ${track.title}`);
+			} else if (track && !playing) {
+				this._musicStatusBarEl.setText(`⏸ ${track.title}`);
+			} else {
+				this._musicStatusBarEl.setText('');
+			}
+		};
+
+		this.musicPlayer.primary.onTrackChange = (track) => {
+			origPrimaryTrackCb?.(track);
+			updateStatusBar();
+		};
+		this.musicPlayer.primary.onStateChange = (state) => {
+			origPrimaryStateCb?.(state);
+			updateStatusBar();
+			// Debounced persistence save on state changes
+			this.debouncedSaveMusicState();
+		};
+
+		// Also hook ambient layer for persistence
+		const origAmbientStateCb = this.musicPlayer.ambient.onStateChange;
+		this.musicPlayer.ambient.onStateChange = (state) => {
+			origAmbientStateCb?.(state);
+			this.debouncedSaveMusicState();
+		};
+
+		this._musicStatusBarCleanup = () => {
+			this.musicPlayer.primary.onTrackChange = origPrimaryTrackCb;
+			this.musicPlayer.primary.onStateChange = origPrimaryStateCb;
+			this.musicPlayer.ambient.onStateChange = origAmbientStateCb;
+		};
+	}
+
+	// ─── Music: Playback Persistence ──────────────────────────
+
+	private _saveMusicStateTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/** Debounce state saves – don't write data.json on every 500ms progress tick */
+	private debouncedSaveMusicState() {
+		if (this._saveMusicStateTimer) clearTimeout(this._saveMusicStateTimer);
+		this._saveMusicStateTimer = setTimeout(() => {
+			this.saveMusicPlaybackState();
+		}, 2000);
+	}
+
+	/** Snapshot current playback state and persist to data.json */
+	private async saveMusicPlaybackState() {
+		const p = this.musicPlayer.primary.state;
+		const a = this.musicPlayer.ambient.state;
+		this.settings.musicPlaybackState = {
+			primaryVolume: p.volume,
+			ambientVolume: a.volume,
+			primaryMuted: p.isMuted,
+			ambientMuted: a.isMuted,
+			primaryPlaylistId: p.currentPlaylistId,
+			ambientPlaylistId: a.currentPlaylistId,
+			primaryShuffled: p.isShuffled,
+			ambientShuffled: a.isShuffled,
+			primaryRepeatMode: p.repeatMode,
+			ambientRepeatMode: a.repeatMode,
+		};
+		await this.saveSettings();
+	}
+
+	/** Restore volumes, playlists, shuffle/repeat from the persisted state */
+	private restoreMusicPlaybackState() {
+		const s = this.settings.musicPlaybackState;
+		if (!s) return;
+
+		// Restore volumes
+		this.musicPlayer.primary.setVolume(s.primaryVolume ?? 70);
+		this.musicPlayer.ambient.setVolume(s.ambientVolume ?? 50);
+
+		// Restore mute
+		if (s.primaryMuted) this.musicPlayer.primary.toggleMute();
+		if (s.ambientMuted) this.musicPlayer.ambient.toggleMute();
+
+		// Restore shuffle
+		if (s.primaryShuffled) this.musicPlayer.primary.toggleShuffle();
+		if (s.ambientShuffled) this.musicPlayer.ambient.toggleShuffle();
+
+		// Restore repeat mode
+		if (s.primaryRepeatMode) {
+			while (this.musicPlayer.primary.state.repeatMode !== s.primaryRepeatMode) {
+				this.musicPlayer.primary.cycleRepeatMode();
+			}
+		}
+		if (s.ambientRepeatMode) {
+			while (this.musicPlayer.ambient.state.repeatMode !== s.ambientRepeatMode) {
+				this.musicPlayer.ambient.cycleRepeatMode();
+			}
+		}
+
+		// Restore loaded playlists (without auto-playing)
+		if (s.primaryPlaylistId) {
+			const pl = this.settings.musicSettings.playlists.find(p => p.id === s.primaryPlaylistId);
+			if (pl) this.musicPlayer.primary.loadPlaylist(pl);
+		}
+		if (s.ambientPlaylistId) {
+			const pl = this.settings.musicSettings.playlists.find(p => p.id === s.ambientPlaylistId);
+			if (pl) this.musicPlayer.ambient.loadPlaylist(pl);
 		}
 	}
 
@@ -17743,7 +17967,6 @@ class SessionRunDashboardView extends ItemView {
   quickNotesContent: string = "";
   autoSaveInterval: number | null = null;
   timerUpdateInterval: number | null = null;
-  musicCleanup: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -18002,30 +18225,6 @@ class SessionRunDashboardView extends ItemView {
     
     // Dice roller section
     this.renderDiceRoller(controlPanel);
-
-    // Music player section
-    if (this.musicCleanup) {
-      this.musicCleanup();
-      this.musicCleanup = null;
-    }
-    this.musicCleanup = renderMusicPlayer(
-      controlPanel,
-      this.app,
-      this.plugin.musicPlayer,
-      this.plugin.settings.musicSettings,
-      () => {
-        new MusicSettingsModal(this.app, this.plugin.settings.musicSettings, async (updated: MusicSettings) => {
-          this.plugin.settings.musicSettings = updated;
-          this.plugin.musicPlayer.reloadSettings(updated);
-          await this.plugin.saveSettings();
-          new Notice("Music settings saved");
-          this.render();
-        }).open();
-      }
-    );
-
-    // Soundboard section
-    renderSoundboard(controlPanel, this.app, this.plugin.musicPlayer, this.plugin.settings.musicSettings);
 
     // Scene music detection – scan active scene for dnd-music codeblock
     await this.renderSceneMusicDetector(controlPanel);
@@ -18398,6 +18597,7 @@ class SessionRunDashboardView extends ItemView {
         if (this.plugin.musicPlayer.isScenePlaying(config)) {
           this.plugin.musicPlayer.stopAll();
         } else {
+          this.plugin.ensureMusicPlayerOpen();
           this.plugin.musicPlayer.loadSceneMusic(config, config.autoPlay);
           new Notice(`🎵 Loaded scene music for "${sceneName}"`);
         }

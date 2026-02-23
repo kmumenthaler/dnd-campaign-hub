@@ -26,6 +26,10 @@ export class AudioLayer {
 
   /** Fade interval handle */
   private fadeTimer: number | null = null;
+  /** Duck fade interval handle (separate from main fade so they don't conflict) */
+  private duckFadeTimer: number | null = null;
+  /** True while this layer is ducked for a sound effect */
+  private _isDucked: boolean = false;
   /** Progress update interval */
   private progressTimer: ReturnType<typeof setInterval> | null = null;
   /** Flag to prevent re-entrant track switches during a fade-out */
@@ -263,6 +267,67 @@ export class AudioLayer {
       this.audio.volume = this.state.isMuted ? 0 : this.state.volume / 100;
     }
     this.emitStateChange();
+  }
+
+  // ─── Ducking (temporary volume reduction for SFX) ───────────
+
+  /**
+   * Smoothly reduce volume by `amountPct`% over `fadeDownMs`.
+   * E.g. if volume is 80 and amountPct is 50, duck to 40.
+   */
+  duckVolume(amountPct: number, fadeDownMs: number) {
+    if (!this.state.isPlaying || this.state.isMuted) return;
+    this._isDucked = true;
+    const current = this.audio.volume * 100;
+    const target = current * (1 - amountPct / 100);
+    this._duckFadeTo(Math.max(0, target), fadeDownMs);
+  }
+
+  /**
+   * Smoothly restore volume back to normal level over `fadeUpMs`.
+   */
+  unduckVolume(fadeUpMs: number) {
+    if (!this._isDucked) return;
+    this._isDucked = false;
+    const target = this.state.isMuted ? 0 : this.state.volume;
+    this._duckFadeTo(target, fadeUpMs);
+  }
+
+  /** Whether this layer is currently ducked. */
+  get isDucked(): boolean { return this._isDucked; }
+
+  /**
+   * Internal duck-specific fade — uses its own timer so it doesn't
+   * conflict with the main playback fade (play/pause/stop/crossfade).
+   */
+  private _duckFadeTo(targetVol: number, durationMs: number) {
+    // Cancel any previous duck fade
+    if (this.duckFadeTimer !== null) {
+      cancelAnimationFrame(this.duckFadeTimer);
+      this.duckFadeTimer = null;
+    }
+    const startVol = this.audio.volume * 100;
+    const diff = targetVol - startVol;
+    if (Math.abs(diff) < 0.5 || durationMs <= 0) {
+      this.audio.volume = Math.max(0, Math.min(1, targetVol / 100));
+      return;
+    }
+    const startTime = performance.now();
+
+    const tick = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(1, elapsed / durationMs);
+      // Simple ease-out curve
+      const eased = 1 - Math.pow(1 - progress, 2);
+      const vol = startVol + diff * eased;
+      this.audio.volume = Math.max(0, Math.min(1, vol / 100));
+      if (progress < 1) {
+        this.duckFadeTimer = requestAnimationFrame(tick);
+      } else {
+        this.duckFadeTimer = null;
+      }
+    };
+    this.duckFadeTimer = requestAnimationFrame(tick);
   }
 
   // ─── Fade helpers ───────────────────────────────────────────

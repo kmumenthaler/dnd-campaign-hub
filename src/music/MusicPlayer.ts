@@ -20,6 +20,8 @@ export class MusicPlayer {
   private sfxAudios: HTMLAudioElement[] = [];
   /** Max concurrent sound effects */
   private readonly MAX_SFX = 8;
+  /** Count of currently playing SFX (for ducking unduck logic) */
+  private _activeSfxCount: number = 0;
 
   /** Currently active scene music config (null when no scene is loaded) */
   private _activeSceneConfig: SceneMusicConfig | null = null;
@@ -145,16 +147,6 @@ export class MusicPlayer {
   }
 
   /**
-   * Find and play a playlist matching the given mood on the primary layer.
-   */
-  playMood(mood: string) {
-    const pl = this.settings.playlists.find(p => p.mood === mood);
-    if (pl) {
-      this.primary.crossfadeToPlaylist(pl, this.settings.crossfadeDurationMs);
-    }
-  }
-
-  /**
    * Retrieve a playlist from settings by ID.
    */
   getPlaylistById(id: string | null): Playlist | null {
@@ -227,6 +219,7 @@ export class MusicPlayer {
 
   /**
    * Play a sound effect overlaid on current music.
+   * If ducking is enabled, temporarily reduces music/ambient volume.
    */
   playSoundEffect(effect: SoundEffect) {
     const file = this.app.vault.getAbstractFileByPath(effect.filePath);
@@ -247,19 +240,37 @@ export class MusicPlayer {
 
     sfxAudio.src = url;
     sfxAudio.volume = ((effect.volume ?? this.state.volume) / 100) * (this.state.isMuted ? 0 : 1);
+
+    // ── Ducking: reduce music volume while SFX plays ──────
+    const duck = this.settings.duckingEnabled ?? true;
+    if (duck) {
+      const amount = this.settings.duckingAmount ?? 50;
+      const fadeDown = this.settings.duckingFadeDownMs ?? 100;
+      const fadeUp = this.settings.duckingFadeUpMs ?? 400;
+      this._activeSfxCount++;
+
+      // Duck both layers
+      this.primary.duckVolume(amount, fadeDown);
+      this.ambient.duckVolume(amount, fadeDown);
+
+      // Restore when this SFX ends (only if no other SFX are still playing)
+      const onEnd = () => {
+        sfxAudio!.removeEventListener('ended', onEnd);
+        sfxAudio!.removeEventListener('pause', onEnd);
+        this._activeSfxCount = Math.max(0, this._activeSfxCount - 1);
+        if (this._activeSfxCount === 0) {
+          this.primary.unduckVolume(fadeUp);
+          this.ambient.unduckVolume(fadeUp);
+        }
+      };
+      sfxAudio.addEventListener('ended', onEnd);
+      sfxAudio.addEventListener('pause', onEnd);
+    }
+
     sfxAudio.play().catch(() => { /* ignore autoplay block */ });
   }
 
   // ─── Scene Integration ──────────────────────────────────────
-
-  /**
-   * Auto-play music for a scene type using the mood mapping.
-   */
-  playForSceneType(sceneType: string) {
-    if (!this.settings.autoPlayOnSceneChange) return;
-    const mood = this.settings.sceneTypeMoodMap[sceneType] || 'ambient';
-    this.playMood(mood);
-  }
 
   /**
    * Load (and optionally auto-play) music from a SceneMusicConfig.
