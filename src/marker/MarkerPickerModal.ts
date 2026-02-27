@@ -121,7 +121,10 @@ export class MarkerPickerModal extends Modal {
 
 				// Info
 				const info = card.createDiv({ cls: 'marker-picker-info' });
-				info.createEl('span', { text: marker.name, cls: 'marker-picker-name' });
+				const displayName = marker.campaign
+					? `${marker.name} (${marker.campaign})`
+					: marker.name;
+				info.createEl('span', { text: displayName, cls: 'marker-picker-name' });
 
 				if (['player', 'npc', 'creature'].includes(marker.type) && marker.creatureSize) {
 					info.createEl('span', {

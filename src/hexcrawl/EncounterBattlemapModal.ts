@@ -94,7 +94,7 @@ export class EncounterBattlemapModal extends Modal {
 
   // Party token state
   private includeParty: boolean = true;
-  private partyMembers: Array<{ name: string; level: number; hp: number; ac: number }> = [];
+  private partyMembers: Array<{ name: string; level: number; hp: number; ac: number; notePath?: string }> = [];
   private partyLoading: boolean = false;
   private partyLoaded: boolean = false;
 
@@ -648,13 +648,27 @@ export class EncounterBattlemapModal extends Modal {
 
   /**
    * Ensure a marker definition exists for a party member.
+   * Uses token_id from the PC's vault note for precise lookup (handles same-name PCs across campaigns).
    */
   private async ensurePartyMarkerDefinition(
-    member: { name: string; level: number; hp: number; ac: number },
+    member: { name: string; level: number; hp: number; ac: number; notePath?: string },
   ): Promise<MarkerDefinition> {
     const library = this.plugin.markerLibrary;
 
-    // Check if a marker with this character name already exists
+    // Try token_id lookup first (precise — handles duplicate names across campaigns)
+    if (member.notePath) {
+      const noteFile = this.app.vault.getAbstractFileByPath(member.notePath);
+      if (noteFile instanceof TFile) {
+        const cache = this.app.metadataCache.getFileCache(noteFile);
+        const tokenId = cache?.frontmatter?.token_id;
+        if (tokenId) {
+          const marker = library.getMarker(tokenId);
+          if (marker) return marker;
+        }
+      }
+    }
+
+    // Fallback: name-based lookup
     const existing = library.getAllMarkers().find(
       m => m.name.toLowerCase() === member.name.toLowerCase() && (m.type === 'player' || m.type === 'creature')
     );
@@ -760,6 +774,7 @@ export class EncounterBattlemapModal extends Modal {
               level: player.level || 1,
               hp: player.hp || player.currentMaxHP || 20,
               ac: player.ac || player.currentAC || 14,
+              notePath: player.path || player.note || undefined,
             });
           }
         }

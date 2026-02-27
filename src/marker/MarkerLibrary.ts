@@ -101,6 +101,31 @@ export class MarkerLibrary {
 	}
 
 	/**
+	 * Find markers by name, optionally scoped to a campaign.
+	 * Returns all matches sorted by most recently updated.
+	 */
+	findMarkersByName(name: string, opts?: { type?: string; campaign?: string }): MarkerDefinition[] {
+		const results: MarkerDefinition[] = [];
+		const lowerName = name.toLowerCase();
+		for (const marker of this.markers.values()) {
+			if (marker.name.toLowerCase() !== lowerName) continue;
+			if (opts?.type && marker.type !== opts.type) continue;
+			if (opts?.campaign && marker.campaign && marker.campaign !== opts.campaign) continue;
+			results.push(marker);
+		}
+		// Prefer campaign-specific matches first, then most recently updated
+		results.sort((a, b) => {
+			if (opts?.campaign) {
+				const aMatch = a.campaign === opts.campaign ? 1 : 0;
+				const bMatch = b.campaign === opts.campaign ? 1 : 0;
+				if (aMatch !== bMatch) return bMatch - aMatch;
+			}
+			return (b.updatedAt || 0) - (a.updatedAt || 0);
+		});
+		return results;
+	}
+
+	/**
 	 * Generate a unique marker ID
 	 */
 	generateId(): string {

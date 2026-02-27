@@ -30,6 +30,13 @@ action D&D Campaign Hub: Create New PC
 \`\`\`
 ^button-new-pc
 
+\`\`\`button
+name Import Existing PC
+type command
+action D&D Campaign Hub: Import Existing PC from Another Campaign
+\`\`\`
+^button-import-pc
+
 \`\`\`dataview
 TABLE WITHOUT ID
   link(file.path, name) AS "Name",
