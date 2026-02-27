@@ -20384,29 +20384,30 @@ class SessionCreationModal extends Modal {
       }
 
       // Replace placeholders in template using proper regex patterns
+      // Note: use .*$ (not [^\r\n]\w*$) so empty template fields are also replaced
       sessionContent = sessionContent
-        .replace(/campaign:\s*([^\r\n]\w*)$/m, `campaign: ${campaignName}`)
-        .replace(/world:\s*([^\r\n]\w*)$/m, `world: ${campaignName}`)
-        .replace(/adventure:\s*([^\r\n]\w*)$/m, `adventure: ${this.adventurePath ? `"[[${this.adventurePath}]]"` : ''}`)
-        .replace(/starting_scene:\s*"?([^"\r\n]*)"?$/m, `starting_scene: ${this.startingScenePath ? `"[[${this.startingScenePath}]]"` : '""'}`)
-        .replace(/ending_scene:\s*"?([^"\r\n]*)"?$/m, `ending_scene: ""`)
-        .replace(/sessionNum:\s*([^\r\n]\w*)$/m, `sessionNum: ${nextNumber}`)
-        .replace(/location:\s*([^\r\n]\w*)$/m, `location: ${this.location}`)
-        .replace(/date:\s*([^\r\n]\w*)$/m, `date: ${this.sessionDate}`)
-        .replace(/fc-calendar:\s*([^\r\n]\w*)$/m, `fc-calendar: ${this.calendar}`)
-        .replace(/# Session\s*([^\r\n]\w*)$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
+        .replace(/^campaign:.*$/m, `campaign: ${campaignName}`)
+        .replace(/^world:.*$/m, `world: ${campaignName}`)
+        .replace(/^adventure:.*$/m, `adventure: ${this.adventurePath ? `"[[${this.adventurePath}]]"` : ''}`)
+        .replace(/^starting_scene:.*$/m, `starting_scene: ${this.startingScenePath ? `"[[${this.startingScenePath}]]"` : '""'}`)
+        .replace(/^ending_scene:.*$/m, `ending_scene: ""`)
+        .replace(/^sessionNum:.*$/m, `sessionNum: ${nextNumber}`)
+        .replace(/^location:.*$/m, `location: ${this.location}`)
+        .replace(/^date:.*$/m, `date: ${this.sessionDate}`)
+        .replace(/^fc-calendar:.*$/m, `fc-calendar: ${this.calendar}`)
+        .replace(/^# Session.*$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
 
       // Replace fc-date (start date) - need to match the nested structure
       sessionContent = sessionContent
-        .replace(/fc-date:\s*\n\s*year:\s*([^\r\n]\w*)$/m, `fc-date:\n  year: ${this.startYear}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*)month:\s*([^\r\n]\w*)$/m, `$1month: ${this.startMonth}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:\s*([^\r\n]\w*)$/m, `$1day: ${this.startDay}`);
+        .replace(/fc-date:\s*\n\s*year:.*$/m, `fc-date:\n  year: ${this.startYear}`)
+        .replace(/(fc-date:\s*\n\s*year:.*\n\s*)month:.*$/m, `$1month: ${this.startMonth}`)
+        .replace(/(fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:.*$/m, `$1day: ${this.startDay}`);
 
       // Replace fc-end (end date) - need to match the nested structure
       sessionContent = sessionContent
-        .replace(/fc-end:\s*\n\s*year:\s*([^\r\n]\w*)$/m, `fc-end:\n  year: ${this.endYear}`)
-        .replace(/(fc-end:\s*\n\s*year:.*\n\s*)month:\s*([^\r\n]\w*)$/m, `$1month: ${this.endMonth}`)
-        .replace(/(fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:\s*([^\r\n]\w*)$/m, `$1day: ${this.endDay}`);
+        .replace(/fc-end:\s*\n\s*year:.*$/m, `fc-end:\n  year: ${this.endYear}`)
+        .replace(/(fc-end:\s*\n\s*year:.*\n\s*)month:.*$/m, `$1month: ${this.endMonth}`)
+        .replace(/(fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:.*$/m, `$1day: ${this.endDay}`);
       // Create the file
       await this.app.vault.create(filePath, sessionContent);
 
