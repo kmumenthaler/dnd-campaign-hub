@@ -2889,6 +2889,21 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "end-session-here",
+      name: "End Session Here (record ending scene)",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) { new Notice("No active file."); return; }
+        const cache = this.app.metadataCache.getFileCache(file);
+        if (cache?.frontmatter?.type !== 'session') {
+          new Notice("Open a session note first.");
+          return;
+        }
+        new EndSessionModal(this.app, this, file).open();
+      },
+    });
+
+    this.addCommand({
       id: "session-prep-dashboard",
       name: "Open Session Prep Dashboard",
       callback: () => this.openSessionPrepDashboard(),
@@ -19909,6 +19924,7 @@ class SessionCreationModal extends Modal {
   sessionDate: string;
   location = "";
   adventurePath = "";
+  startingScenePath = "";
   useCustomDate = false;
   calendar = "";
   startYear = "";
@@ -19958,6 +19974,44 @@ class SessionCreationModal extends Modal {
     }
 
     return adventures;
+  }
+
+  async getAllScenesForAdventure(adventurePath: string): Promise<Array<{ path: string; name: string; sceneNumber: number; status: string }>> {
+    const scenes: Array<{ path: string; name: string; sceneNumber: number; status: string }> = [];
+    if (!adventurePath) return scenes;
+
+    const advFile = this.app.vault.getAbstractFileByPath(adventurePath);
+    if (!(advFile instanceof TFile)) return scenes;
+
+    const advFolder = advFile.parent;
+    if (!advFolder) return scenes;
+
+    const seen = new Set<string>();
+    const addScene = (file: TFile) => {
+      if (seen.has(file.path)) return;
+      seen.add(file.path);
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache?.frontmatter;
+      if (!fm || fm.type !== 'scene') return;
+      const num = parseInt(fm.scene_number ?? file.name.match(/Scene\s+(\d+)/i)?.[1] ?? '0') || 0;
+      scenes.push({ path: file.path, name: file.basename, sceneNumber: num, status: fm.status || 'not-started' });
+    };
+
+    // Search in adventure folder and its Scenes/ subfolder
+    const searchFolder = (folder: TFolder) => {
+      for (const child of folder.children) {
+        if (child instanceof TFile && child.extension === 'md') addScene(child);
+        else if (child instanceof TFolder && child.name.toLowerCase() === 'scenes') {
+          for (const sc of child.children) {
+            if (sc instanceof TFile && sc.extension === 'md') addScene(sc);
+          }
+        }
+      }
+    };
+    searchFolder(advFolder);
+
+    scenes.sort((a, b) => a.sceneNumber - b.sceneNumber);
+    return scenes;
   }
 
   async loadCalendarData() {
@@ -20093,6 +20147,34 @@ class SessionCreationModal extends Modal {
 
     // Adventure Selection
     const adventures = await this.getAllAdventures();
+    const scenePickerContainer = contentEl.createDiv();
+
+    const refreshScenePicker = async (adventurePath: string) => {
+      scenePickerContainer.empty();
+      if (!adventurePath) return;
+      const scenes = await this.getAllScenesForAdventure(adventurePath);
+      if (scenes.length === 0) return;
+
+      // Pre-select first in-progress, then first not-started, then first overall
+      const preferred = scenes.find(s => s.status === 'in-progress')
+        ?? scenes.find(s => s.status === 'not-started')
+        ?? scenes[0];
+      this.startingScenePath = preferred?.path ?? '';
+
+      new Setting(scenePickerContainer)
+        .setName("Starting Scene")
+        .setDesc("Scene where this session begins (auto-populated from adventure progress)")
+        .addDropdown(dd => {
+          dd.addOption("", "-- None --");
+          for (const sc of scenes) {
+            const label = `${sc.name} [${sc.status}]`;
+            dd.addOption(sc.path, label);
+          }
+          dd.setValue(this.startingScenePath);
+          dd.onChange(value => { this.startingScenePath = value; });
+        });
+    };
+
     if (adventures.length > 0) {
       new Setting(contentEl)
         .setName("Adventure")
@@ -20103,10 +20185,13 @@ class SessionCreationModal extends Modal {
             dropdown.addOption(adv.path, adv.name);
           });
           dropdown.setValue(this.adventurePath);
-          dropdown.onChange(value => {
+          dropdown.onChange(async value => {
             this.adventurePath = value;
+            this.startingScenePath = "";
+            await refreshScenePicker(value);
           });
         });
+      await refreshScenePicker(this.adventurePath);
     }
 
     // Session Date (real world)
@@ -20303,6 +20388,8 @@ class SessionCreationModal extends Modal {
         .replace(/campaign:\s*([^\r\n]\w*)$/m, `campaign: ${campaignName}`)
         .replace(/world:\s*([^\r\n]\w*)$/m, `world: ${campaignName}`)
         .replace(/adventure:\s*([^\r\n]\w*)$/m, `adventure: ${this.adventurePath ? `"[[${this.adventurePath}]]"` : ''}`)
+        .replace(/starting_scene:\s*"?([^"\r\n]*)"?$/m, `starting_scene: ${this.startingScenePath ? `"[[${this.startingScenePath}]]"` : '""'}`)
+        .replace(/ending_scene:\s*"?([^"\r\n]*)"?$/m, `ending_scene: ""`)
         .replace(/sessionNum:\s*([^\r\n]\w*)$/m, `sessionNum: ${nextNumber}`)
         .replace(/location:\s*([^\r\n]\w*)$/m, `location: ${this.location}`)
         .replace(/date:\s*([^\r\n]\w*)$/m, `date: ${this.sessionDate}`)
@@ -20323,6 +20410,16 @@ class SessionCreationModal extends Modal {
       // Create the file
       await this.app.vault.create(filePath, sessionContent);
 
+      // Link this session to the adventure's sessions[] frontmatter
+      if (this.adventurePath) {
+        await this.linkSessionToAdventure(this.adventurePath, filePath);
+      }
+
+      // Handle starting scene backlink + optional status update
+      if (this.startingScenePath) {
+        await this.handleStartingSceneUpdate(this.startingScenePath, filePath);
+      }
+
       // Open the file
       await this.app.workspace.openLinkText(filePath, "", true);
 
@@ -20333,10 +20430,280 @@ class SessionCreationModal extends Modal {
     }
   }
 
+  /** Append this session's wikilink to the adventure's sessions[] frontmatter array. */
+  async linkSessionToAdventure(adventurePath: string, sessionFilePath: string) {
+    const advFile = this.app.vault.getAbstractFileByPath(adventurePath);
+    if (!(advFile instanceof TFile)) return;
+    try {
+      let content = await this.app.vault.read(advFile);
+      const wikilink = `"[[${sessionFilePath}]]"`;
+      const match = content.match(/^sessions:\s*\[([^\]]*)\]/m);
+      if (match) {
+        const existing = (match[1] ?? '').trim();
+        const newVal = existing ? `${existing}, ${wikilink}` : wikilink;
+        content = content.replace(/^sessions:\s*\[[^\]]*\]/m, `sessions: [${newVal}]`);
+      } else {
+        content = content.replace(/(---\n)([\s\S]*?)(---\n)/, (_full, open, body, close) => {
+          return `${open}${body}sessions: [${wikilink}]\n${close}`;
+        });
+      }
+      await this.app.vault.modify(advFile, content);
+    } catch (e) {
+      console.warn("SessionCreationModal: Could not link session to adventure:", e);
+    }
+  }
+
+  /** Add session backlink to scene, then optionally update scene statuses. */
+  async handleStartingSceneUpdate(startingScenePath: string, sessionFilePath: string) {
+    await this.addSessionBacklinkToScene(startingScenePath, sessionFilePath);
+
+    const scenes = await this.getAllScenesForAdventure(this.adventurePath);
+    const startIdx = scenes.findIndex(s => s.path === startingScenePath);
+    if (startIdx < 0) return;
+
+    const startingScene = scenes[startIdx];
+    if (!startingScene) return;
+    const scenesBeforeCount = startIdx;
+
+    if (scenesBeforeCount === 0 && startingScene.status === 'in-progress') return;
+
+    const msgLines: string[] = [];
+    if (scenesBeforeCount > 0)
+      msgLines.push(`Mark ${scenesBeforeCount} scene(s) before "${startingScene.name}" as completed.`);
+    if (startingScene.status !== 'in-progress')
+      msgLines.push(`Set "${startingScene.name}" to in-progress.`);
+    if (msgLines.length === 0) return;
+
+    const confirmed = await new Promise<boolean>(resolve => {
+      const modal = new ConfirmModal(this.app, "Update Scene Statuses?", msgLines.join('\n'), resolve);
+      modal.open();
+    });
+
+    if (confirmed) {
+      await this.updateSceneStatusesFromStartingScene(scenes, startIdx);
+    }
+  }
+
+  /** Append session wikilink to a scene's sessions[] frontmatter. */
+  async addSessionBacklinkToScene(scenePath: string, sessionFilePath: string) {
+    const sceneFile = this.app.vault.getAbstractFileByPath(scenePath);
+    if (!(sceneFile instanceof TFile)) return;
+    try {
+      let content = await this.app.vault.read(sceneFile);
+      const wikilink = `"[[${sessionFilePath}]]"`;
+      const match = content.match(/^sessions:\s*\[([^\]]*)\]/m);
+      if (match) {
+        const existing = (match[1] ?? '').trim();
+        const newVal = existing ? `${existing}, ${wikilink}` : wikilink;
+        content = content.replace(/^sessions:\s*\[[^\]]*\]/m, `sessions: [${newVal}]`);
+      } else {
+        content = content.replace(/(---\n)([\s\S]*?)(---\n)/, (_full, open, body, close) => {
+          return `${open}${body}sessions: [${wikilink}]\n${close}`;
+        });
+      }
+      await this.app.vault.modify(sceneFile, content);
+    } catch (e) {
+      console.warn("SessionCreationModal: Could not add session backlink to scene:", e);
+    }
+  }
+
+  /** Set scenes before startIdx to 'completed', scene at startIdx to 'in-progress'. */
+  async updateSceneStatusesFromStartingScene(
+    scenes: Array<{ path: string; name: string; sceneNumber: number; status: string }>,
+    startIdx: number
+  ) {
+    for (let i = 0; i < startIdx; i++) {
+      const scene = scenes[i];
+      if (!scene || scene.status === 'completed') continue;
+      const file = this.app.vault.getAbstractFileByPath(scene.path);
+      if (!(file instanceof TFile)) continue;
+      try {
+        const c = await this.app.vault.read(file);
+        await this.app.vault.modify(file, c.replace(/^status:\s*.+$/m, 'status: completed'));
+      } catch (_e) { /* skip */ }
+    }
+    const startScene = scenes[startIdx];
+    if (startScene && startScene.status !== 'in-progress') {
+      const file = this.app.vault.getAbstractFileByPath(startScene.path);
+      if (file instanceof TFile) {
+        try {
+          const c = await this.app.vault.read(file);
+          await this.app.vault.modify(file, c.replace(/^status:\s*.+$/m, 'status: in-progress'));
+        } catch (_e) { /* skip */ }
+      }
+    }
+  }
+
   onClose() {
     const { contentEl } = this;
     contentEl.empty();
   }
+}
+
+/** Simple yes/no confirmation modal used by SessionCreationModal. */
+class ConfirmModal extends Modal {
+  private resolve: (value: boolean) => void;
+  private titleText: string;
+  private bodyText: string;
+
+  constructor(app: App, title: string, body: string, resolve: (value: boolean) => void) {
+    super(app);
+    this.titleText = title;
+    this.bodyText = body;
+    this.resolve = resolve;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl('h3', { text: this.titleText });
+    this.bodyText.split('\n').forEach(line => {
+      if (line.trim()) contentEl.createEl('p', { text: line });
+    });
+    const btns = contentEl.createDiv({ cls: 'dnd-modal-buttons' });
+    const yes = btns.createEl('button', { text: 'Yes', cls: 'mod-cta' });
+    const no  = btns.createEl('button', { text: 'No' });
+    yes.onclick = () => { this.resolve(true);  this.close(); };
+    no.onclick  = () => { this.resolve(false); this.close(); };
+  }
+
+  onClose() {
+    this.contentEl.empty();
+    // Resolve false if closed without clicking
+    this.resolve(false);
+  }
+}
+
+/** Modal for recording where the session ended (ending scene). */
+class EndSessionModal extends Modal {
+  plugin: DndCampaignHubPlugin;
+  sessionFile: TFile;
+  endingScenePath = "";
+  scenes: Array<{ path: string; name: string; sceneNumber: number; status: string }> = [];
+
+  constructor(app: App, plugin: DndCampaignHubPlugin, sessionFile: TFile) {
+    super(app);
+    this.plugin = plugin;
+    this.sessionFile = sessionFile;
+  }
+
+  private parseWikilink(val: unknown): string | null {
+    if (!val) return null;
+    const s = String(val);
+    const m = s.match(/\[\[(.+?)\]\]/);
+    return m ? (m[1] ?? null) : (s.trim() || null);
+  }
+
+  async onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl('h2', { text: '🏁 End Session Here' });
+
+    const cache = this.app.metadataCache.getFileCache(this.sessionFile);
+    const fm = cache?.frontmatter;
+    const adventureRaw = fm?.adventure;
+    const adventurePath = this.parseWikilink(adventureRaw);
+
+    if (!adventurePath) {
+      contentEl.createEl('p', { text: 'This session has no adventure linked. Cannot pick ending scene.' });
+      contentEl.createEl('button', { text: 'Close' }).onclick = () => this.close();
+      return;
+    }
+
+    // Load scenes
+    const modal = this; // capture for closure
+    this.scenes = await (async () => {
+      // Reuse SessionCreationModal scene-loading logic via a temporary instance
+      const tmp = new SessionCreationModal(this.app, this.plugin);
+      tmp.adventurePath = adventurePath;
+      return tmp.getAllScenesForAdventure(adventurePath);
+    })();
+
+    if (this.scenes.length === 0) {
+      contentEl.createEl('p', { text: 'No scenes found for this adventure.' });
+      contentEl.createEl('button', { text: 'Close' }).onclick = () => this.close();
+      return;
+    }
+
+    // Pre-select: last in-progress, else last scene
+    const preferred = [...this.scenes].reverse().find(s => s.status === 'in-progress')
+      ?? this.scenes[this.scenes.length - 1];
+    this.endingScenePath = preferred?.path ?? '';
+
+    contentEl.createEl('p', { text: 'Record which scene the session ended at. This will be saved to the session frontmatter.', cls: 'setting-item-description' });
+
+    new Setting(contentEl)
+      .setName('Ending Scene')
+      .setDesc('Scene where the session stopped')
+      .addDropdown(dd => {
+        dd.addOption('', '-- None --');
+        for (const sc of this.scenes) {
+          dd.addOption(sc.path, `${sc.name} [${sc.status}]`);
+        }
+        dd.setValue(this.endingScenePath);
+        dd.onChange(v => { this.endingScenePath = v; });
+      });
+
+    const btns = contentEl.createDiv({ cls: 'dnd-modal-buttons' });
+    const cancel = btns.createEl('button', { text: 'Cancel' });
+    cancel.onclick = () => this.close();
+    const save = btns.createEl('button', { text: '🏁 Save Ending Scene', cls: 'mod-cta' });
+    save.onclick = async () => {
+      this.close();
+      await modal.saveEndingScene();
+    };
+  }
+
+  async saveEndingScene() {
+    if (!this.endingScenePath) return;
+    try {
+      // Write ending_scene to session frontmatter
+      let content = await this.app.vault.read(this.sessionFile);
+      const wikiVal = `"[[${this.endingScenePath}]]"`;
+      if (/^ending_scene:/m.test(content)) {
+        content = content.replace(/^ending_scene:\s*.*$/m, `ending_scene: ${wikiVal}`);
+      } else {
+        content = content.replace(/(---\n)([\s\S]*?)(---\n)/, (_f, open, body, close) =>
+          `${open}${body}ending_scene: ${wikiVal}\n${close}`
+        );
+      }
+      await this.app.vault.modify(this.sessionFile, content);
+
+      // Add session backlink to scene
+      const tmp = new SessionCreationModal(this.app, this.plugin);
+      tmp.adventurePath = (() => {
+        const fm = this.app.metadataCache.getFileCache(this.sessionFile)?.frontmatter;
+        return this.parseWikilink(fm?.adventure) ?? '';
+      })();
+      await tmp.addSessionBacklinkToScene(this.endingScenePath, this.sessionFile.path);
+
+      // Optionally update scene statuses
+      const endIdx = this.scenes.findIndex(s => s.path === this.endingScenePath);
+      if (endIdx >= 0) {
+        const endScene = this.scenes[endIdx];
+        if (!endScene) return;
+        const scenesBeforeCount = endIdx;
+        const msgs: string[] = [];
+        if (scenesBeforeCount > 0) msgs.push(`Mark ${scenesBeforeCount} scene(s) before "${endScene.name}" as completed.`);
+        if (endScene.status !== 'in-progress') msgs.push(`Set "${endScene.name}" to in-progress.`);
+
+        if (msgs.length > 0) {
+          const confirmed = await new Promise<boolean>(resolve => {
+            new ConfirmModal(this.app, 'Update Scene Statuses?', msgs.join('\n'), resolve).open();
+          });
+          if (confirmed) {
+            await tmp.updateSceneStatusesFromStartingScene(this.scenes, endIdx);
+          }
+        }
+      }
+
+      new Notice('🏁 Ending scene recorded!');
+    } catch (e) {
+      new Notice(`❌ Could not save ending scene: ${e instanceof Error ? e.message : String(e)}`);
+      console.error('EndSessionModal.saveEndingScene error:', e);
+    }
+  }
+
+  onClose() { this.contentEl.empty(); }
 }
 
 class CampaignCreationModal extends Modal {
@@ -23590,9 +23957,19 @@ class SceneCreationModal extends Modal {
           });
         }
 
+        const existingFm = this.app.metadataCache.getFileCache(originalFile)?.frontmatter;
+        const existingStatus = existingFm?.status || 'not-started';
+        const existingSessions = (() => {
+          const raw = existingFm?.sessions;
+          if (!raw) return '[]';
+          if (Array.isArray(raw)) return JSON.stringify(raw);
+          return String(raw);
+        })();
+        const existingTemplateVersion = existingFm?.template_version || '2.2.0';
+
         const updatedFrontmatter = `---
 type: scene
-template_version: 2.0.0
+template_version: ${existingTemplateVersion}
 adventure: "${adventureFile.basename}"
 campaign: "${campaignName}"
 world: "${worldName}"
@@ -23601,7 +23978,8 @@ scene_number: ${sceneNum}
 duration: ${this.duration}
 scene_type: ${this.type}
 difficulty: ${this.difficulty}
-status: ${this.app.metadataCache.getFileCache(originalFile)?.frontmatter?.status || 'not-started'}
+status: ${existingStatus}
+sessions: ${existingSessions}
 tracker_encounter: ${trackerEncounter}
 encounter_file: ${encounterFile}
 encounter_creatures: ${encounterCreaturesJson}

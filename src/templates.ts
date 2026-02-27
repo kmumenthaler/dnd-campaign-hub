@@ -154,10 +154,12 @@ SORT file.ctime DESC
 
 export const SESSION_GM_TEMPLATE = `---
 type: session
-template_version: 1.2.1
+template_version: 1.3.0
 campaign: 
 world: 
 adventure: 
+starting_scene: ""
+ending_scene: ""
 sessionNum: 
 location: 
 date: 
@@ -195,92 +197,137 @@ art: ""
 
 ## Scenes
 
-- [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
-
 \`\`\`dataviewjs
-// Get current session's adventure (if linked)
+// Session Scene Navigator
 const sessionFile = dv.current();
 let adventureLink = sessionFile.adventure;
+const startingScene = sessionFile.starting_scene;
+const endingScene   = sessionFile.ending_scene;
 
-// Parse wikilink if present: "[[path]]" -> path
-if (adventureLink && typeof adventureLink === 'string') {
-  const match = adventureLink.match(/\[\[(.+?)\]\]/);
-  if (match) adventureLink = match[1];
-}
+// Parse "[[path]]" -> path
+const parseLink = (val) => {
+  if (!val || val === '""' || val === '') return null;
+  if (typeof val === 'string') {
+    const m = val.match(/\[\[(.+?)\]\]/);
+    return m ? m[1] : null;
+  }
+  return val?.path || null;
+};
 
-if (adventureLink) {
-  // Get the adventure file
+adventureLink = parseLink(adventureLink) || adventureLink;
+const startPath = parseLink(startingScene);
+const endPath   = parseLink(endingScene);
+
+if (!adventureLink) {
+  dv.paragraph("*No adventure linked to this session.*");
+  const createBtn = dv.el('button', '🗺️ Create Adventure');
+  createBtn.className = 'mod-cta';
+  createBtn.style.marginTop = '10px';
+  createBtn.onclick = () => app.commands.executeCommandById('dnd-campaign-hub:create-adventure');
+} else {
   const adventurePage = dv.page(adventureLink);
-  
-  if (adventurePage) {
+  if (!adventurePage) {
+    dv.paragraph("*Adventure note not found: " + adventureLink + "*");
+  } else {
     const adventureName = adventurePage.name || adventurePage.file.name;
-    const campaignFolder = adventurePage.campaign;
     const adventureFolder = adventurePage.file.folder;
-    
-    // Find scenes in both flat and folder structures
-    let scenesFlat = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`)
-      .where(p => p.file.name.startsWith("Scene"));
-    let scenesFolder = dv.pages(\`"\${adventureFolder}"\`)
-      .where(p => p.file.name.startsWith("Scene"));
-    
-    let allScenes = [...scenesFlat, ...scenesFolder];
-    
-    if (allScenes.length > 0) {
-      // Sort by scene number
-      allScenes.sort((a, b) => {
-        const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
-        const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
-        return aNum - bNum;
-      });
-      
-      dv.header(4, "Adventure Scenes");
-      for (const scene of allScenes) {
-        const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
-        const duration = scene.duration || "?min";
-        const type = scene.type || "?";
-        
-        // Create clickable status button
-        const sceneDiv = dv.el('div', '', { cls: 'scene-item' });
-        const statusBtn = dv.el('button', status, { container: sceneDiv });
-        statusBtn.style.border = 'none';
-        statusBtn.style.background = 'transparent';
-        statusBtn.style.cursor = 'pointer';
-        statusBtn.style.fontSize = '1.2em';
-        statusBtn.title = 'Click to change status';
-        statusBtn.onclick = async () => {
-          const file = app.vault.getAbstractFileByPath(scene.file.path);
-          if (file) {
-            const content = await app.vault.read(file);
-            const currentStatus = scene.status || 'not-started';
-            const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
-                               currentStatus === 'in-progress' ? 'completed' : 'not-started';
-            const newContent = content.replace(
-              /^status:\s*.+$/m,
-              \`status: \${nextStatus}\`
-            );
-            await app.vault.modify(file, newContent);
+    const campaignFolder = adventurePage.campaign;
+
+    // Collect scenes from all folder structures (new Scenes/, flat, legacy)
+    let raw = [
+      ...dv.pages(\`"\${adventureFolder}/Scenes"\`).where(p => p.type === 'scene'),
+      ...dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`).where(p => p.file.name.startsWith('Scene')),
+      ...dv.pages(\`"\${adventureFolder}"\`).where(p => p.type === 'scene'),
+    ];
+
+    // Deduplicate and sort by scene number
+    const seen = new Set();
+    let allScenes = raw.filter(s => {
+      if (seen.has(s.file.path)) return false;
+      seen.add(s.file.path);
+      return true;
+    });
+    allScenes.sort((a, b) => {
+      const n = s => parseInt(s.scene_number || s.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
+      return n(a) - n(b);
+    });
+
+    if (allScenes.length === 0) {
+      dv.paragraph("*No scenes found for this adventure. Create a scene from the adventure note.*");
+    } else {
+      const idxOf = (path) => !path ? -1 : allScenes.findIndex(s =>
+        s.file.path === path || s.file.name === path ||
+        s.file.path.endsWith('/' + path + '.md') || s.file.path.endsWith('/' + path)
+      );
+      const startIdx = idxOf(startPath);
+      const endIdx   = idxOf(endPath);
+
+      // Starting scene callout
+      if (startIdx >= 0) {
+        const c = dv.el('div', '');
+        c.style.cssText = 'background:rgba(0,180,0,0.08);border-left:4px solid #00aa44;padding:8px 12px;border-radius:4px;margin-bottom:8px;';
+        c.innerHTML = '<strong>🎬 Session starts at:</strong> ';
+        const a = c.createEl('a', { text: allScenes[startIdx].file.name, href: '#' });
+        a.onclick = (e) => { e.preventDefault(); app.workspace.openLinkText(allScenes[startIdx].file.path, '', false); };
+      }
+
+      // Ending scene callout
+      if (endIdx >= 0) {
+        const c = dv.el('div', '');
+        c.style.cssText = 'background:rgba(255,140,0,0.08);border-left:4px solid #ff8800;padding:8px 12px;border-radius:4px;margin-bottom:8px;';
+        c.innerHTML = '<strong>🏁 Session ended at:</strong> ';
+        const a = c.createEl('a', { text: allScenes[endIdx].file.name, href: '#' });
+        a.onclick = (e) => { e.preventDefault(); app.workspace.openLinkText(allScenes[endIdx].file.path, '', false); };
+      }
+
+      // "End Session Here" button (only if not yet recorded)
+      if (!endPath) {
+        const btnRow = dv.el('div', '');
+        btnRow.style.cssText = 'margin-bottom:12px;';
+        const endBtn = btnRow.createEl('button', { text: '🏁 End Session Here' });
+        endBtn.style.cssText = 'padding:5px 12px;cursor:pointer;border-radius:4px;';
+        endBtn.onclick = () => app.commands.executeCommandById('dnd-campaign-hub:end-session-here');
+      }
+
+      // Scene list
+      dv.header(4, 'Adventure Scenes');
+      for (let i = 0; i < allScenes.length; i++) {
+        const scene = allScenes[i];
+        const isStart = i === startIdx;
+        const isEnd   = i === endIdx;
+        const status  = scene.status || 'not-started';
+        const icon    = status === 'completed' ? '✅' : status === 'in-progress' ? '🎬' : '⬜';
+
+        const row = dv.el('div', '');
+        row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:3px 0;' + (isStart ? 'font-weight:600;' : '');
+
+        // Status toggle button
+        const togBtn = row.createEl('button', { text: icon });
+        togBtn.style.cssText = 'border:none;background:transparent;cursor:pointer;font-size:1.1em;padding:0;width:22px;';
+        togBtn.title = 'Click to cycle: not-started → in-progress → completed';
+        togBtn.onclick = async () => {
+          const next = { 'not-started': 'in-progress', 'in-progress': 'completed', 'completed': 'not-started' };
+          const f = app.vault.getAbstractFileByPath(scene.file.path);
+          if (f) {
+            const c = await app.vault.read(f);
+            await app.vault.modify(f, c.replace(/^status:\s*.+$/m, \`status: \${next[status] || 'not-started'}\`));
           }
         };
-        dv.span(' ', { container: sceneDiv });
-        dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
-        dv.span(\` - \\\`\${duration} | \${type}\\\`\`, { container: sceneDiv });
+
+        // Scene name link
+        const nameEl = row.createEl('span');
+        const link = nameEl.createEl('a', { text: scene.file.name, href: '#' });
+        link.onclick = (e) => { e.preventDefault(); app.workspace.openLinkText(scene.file.path, '', false); };
+
+        // Meta info
+        const meta = row.createEl('span', { text: \` — \${scene.duration || '?'} | \${scene.scene_type || '?'}\` });
+        meta.style.cssText = 'opacity:0.55;font-size:0.82em;';
+
+        if (isStart) { const b = row.createEl('span', { text: ' 📍' }); b.title = 'Session start'; }
+        if (isEnd)   { const b = row.createEl('span', { text: ' 🏁' }); b.title = 'Session end'; }
       }
     }
   }
-} else {
-  dv.paragraph("*No adventure linked to this session.*");
-  dv.paragraph("To link an adventure, add it to the frontmatter:");
-  dv.paragraph(\`\\\`\\\`\\\`yaml\\nadventure: "[[Your Adventure Name]]"\\n\\\`\\\`\\\`\`);
-  dv.paragraph("Or create a new adventure:");
-  const createAdvBtn = dv.el('button', '🗺️ Create Adventure');
-  createAdvBtn.className = 'mod-cta';
-  createAdvBtn.style.marginTop = '10px';
-  createAdvBtn.onclick = () => {
-    app.commands.executeCommandById('dnd-campaign-hub:create-adventure');
-  };
 }
 \`\`\`
 
@@ -876,7 +923,7 @@ if (allScenes.length === 0) {
 
 export const SCENE_TEMPLATE = `---
 type: scene
-template_version: 2.1.0
+template_version: 2.2.0
 adventure: "{{ADVENTURE_NAME}}"
 campaign: "{{CAMPAIGN}}"
 world: "{{WORLD}}"
@@ -886,6 +933,7 @@ duration: {{DURATION}}
 scene_type: {{TYPE}}
 difficulty: {{DIFFICULTY}}
 status: not-started
+sessions: []
 tracker_encounter: {{TRACKER_ENCOUNTER}}
 encounter_file: {{ENCOUNTER_FILE}}
 encounter_creatures: {{ENCOUNTER_CREATURES}}

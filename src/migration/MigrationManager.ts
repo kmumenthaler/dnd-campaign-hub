@@ -7,12 +7,12 @@ import { MarkerDefinition, CreatureSize } from "../marker/MarkerTypes";
  */
 export const TEMPLATE_VERSIONS = {
   world: "1.0.0",
-  session: "1.2.1", // Fixed escaping issues in interactive scene checkboxes
+  session: "1.3.0", // Added starting_scene / ending_scene frontmatter fields
   npc: "1.2.0", // Added Edit/Delete buttons
   pc: "1.2.0", // Added Edit/Delete buttons
   player: "1.2.0", // Added Edit/Delete buttons (same as pc)
   adventure: "1.2.0", // Added Edit/Delete buttons + adventurePath context passing to scene creation
-  scene: "2.1.0", // Consolidated single scene template with Edit/Delete buttons
+  scene: "2.2.0", // Added sessions[] backlink array to scene frontmatter
   faction: "1.0.0",
   item: "1.1.0", // Updated with Edit/Delete buttons
   spell: "1.0.0",
@@ -145,6 +145,17 @@ export class MigrationManager {
     if (fileType === 'scene') {
       const content = await this.app.vault.read(file);
       if (!content.includes('dnd-campaign-hub:edit-scene')) {
+        return true;
+      }
+      // Check for missing sessions[] field
+      if (!frontmatter?.sessions && frontmatter?.sessions !== '') {
+        return true;
+      }
+    }
+
+    // Check for missing starting_scene / ending_scene in session notes
+    if (fileType === 'session') {
+      if (!frontmatter?.starting_scene && frontmatter?.starting_scene !== '') {
         return true;
       }
     }
@@ -817,6 +828,40 @@ deleteBtn.addEventListener("click", () => {
     console.log(`Scene ${file.path} migrated to v2.1.0 with edit/delete buttons`);
   }
 
+  async migrateSessionTo1_3_0(file: TFile): Promise<void> {
+    console.log(`Migrating session ${file.path} to v1.3.0`);
+    let content = await this.app.vault.read(file);
+
+    // Insert starting_scene and ending_scene after adventure: line if not already present
+    if (!/^starting_scene:/m.test(content)) {
+      content = content.replace(
+        /^(adventure:.*)(\n)/m,
+        `$1$2starting_scene: ""\nending_scene: ""\n`
+      );
+    }
+
+    await this.app.vault.modify(file, content);
+    await this.updateTemplateVersion(file, "1.3.0");
+    console.log(`Session ${file.path} migrated to v1.3.0`);
+  }
+
+  async migrateSceneTo2_2_0(file: TFile): Promise<void> {
+    console.log(`Migrating scene ${file.path} to v2.2.0`);
+    let content = await this.app.vault.read(file);
+
+    // Insert sessions: [] after status: line if not already present
+    if (!/^sessions:/m.test(content)) {
+      content = content.replace(
+        /^(status:.*)(\n)/m,
+        `$1$2sessions: []\n`
+      );
+    }
+
+    await this.app.vault.modify(file, content);
+    await this.updateTemplateVersion(file, "2.2.0");
+    console.log(`Scene ${file.path} migrated to v2.2.0`);
+  }
+
   /**
    * Apply migration based on file type and version
    */
@@ -844,7 +889,7 @@ deleteBtn.addEventListener("click", () => {
         
         // For types with migration logic, treat as version 0.0.0 so they
         // go through the full migration path below
-        const typesWithMigration = ['player', 'pc', 'npc', 'creature', 'encounter-table', 'adventure', 'scene'];
+        const typesWithMigration = ['player', 'pc', 'npc', 'creature', 'encounter-table', 'adventure', 'scene', 'session'];
         if (typesWithMigration.includes(fileType)) {
           // Add version field first, then let migration logic handle the rest
           await this.updateTemplateVersion(file, "0.0.0");
@@ -971,13 +1016,37 @@ deleteBtn.addEventListener("click", () => {
       if (fileType === "scene") {
         if (this.compareVersions(currentVersion, "2.1.0") < 0) {
           await this.migrateSceneTo2_1_0(file);
+          currentVersion = "2.1.0";
+        }
+        if (this.compareVersions(currentVersion, "2.2.0") < 0) {
+          await this.migrateSceneTo2_2_0(file);
           return true;
         }
-        // Check if edit/delete buttons are missing even if version is 2.1.0
+        // Check if edit/delete buttons are missing even if version is 2.1.0+
         const sceneContent = await this.app.vault.read(file);
         if (!sceneContent.includes('dnd-campaign-hub:edit-scene')) {
-          console.log(`${file.path} has v2.1.0 but missing buttons, re-running migration`);
+          console.log(`${file.path} has v${currentVersion} but missing buttons, re-running migration`);
           await this.migrateSceneTo2_1_0(file);
+          return true;
+        }
+        // Check for missing sessions[] field
+        const sceneFm = await this.parseFrontmatter(file);
+        if (sceneFm && !Object.prototype.hasOwnProperty.call(sceneFm, 'sessions')) {
+          await this.migrateSceneTo2_2_0(file);
+          return true;
+        }
+      }
+
+      // Session-specific migrations
+      if (fileType === "session") {
+        if (this.compareVersions(currentVersion, "1.3.0") < 0) {
+          await this.migrateSessionTo1_3_0(file);
+          return true;
+        }
+        // Check for missing starting_scene field
+        const sessionFm = await this.parseFrontmatter(file);
+        if (sessionFm && !Object.prototype.hasOwnProperty.call(sessionFm, 'starting_scene')) {
+          await this.migrateSessionTo1_3_0(file);
           return true;
         }
       }
