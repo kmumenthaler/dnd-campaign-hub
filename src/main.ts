@@ -19977,67 +19977,49 @@ class SessionCreationModal extends Modal {
   }
 
   async getAllScenesForAdventure(adventurePath: string): Promise<Array<{ path: string; name: string; sceneNumber: number; status: string }>> {
-    const scenes: Array<{ path: string; name: string; sceneNumber: number; status: string }> = [];
-    if (!adventurePath) return scenes;
+    if (!adventurePath) return [];
 
     const advFile = this.app.vault.getAbstractFileByPath(adventurePath);
-    if (!(advFile instanceof TFile)) return scenes;
+    if (!(advFile instanceof TFile)) return [];
 
     const advFolder = advFile.parent;
-    if (!advFolder) return scenes;
+    if (!advFolder) return [];
 
+    // Determine the folder prefix to search under.
+    // If the adventure is stored as Folder/Folder.md, search that folder.
+    // Otherwise search a sibling "Name - Scenes" folder, or fall back to the parent.
+    const candidatePrefixes: string[] = [];
+
+    // Case: Adventures/AdventureName/AdventureName.md  -> search Adventures/AdventureName/
+    if (advFolder.name === advFile.basename) {
+      candidatePrefixes.push(advFolder.path + '/');
+    }
+
+    // Case: Adventures/AdventureName.md -> search Adventures/AdventureName - Scenes/ or Adventures/AdventureName/
+    candidatePrefixes.push(`${advFolder.path}/${advFile.basename} - Scenes/`);
+    candidatePrefixes.push(`${advFolder.path}/${advFile.basename}/`);
+
+    // Always also try the parent folder itself as a last resort
+    candidatePrefixes.push(advFolder.path + '/');
+
+    // Walk every markdown file in the vault and collect scenes under any prefix
     const seen = new Set<string>();
-    const addScene = (file: TFile) => {
-      if (seen.has(file.path)) return;
-      seen.add(file.path);
+    const scenes: Array<{ path: string; name: string; sceneNumber: number; status: string }> = [];
+
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (seen.has(file.path)) continue;
+      const underAdventure = candidatePrefixes.some(prefix => file.path.startsWith(prefix));
+      if (!underAdventure) continue;
+
       const cache = this.app.metadataCache.getFileCache(file);
       const fm = cache?.frontmatter;
-      if (!fm || fm.type !== 'scene') return;
-      const num = parseInt(fm.scene_number ?? file.name.match(/Scene\s+(\d+)/i)?.[1] ?? '0') || 0;
+      if (!fm || fm.type !== 'scene') continue;
+
+      seen.add(file.path);
+      const num = parseInt(
+        fm.scene_number ?? file.name.match(/Scene\s+(\d+)/i)?.[1] ?? '0'
+      ) || 0;
       scenes.push({ path: file.path, name: file.basename, sceneNumber: num, status: fm.status || 'not-started' });
-    };
-
-    const searchFolderRecursive = (folder: TFolder, depth = 0) => {
-      for (const child of folder.children) {
-        if (child instanceof TFile && child.extension === 'md') {
-          addScene(child);
-        } else if (child instanceof TFolder && depth < 2) {
-          // Recurse into Scenes/ or Act X/ subfolders
-          const lower = child.name.toLowerCase();
-          if (lower === 'scenes' || lower.startsWith('act')) {
-            searchFolderRecursive(child, depth + 1);
-          }
-        }
-      }
-    };
-
-    // Case 1: adventure is inside its own folder (folder structure)
-    // e.g. Adventures/AdventureName/AdventureName.md
-    // -> search Adventures/AdventureName/
-    if (advFolder.name === advFile.basename) {
-      searchFolderRecursive(advFolder);
-    }
-
-    // Case 2: adventure is a flat file (e.g. Adventures/AdventureName.md)
-    // -> search sibling folder Adventures/AdventureName - Scenes/
-    //    and also Adventures/AdventureName/ if it exists
-    const siblingSceneFolder = this.app.vault.getAbstractFileByPath(
-      `${advFolder.path}/${advFile.basename} - Scenes`
-    );
-    if (siblingSceneFolder instanceof TFolder) {
-      searchFolderRecursive(siblingSceneFolder);
-    }
-    const siblingFolder = this.app.vault.getAbstractFileByPath(
-      `${advFolder.path}/${advFile.basename}`
-    );
-    if (siblingFolder instanceof TFolder) {
-      searchFolderRecursive(siblingFolder);
-    }
-
-    // Case 3: scenes are directly inside the adventure's parent folder (legacy flat)
-    // only if we haven't found anything yet
-    if (scenes.length === 0) {
-      searchFolderRecursive(advFolder);
     }
 
     scenes.sort((a, b) => a.sceneNumber - b.sceneNumber);
