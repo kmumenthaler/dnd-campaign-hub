@@ -20635,38 +20635,67 @@ class EndSessionModal extends Modal {
 
     const cache = this.app.metadataCache.getFileCache(this.sessionFile);
     const fm = cache?.frontmatter;
-    const adventureRaw = fm?.adventure;
-    const adventurePath = this.parseWikilink(adventureRaw);
+    const adventurePath = this.parseWikilink(fm?.adventure);
 
-    if (!adventurePath) {
-      contentEl.createEl('p', { text: 'This session has no adventure linked. Cannot pick ending scene.' });
-      contentEl.createEl('button', { text: 'Close' }).onclick = () => this.close();
-      return;
-    }
+    if (adventurePath) {
+      await this.buildScenePicker(contentEl, adventurePath);
+    } else {
+      // No adventure linked — show adventure picker first
+      contentEl.createEl('p', {
+        text: 'This session has no adventure linked. Pick one to find its scenes:',
+        cls: 'setting-item-description'
+      });
 
-    // Load scenes
-    const modal = this; // capture for closure
-    this.scenes = await (async () => {
-      // Reuse SessionCreationModal scene-loading logic via a temporary instance
+      const campaignPath = this.sessionFile.parent?.path ?? '';
       const tmp = new SessionCreationModal(this.app, this.plugin);
-      tmp.adventurePath = adventurePath;
-      return tmp.getAllScenesForAdventure(adventurePath);
-    })();
+      tmp.campaignPath = campaignPath;
+      const adventures = await tmp.getAllAdventures();
+
+      if (adventures.length === 0) {
+        contentEl.createEl('p', { text: 'No adventures found.' });
+        contentEl.createEl('button', { text: 'Close' }).onclick = () => this.close();
+        return;
+      }
+
+      let pickedAdventurePath = adventures[0]?.path ?? '';
+      new Setting(contentEl)
+        .setName('Adventure')
+        .addDropdown(dd => {
+          adventures.forEach(a => dd.addOption(a.path, a.name));
+          dd.setValue(pickedAdventurePath);
+          dd.onChange(v => { pickedAdventurePath = v; });
+        });
+
+      const sceneArea = contentEl.createDiv();
+      const loadBtn = contentEl.createEl('button', { text: 'Load Scenes →', cls: 'mod-cta' });
+      loadBtn.style.margin = '8px 0';
+      loadBtn.onclick = async () => {
+        loadBtn.remove();
+        sceneArea.empty();
+        await this.buildScenePicker(sceneArea, pickedAdventurePath, pickedAdventurePath);
+      };
+    }
+  }
+
+  /** Renders the scene picker and Save button into `container`. */
+  private async buildScenePicker(container: HTMLElement, adventurePath: string, overrideAdventurePath?: string) {
+    const modal = this;
+    const tmp = new SessionCreationModal(this.app, this.plugin);
+    this.scenes = await tmp.getAllScenesForAdventure(adventurePath);
 
     if (this.scenes.length === 0) {
-      contentEl.createEl('p', { text: 'No scenes found for this adventure.' });
-      contentEl.createEl('button', { text: 'Close' }).onclick = () => this.close();
+      container.createEl('p', { text: `No scenes found for this adventure. Check that scene notes have type: scene in their frontmatter.` });
+      container.createEl('button', { text: 'Close' }).onclick = () => this.close();
       return;
     }
 
-    // Pre-select: last in-progress, else last scene
     const preferred = [...this.scenes].reverse().find(s => s.status === 'in-progress')
       ?? this.scenes[this.scenes.length - 1];
     this.endingScenePath = preferred?.path ?? '';
 
-    contentEl.createEl('p', { text: 'Record which scene the session ended at. This will be saved to the session frontmatter.', cls: 'setting-item-description' });
+    container.createEl('p', { text: 'Record which scene the session ended at.', cls: 'setting-item-description' });
 
-    new Setting(contentEl)
+    new Setting(container)
       .setName('Ending Scene')
       .setDesc('Scene where the session stopped')
       .addDropdown(dd => {
@@ -20678,22 +20707,23 @@ class EndSessionModal extends Modal {
         dd.onChange(v => { this.endingScenePath = v; });
       });
 
-    const btns = contentEl.createDiv({ cls: 'dnd-modal-buttons' });
+    const btns = container.createDiv({ cls: 'dnd-modal-buttons' });
     const cancel = btns.createEl('button', { text: 'Cancel' });
     cancel.onclick = () => this.close();
     const save = btns.createEl('button', { text: '🏁 Save Ending Scene', cls: 'mod-cta' });
     save.onclick = async () => {
       this.close();
-      await modal.saveEndingScene();
+      await modal.saveEndingScene(overrideAdventurePath ?? adventurePath);
     };
   }
 
-  async saveEndingScene() {
+  async saveEndingScene(resolvedAdventurePath: string) {
     if (!this.endingScenePath) return;
     try {
-      // Write ending_scene to session frontmatter
+      // Write ending_scene (and adventure if missing) to session frontmatter
       let content = await this.app.vault.read(this.sessionFile);
       const wikiVal = `"[[${this.endingScenePath}]]"`;
+
       if (/^ending_scene:/m.test(content)) {
         content = content.replace(/^ending_scene:\s*.*$/m, `ending_scene: ${wikiVal}`);
       } else {
@@ -20701,14 +20731,24 @@ class EndSessionModal extends Modal {
           `${open}${body}ending_scene: ${wikiVal}\n${close}`
         );
       }
+
+      // Also patch adventure: field if it was empty
+      if (!/^adventure:\s*\[\[/m.test(content) && resolvedAdventurePath) {
+        const advWiki = `"[[${resolvedAdventurePath}]]"`;
+        if (/^adventure:/m.test(content)) {
+          content = content.replace(/^adventure:\s*.*$/m, `adventure: ${advWiki}`);
+        } else {
+          content = content.replace(/(---\n)([\s\S]*?)(---\n)/, (_f, open, body, close) =>
+            `${open}${body}adventure: ${advWiki}\n${close}`
+          );
+        }
+      }
+
       await this.app.vault.modify(this.sessionFile, content);
 
       // Add session backlink to scene
       const tmp = new SessionCreationModal(this.app, this.plugin);
-      tmp.adventurePath = (() => {
-        const fm = this.app.metadataCache.getFileCache(this.sessionFile)?.frontmatter;
-        return this.parseWikilink(fm?.adventure) ?? '';
-      })();
+      tmp.adventurePath = resolvedAdventurePath;
       await tmp.addSessionBacklinkToScene(this.endingScenePath, this.sessionFile.path);
 
       // Optionally update scene statuses
