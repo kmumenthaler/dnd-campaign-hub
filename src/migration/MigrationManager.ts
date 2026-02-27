@@ -11,8 +11,8 @@ export const TEMPLATE_VERSIONS = {
   npc: "1.2.0", // Added Edit/Delete buttons
   pc: "1.2.0", // Added Edit/Delete buttons
   player: "1.2.0", // Added Edit/Delete buttons (same as pc)
-  adventure: "1.1.1", // Fixed escaping issues in interactive scene checkboxes
-  scene: "2.0.0", // Specialized scene templates (social, combat, exploration, puzzle, montage)
+  adventure: "1.2.0", // Added Edit/Delete buttons + adventurePath context passing to scene creation
+  scene: "2.1.0", // Consolidated single scene template with Edit/Delete buttons
   faction: "1.0.0",
   item: "1.1.0", // Updated with Edit/Delete buttons
   spell: "1.0.0",
@@ -129,6 +129,22 @@ export class MigrationManager {
     if (fileType === 'encounter-table') {
       const content = await this.app.vault.read(file);
       if (!content.includes('dnd-campaign-hub:edit-encounter-table')) {
+        return true;
+      }
+    }
+
+    // Check for missing edit/delete buttons in adventure notes
+    if (fileType === 'adventure') {
+      const content = await this.app.vault.read(file);
+      if (!content.includes('dnd-campaign-hub:edit-adventure')) {
+        return true;
+      }
+    }
+
+    // Check for missing edit/delete buttons in scene notes
+    if (fileType === 'scene') {
+      const content = await this.app.vault.read(file);
+      if (!content.includes('dnd-campaign-hub:edit-scene')) {
         return true;
       }
     }
@@ -660,12 +676,154 @@ deleteBtn.addEventListener("click", () => {
   }
 
   /**
+   * Migrate Adventure to v1.2.0 (add Edit/Delete buttons + adventurePath context passing)
+   */
+  async migrateAdventureTo1_2_0(file: TFile): Promise<void> {
+    console.log(`Migrating adventure ${file.path} to v1.2.0`);
+
+    const content = await this.app.vault.read(file);
+
+    // Check if edit/delete buttons already exist
+    if (content.includes("dnd-campaign-hub:edit-adventure")) {
+      console.log(`Adventure ${file.path} already has edit/delete buttons`);
+      await this.updateTemplateVersion(file, "1.2.0");
+      return;
+    }
+
+    const updatedButtonBlock = `\`\`\`dataviewjs
+const adventurePath = dv.current().file.path;
+const plugin = app.plugins.plugins['dnd-campaign-hub'];
+
+const sceneButton = dv.el('button', '🎬 Create New Scene');
+sceneButton.className = 'mod-cta';
+sceneButton.onclick = () => {
+  new plugin.SceneCreationModal(app, plugin, adventurePath).open();
+};
+
+const trapButton = dv.el('button', '🪤 Create New Trap', { cls: 'mod-cta' });
+trapButton.style.marginLeft = '10px';
+trapButton.onclick = () => {
+  app.commands.executeCommandById('dnd-campaign-hub:create-trap');
+};
+
+const sessionButton = dv.el('button', '📜 Create Session', { cls: 'mod-cta' });
+sessionButton.style.marginLeft = '10px';
+sessionButton.onclick = async () => {
+  new plugin.SessionCreationModal(app, plugin, adventurePath).open();
+};
+
+const editButton = dv.el('button', '✏️ Edit Adventure');
+editButton.style.marginLeft = '10px';
+editButton.onclick = () => {
+  app.commands.executeCommandById('dnd-campaign-hub:edit-adventure');
+};
+
+const deleteButton = dv.el('button', '🗑️ Delete Adventure');
+deleteButton.style.marginLeft = '10px';
+deleteButton.onclick = () => {
+  app.commands.executeCommandById('dnd-campaign-hub:delete-adventure');
+};
+\`\`\``;
+
+    // Try to replace existing button block (from v1.1.1 with Create Scene/Trap/Session)
+    const replaced = await this.replaceDataviewjsBlock(
+      file,
+      'Create New Scene',
+      updatedButtonBlock
+    );
+
+    if (!replaced) {
+      // No existing block found — inject after the title heading
+      const titleMatch = content.match(/^(---\n[\s\S]*?\n---\n\n)(# .+\n)/m);
+      if (titleMatch) {
+        const newContent = content.replace(
+          titleMatch[0],
+          `${titleMatch[1]}${titleMatch[2]}\n${updatedButtonBlock}\n\n`
+        );
+        await this.app.vault.modify(file, newContent);
+      }
+    }
+
+    await this.updateTemplateVersion(file, "1.2.0");
+    console.log(`Adventure ${file.path} migrated to v1.2.0 with edit/delete buttons + context passing`);
+  }
+
+  /**
+   * Migrate Scene to v2.1.0 (add Edit/Delete buttons if missing)
+   */
+  async migrateSceneTo2_1_0(file: TFile): Promise<void> {
+    console.log(`Migrating scene ${file.path} to v2.1.0`);
+
+    const content = await this.app.vault.read(file);
+
+    // Check if edit/delete buttons already exist
+    if (content.includes("dnd-campaign-hub:edit-scene")) {
+      console.log(`Scene ${file.path} already has edit/delete buttons`);
+      await this.updateTemplateVersion(file, "2.1.0");
+      return;
+    }
+
+    const buttonBlock = `\`\`\`dataviewjs
+// Action buttons for scene management
+const buttonContainer = dv.el("div", "", { 
+  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
+});
+
+// Edit Scene button
+const editBtn = buttonContainer.createEl("button", { 
+  text: "✏️ Edit Scene",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+editBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-scene");
+});
+
+// Delete Scene button  
+const deleteBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Delete Scene",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+deleteBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:delete-scene");
+});
+\`\`\``;
+
+    // Insert button block after the title (first # heading)
+    const titleMatch = content.match(/^(---\n[\s\S]*?\n---\n\n)(# .+\n)/m);
+    if (titleMatch) {
+      // Check if there's a metadata line right after the title
+      const afterTitle = content.substring(titleMatch[0].length);
+      const metaLineMatch = afterTitle.match(/^(\*\*Duration:[\s\S]*?\n(?:\*\*Act:[\s\S]*?\n)?)\n?/);
+      
+      if (metaLineMatch) {
+        // Insert after title + metadata lines
+        const insertPoint = titleMatch[0] + metaLineMatch[0];
+        const newContent = content.replace(
+          insertPoint,
+          `${insertPoint}\n${buttonBlock}\n\n`
+        );
+        await this.app.vault.modify(file, newContent);
+      } else {
+        // Insert right after the title
+        const newContent = content.replace(
+          titleMatch[0],
+          `${titleMatch[1]}${titleMatch[2]}\n${buttonBlock}\n\n`
+        );
+        await this.app.vault.modify(file, newContent);
+      }
+    }
+
+    await this.updateTemplateVersion(file, "2.1.0");
+    console.log(`Scene ${file.path} migrated to v2.1.0 with edit/delete buttons`);
+  }
+
+  /**
    * Apply migration based on file type and version
    */
   async migrateFile(file: TFile): Promise<boolean> {
     try {
       const fileType = await this.getFileType(file);
-      const currentVersion = await this.getFileTemplateVersion(file);
+      let currentVersion = await this.getFileTemplateVersion(file);
 
       if (!fileType) {
         console.error(`No file type found in ${file.path}`);
@@ -679,11 +837,23 @@ deleteBtn.addEventListener("click", () => {
         return false;
       }
 
-      // If file has no version, add the current template version
+      // If file has no version, run full migration for types that need it,
+      // otherwise just stamp the current version
       if (!currentVersion) {
-        console.log(`Adding template_version to ${file.path}`);
-        await this.updateTemplateVersion(file, targetVersion);
-        return true;
+        console.log(`No template_version in ${file.path}, running migration`);
+        
+        // For types with migration logic, treat as version 0.0.0 so they
+        // go through the full migration path below
+        const typesWithMigration = ['player', 'pc', 'npc', 'creature', 'encounter-table', 'adventure', 'scene'];
+        if (typesWithMigration.includes(fileType)) {
+          // Add version field first, then let migration logic handle the rest
+          await this.updateTemplateVersion(file, "0.0.0");
+          // Set currentVersion to 0.0.0 so migration logic below will run
+          currentVersion = "0.0.0";
+        } else {
+          await this.updateTemplateVersion(file, targetVersion);
+          return true;
+        }
       }
 
       // Player/PC-specific migrations
@@ -778,6 +948,36 @@ deleteBtn.addEventListener("click", () => {
         if (!etContent.includes('dnd-campaign-hub:edit-encounter-table')) {
           console.log(`${file.path} has v1.1.0 but missing buttons, re-running migration`);
           await this.migrateEncounterTableTo1_1_0(file);
+          return true;
+        }
+      }
+
+      // Adventure-specific migrations
+      if (fileType === "adventure") {
+        if (this.compareVersions(currentVersion, "1.2.0") < 0) {
+          await this.migrateAdventureTo1_2_0(file);
+          return true;
+        }
+        // Check if edit/delete buttons are missing even if version is 1.2.0
+        const advContent = await this.app.vault.read(file);
+        if (!advContent.includes('dnd-campaign-hub:edit-adventure')) {
+          console.log(`${file.path} has v1.2.0 but missing buttons, re-running migration`);
+          await this.migrateAdventureTo1_2_0(file);
+          return true;
+        }
+      }
+
+      // Scene-specific migrations
+      if (fileType === "scene") {
+        if (this.compareVersions(currentVersion, "2.1.0") < 0) {
+          await this.migrateSceneTo2_1_0(file);
+          return true;
+        }
+        // Check if edit/delete buttons are missing even if version is 2.1.0
+        const sceneContent = await this.app.vault.read(file);
+        if (!sceneContent.includes('dnd-campaign-hub:edit-scene')) {
+          console.log(`${file.path} has v2.1.0 but missing buttons, re-running migration`);
+          await this.migrateSceneTo2_1_0(file);
           return true;
         }
       }

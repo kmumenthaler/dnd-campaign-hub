@@ -647,7 +647,7 @@ deleteBtn.addEventListener("click", () => {
 
 export const ADVENTURE_TEMPLATE = `---
 type: adventure
-template_version: 1.1.1
+template_version: 1.2.0
 name: 
 campaign: 
 world: 
@@ -876,7 +876,7 @@ if (allScenes.length === 0) {
 
 export const SCENE_TEMPLATE = `---
 type: scene
-template_version: 2.0.0
+template_version: 2.1.0
 adventure: "{{ADVENTURE_NAME}}"
 campaign: "{{CAMPAIGN}}"
 world: "{{WORLD}}"
