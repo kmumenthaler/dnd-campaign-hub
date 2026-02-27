@@ -19976,10 +19976,38 @@ class SessionCreationModal extends Modal {
     return adventures;
   }
 
+  /**
+   * Resolve an adventure reference to a TFile.
+   * Handles full paths, wikilink paths, and bare names (e.g. "My Adventure").
+   */
+  resolveAdventureFile(adventureRef: string): TFile | null {
+    // Try as a direct vault path first
+    const direct = this.app.vault.getAbstractFileByPath(adventureRef);
+    if (direct instanceof TFile) return direct;
+
+    // Try appending .md
+    const withMd = this.app.vault.getAbstractFileByPath(adventureRef + '.md');
+    if (withMd instanceof TFile) return withMd;
+
+    // Search the vault for a file matching this name with type: adventure
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (file.basename !== adventureRef) continue;
+      const cache = this.app.metadataCache.getFileCache(file);
+      if (cache?.frontmatter?.type === 'adventure') return file;
+    }
+
+    // Last resort: any file with that basename
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (file.basename === adventureRef) return file;
+    }
+
+    return null;
+  }
+
   async getAllScenesForAdventure(adventurePath: string): Promise<Array<{ path: string; name: string; sceneNumber: number; status: string }>> {
     if (!adventurePath) return [];
 
-    const advFile = this.app.vault.getAbstractFileByPath(adventurePath);
+    const advFile = this.resolveAdventureFile(adventurePath);
     if (!(advFile instanceof TFile)) return [];
 
     const advFolder = advFile.parent;
