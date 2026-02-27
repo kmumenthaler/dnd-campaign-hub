@@ -6,7 +6,6 @@ import {
   NPC_TEMPLATE,
   PC_TEMPLATE,
   ADVENTURE_TEMPLATE,
-  SCENE_TEMPLATE,
   SCENE_SOCIAL_TEMPLATE,
   SCENE_COMBAT_TEMPLATE,
   SCENE_EXPLORATION_TEMPLATE,
@@ -20862,7 +20861,6 @@ class AdventureCreationModal extends Modal {
   levelFrom = "1";
   levelTo = "3";
   expectedSessions = "3";
-  useFolderStructure = false;
   isGM = false;
 
   constructor(app: App, plugin: DndCampaignHubPlugin) {
@@ -20990,20 +20988,6 @@ class AdventureCreationModal extends Modal {
         text.inputEl.style.width = "80px";
       });
 
-    contentEl.createEl("h3", { text: "📁 Structure Options" });
-
-    // Folder Structure Toggle
-    new Setting(contentEl)
-      .setName("Create full folder structure with Acts")
-      .setDesc("Organize scenes into separate Act folders (recommended for 3+ session adventures)")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.useFolderStructure)
-          .onChange((value) => {
-            this.useFolderStructure = value;
-          })
-      );
-
     // Buttons
     const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
 
@@ -21075,23 +21059,13 @@ class AdventureCreationModal extends Modal {
         }
       }
 
-      // Determine folder structure
-      let adventureFolder: string;
-      let mainNotePath: string;
-      let scenesBasePath: string;
-
-      if (this.useFolderStructure) {
-        // Full folder structure: Adventures/Adventure Name/Adventure Name.md
-        adventureFolder = `${baseAdventurePath}/${this.adventureName}`;
-        await this.plugin.ensureFolderExists(adventureFolder);
-        mainNotePath = `${adventureFolder}/${this.adventureName}.md`;
-        scenesBasePath = adventureFolder; // Acts will be subfolders here
-      } else {
-        // Flat structure: Adventures/Adventure Name.md with Scenes subfolder
-        mainNotePath = `${baseAdventurePath}/${this.adventureName}.md`;
-        scenesBasePath = `${baseAdventurePath}/${this.adventureName} - Scenes`;
-        await this.plugin.ensureFolderExists(scenesBasePath);
-      }
+      // Always use folder structure: Adventures/Adventure Name/Adventure Name.md
+      // with a Scenes subfolder for all scene notes
+      const adventureFolder = `${baseAdventurePath}/${this.adventureName}`;
+      await this.plugin.ensureFolderExists(adventureFolder);
+      const mainNotePath = `${adventureFolder}/${this.adventureName}.md`;
+      const scenesFolder = `${adventureFolder}/Scenes`;
+      await this.plugin.ensureFolderExists(scenesFolder);
 
       // Get current date
       const currentDate: string = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
@@ -21100,16 +21074,13 @@ class AdventureCreationModal extends Modal {
       const safeWorldName: string = worldName || campaignName || "Unknown";
       const safeCampaignName: string = campaignName || "Unknown";
 
-      // Create main adventure note
+      // Create main adventure note (no placeholder scenes)
       await this.createMainAdventureNote(mainNotePath, safeCampaignName, safeWorldName, currentDate);
-
-      // Create scene notes
-      await this.createSceneNotes(scenesBasePath, safeCampaignName, safeWorldName, currentDate);
 
       // Open the main adventure file
       await this.app.workspace.openLinkText(mainNotePath, "", true);
 
-      new Notice(`✅ Adventure "${this.adventureName}" created with 9 scenes!`);
+      new Notice(`✅ Adventure "${this.adventureName}" created!`);
     } catch (error) {
       new Notice(`❌ Error creating Adventure: ${error instanceof Error ? error.message : String(error)}`);
       console.error("Adventure creation error:", error);
@@ -21161,55 +21132,6 @@ date: ${currentDate}
     await this.app.vault.create(filePath, adventureContent);
   }
 
-  async createSceneNotes(basePath: string, campaignName: string, worldName: string, currentDate: string) {
-    const scenes = [
-      { act: 1, num: 1, name: "Opening Hook", duration: "15min", type: "social", difficulty: "easy" },
-      { act: 1, num: 2, name: "Investigation", duration: "30min", type: "exploration", difficulty: "medium" },
-      { act: 1, num: 3, name: "First Confrontation", duration: "45min", type: "combat", difficulty: "medium" },
-      { act: 2, num: 4, name: "Complication Arises", duration: "20min", type: "social", difficulty: "medium" },
-      { act: 2, num: 5, name: "Major Challenge", duration: "40min", type: "combat", difficulty: "hard" },
-      { act: 2, num: 6, name: "Critical Choice", duration: "30min", type: "social", difficulty: "hard" },
-      { act: 3, num: 7, name: "Preparation", duration: "20min", type: "exploration", difficulty: "medium" },
-      { act: 3, num: 8, name: "Climactic Battle", duration: "60min", type: "combat", difficulty: "deadly" },
-      { act: 3, num: 9, name: "Resolution", duration: "10min", type: "social", difficulty: "easy" }
-    ];
-
-    for (const scene of scenes) {
-      let scenePath: string;
-      
-      if (this.useFolderStructure) {
-        // Create Act folders
-        const actName = scene.act === 1 ? "Act 1 - Setup" : scene.act === 2 ? "Act 2 - Rising Action" : "Act 3 - Climax";
-        const actFolder = `${basePath}/${actName}`;
-        await this.plugin.ensureFolderExists(actFolder);
-        scenePath = `${actFolder}/Scene ${scene.num} - ${scene.name}.md`;
-      } else {
-        // Flat structure
-        scenePath = `${basePath}/Scene ${scene.num} - ${scene.name}.md`;
-      }
-
-      await this.createSceneNote(scenePath, scene, campaignName, worldName, currentDate);
-    }
-  }
-
-  async createSceneNote(filePath: string, scene: any, campaignName: string, worldName: string, currentDate: string) {
-    const sceneContent = SCENE_TEMPLATE
-      .replace(/{{SCENE_NUMBER}}/g, scene.num.toString())
-      .replace(/{{SCENE_NAME}}/g, scene.name)
-      .replace(/{{ADVENTURE_NAME}}/g, this.adventureName)
-      .replace(/{{ACT_NUMBER}}/g, scene.act.toString())
-      .replace(/{{DURATION}}/g, scene.duration)
-      .replace(/{{TYPE}}/g, scene.type)
-      .replace(/{{DIFFICULTY}}/g, scene.difficulty)
-      .replace(/{{CAMPAIGN}}/g, campaignName)
-      .replace(/{{WORLD}}/g, worldName)
-      .replace(/{{DATE}}/g, currentDate)
-      .replace(/{{TRACKER_ENCOUNTER}}/g, "")
-      .replace(/{{ENCOUNTER_CREATURES}}/g, "[]")
-      .replace(/{{ENCOUNTER_DIFFICULTY}}/g, "null");
-
-    await this.app.vault.create(filePath, sceneContent);
-  }
 
   onClose() {
     const { contentEl } = this;
@@ -23240,30 +23162,34 @@ class SceneCreationModal extends Modal {
     const adventureFolder = adventureFile.parent;
     if (!adventureFolder) return scenes;
 
-    // Check for flat structure (Adventure - Scenes folder)
-    const flatScenesFolder = this.app.vault.getAbstractFileByPath(
-      `${adventureFolder.path}/${adventureFile.basename} - Scenes`
-    );
-
-    // Check for folder structure (Adventure/Scene files or Adventure/Act X folders)
-    const folderScenesPath = `${adventureFolder.path}/${adventureFile.basename}`;
-    const folderStructure = this.app.vault.getAbstractFileByPath(folderScenesPath);
-
     let sceneFolders: TFolder[] = [];
 
-    if (flatScenesFolder instanceof TFolder) {
-      // Flat structure
-      sceneFolders.push(flatScenesFolder);
-    } else if (folderStructure instanceof TFolder) {
-      // Folder structure - check for Act folders or direct scenes
-      for (const child of folderStructure.children) {
+    const isFolderStructure = adventureFolder.name === adventureFile.basename;
+
+    if (isFolderStructure) {
+      // Folder structure: Adventures/Adventure Name/
+      // Check for new Scenes folder
+      const scenesFolder = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Scenes`);
+      if (scenesFolder instanceof TFolder) {
+        sceneFolders.push(scenesFolder);
+      }
+      // Also check legacy Act folders
+      for (const child of adventureFolder.children) {
         if (child instanceof TFolder && child.name.startsWith("Act ")) {
           sceneFolders.push(child);
         }
       }
-      // If no Act folders, the main folder contains scenes
+      // If no Scenes or Act folders, check the main folder itself
       if (sceneFolders.length === 0) {
-        sceneFolders.push(folderStructure);
+        sceneFolders.push(adventureFolder);
+      }
+    } else {
+      // Legacy flat structure: Adventures/Adventure Name - Scenes/
+      const flatScenesFolder = this.app.vault.getAbstractFileByPath(
+        `${adventureFolder.path}/${adventureFile.basename} - Scenes`
+      );
+      if (flatScenesFolder instanceof TFolder) {
+        sceneFolders.push(flatScenesFolder);
       }
     }
 
@@ -23343,38 +23269,10 @@ class SceneCreationModal extends Modal {
         let targetPath: string;
         
         if (numberChanged) {
-          // Scene number changed - need to determine new path and potentially renumber
-          const flatScenesFolder = `${adventureFolder.path}/${adventureFile.basename} - Scenes`;
-          const flatExists = this.app.vault.getAbstractFileByPath(flatScenesFolder) instanceof TFolder;
-          const isFolderStructure = adventureFolder.name === adventureFile.basename;
-
-          if (flatExists) {
-            targetPath = `${flatScenesFolder}/Scene ${sceneNum} - ${this.sceneName}.md`;
-          } else if (isFolderStructure) {
-            const actFolderName = this.act === "1" ? "Act 1 - Setup" : 
-                                  this.act === "2" ? "Act 2 - Rising Action" : "Act 3 - Climax";
-            const actFolderPath = `${adventureFolder.path}/${actFolderName}`;
-            const actFolder = this.app.vault.getAbstractFileByPath(actFolderPath);
-            
-            if (actFolder instanceof TFolder) {
-              targetPath = `${actFolderPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
-            } else {
-              // Check if any act folders exist
-              const act1Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 1 - Setup`) instanceof TFolder;
-              const act2Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 2 - Rising Action`) instanceof TFolder;
-              const act3Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 3 - Climax`) instanceof TFolder;
-              
-              if (act1Exists || act2Exists || act3Exists) {
-                await this.plugin.ensureFolderExists(actFolderPath);
-                targetPath = `${actFolderPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
-              } else {
-                targetPath = `${adventureFolder.path}/Scene ${sceneNum} - ${this.sceneName}.md`;
-              }
-            }
-          } else {
-            new Notice("❌ Could not determine scene folder structure!");
-            return;
-          }
+          // Scene number changed - determine new path using the scene's current folder
+          // Scenes stay in their current folder (Scenes/, legacy Act folders, or legacy flat structure)
+          const parentPath = originalFile.parent?.path || "";
+          targetPath = `${parentPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
 
           // Check if new number conflicts with existing scenes (excluding the current scene)
           const existingScenes = await this.getExistingScenes(this.adventurePath);
@@ -23395,17 +23293,6 @@ class SceneCreationModal extends Modal {
           targetPath = `${parentPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
         }
 
-        // Create the updated scene content
-        const currentDate: string = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
-        const sceneData = {
-          act: parseInt(this.act),
-          num: sceneNum,
-          name: this.sceneName,
-          duration: this.duration,
-          type: this.type,
-          difficulty: this.difficulty
-        };
-
         // Handle encounter file
         let encounterFilePath = "";
         if (this.createEncounter && this.creatures.length > 0) {
@@ -23415,24 +23302,89 @@ class SceneCreationModal extends Modal {
           }
         }
 
-        // Update or recreate the scene note
-        const tempPath = targetPath + ".tmp";
-        await this.createSceneNote(tempPath, sceneData, campaignName, worldName, adventureFile.basename, currentDate, encounterFilePath);
+        // Preserve existing scene body content while updating frontmatter + header
+        const existingContent = await this.app.vault.read(originalFile);
 
-        // Read the new content
-        const tempFile = this.app.vault.getAbstractFileByPath(tempPath);
-        if (tempFile instanceof TFile) {
-          const newContent = await this.app.vault.read(tempFile);
-          await this.app.vault.delete(tempFile);
+        // Build updated frontmatter
+        const currentDate: string = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
+        const trackerEncounter = this.encounterName || "";
+        const encounterFile = encounterFilePath ? `"[[${encounterFilePath}]]"` : '""';
+        const encounterCreaturesJson = this.creatures.length > 0 
+          ? JSON.stringify(this.creatures) 
+          : "[]";
+        
+        let encounterDifficultyJson = "null";
+        if (this.creatures.length > 0) {
+          const diffResult = await this.calculateEncounterDifficulty();
+          encounterDifficultyJson = JSON.stringify({
+            difficulty: diffResult.analysis.difficulty,
+            roundsToDefeat: diffResult.analysis.roundsToDefeatEnemies,
+            survivalRatio: Math.round(diffResult.analysis.survivalRatio * 100) / 100,
+            partyHP: diffResult.partyStats.totalHP,
+            partyEffectiveDPR: Math.round(diffResult.analysis.partyEffectiveDPR),
+            enemyHP: diffResult.enemyStats.totalHP,
+            enemyEffectiveDPR: Math.round(diffResult.analysis.enemyEffectiveDPR),
+            enemyCount: diffResult.enemyStats.creatureCount,
+            partyCount: diffResult.partyStats.memberCount
+          });
+        }
 
-          if (originalFile.path === targetPath) {
-            // Same path - just update content
-            await this.app.vault.modify(originalFile, newContent);
-          } else {
-            // Path changed - create new and delete old
-            await this.app.vault.create(targetPath, newContent);
-            await this.app.vault.delete(originalFile);
-          }
+        const updatedFrontmatter = `---
+type: scene
+template_version: 2.0.0
+adventure: "${adventureFile.basename}"
+campaign: "${campaignName}"
+world: "${worldName}"
+act: ${this.act}
+scene_number: ${sceneNum}
+duration: ${this.duration}
+scene_type: ${this.type}
+difficulty: ${this.difficulty}
+status: ${this.app.metadataCache.getFileCache(originalFile)?.frontmatter?.status || 'not-started'}
+tracker_encounter: ${trackerEncounter}
+encounter_file: ${encounterFile}
+encounter_creatures: ${encounterCreaturesJson}
+encounter_difficulty: ${encounterDifficultyJson}
+selected_party_id: "${this.selectedPartyId || ''}"
+selected_party_members: ${JSON.stringify(this.selectedPartyMembers)}
+date: ${currentDate}
+---`;
+
+        // Extract body content (everything after frontmatter)
+        // Find the end of frontmatter
+        const fmEndMatch = existingContent.match(/^---\n[\s\S]*?\n---\n?/);
+        let bodyContent = "";
+        if (fmEndMatch) {
+          bodyContent = existingContent.substring(fmEndMatch[0].length);
+        } else {
+          bodyContent = existingContent;
+        }
+
+        // Update the header line in body content if scene name/number changed
+        bodyContent = bodyContent.replace(
+          /^# Scene\s+\d+:\s+.+$/m,
+          `# Scene ${sceneNum}: ${this.sceneName}`
+        );
+
+        // Update the metadata line if present
+        bodyContent = bodyContent.replace(
+          /^\*\*Duration:\*\*.*\|.*\*\*Difficulty:\*\*.*$/m,
+          `**Duration:** ${this.duration} | **Type:** ${this.type.charAt(0).toUpperCase() + this.type.slice(1)} | **Difficulty:** ${this.difficulty}`
+        );
+        bodyContent = bodyContent.replace(
+          /^\*\*Act:\*\*.*\|.*\*\*Adventure:\*\*.*$/m,
+          `**Act:** ${this.act} | **Adventure:** [[${adventureFile.basename}]]`
+        );
+
+        const updatedContent = updatedFrontmatter + "\n" + bodyContent;
+
+        if (originalFile.path === targetPath) {
+          // Same path - just update content
+          await this.app.vault.modify(originalFile, updatedContent);
+        } else {
+          // Path changed - create new and delete old
+          await this.app.vault.create(targetPath, updatedContent);
+          await this.app.vault.delete(originalFile);
         }
 
         // Update Initiative Tracker encounter
@@ -23459,52 +23411,55 @@ class SceneCreationModal extends Modal {
         return;
       }
 
-      // Check which structure is being used
-      // Flat structure: Adventures/Adventure Name.md with "Adventure Name - Scenes" folder
-      // Folder structure: Adventures/Adventure Name/Adventure Name.md with scenes in that folder (or Act subfolders)
-      
-      const flatScenesFolder = `${adventureFolder.path}/${adventureFile.basename} - Scenes`;
-      const flatExists = this.app.vault.getAbstractFileByPath(flatScenesFolder) instanceof TFolder;
-      
-      // For folder structure, check if we're in a dedicated adventure folder
-      // (i.e., adventure file has same name as its parent folder)
+      // Determine scenes folder path
+      // New structure: Adventures/Adventure Name/Scenes/
+      // Legacy support: Adventures/Adventure Name - Scenes/ or Adventures/Adventure Name/Act X/
       const isFolderStructure = adventureFolder.name === adventureFile.basename;
-
+      
       let scenePath: string;
-      let usesActFolders = false;
+      let scenesFolder: string;
 
-      if (flatExists) {
-        // Flat structure
-        scenePath = `${flatScenesFolder}/Scene ${sceneNum} - ${this.sceneName}.md`;
-      } else if (isFolderStructure) {
-        // Folder structure - scenes go in the adventure folder or act subfolders
-        const actFolderName = this.act === "1" ? "Act 1 - Setup" : 
-                              this.act === "2" ? "Act 2 - Rising Action" : "Act 3 - Climax";
-        const actFolderPath = `${adventureFolder.path}/${actFolderName}`;
-        const actFolder = this.app.vault.getAbstractFileByPath(actFolderPath);
+      if (isFolderStructure) {
+        // Folder structure: Adventures/Adventure Name/
+        const newScenesFolder = `${adventureFolder.path}/Scenes`;
+        const newScenesExists = this.app.vault.getAbstractFileByPath(newScenesFolder) instanceof TFolder;
         
-        if (actFolder instanceof TFolder) {
-          usesActFolders = true;
-          scenePath = `${actFolderPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
+        if (newScenesExists) {
+          // New structure: Adventures/Adventure Name/Scenes/
+          scenesFolder = newScenesFolder;
         } else {
-          // Check if ANY act folders exist - if so, this is act-based structure
+          // Legacy: check for Act folders
           const act1Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 1 - Setup`) instanceof TFolder;
           const act2Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 2 - Rising Action`) instanceof TFolder;
           const act3Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 3 - Climax`) instanceof TFolder;
           
           if (act1Exists || act2Exists || act3Exists) {
-            // Act-based structure - create the missing act folder
-            usesActFolders = true;
-            await this.plugin.ensureFolderExists(actFolderPath);
-            scenePath = `${actFolderPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
+            // Legacy act-based - put new scenes in Scenes folder going forward
+            scenesFolder = newScenesFolder;
+            await this.plugin.ensureFolderExists(scenesFolder);
           } else {
-            // No act folders, scenes directly in adventure folder
-            scenePath = `${adventureFolder.path}/Scene ${sceneNum} - ${this.sceneName}.md`;
+            // No Scenes or Act folders - create Scenes folder
+            scenesFolder = newScenesFolder;
+            await this.plugin.ensureFolderExists(scenesFolder);
           }
         }
+        scenePath = `${scenesFolder}/Scene ${sceneNum} - ${this.sceneName}.md`;
       } else {
-        new Notice("❌ Could not determine scene folder structure!");
-        return;
+        // Legacy flat structure: Adventures/Adventure Name - Scenes/
+        const flatScenesFolder = `${adventureFolder.path}/${adventureFile.basename} - Scenes`;
+        const flatExists = this.app.vault.getAbstractFileByPath(flatScenesFolder) instanceof TFolder;
+        
+        if (flatExists) {
+          scenesFolder = flatScenesFolder;
+        } else {
+          // Create new Scenes folder inside adventure folder
+          // Need to create the adventure folder first
+          const advFolder = `${adventureFolder.path}/${adventureFile.basename}`;
+          await this.plugin.ensureFolderExists(advFolder);
+          scenesFolder = `${advFolder}/Scenes`;
+          await this.plugin.ensureFolderExists(scenesFolder);
+        }
+        scenePath = `${scenesFolder}/Scene ${sceneNum} - ${this.sceneName}.md`;
       }
 
       // Check if we need to renumber existing scenes
