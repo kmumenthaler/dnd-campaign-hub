@@ -667,10 +667,13 @@ date:
 **Sessions Played:** 
 
 \`\`\`dataviewjs
+const adventurePath = dv.current().file.path;
+const plugin = app.plugins.plugins['dnd-campaign-hub'];
+
 const sceneButton = dv.el('button', '🎬 Create New Scene');
 sceneButton.className = 'mod-cta';
 sceneButton.onclick = () => {
-  app.commands.executeCommandById('dnd-campaign-hub:create-scene');
+  new plugin.SceneCreationModal(app, plugin, adventurePath).open();
 };
 
 const trapButton = dv.el('button', '🪤 Create New Trap', { cls: 'mod-cta' });
@@ -679,12 +682,22 @@ trapButton.onclick = () => {
   app.commands.executeCommandById('dnd-campaign-hub:create-trap');
 };
 
-const sessionButton = dv.el('button', '📜 Create Session for This Adventure', { cls: 'mod-cta' });
+const sessionButton = dv.el('button', '📜 Create Session', { cls: 'mod-cta' });
 sessionButton.style.marginLeft = '10px';
 sessionButton.onclick = async () => {
-  const adventurePath = dv.current().file.path;
-  const plugin = app.plugins.plugins['dnd-campaign-hub'];
   new plugin.SessionCreationModal(app, plugin, adventurePath).open();
+};
+
+const editButton = dv.el('button', '✏️ Edit Adventure');
+editButton.style.marginLeft = '10px';
+editButton.onclick = () => {
+  app.commands.executeCommandById('dnd-campaign-hub:edit-adventure');
+};
+
+const deleteButton = dv.el('button', '🗑️ Delete Adventure');
+deleteButton.style.marginLeft = '10px';
+deleteButton.onclick = () => {
+  app.commands.executeCommandById('dnd-campaign-hub:delete-adventure');
 };
 \`\`\`
 
@@ -858,11 +871,10 @@ if (allScenes.length === 0) {
 `;
 
 // ============================================================================
-// SPECIALIZED SCENE TEMPLATES
+// SCENE TEMPLATE
 // ============================================================================
 
-// Base frontmatter and header shared across all scene types
-const SCENE_BASE_HEADER = (type: string) => `---
+export const SCENE_TEMPLATE = `---
 type: scene
 template_version: 2.0.0
 adventure: "{{ADVENTURE_NAME}}"
@@ -871,7 +883,7 @@ world: "{{WORLD}}"
 act: {{ACT_NUMBER}}
 scene_number: {{SCENE_NUMBER}}
 duration: {{DURATION}}
-scene_type: ${type}
+scene_type: {{TYPE}}
 difficulty: {{DIFFICULTY}}
 status: not-started
 tracker_encounter: {{TRACKER_ENCOUNTER}}
@@ -885,7 +897,7 @@ date: {{DATE}}
 
 # Scene {{SCENE_NUMBER}}: {{SCENE_NAME}}
 
-**Duration:** {{DURATION}} | **Type:** ${type.charAt(0).toUpperCase() + type.slice(1)} | **Difficulty:** {{DIFFICULTY}}  
+**Duration:** {{DURATION}} | **Type:** {{TYPE}} | **Difficulty:** {{DIFFICULTY}}  
 **Act:** {{ACT_NUMBER}} | **Adventure:** [[{{ADVENTURE_NAME}}]]
 
 \`\`\`dataviewjs
@@ -915,29 +927,6 @@ deleteBtn.addEventListener("click", () => {
 
 ---
 `;
-
-// 1. SOCIAL SCENE - NPC interactions, negotiations, information gathering
-export const SCENE_SOCIAL_TEMPLATE = SCENE_BASE_HEADER('social') + `
-`;
-
-// 2. COMBAT SCENE - Fighting enemies
-export const SCENE_COMBAT_TEMPLATE = SCENE_BASE_HEADER('combat') + `
-`;
-
-// 3. EXPLORATION SCENE - Discovery, environment interaction, optional encounters
-export const SCENE_EXPLORATION_TEMPLATE = SCENE_BASE_HEADER('exploration') + `
-`;
-
-// 4. PUZZLE SCENE - Riddles, mechanical challenges, intellectual problems
-export const SCENE_PUZZLE_TEMPLATE = SCENE_BASE_HEADER('puzzle') + `
-`;
-
-// 5. MONTAGE SCENE - Skill challenges, time compression, complex sequences
-export const SCENE_MONTAGE_TEMPLATE = SCENE_BASE_HEADER('montage') + `
-`;
-
-// Legacy template for backwards compatibility - defaults to exploration type
-export const SCENE_TEMPLATE = SCENE_EXPLORATION_TEMPLATE;
 
 export const TRAP_TEMPLATE = `---
 type: trap

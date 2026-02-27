@@ -6,11 +6,7 @@ import {
   NPC_TEMPLATE,
   PC_TEMPLATE,
   ADVENTURE_TEMPLATE,
-  SCENE_SOCIAL_TEMPLATE,
-  SCENE_COMBAT_TEMPLATE,
-  SCENE_EXPLORATION_TEMPLATE,
-  SCENE_PUZZLE_TEMPLATE,
-  SCENE_MONTAGE_TEMPLATE,
+  SCENE_TEMPLATE,
   TRAP_TEMPLATE,
   FACTION_TEMPLATE,
   ITEM_TEMPLATE,
@@ -2689,6 +2685,8 @@ type MapMediaElement = (HTMLImageElement | HTMLVideoElement) & {
 export default class DndCampaignHubPlugin extends Plugin {
   settings!: DndCampaignHubSettings;
   SessionCreationModal = SessionCreationModal;
+  SceneCreationModal = SceneCreationModal;
+  AdventureCreationModal = AdventureCreationModal;
   migrationManager!: MigrationManager;
   encounterBuilder!: EncounterBuilder;
   mapManager!: MapManager;
@@ -3111,6 +3109,37 @@ export default class DndCampaignHubPlugin extends Plugin {
       id: "create-adventure",
       name: "Create New Adventure",
       callback: () => this.createAdventure(),
+    });
+
+    this.addCommand({
+      id: "edit-adventure",
+      name: "Edit Adventure",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          this.editAdventure(file.path);
+        } else {
+          new Notice("Please open an adventure note first");
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "delete-adventure",
+      name: "Delete Adventure",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "adventure") {
+            await this.deleteAdventure(file);
+          } else {
+            new Notice("Please open an adventure note first");
+          }
+        } else {
+          new Notice("Please open an adventure note first");
+        }
+      },
     });
 
     this.addCommand({
@@ -4329,6 +4358,60 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async createAdventure() {
 		// Open Adventure creation modal
 		new AdventureCreationModal(this.app, this).open();
+	}
+
+	async editAdventure(adventurePath: string) {
+		// Open Adventure creation modal in edit mode
+		new AdventureCreationModal(this.app, this, adventurePath).open();
+	}
+
+	async deleteAdventure(file: TFile) {
+		const adventureName = this.app.metadataCache.getFileCache(file)?.frontmatter?.name || file.basename;
+		const adventureFolder = file.parent;
+
+		const confirmed = await this.confirmDelete(`adventure "${adventureName}" and all its scenes`);
+		if (!confirmed) return;
+
+		try {
+			if (adventureFolder && adventureFolder.name === file.basename) {
+				// Folder structure: delete the entire adventure folder
+				const children = [...adventureFolder.children];
+				for (const child of children) {
+					if (child instanceof TFolder) {
+						// Recursively delete subfolders (Scenes, Act folders, etc.)
+						const subChildren = [...child.children];
+						for (const subChild of subChildren) {
+							if (subChild instanceof TFile) {
+								await this.app.vault.delete(subChild);
+							}
+						}
+						await this.app.vault.delete(child);
+					} else if (child instanceof TFile) {
+						await this.app.vault.delete(child);
+					}
+				}
+				await this.app.vault.delete(adventureFolder);
+			} else {
+				// Flat structure: delete the adventure file and its scenes folder
+				const scenesFolder = this.app.vault.getAbstractFileByPath(
+					`${file.parent?.path}/${file.basename} - Scenes`
+				);
+				if (scenesFolder instanceof TFolder) {
+					const children = [...scenesFolder.children];
+					for (const child of children) {
+						if (child instanceof TFile) {
+							await this.app.vault.delete(child);
+						}
+					}
+					await this.app.vault.delete(scenesFolder);
+				}
+				await this.app.vault.delete(file);
+			}
+			new Notice(`✅ Adventure "${adventureName}" deleted!`);
+		} catch (error) {
+			new Notice(`❌ Error deleting adventure: ${error instanceof Error ? error.message : String(error)}`);
+			console.error("Adventure deletion error:", error);
+		}
 	}
 
 	async createScene() {
@@ -20862,18 +20945,80 @@ class AdventureCreationModal extends Modal {
   levelTo = "3";
   expectedSessions = "3";
   isGM = false;
+  
+  // Edit mode
+  isEdit = false;
+  originalPath = "";
+  originalStatus = "planning";
 
-  constructor(app: App, plugin: DndCampaignHubPlugin) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string) {
     super(app);
     this.plugin = plugin;
     this.campaign = plugin.settings.currentCampaign;
+    if (adventurePath) {
+      this.isEdit = true;
+      this.originalPath = adventurePath;
+    }
+  }
+
+  async loadAdventureData() {
+    try {
+      const file = this.app.vault.getAbstractFileByPath(this.originalPath);
+      if (!(file instanceof TFile)) {
+        new Notice("Adventure file not found!");
+        return;
+      }
+
+      const cache = this.app.metadataCache.getFileCache(file);
+      const frontmatter = cache?.frontmatter;
+
+      if (!frontmatter) {
+        new Notice("Could not read adventure data!");
+        return;
+      }
+
+      this.adventureName = frontmatter.name || file.basename;
+      this.theProblem = "";
+      this.originalStatus = frontmatter.status || "planning";
+      
+      // Parse level range
+      const levelRange = frontmatter.level_range || "1-3";
+      const parts = String(levelRange).split("-");
+      this.levelFrom = parts[0] || "1";
+      this.levelTo = parts[1] || "3";
+      
+      this.expectedSessions = String(frontmatter.expected_sessions || "3");
+
+      // Resolve campaign path
+      const campaignName = frontmatter.campaign || "";
+      this.campaign = `ttrpgs/${campaignName}`;
+      
+      // Read body to get "The Problem" text
+      const content = await this.app.vault.read(file);
+      const problemMatch = content.match(/## The Problem\s*\n\n([\s\S]*?)(?=\n##|\n---|\n$)/);
+      if (problemMatch && problemMatch[1]) {
+        const text = problemMatch[1].trim();
+        // Skip placeholder text
+        if (!text.startsWith("_[")) {
+          this.theProblem = text;
+        }
+      }
+    } catch (error) {
+      console.error("Error loading adventure data:", error);
+      new Notice("Error loading adventure data");
+    }
   }
 
   async onOpen() {
     const { contentEl } = this;
     contentEl.empty();
 
-    contentEl.createEl("h2", { text: "🗺️ Create New Adventure" });
+    // Load existing adventure data if editing
+    if (this.isEdit) {
+      await this.loadAdventureData();
+    }
+
+    contentEl.createEl("h2", { text: this.isEdit ? "✏️ Edit Adventure" : "🗺️ Create New Adventure" });
 
     // Get all campaigns and filter for GM ones
     const allCampaigns = await this.getAllGMCampaigns();
@@ -20907,10 +21052,11 @@ class AdventureCreationModal extends Modal {
       .addText((text) => {
         text
           .setPlaceholder("e.g., The Sunless Citadel, Murder in Baldur's Gate")
+          .setValue(this.adventureName)
           .onChange((value) => {
             this.adventureName = value;
           });
-        text.inputEl.focus();
+        if (!this.isEdit) text.inputEl.focus();
       });
 
     // Campaign Selection (only GM campaigns)
@@ -20936,6 +21082,7 @@ class AdventureCreationModal extends Modal {
       .addTextArea((text) => {
         text
           .setPlaceholder("e.g., A kobold tribe has taken over an ancient citadel and is terrorizing nearby settlements. The mayor desperately needs heroes to stop the raids before the town is abandoned.")
+          .setValue(this.theProblem)
           .onChange((value) => {
             this.theProblem = value;
           });
@@ -20997,7 +21144,7 @@ class AdventureCreationModal extends Modal {
     });
 
     const createButton = buttonContainer.createEl("button", {
-      text: "Create Adventure",
+      text: this.isEdit ? "Save Changes" : "Create Adventure",
       cls: "mod-cta",
     });
 
@@ -21008,8 +21155,122 @@ class AdventureCreationModal extends Modal {
       }
 
       this.close();
-      await this.createAdventureFile();
+      if (this.isEdit) {
+        await this.updateAdventureFile();
+      } else {
+        await this.createAdventureFile();
+      }
     });
+  }
+
+  async updateAdventureFile() {
+    try {
+      const originalFile = this.app.vault.getAbstractFileByPath(this.originalPath);
+      if (!(originalFile instanceof TFile)) {
+        new Notice("❌ Adventure file not found!");
+        return;
+      }
+
+      new Notice(`Updating adventure "${this.adventureName}"...`);
+
+      const existingContent = await this.app.vault.read(originalFile);
+      const campaignName = this.campaign.split('/').pop() || "Unknown";
+
+      // Get world name
+      const worldFile = this.app.vault.getAbstractFileByPath(`${this.campaign}/World.md`);
+      let worldName = campaignName;
+      if (worldFile instanceof TFile) {
+        const worldContent = await this.app.vault.read(worldFile);
+        const worldMatch = worldContent.match(/^world:\s*([^\r\n]+)$/m);
+        if (worldMatch && worldMatch[1]?.trim()) {
+          worldName = worldMatch[1].trim();
+        }
+      }
+
+      const currentDate: string = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
+
+      // Build updated frontmatter preserving status and sessions
+      const cache = this.app.metadataCache.getFileCache(originalFile);
+      const existingFm = cache?.frontmatter;
+      const sessions = existingFm?.sessions ? JSON.stringify(existingFm.sessions) : "[]";
+      const currentAct = existingFm?.current_act || 1;
+
+      const updatedFrontmatter = `---
+type: adventure
+name: ${this.adventureName}
+campaign: ${campaignName}
+world: ${worldName}
+status: ${this.originalStatus}
+level_range: ${this.levelFrom}-${this.levelTo}
+current_act: ${currentAct}
+expected_sessions: ${this.expectedSessions}
+sessions: ${sessions}
+date: ${currentDate}
+---`;
+
+      // Replace frontmatter
+      let updatedContent = existingContent.replace(/^---\n[\s\S]*?\n---/, updatedFrontmatter);
+
+      // Update title
+      updatedContent = updatedContent.replace(
+        /^# .+$/m,
+        `# ${this.adventureName}`
+      );
+
+      // Update metadata line
+      updatedContent = updatedContent.replace(
+        /\*\*Level:\*\* .+? \| \*\*Current Act:\*\*/,
+        `**Level:** ${this.levelFrom}-${this.levelTo} | **Current Act:**`
+      );
+      updatedContent = updatedContent.replace(
+        /\*\*Expected Sessions:\*\* \S+/,
+        `**Expected Sessions:** ${this.expectedSessions}`
+      );
+
+      // Update "The Problem" section
+      const problemText = this.theProblem || "_[What urgent situation demands heroes?]_";
+      updatedContent = updatedContent.replace(
+        /## The Problem\s*\n\n[\s\S]*?(?=\n## )/,
+        `## The Problem\n\n${problemText}\n\n`
+      );
+
+      // Handle rename if name changed
+      const originalName = originalFile.basename;
+      if (originalName !== this.adventureName) {
+        const parentFolder = originalFile.parent;
+        
+        if (parentFolder && parentFolder.name === originalName) {
+          // Folder structure: Adventures/OldName/OldName.md → rename folder then file
+          const grandParentPath = parentFolder.parent?.path || "";
+          const newFolderPath = `${grandParentPath}/${this.adventureName}`;
+          
+          // Update content first
+          await this.app.vault.modify(originalFile, updatedContent);
+          
+          // Rename the parent folder (this moves everything inside)
+          await this.app.fileManager.renameFile(parentFolder, newFolderPath);
+          
+          // Now rename the file inside the new folder
+          const movedFile = this.app.vault.getAbstractFileByPath(`${newFolderPath}/${originalName}.md`);
+          if (movedFile instanceof TFile) {
+            await this.app.fileManager.renameFile(movedFile, `${newFolderPath}/${this.adventureName}.md`);
+          }
+        } else {
+          // Flat structure
+          const parentPath = parentFolder?.path || "";
+          const newPath = `${parentPath}/${this.adventureName}.md`;
+          await this.app.vault.modify(originalFile, updatedContent);
+          await this.app.fileManager.renameFile(originalFile, newPath);
+        }
+      } else {
+        await this.app.vault.modify(originalFile, updatedContent);
+      }
+
+      new Notice(`✅ Adventure "${this.adventureName}" updated!`);
+    } catch (error) {
+      new Notice(`❌ Error updating adventure: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("Adventure update error:", error);
+    }
   }
 
   async getAllGMCampaigns(): Promise<Array<{ path: string; name: string }>> {
@@ -23602,36 +23863,8 @@ date: ${currentDate}
       });
     }
     
-    // Select the appropriate template based on scene type
-    let templateToUse = SCENE_EXPLORATION_TEMPLATE; // Default
-    switch (scene.type) {
-      case 'social':
-        templateToUse = SCENE_SOCIAL_TEMPLATE;
-        break;
-      case 'combat':
-        templateToUse = SCENE_COMBAT_TEMPLATE;
-        break;
-      case 'exploration':
-        templateToUse = SCENE_EXPLORATION_TEMPLATE;
-        break;
-      case 'puzzle':
-        templateToUse = SCENE_PUZZLE_TEMPLATE;
-        break;
-      case 'montage':
-        templateToUse = SCENE_MONTAGE_TEMPLATE;
-        break;
-    }
-    
-    // Calculate difficulty DC based on difficulty level
-    const difficultyDCs: Record<string, string> = {
-      'easy': '12',
-      'medium': '15',
-      'hard': '18',
-      'deadly': '20'
-    };
-    const difficultyDC = difficultyDCs[scene.difficulty] || '15';
-    
-    const sceneContent = templateToUse
+    // Use generic scene template
+    const sceneContent = SCENE_TEMPLATE
       .replace(/{{SCENE_NUMBER}}/g, scene.num.toString())
       .replace(/{{SCENE_NAME}}/g, scene.name)
       .replace(/{{ADVENTURE_NAME}}/g, adventureName)
@@ -23639,7 +23872,6 @@ date: ${currentDate}
       .replace(/{{DURATION}}/g, scene.duration)
       .replace(/{{TYPE}}/g, scene.type)
       .replace(/{{DIFFICULTY}}/g, scene.difficulty)
-      .replace(/{{DIFFICULTY_DC}}/g, difficultyDC)
       .replace(/{{CAMPAIGN}}/g, campaignName)
       .replace(/{{WORLD}}/g, worldName)
       .replace(/{{DATE}}/g, currentDate)
