@@ -19997,18 +19997,48 @@ class SessionCreationModal extends Modal {
       scenes.push({ path: file.path, name: file.basename, sceneNumber: num, status: fm.status || 'not-started' });
     };
 
-    // Search in adventure folder and its Scenes/ subfolder
-    const searchFolder = (folder: TFolder) => {
+    const searchFolderRecursive = (folder: TFolder, depth = 0) => {
       for (const child of folder.children) {
-        if (child instanceof TFile && child.extension === 'md') addScene(child);
-        else if (child instanceof TFolder && child.name.toLowerCase() === 'scenes') {
-          for (const sc of child.children) {
-            if (sc instanceof TFile && sc.extension === 'md') addScene(sc);
+        if (child instanceof TFile && child.extension === 'md') {
+          addScene(child);
+        } else if (child instanceof TFolder && depth < 2) {
+          // Recurse into Scenes/ or Act X/ subfolders
+          const lower = child.name.toLowerCase();
+          if (lower === 'scenes' || lower.startsWith('act')) {
+            searchFolderRecursive(child, depth + 1);
           }
         }
       }
     };
-    searchFolder(advFolder);
+
+    // Case 1: adventure is inside its own folder (folder structure)
+    // e.g. Adventures/AdventureName/AdventureName.md
+    // -> search Adventures/AdventureName/
+    if (advFolder.name === advFile.basename) {
+      searchFolderRecursive(advFolder);
+    }
+
+    // Case 2: adventure is a flat file (e.g. Adventures/AdventureName.md)
+    // -> search sibling folder Adventures/AdventureName - Scenes/
+    //    and also Adventures/AdventureName/ if it exists
+    const siblingSceneFolder = this.app.vault.getAbstractFileByPath(
+      `${advFolder.path}/${advFile.basename} - Scenes`
+    );
+    if (siblingSceneFolder instanceof TFolder) {
+      searchFolderRecursive(siblingSceneFolder);
+    }
+    const siblingFolder = this.app.vault.getAbstractFileByPath(
+      `${advFolder.path}/${advFile.basename}`
+    );
+    if (siblingFolder instanceof TFolder) {
+      searchFolderRecursive(siblingFolder);
+    }
+
+    // Case 3: scenes are directly inside the adventure's parent folder (legacy flat)
+    // only if we haven't found anything yet
+    if (scenes.length === 0) {
+      searchFolderRecursive(advFolder);
+    }
 
     scenes.sort((a, b) => a.sceneNumber - b.sceneNumber);
     return scenes;
@@ -20589,6 +20619,10 @@ class EndSessionModal extends Modal {
 
   private parseWikilink(val: unknown): string | null {
     if (!val) return null;
+    // Obsidian metadata cache resolves wikilinks to {path, ...} objects
+    if (typeof val === 'object' && val !== null && 'path' in val) {
+      return (val as { path: string }).path || null;
+    }
     const s = String(val);
     const m = s.match(/\[\[(.+?)\]\]/);
     return m ? (m[1] ?? null) : (s.trim() || null);
