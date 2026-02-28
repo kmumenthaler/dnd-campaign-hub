@@ -32105,13 +32105,18 @@ class PlayerMapView extends ItemView {
     playerDrawings.forEach((d: any) => this.drawDrawing(ctx, d));
 
     // Separate player tokens from other markers - player tokens should always be visible
-    const playerTokens: any[] = [];
+    // visibleToPlayers tokens are drawn on top of fog (always visible) but do NOT
+    // contribute to vision — only actual player-type tokens act as vision sources.
+    const playerTokens: any[] = [];      // actual player-type tokens (vision sources)
+    const visibleNonPlayerTokens: any[] = []; // non-player tokens marked visible to players
     const otherMarkers: any[] = [];
     playerMarkers.forEach((m: any) => {
       if (m.markerId) {
         const markerDef = this.plugin.markerLibrary.getMarker(m.markerId);
-        if (markerDef && (markerDef.type === 'player' || m.visibleToPlayers)) {
+        if (markerDef && markerDef.type === 'player') {
           playerTokens.push(m);
+        } else if (markerDef && m.visibleToPlayers) {
+          visibleNonPlayerTokens.push(m);
         } else {
           otherMarkers.push(m);
         }
@@ -32123,6 +32128,7 @@ class PlayerMapView extends ItemView {
     console.log('[Marker Separation Debug] Separated markers:', {
       totalPlayerMarkers: playerMarkers.length,
       playerTokensCount: playerTokens.length,
+      visibleNonPlayerCount: visibleNonPlayerTokens.length,
       otherMarkersCount: otherMarkers.length,
       allPlayerMarkers: playerMarkers.map((m: any) => {
         const markerDef = m.markerId ? this.plugin.markerLibrary.getMarker(m.markerId) : null;
@@ -32251,13 +32257,15 @@ class PlayerMapView extends ItemView {
     // Determine which player tokens are vision-relevant for tunnel visibility checks.
     // When a specific vision token is selected, ONLY that token can "see" into tunnels.
     // A surface token should never see underground tokens, and vice versa.
+    // Only actual player-type tokens contribute to vision — visibleToPlayers tokens
+    // are drawn on top of fog but do NOT act as vision sources.
     const selectedVisionToken = config.selectedVisionTokenId
       ? playerTokens.find((m: any) => m.id === config.selectedVisionTokenId)
       : null;
     const selectedVisionIsInTunnel = !!(selectedVisionToken && selectedVisionToken.tunnelState);
     const visionRelevantTokens: any[] = config.selectedVisionTokenId
       ? (selectedVisionToken ? [selectedVisionToken] : [])
-      : playerTokens; // Default: all player tokens contribute to vision
+      : playerTokens; // Default: only actual player tokens contribute to vision
 
     // Draw non-player markers (these will be obscured by fog)
     // Filter out burrowed tokens unless they're marked as visible to players OR visible to a player in the same tunnel
@@ -32846,6 +32854,9 @@ class PlayerMapView extends ItemView {
     // A token in a tunnel cannot see through the earth to the surface
     if (!config.selectedVisionTokenId || !selectedVisionIsInTunnel) {
       surfacePlayerTokens.forEach((m: any) => this.drawMarker(ctx, m));
+      // Draw non-player tokens marked "visible to players" on top of fog.
+      // These tokens are visible but do NOT contribute to vision/fog calculation.
+      visibleNonPlayerTokens.filter((m: any) => !m.tunnelState).forEach((m: any) => this.drawMarker(ctx, m));
     }
     
     // Draw tunnel players on top (after tunnel paths are rendered)
@@ -34421,7 +34432,9 @@ class PlayerMapView extends ItemView {
     
     // Collect vision tokens - defines what's visible in the player view
     // If selectedVisionTokenId is set, use ONLY that token (any type: player, creature, NPC)
-    // Otherwise, use all player-type tokens (default combined vision)
+    // Otherwise, use only actual player-type tokens (default combined vision)
+    // visibleToPlayers does NOT make a token a vision source — it only means
+    // the token is drawn on top of fog. Vision is exclusively from player tokens.
     // SKIP tokens in tunnels (underground) - they don't reveal above-ground fog
     const playerTokens: { x: number; y: number; darkvision: number }[] = [];
     if (config.markers && config.markers.length > 0) {
@@ -34443,8 +34456,8 @@ class PlayerMapView extends ItemView {
           // Single-token mode: only include the selected token (any type)
           includeToken = (marker.id === config.selectedVisionTokenId);
         } else {
-          // Default mode: include all player-type tokens and tokens marked visible to players
-          includeToken = (markerDef.type === 'player' || !!marker.visibleToPlayers);
+          // Default mode: ONLY actual player-type tokens contribute to vision
+          includeToken = (markerDef.type === 'player');
         }
         
         if (includeToken) {
@@ -34622,7 +34635,7 @@ class PlayerMapView extends ItemView {
     // Darkvision reveals fog but shows grayscale
     // Collect markers with darkvision for fog reveal
     // Respects selectedVisionTokenId: single-token mode uses only the selected token (any type)
-    // Default mode uses all player-type tokens
+    // Default mode uses only actual player-type tokens (visibleToPlayers ≠ vision source)
     const darkvisionMarkers: any[] = [];
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
@@ -34643,8 +34656,8 @@ class PlayerMapView extends ItemView {
           // Single-token mode: only include the selected token (any type)
           includeToken = (marker.id === config.selectedVisionTokenId);
         } else {
-          // Default mode: include all player-type tokens and tokens marked visible to players
-          includeToken = (markerDef.type === 'player' || !!marker.visibleToPlayers);
+          // Default mode: ONLY actual player-type tokens contribute to darkvision
+          includeToken = (markerDef.type === 'player');
         }
         
         if (includeToken) {
