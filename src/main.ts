@@ -1506,7 +1506,20 @@ class EncounterBuilderModal extends Modal {
         creature.path = newFilePath;
         creature.source = "vault";
         creature.isCustom = false;
-        // count, hp, ac, cr, isFriendly, isHidden all stay the same
+        // count, isFriendly, isHidden stay the same
+
+        // Read stats back from the newly created file to ensure hp/ac/cr are set
+        const createdFile = this.app.vault.getAbstractFileByPath(newFilePath);
+        if (createdFile instanceof TFile) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+          const cache = this.app.metadataCache.getFileCache(createdFile);
+          if (cache?.frontmatter) {
+            const fm = cache.frontmatter;
+            creature.hp = parseInt(fm.hp) || creature.hp;
+            creature.ac = parseInt(fm.ac) || creature.ac;
+            creature.cr = fm.cr?.toString() || creature.cr;
+          }
+        }
 
         this.renderCreatureList();
         this.updateDifficultyDisplay();
@@ -26091,6 +26104,19 @@ date: ${currentDate}
         creature.name = newName;
         creature.path = newFilePath;
         creature.source = "vault";
+
+        // Read stats back from the newly created file to ensure hp/ac/cr are set
+        const createdFile = this.app.vault.getAbstractFileByPath(newFilePath);
+        if (createdFile instanceof TFile) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+          const cache = this.app.metadataCache.getFileCache(createdFile);
+          if (cache?.frontmatter) {
+            const fm = cache.frontmatter;
+            creature.hp = parseInt(fm.hp) || creature.hp;
+            creature.ac = parseInt(fm.ac) || creature.ac;
+            creature.cr = fm.cr?.toString() || creature.cr;
+          }
+        }
 
         this.renderCreatureList();
         new Notice(`✅ Renamed "${originalName}" → "${newName}" — creature note and map token created.`);
