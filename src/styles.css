@@ -4939,6 +4939,21 @@
   color: #9c27b0;
 }
 
+/* Rename creature button styling */
+.dnd-creature-rename {
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  background-color: var(--interactive-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dnd-creature-rename:hover {
+  background-color: var(--interactive-hover);
+}
+
   max-width: 90vw;
   max-height: 80vh;
 }

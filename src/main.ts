@@ -498,6 +498,66 @@ class MultiCreatureSelectorModal extends Modal {
   }
 }
 
+/**
+ * Simple modal to prompt for a new creature name when renaming/copying a creature.
+ */
+class RenameCreatureModal extends Modal {
+  originalName: string;
+  onSubmit: (newName: string) => void;
+
+  constructor(app: App, originalName: string, onSubmit: (newName: string) => void) {
+    super(app);
+    this.originalName = originalName;
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h3", { text: "Rename Creature" });
+    contentEl.createEl("p", {
+      text: `This will create a copy of "${this.originalName}" with a new name, including its stats and map token.`,
+      cls: "setting-item-description"
+    });
+
+    let newName = "";
+    new Setting(contentEl)
+      .setName("New Name")
+      .addText(text => {
+        text.setPlaceholder("e.g. Bandit Captain's Guard")
+          .onChange(value => { newName = value.trim(); });
+        text.inputEl.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && newName) {
+            this.onSubmit(newName);
+            this.close();
+          }
+        });
+        // Auto-focus
+        setTimeout(() => text.inputEl.focus(), 50);
+      });
+
+    new Setting(contentEl)
+      .addButton(btn => btn
+        .setButtonText("Create Copy")
+        .setCta()
+        .onClick(() => {
+          if (!newName) {
+            new Notice("Please enter a name.");
+            return;
+          }
+          this.onSubmit(newName);
+          this.close();
+        }))
+      .addButton(btn => btn
+        .setButtonText("Cancel")
+        .onClick(() => this.close()));
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
 class EncounterBuilderModal extends Modal {
   plugin: DndCampaignHubPlugin;
   encounterBuilder: EncounterBuilder;
@@ -1269,6 +1329,319 @@ class EncounterBuilderModal extends Modal {
     this.updateDifficultyDisplay();
   }
 
+  /**
+   * Rename a creature by creating a copy of its vault note (and map token) under a new name.
+   * The original creature entry is replaced with the copy. Count is preserved.
+   */
+  async renameCreature(index: number) {
+    const creature = this.creatures[index];
+    if (!creature) return;
+
+    const modal = new RenameCreatureModal(this.app, creature.name, async (newName: string) => {
+      try {
+        // Determine the beastiaryPath — first existing folder wins
+        const possiblePaths = ["z_Beastiarity", "My Vault/z_Beastiarity"];
+        let beastiaryPath = "z_Beastiarity";
+        for (const p of possiblePaths) {
+          if (this.app.vault.getAbstractFileByPath(p) instanceof TFolder) {
+            beastiaryPath = p;
+            break;
+          }
+        }
+
+        const newFilePath = `${beastiaryPath}/${newName}.md`;
+
+        // Check if a creature with the new name already exists
+        if (await this.app.vault.adapter.exists(newFilePath)) {
+          new Notice(`A creature named "${newName}" already exists! Using existing file.`);
+          // Point the encounter entry at the existing file
+          const existingFile = this.app.vault.getAbstractFileByPath(newFilePath);
+          if (existingFile instanceof TFile) {
+            const cache = this.app.metadataCache.getFileCache(existingFile);
+            creature.name = newName;
+            creature.path = newFilePath;
+            creature.source = "vault";
+            creature.isCustom = false;
+            // Pick up stats from the existing file if available
+            if (cache?.frontmatter) {
+              if (cache.frontmatter.hp) creature.hp = parseInt(cache.frontmatter.hp) || creature.hp;
+              if (cache.frontmatter.ac) creature.ac = parseInt(cache.frontmatter.ac) || creature.ac;
+              if (cache.frontmatter.cr) creature.cr = cache.frontmatter.cr?.toString() || creature.cr;
+            }
+          }
+          this.renderCreatureList();
+          this.updateDifficultyDisplay();
+          return;
+        }
+
+        // --- Build the new creature file content ---
+        let newContent: string | null = null;
+        let sourceTokenId: string | undefined;
+
+        if (creature.path && creature.path !== "[SRD]") {
+          // ── Vault creature: read and patch the original file ──
+          const originalFile = this.app.vault.getAbstractFileByPath(creature.path);
+          if (originalFile instanceof TFile) {
+            const fileContent = await this.app.vault.read(originalFile);
+            const cache = this.app.metadataCache.getFileCache(originalFile);
+            sourceTokenId = cache?.frontmatter?.token_id;
+
+            // Replace name in frontmatter and statblock code block
+            newContent = fileContent
+              .replace(/^name:\s*.+$/m, `name: ${newName}`)
+              .replace(/^creature:\s*.+$/m, `creature: ${newName}`);
+          }
+        }
+
+        if (!newContent && creature.path === "[SRD]") {
+          // ── SRD creature: read full data from Fantasy Statblocks bestiary ──
+          const statblocksPlugin = (this.app as any).plugins?.plugins?.["obsidian-5e-statblocks"];
+          let monsterData: any = null;
+
+          if (statblocksPlugin) {
+            // Try API first
+            if (statblocksPlugin.api?.getBestiaryCreatures) {
+              const all = statblocksPlugin.api.getBestiaryCreatures();
+              if (Array.isArray(all)) {
+                monsterData = all.find((m: any) => m.name === creature.name);
+              }
+            }
+            // Fallback: data.bestiary / data.monsters
+            if (!monsterData) {
+              const src = statblocksPlugin.data?.bestiary || statblocksPlugin.data?.monsters;
+              if (Array.isArray(src)) {
+                monsterData = src.find((m: any) => m.name === creature.name);
+              }
+            }
+          }
+
+          if (monsterData) {
+            newContent = this.buildCreatureFileFromStatblock(newName, monsterData);
+          }
+        }
+
+        // ── Fallback: create a minimal creature file from encounter stats ──
+        if (!newContent) {
+          newContent = this.buildMinimalCreatureFile(newName, creature);
+        }
+
+        // --- Generate a new token_id and create the MarkerDefinition ---
+        const newTokenId = this.plugin.markerLibrary.generateId();
+
+        // Try to copy the source marker's visual properties
+        let existingMarker: MarkerDefinition | undefined;
+        if (sourceTokenId) {
+          existingMarker = this.plugin.markerLibrary.getMarker(sourceTokenId);
+        }
+        // Fallback: search by creature name
+        if (!existingMarker) {
+          existingMarker = this.plugin.markerLibrary.getAllMarkers().find(
+            (m: MarkerDefinition) => m.name.toLowerCase() === creature.name.toLowerCase() && m.type === 'creature'
+          );
+        }
+
+        const now = Date.now();
+        const tokenDef: MarkerDefinition = {
+          ...(existingMarker ? { ...existingMarker } : {}),
+          id: newTokenId,
+          name: newName,
+          type: existingMarker?.type || 'creature',
+          icon: existingMarker?.icon || '',
+          backgroundColor: existingMarker?.backgroundColor || '#8b0000',
+          borderColor: existingMarker?.borderColor || '#ffffff',
+          creatureSize: existingMarker?.creatureSize || 'medium',
+          createdAt: now,
+          updatedAt: now
+        };
+        await this.plugin.markerLibrary.setMarker(tokenDef);
+
+        // Inject the new token_id into the file content
+        if (newContent.includes("token_id:")) {
+          newContent = newContent.replace(/^token_id:\s*.+$/m, `token_id: ${newTokenId}`);
+        } else {
+          // Insert token_id before the closing ---
+          newContent = newContent.replace(/\n---\s*\n/, `\ntoken_id: ${newTokenId}\n---\n`);
+        }
+
+        // --- Create the new creature file ---
+        await this.app.vault.create(newFilePath, newContent);
+
+        // --- Save to Fantasy Statblocks bestiary ---
+        try {
+          const statblocksPlugin = (this.app as any).plugins?.plugins?.["obsidian-5e-statblocks"];
+          if (statblocksPlugin?.data?.bestiary) {
+            // Parse the new file's frontmatter to build the bestiary entry
+            const newFile = this.app.vault.getAbstractFileByPath(newFilePath);
+            if (newFile instanceof TFile) {
+              // Wait a moment for metadata cache to update
+              await new Promise(resolve => setTimeout(resolve, 200));
+              const cache = this.app.metadataCache.getFileCache(newFile);
+              if (cache?.frontmatter) {
+                const fm = cache.frontmatter;
+                const statblock: any = {
+                  name: newName,
+                  size: fm.size || "Medium",
+                  type: fm.type || "humanoid",
+                  alignment: fm.alignment || "",
+                  ac: parseInt(fm.ac) || 10,
+                  hp: parseInt(fm.hp) || 1,
+                  hit_dice: fm.hit_dice || "",
+                  speed: fm.speed || "30 ft.",
+                  stats: fm.stats || [10, 10, 10, 10, 10, 10],
+                  cr: fm.cr?.toString() || "0",
+                  source: "Homebrew"
+                };
+                statblocksPlugin.data.bestiary.push(statblock);
+                await statblocksPlugin.saveSettings();
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[Rename] Failed to save to Fantasy Statblocks bestiary:", e);
+        }
+
+        // --- Update the encounter creature entry ---
+        const originalName = creature.name;
+        creature.name = newName;
+        creature.path = newFilePath;
+        creature.source = "vault";
+        creature.isCustom = false;
+        // count, hp, ac, cr, isFriendly, isHidden all stay the same
+
+        this.renderCreatureList();
+        this.updateDifficultyDisplay();
+        new Notice(`✅ Renamed "${originalName}" → "${newName}" — creature note and map token created.`);
+      } catch (error) {
+        console.error("[Rename] Error renaming creature:", error);
+        new Notice(`❌ Failed to rename creature: ${error}`);
+      }
+    });
+    modal.open();
+  }
+
+  /**
+   * Build a creature markdown file from Fantasy Statblocks bestiary data.
+   */
+  private buildCreatureFileFromStatblock(newName: string, monster: any): string {
+    const stats = monster.stats || [10, 10, 10, 10, 10, 10];
+    const calcMod = (score: number) => Math.floor((score - 10) / 2);
+
+    let fm = `---\nstatblock: true\nlayout: Basic 5e Layout\nname: ${newName}\n`;
+    fm += `size: ${monster.size || "Medium"}\n`;
+    fm += `type: ${monster.type || "humanoid"}\n`;
+    if (monster.subtype) fm += `subtype: ${monster.subtype}\n`;
+    fm += `alignment: ${monster.alignment || ""}\n`;
+    fm += `ac: ${monster.ac ?? 10}\n`;
+    fm += `hp: ${monster.hp ?? 1}\n`;
+    if (monster.hit_dice) fm += `hit_dice: ${monster.hit_dice}\n`;
+    fm += `speed: ${monster.speed || "30 ft."}\n`;
+    fm += `stats:\n`;
+    for (const s of stats) fm += `  - ${s}\n`;
+    fm += `fage_stats:\n`;
+    for (const s of stats) fm += `  - ${calcMod(s)}\n`;
+
+    // Saves
+    if (Array.isArray(monster.saves) && monster.saves.length > 0) {
+      fm += `saves:\n`;
+      for (const save of monster.saves) {
+        if (typeof save === 'object') {
+          const key = Object.keys(save)[0];
+          if (key) fm += `  - ${key}: ${save[key]}\n`;
+        }
+      }
+    } else { fm += `saves:\n`; }
+
+    // Skills
+    if (Array.isArray(monster.skillsaves) && monster.skillsaves.length > 0) {
+      fm += `skillsaves:\n`;
+      for (const skill of monster.skillsaves) {
+        if (typeof skill === 'object') {
+          const key = Object.keys(skill)[0];
+          if (key) fm += `  - ${key}: ${skill[key]}\n`;
+        }
+      }
+    } else { fm += `skillsaves:\n`; }
+
+    fm += `damage_vulnerabilities: ${monster.damage_vulnerabilities || ""}\n`;
+    fm += `damage_resistances: ${monster.damage_resistances || ""}\n`;
+    fm += `damage_immunities: ${monster.damage_immunities || ""}\n`;
+    fm += `condition_immunities: ${monster.condition_immunities || ""}\n`;
+    fm += `senses: ${monster.senses || ""}\n`;
+    fm += `languages: ${monster.languages || ""}\n`;
+    fm += `cr: ${monster.cr ?? "0"}\n`;
+    fm += `spells:\n`;
+
+    // Traits
+    if (Array.isArray(monster.traits) && monster.traits.length > 0) {
+      fm += `traits:\n`;
+      for (const t of monster.traits) {
+        if (t.name && t.desc) {
+          fm += `  - name: ${t.name}\n    desc: "${String(t.desc).replace(/"/g, '\\"')}"\n`;
+        }
+      }
+    } else { fm += `traits:\n`; }
+
+    // Actions
+    if (Array.isArray(monster.actions) && monster.actions.length > 0) {
+      fm += `actions:\n`;
+      for (const a of monster.actions) {
+        if (a.name && a.desc) {
+          fm += `  - name: ${a.name}\n    desc: "${String(a.desc).replace(/"/g, '\\"')}"\n`;
+        }
+      }
+    } else { fm += `actions:\n`; }
+
+    fm += `legendary_actions:\n`;
+    if (Array.isArray(monster.legendary_actions) && monster.legendary_actions.length > 0) {
+      for (const la of monster.legendary_actions) {
+        if (la.name && la.desc) {
+          fm += `  - name: ${la.name}\n    desc: "${String(la.desc).replace(/"/g, '\\"')}"\n`;
+        }
+      }
+    }
+
+    fm += `bonus_actions:\n`;
+    fm += `reactions:\n`;
+    if (Array.isArray(monster.reactions) && monster.reactions.length > 0) {
+      for (const r of monster.reactions) {
+        if (r.name && r.desc) {
+          fm += `  - name: ${r.name}\n    desc: "${String(r.desc).replace(/"/g, '\\"')}"\n`;
+        }
+      }
+    }
+
+    fm += `token_id: PLACEHOLDER\n`;
+    fm += `---\n\n`;
+
+    fm += `${newName} creature description.\n`;
+    fm += `\n\`\`\`statblock\ncreature: ${newName}\n\`\`\`\n`;
+
+    return fm;
+  }
+
+  /**
+   * Build a minimal creature markdown file from encounter stats (fallback).
+   */
+  private buildMinimalCreatureFile(newName: string, creature: EncounterCreature): string {
+    let fm = `---\nstatblock: true\nlayout: Basic 5e Layout\nname: ${newName}\n`;
+    fm += `size: Medium\ntype: humanoid\nalignment: ""\n`;
+    fm += `ac: ${creature.ac ?? 10}\nhp: ${creature.hp ?? 1}\n`;
+    fm += `speed: 30 ft.\n`;
+    fm += `stats:\n  - 10\n  - 10\n  - 10\n  - 10\n  - 10\n  - 10\n`;
+    fm += `fage_stats:\n  - 0\n  - 0\n  - 0\n  - 0\n  - 0\n  - 0\n`;
+    fm += `saves:\nskillsaves:\n`;
+    fm += `damage_vulnerabilities: ""\ndamage_resistances: ""\n`;
+    fm += `damage_immunities: ""\ncondition_immunities: ""\n`;
+    fm += `senses: ""\nlanguages: ""\n`;
+    fm += `cr: ${creature.cr || "0"}\nspells:\ntraits:\nactions:\n`;
+    fm += `legendary_actions:\nbonus_actions:\nreactions:\n`;
+    fm += `token_id: PLACEHOLDER\n`;
+    fm += `---\n\n`;
+    fm += `${newName} creature description.\n`;
+    fm += `\n\`\`\`statblock\ncreature: ${newName}\n\`\`\`\n`;
+    return fm;
+  }
+
   renderCreatureList() {
     if (!this.creatureListContainer) return;
     this.creatureListContainer.empty();
@@ -1320,6 +1693,16 @@ class EncounterBuilderModal extends Modal {
         creature.isHidden = !creature.isHidden;
         this.renderCreatureList();
         this.updateDifficultyDisplay();
+      });
+      
+      // Rename button — copy creature with a new name
+      const renameBtn = creatureItem.createEl("button", {
+        text: "✏️",
+        cls: "dnd-creature-rename",
+        attr: { title: "Rename (copy with new name)" }
+      });
+      renameBtn.addEventListener("click", () => {
+        this.renameCreature(index);
       });
       
       const removeBtn = creatureItem.createEl("button", {
@@ -25591,6 +25974,190 @@ date: ${currentDate}
   }
 
   /**
+   * Rename a creature by creating a copy of its vault note (and map token) under a new name.
+   * Mirrors EncounterBuilderModal.renameCreature().
+   */
+  async renameCreature(index: number) {
+    const creature = this.creatures[index];
+    if (!creature) return;
+
+    const modal = new RenameCreatureModal(this.app, creature.name, async (newName: string) => {
+      try {
+        const possiblePaths = ["z_Beastiarity", "My Vault/z_Beastiarity"];
+        let beastiaryPath = "z_Beastiarity";
+        for (const p of possiblePaths) {
+          if (this.app.vault.getAbstractFileByPath(p) instanceof TFolder) {
+            beastiaryPath = p;
+            break;
+          }
+        }
+
+        const newFilePath = `${beastiaryPath}/${newName}.md`;
+
+        if (await this.app.vault.adapter.exists(newFilePath)) {
+          new Notice(`A creature named "${newName}" already exists! Using existing file.`);
+          const existingFile = this.app.vault.getAbstractFileByPath(newFilePath);
+          if (existingFile instanceof TFile) {
+            const cache = this.app.metadataCache.getFileCache(existingFile);
+            creature.name = newName;
+            creature.path = newFilePath;
+            creature.source = "vault";
+            if (cache?.frontmatter) {
+              if (cache.frontmatter.hp) creature.hp = parseInt(cache.frontmatter.hp) || creature.hp;
+              if (cache.frontmatter.ac) creature.ac = parseInt(cache.frontmatter.ac) || creature.ac;
+              if (cache.frontmatter.cr) creature.cr = cache.frontmatter.cr?.toString() || creature.cr;
+            }
+          }
+          this.renderCreatureList();
+          return;
+        }
+
+        let newContent: string | null = null;
+        let sourceTokenId: string | undefined;
+
+        if (creature.path && creature.path !== "[SRD]") {
+          const originalFile = this.app.vault.getAbstractFileByPath(creature.path);
+          if (originalFile instanceof TFile) {
+            const fileContent = await this.app.vault.read(originalFile);
+            const cache = this.app.metadataCache.getFileCache(originalFile);
+            sourceTokenId = cache?.frontmatter?.token_id;
+            newContent = fileContent
+              .replace(/^name:\s*.+$/m, `name: ${newName}`)
+              .replace(/^creature:\s*.+$/m, `creature: ${newName}`);
+          }
+        }
+
+        if (!newContent && creature.path === "[SRD]") {
+          const statblocksPlugin = (this.app as any).plugins?.plugins?.["obsidian-5e-statblocks"];
+          let monsterData: any = null;
+          if (statblocksPlugin) {
+            if (statblocksPlugin.api?.getBestiaryCreatures) {
+              const all = statblocksPlugin.api.getBestiaryCreatures();
+              if (Array.isArray(all)) {
+                monsterData = all.find((m: any) => m.name === creature.name);
+              }
+            }
+            if (!monsterData) {
+              const src = statblocksPlugin.data?.bestiary || statblocksPlugin.data?.monsters;
+              if (Array.isArray(src)) {
+                monsterData = src.find((m: any) => m.name === creature.name);
+              }
+            }
+          }
+          if (monsterData) {
+            newContent = this.buildCreatureFileFromStatblock(newName, monsterData);
+          }
+        }
+
+        if (!newContent) {
+          newContent = this.buildMinimalCreatureFile(newName, creature);
+        }
+
+        const newTokenId = this.plugin.markerLibrary.generateId();
+        let existingMarker: MarkerDefinition | undefined;
+        if (sourceTokenId) {
+          existingMarker = this.plugin.markerLibrary.getMarker(sourceTokenId);
+        }
+        if (!existingMarker) {
+          existingMarker = this.plugin.markerLibrary.getAllMarkers().find(
+            (m: MarkerDefinition) => m.name.toLowerCase() === creature.name.toLowerCase() && m.type === 'creature'
+          );
+        }
+
+        const now = Date.now();
+        const tokenDef: MarkerDefinition = {
+          ...(existingMarker ? { ...existingMarker } : {}),
+          id: newTokenId,
+          name: newName,
+          type: existingMarker?.type || 'creature',
+          icon: existingMarker?.icon || '',
+          backgroundColor: existingMarker?.backgroundColor || '#8b0000',
+          borderColor: existingMarker?.borderColor || '#ffffff',
+          creatureSize: existingMarker?.creatureSize || 'medium',
+          createdAt: now,
+          updatedAt: now
+        };
+        await this.plugin.markerLibrary.setMarker(tokenDef);
+
+        if (newContent.includes("token_id:")) {
+          newContent = newContent.replace(/^token_id:\s*.+$/m, `token_id: ${newTokenId}`);
+        } else {
+          newContent = newContent.replace(/\n---\s*\n/, `\ntoken_id: ${newTokenId}\n---\n`);
+        }
+
+        await this.app.vault.create(newFilePath, newContent);
+
+        const originalName = creature.name;
+        creature.name = newName;
+        creature.path = newFilePath;
+        creature.source = "vault";
+
+        this.renderCreatureList();
+        new Notice(`✅ Renamed "${originalName}" → "${newName}" — creature note and map token created.`);
+      } catch (error) {
+        console.error("[Rename] Error renaming creature:", error);
+        new Notice(`❌ Failed to rename creature: ${error}`);
+      }
+    });
+    modal.open();
+  }
+
+  /**
+   * Build a creature markdown file from Fantasy Statblocks bestiary data.
+   */
+  private buildCreatureFileFromStatblock(newName: string, monster: any): string {
+    const stats = monster.stats || [10, 10, 10, 10, 10, 10];
+    const calcMod = (score: number) => Math.floor((score - 10) / 2);
+
+    let fm = `---\nstatblock: true\nlayout: Basic 5e Layout\nname: ${newName}\n`;
+    fm += `size: ${monster.size || "Medium"}\ntype: ${monster.type || "humanoid"}\n`;
+    if (monster.subtype) fm += `subtype: ${monster.subtype}\n`;
+    fm += `alignment: ${monster.alignment || ""}\nac: ${monster.ac ?? 10}\nhp: ${monster.hp ?? 1}\n`;
+    if (monster.hit_dice) fm += `hit_dice: ${monster.hit_dice}\n`;
+    fm += `speed: ${monster.speed || "30 ft."}\nstats:\n`;
+    for (const s of stats) fm += `  - ${s}\n`;
+    fm += `fage_stats:\n`;
+    for (const s of stats) fm += `  - ${calcMod(s)}\n`;
+    if (Array.isArray(monster.saves) && monster.saves.length > 0) {
+      fm += `saves:\n`;
+      for (const save of monster.saves) { if (typeof save === 'object') { const key = Object.keys(save)[0]; if (key) fm += `  - ${key}: ${save[key]}\n`; } }
+    } else { fm += `saves:\n`; }
+    if (Array.isArray(monster.skillsaves) && monster.skillsaves.length > 0) {
+      fm += `skillsaves:\n`;
+      for (const skill of monster.skillsaves) { if (typeof skill === 'object') { const key = Object.keys(skill)[0]; if (key) fm += `  - ${key}: ${skill[key]}\n`; } }
+    } else { fm += `skillsaves:\n`; }
+    fm += `damage_vulnerabilities: ${monster.damage_vulnerabilities || ""}\ndamage_resistances: ${monster.damage_resistances || ""}\n`;
+    fm += `damage_immunities: ${monster.damage_immunities || ""}\ncondition_immunities: ${monster.condition_immunities || ""}\n`;
+    fm += `senses: ${monster.senses || ""}\nlanguages: ${monster.languages || ""}\ncr: ${monster.cr ?? "0"}\nspells:\n`;
+    if (Array.isArray(monster.traits) && monster.traits.length > 0) {
+      fm += `traits:\n`;
+      for (const t of monster.traits) { if (t.name && t.desc) fm += `  - name: ${t.name}\n    desc: "${String(t.desc).replace(/"/g, '\\"')}"\n`; }
+    } else { fm += `traits:\n`; }
+    if (Array.isArray(monster.actions) && monster.actions.length > 0) {
+      fm += `actions:\n`;
+      for (const a of monster.actions) { if (a.name && a.desc) fm += `  - name: ${a.name}\n    desc: "${String(a.desc).replace(/"/g, '\\"')}"\n`; }
+    } else { fm += `actions:\n`; }
+    fm += `legendary_actions:\nbonus_actions:\nreactions:\ntoken_id: PLACEHOLDER\n---\n\n`;
+    fm += `${newName} creature description.\n\n\`\`\`statblock\ncreature: ${newName}\n\`\`\`\n`;
+    return fm;
+  }
+
+  /**
+   * Build a minimal creature markdown file from encounter stats (fallback).
+   */
+  private buildMinimalCreatureFile(newName: string, creature: { hp?: number; ac?: number; cr?: string }): string {
+    let fm = `---\nstatblock: true\nlayout: Basic 5e Layout\nname: ${newName}\n`;
+    fm += `size: Medium\ntype: humanoid\nalignment: ""\nac: ${creature.ac ?? 10}\nhp: ${creature.hp ?? 1}\n`;
+    fm += `speed: 30 ft.\nstats:\n  - 10\n  - 10\n  - 10\n  - 10\n  - 10\n  - 10\n`;
+    fm += `fage_stats:\n  - 0\n  - 0\n  - 0\n  - 0\n  - 0\n  - 0\n`;
+    fm += `saves:\nskillsaves:\ndamage_vulnerabilities: ""\ndamage_resistances: ""\n`;
+    fm += `damage_immunities: ""\ncondition_immunities: ""\nsenses: ""\nlanguages: ""\n`;
+    fm += `cr: ${creature.cr || "0"}\nspells:\ntraits:\nactions:\nlegendary_actions:\nbonus_actions:\nreactions:\n`;
+    fm += `token_id: PLACEHOLDER\n---\n\n${newName} creature description.\n\n\`\`\`statblock\ncreature: ${newName}\n\`\`\`\n`;
+    return fm;
+  }
+
+  /**
    * Render the list of creatures in the encounter
    */
   renderCreatureList() {
@@ -25643,6 +26210,16 @@ date: ${currentDate}
       hiddenBtn.addEventListener("click", () => {
         creature.isHidden = !creature.isHidden;
         this.renderCreatureList();
+      });
+      
+      // Rename button — copy creature with a new name
+      const renameBtn = creatureItem.createEl("button", {
+        text: "✏️",
+        cls: "dnd-creature-rename",
+        attr: { title: "Rename (copy with new name)" }
+      });
+      renameBtn.addEventListener("click", () => {
+        this.renameCreature(index);
       });
       
       const removeBtn = creatureItem.createEl("button", {
