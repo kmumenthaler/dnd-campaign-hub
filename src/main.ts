@@ -17891,6 +17891,7 @@ class SessionPrepDashboardView extends ItemView {
   campaignPath: string;
   private refreshInterval: number | null = null;
   private activeLeafChangeRef: any = null;
+  private expandedSections: Set<string> = new Set();
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -17923,15 +17924,34 @@ class SessionPrepDashboardView extends ItemView {
     
     await this.render();
 
+    // Force all open notes into editing (source) mode for prep work
+    setTimeout(() => {
+      this.enableEditMode();
+    }, 300);
+
     // Set up auto-refresh every 30 seconds
     this.refreshInterval = window.setInterval(() => {
       this.render();
     }, 30000);
 
-    // Refresh when this view becomes active
+    // Refresh and enforce edit mode when this view becomes active
     this.activeLeafChangeRef = this.app.workspace.on('active-leaf-change', (leaf) => {
       if (leaf?.view === this) {
         this.render();
+        this.enableEditMode();
+      }
+    });
+  }
+
+  enableEditMode() {
+    // Set all markdown views to source/editing mode for session prep
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (leaf.view.getViewType() === "markdown") {
+        const view = leaf.view as any;
+        if (view.getMode && view.getMode() === "preview") {
+          const state = view.getState();
+          view.setState({ ...state, mode: "source" }, {});
+        }
       }
     });
   }
@@ -17990,8 +18010,11 @@ class SessionPrepDashboardView extends ItemView {
     const toggle = header.createEl("span", { text: "▶", cls: "toggle-icon" });
     header.createEl("span", { text: "⚡ Quick Actions" });
     
+    const sectionKey = "quick-actions";
+    const isExpanded = this.expandedSections.has(sectionKey);
     const content = section.createEl("div", { cls: "section-content" });
-    content.style.display = "none";
+    content.style.display = isExpanded ? "block" : "none";
+    toggle.textContent = isExpanded ? "▼" : "▶";
     
     const actionsGrid = content.createEl("div", { cls: "actions-grid" });
     const allActions = [
@@ -18018,11 +18041,14 @@ class SessionPrepDashboardView extends ItemView {
       });
     }
 
-    let isExpanded = false;
     header.addEventListener("click", () => {
-      isExpanded = !isExpanded;
-      content.style.display = isExpanded ? "block" : "none";
-      toggle.textContent = isExpanded ? "▼" : "▶";
+      if (this.expandedSections.has(sectionKey)) {
+        this.expandedSections.delete(sectionKey);
+      } else {
+        this.expandedSections.add(sectionKey);
+      }
+      content.style.display = this.expandedSections.has(sectionKey) ? "block" : "none";
+      toggle.textContent = this.expandedSections.has(sectionKey) ? "▼" : "▶";
     });
   }
 
@@ -18032,8 +18058,11 @@ class SessionPrepDashboardView extends ItemView {
     const toggle = header.createEl("span", { text: "▶", cls: "toggle-icon" });
     header.createEl("span", { text: "👥 Recent NPCs" });
     
+    const sectionKey = "recent-npcs";
+    const isExpanded = this.expandedSections.has(sectionKey);
     const content = section.createEl("div", { cls: "section-content" });
-    content.style.display = "none";
+    content.style.display = isExpanded ? "block" : "none";
+    toggle.textContent = isExpanded ? "▼" : "▶";
 
     // Get NPCs from the campaign
     const npcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/NPCs`);
@@ -18069,11 +18098,14 @@ class SessionPrepDashboardView extends ItemView {
       }
     }
 
-    let isExpanded = false;
     header.addEventListener("click", () => {
-      isExpanded = !isExpanded;
-      content.style.display = isExpanded ? "block" : "none";
-      toggle.textContent = isExpanded ? "▼" : "▶";
+      if (this.expandedSections.has(sectionKey)) {
+        this.expandedSections.delete(sectionKey);
+      } else {
+        this.expandedSections.add(sectionKey);
+      }
+      content.style.display = this.expandedSections.has(sectionKey) ? "block" : "none";
+      toggle.textContent = this.expandedSections.has(sectionKey) ? "▼" : "▶";
     });
   }
 
@@ -18171,14 +18203,16 @@ class SessionPrepDashboardView extends ItemView {
 
       // Upcoming scenes (collapsed by default)
       if (scenes.length > 1) {
+        const sectionKey = `upcoming-scenes-${adventure.name}`;
+        let upcomingExpanded = this.expandedSections.has(sectionKey);
         const upcomingHeader = adventureCard.createEl("div", { cls: "upcoming-header" });
         const toggleBtn = upcomingHeader.createEl("button", {
-          text: `▶ Show ${scenes.length - 1} more scenes`,
+          text: upcomingExpanded ? `▼ Hide scenes` : `▶ Show ${scenes.length - 1} more scenes`,
           cls: "upcoming-toggle"
         });
 
         const upcomingList = adventureCard.createEl("div", { cls: "upcoming-scenes-list" });
-        upcomingList.style.display = "none";
+        upcomingList.style.display = upcomingExpanded ? "block" : "none";
 
         for (const scene of scenes) {
           if (scene.path === nextScene?.path) continue; // Skip the next scene
@@ -18198,19 +18232,20 @@ class SessionPrepDashboardView extends ItemView {
           });
         }
 
-        let isExpanded = false;
         toggleBtn.addEventListener("click", () => {
-          isExpanded = !isExpanded;
-          upcomingList.style.display = isExpanded ? "block" : "none";
-          toggleBtn.textContent = isExpanded 
+          if (this.expandedSections.has(sectionKey)) {
+            this.expandedSections.delete(sectionKey);
+          } else {
+            this.expandedSections.add(sectionKey);
+          }
+          const expanded = this.expandedSections.has(sectionKey);
+          upcomingList.style.display = expanded ? "block" : "none";
+          toggleBtn.textContent = expanded 
             ? `▼ Hide scenes` 
             : `▶ Show ${scenes.length - 1} more scenes`;
         });
       }
     }
-
-    // Party Stats
-    await this.renderPartyStats(container);
   }
 
   async renderQuickReference(container: HTMLElement) {
@@ -18300,8 +18335,11 @@ class SessionPrepDashboardView extends ItemView {
     const toggle = header.createEl("span", { text: "▶", cls: "toggle-icon" });
     header.createEl("span", { text: "🎭 Party Overview" });
     
+    const sectionKey = "party-overview";
+    let isExpanded = this.expandedSections.has(sectionKey);
     const content = section.createEl("div", { cls: "section-content" });
-    content.style.display = "none";
+    content.style.display = isExpanded ? "block" : "none";
+    toggle.textContent = isExpanded ? "▼" : "▶";
 
     // Get PCs from the campaign
     const pcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/PCs`);
@@ -18377,9 +18415,13 @@ class SessionPrepDashboardView extends ItemView {
       }
     }
 
-    let isExpanded = false;
     header.addEventListener("click", () => {
-      isExpanded = !isExpanded;
+      if (this.expandedSections.has(sectionKey)) {
+        this.expandedSections.delete(sectionKey);
+      } else {
+        this.expandedSections.add(sectionKey);
+      }
+      isExpanded = this.expandedSections.has(sectionKey);
       content.style.display = isExpanded ? "block" : "none";
       toggle.textContent = isExpanded ? "▼" : "▶";
     });
@@ -18517,74 +18559,38 @@ class SessionPrepDashboardView extends ItemView {
 
     if (!(adventureFile instanceof TFile)) return scenes;
 
-    const adventureFolder = adventureFile.parent;
-    if (!adventureFolder) return scenes;
+    const adventureName = adventureFile.basename;
 
-    // Check for flat structure
-    const flatScenesFolder = this.app.vault.getAbstractFileByPath(
-      `${adventureFolder.path}/${adventureFile.basename} - Scenes`
-    );
+    // Search all markdown files by frontmatter: type=scene + adventure matches
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache?.frontmatter;
+      if (!fm || fm.type !== "scene") continue;
 
-    // Check for folder structure
-    const folderScenesPath = `${adventureFolder.path}/${adventureFile.basename}`;
-    const folderStructure = this.app.vault.getAbstractFileByPath(folderScenesPath);
+      // Match by adventure frontmatter field (basename of the adventure)
+      if (fm.adventure !== adventureName) continue;
 
-    let sceneFolders: TFolder[] = [];
+      const sceneNum = parseInt(
+        fm.scene_number ?? file.basename.match(/Scene\s+(\d+)/i)?.[1] ?? "0"
+      ) || 0;
 
-    if (flatScenesFolder instanceof TFolder) {
-      sceneFolders.push(flatScenesFolder);
-    } else if (folderStructure instanceof TFolder) {
-      for (const child of folderStructure.children) {
-        if (child instanceof TFolder && child.name.startsWith("Act ")) {
-          sceneFolders.push(child);
-        }
+      // Extract scene name from frontmatter or filename
+      let sceneName = fm.name || "";
+      if (!sceneName) {
+        const nameMatch = file.basename.match(/^Scene\s+\d+\s+-\s+(.+)$/);
+        sceneName = nameMatch ? nameMatch[1] : file.basename;
       }
-      if (sceneFolders.length === 0) {
-        sceneFolders.push(folderStructure);
-      }
-    } else {
-      // Check if the adventure folder itself contains Act folders
-      // (case where adventure file is inside a folder with the same name)
-      for (const child of adventureFolder.children) {
-        if (child instanceof TFolder && child.name.startsWith("Act ")) {
-          sceneFolders.push(child);
-        }
-      }
-      // If no Act folders, check the adventure folder itself for scenes
-      if (sceneFolders.length === 0) {
-        for (const child of adventureFolder.children) {
-          if (child instanceof TFile && child.extension === "md" && 
-              child.path !== adventurePath && 
-              child.basename.match(/^Scene\s+\d+/)) {
-            sceneFolders.push(adventureFolder);
-            break;
-          }
-        }
-      }
-    }
 
-    // Scan all scene folders
-    for (const folder of sceneFolders) {
-      for (const item of folder.children) {
-        if (item instanceof TFile && item.extension === "md") {
-          const match = item.basename.match(/^Scene\s+(\d+)\s+-\s+(.+)$/);
-          if (match && match[1] && match[2]) {
-            const cache = this.app.metadataCache.getFileCache(item);
-            const frontmatter = cache?.frontmatter;
-
-            scenes.push({
-              path: item.path,
-              number: parseInt(match[1]),
-              name: match[2],
-              type: frontmatter?.scene_type || "exploration",
-              duration: frontmatter?.duration || "?",
-              difficulty: frontmatter?.difficulty || "medium",
-              status: frontmatter?.status || "not-started",
-              goal: ""  // We'll extract this if needed
-            });
-          }
-        }
-      }
+      scenes.push({
+        path: file.path,
+        number: sceneNum,
+        name: sceneName,
+        type: fm.scene_type || "exploration",
+        duration: fm.duration || "?",
+        difficulty: fm.difficulty || "medium",
+        status: fm.status || "not-started",
+        goal: fm.goal || ""
+      });
     }
 
     // Sort by scene number
@@ -18609,8 +18615,11 @@ class SessionPrepDashboardView extends ItemView {
     const toggle = header.createEl("span", { text: "▶", cls: "toggle-icon" });
     header.createEl("span", { text: "📖 Last Session" });
     
+    const sectionKey = "last-session";
+    let isExpanded = this.expandedSections.has(sectionKey);
     const content = section.createEl("div", { cls: "section-content" });
-    content.style.display = "none";
+    content.style.display = isExpanded ? "block" : "none";
+    toggle.textContent = isExpanded ? "▼" : "▶";
 
     // Get recent sessions
     const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
@@ -18682,9 +18691,13 @@ class SessionPrepDashboardView extends ItemView {
       }
     }
 
-    let isExpanded = false;
     header.addEventListener("click", () => {
-      isExpanded = !isExpanded;
+      if (this.expandedSections.has(sectionKey)) {
+        this.expandedSections.delete(sectionKey);
+      } else {
+        this.expandedSections.add(sectionKey);
+      }
+      isExpanded = this.expandedSections.has(sectionKey);
       content.style.display = isExpanded ? "block" : "none";
       toggle.textContent = isExpanded ? "▼" : "▶";
     });
@@ -19799,66 +19812,36 @@ class SessionRunDashboardView extends ItemView {
 
     if (!(adventureFile instanceof TFile)) return scenes;
 
-    const adventureFolder = adventureFile.parent;
-    if (!adventureFolder) return scenes;
+    const adventureName = adventureFile.basename;
 
-    const flatScenesFolder = this.app.vault.getAbstractFileByPath(
-      `${adventureFolder.path}/${adventureFile.basename} - Scenes`
-    );
+    // Search all markdown files by frontmatter: type=scene + adventure matches
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache?.frontmatter;
+      if (!fm || fm.type !== "scene") continue;
 
-    const folderScenesPath = `${adventureFolder.path}/${adventureFile.basename}`;
-    const folderStructure = this.app.vault.getAbstractFileByPath(folderScenesPath);
+      // Match by adventure frontmatter field (basename of the adventure)
+      if (fm.adventure !== adventureName) continue;
 
-    let sceneFolders: TFolder[] = [];
+      const sceneNum = parseInt(
+        fm.scene_number ?? file.basename.match(/Scene\s+(\d+)/i)?.[1] ?? "0"
+      ) || 0;
 
-    if (flatScenesFolder instanceof TFolder) {
-      sceneFolders.push(flatScenesFolder);
-    } else if (folderStructure instanceof TFolder) {
-      for (const child of folderStructure.children) {
-        if (child instanceof TFolder && child.name.startsWith("Act ")) {
-          sceneFolders.push(child);
-        }
+      // Extract scene name from frontmatter or filename
+      let sceneName = fm.name || "";
+      if (!sceneName) {
+        const nameMatch = file.basename.match(/^Scene\s+\d+\s+-\s+(.+)$/);
+        sceneName = nameMatch ? nameMatch[1] : file.basename;
       }
-      if (sceneFolders.length === 0) {
-        sceneFolders.push(folderStructure);
-      }
-    } else {
-      for (const child of adventureFolder.children) {
-        if (child instanceof TFolder && child.name.startsWith("Act ")) {
-          sceneFolders.push(child);
-        }
-      }
-      if (sceneFolders.length === 0) {
-        for (const child of adventureFolder.children) {
-          if (child instanceof TFile && child.extension === "md" && 
-              child.path !== adventurePath && 
-              child.basename.match(/^Scene\s+\d+/)) {
-            sceneFolders.push(adventureFolder);
-            break;
-          }
-        }
-      }
-    }
 
-    for (const folder of sceneFolders) {
-      for (const item of folder.children) {
-        if (item instanceof TFile && item.extension === "md") {
-          const match = item.basename.match(/^Scene\s+(\d+)\s+-\s+(.+)$/);
-          if (match && match[1] && match[2]) {
-            const cache = this.app.metadataCache.getFileCache(item);
-            const frontmatter = cache?.frontmatter;
-
-            scenes.push({
-              path: item.path,
-              number: parseInt(match[1]),
-              name: match[2],
-              type: frontmatter?.scene_type || "exploration",
-              difficulty: frontmatter?.difficulty || "medium",
-              status: frontmatter?.status || "not-started"
-            });
-          }
-        }
-      }
+      scenes.push({
+        path: file.path,
+        number: sceneNum,
+        name: sceneName,
+        type: fm.scene_type || "exploration",
+        difficulty: fm.difficulty || "medium",
+        status: fm.status || "not-started"
+      });
     }
 
     scenes.sort((a, b) => a.number - b.number);
