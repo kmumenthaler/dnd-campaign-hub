@@ -20460,17 +20460,45 @@ class SessionCreationModal extends Modal {
     if (!(advFile instanceof TFile)) return;
     try {
       let content = await this.app.vault.read(advFile);
-      const wikilink = `"[[${sessionFilePath}]]"`;
-      const match = content.match(/^sessions:\s*\[([^\]]*)\]/m);
-      if (match) {
-        const existing = (match[1] ?? '').trim();
-        const newVal = existing ? `${existing}, ${wikilink}` : wikilink;
-        content = content.replace(/^sessions:\s*\[[^\]]*\]/m, `sessions: [${newVal}]`);
-      } else {
-        content = content.replace(/(---\n)([\s\S]*?)(---\n)/, (_full, open, body, close) => {
-          return `${open}${body}sessions: [${wikilink}]\n${close}`;
-        });
+
+      // Parse existing sessions from metadata cache (reliable regardless of YAML format)
+      const cache = this.app.metadataCache.getFileCache(advFile);
+      const existingSessions: string[] = [];
+      if (cache?.frontmatter?.sessions) {
+        const raw = cache.frontmatter.sessions;
+        if (Array.isArray(raw)) {
+          for (const entry of raw) existingSessions.push(String(entry));
+        } else {
+          existingSessions.push(String(raw));
+        }
       }
+
+      // Add new session link if not already present
+      const linkStr = `[[${sessionFilePath}]]`;
+      if (!existingSessions.some(s => s.includes(sessionFilePath))) {
+        existingSessions.push(linkStr);
+      }
+
+      // Build the new sessions value
+      const sessionsValue = `[${existingSessions.map(s => {
+        const normalized = s.startsWith('[[') ? s : `[[${s}]]`;
+        return `"${normalized}"`;
+      }).join(', ')}]`;
+
+      // Remove ALL occurrences of sessions: from frontmatter, then insert canonical one
+      const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+      if (fmMatch && fmMatch[1] !== undefined) {
+        let body = fmMatch[1];
+        // Remove inline sessions: [...]
+        body = body.replace(/^sessions:\s*\[.*$/gm, '');
+        // Remove YAML list sessions:\n  - ...
+        body = body.replace(/^sessions:\s*\n(?:\s+-\s+.*\n?)*/gm, '');
+        // Clean up multiple blank lines
+        body = body.replace(/\n{3,}/g, '\n');
+        body = body.replace(/\s+$/, '');
+        content = content.replace(/^---\n[\s\S]*?\n---/, `---\n${body}\nsessions: ${sessionsValue}\n---`);
+      }
+
       await this.app.vault.modify(advFile, content);
     } catch (e) {
       console.warn("SessionCreationModal: Could not link session to adventure:", e);
@@ -20514,17 +20542,45 @@ class SessionCreationModal extends Modal {
     if (!(sceneFile instanceof TFile)) return;
     try {
       let content = await this.app.vault.read(sceneFile);
-      const wikilink = `"[[${sessionFilePath}]]"`;
-      const match = content.match(/^sessions:\s*\[([^\]]*)\]/m);
-      if (match) {
-        const existing = (match[1] ?? '').trim();
-        const newVal = existing ? `${existing}, ${wikilink}` : wikilink;
-        content = content.replace(/^sessions:\s*\[[^\]]*\]/m, `sessions: [${newVal}]`);
-      } else {
-        content = content.replace(/(---\n)([\s\S]*?)(---\n)/, (_full, open, body, close) => {
-          return `${open}${body}sessions: [${wikilink}]\n${close}`;
-        });
+
+      // Parse existing sessions from metadata cache (reliable regardless of YAML format)
+      const cache = this.app.metadataCache.getFileCache(sceneFile);
+      const existingSessions: string[] = [];
+      if (cache?.frontmatter?.sessions) {
+        const raw = cache.frontmatter.sessions;
+        if (Array.isArray(raw)) {
+          for (const entry of raw) existingSessions.push(String(entry));
+        } else {
+          existingSessions.push(String(raw));
+        }
       }
+
+      // Add new session link if not already present
+      const linkStr = `[[${sessionFilePath}]]`;
+      if (!existingSessions.some(s => s.includes(sessionFilePath))) {
+        existingSessions.push(linkStr);
+      }
+
+      // Build the new sessions value
+      const sessionsValue = `[${existingSessions.map(s => {
+        const normalized = s.startsWith('[[') ? s : `[[${s}]]`;
+        return `"${normalized}"`;
+      }).join(', ')}]`;
+
+      // Remove ALL occurrences of sessions: from frontmatter, then insert canonical one
+      const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+      if (fmMatch && fmMatch[1] !== undefined) {
+        let body = fmMatch[1];
+        // Remove inline sessions: [...]
+        body = body.replace(/^sessions:\s*\[.*$/gm, '');
+        // Remove YAML list sessions:\n  - ...
+        body = body.replace(/^sessions:\s*\n(?:\s+-\s+.*\n?)*/gm, '');
+        // Clean up multiple blank lines
+        body = body.replace(/\n{3,}/g, '\n');
+        body = body.replace(/\s+$/, '');
+        content = content.replace(/^---\n[\s\S]*?\n---/, `---\n${body}\nsessions: ${sessionsValue}\n---`);
+      }
+
       await this.app.vault.modify(sceneFile, content);
     } catch (e) {
       console.warn("SessionCreationModal: Could not add session backlink to scene:", e);
@@ -21627,7 +21683,18 @@ class AdventureCreationModal extends Modal {
       // Build updated frontmatter preserving status and sessions
       const cache = this.app.metadataCache.getFileCache(originalFile);
       const existingFm = cache?.frontmatter;
-      const sessions = existingFm?.sessions ? JSON.stringify(existingFm.sessions) : "[]";
+      const sessionsArr: string[] = [];
+      if (existingFm?.sessions) {
+        const raw = existingFm.sessions;
+        if (Array.isArray(raw)) {
+          for (const entry of raw) sessionsArr.push(String(entry));
+        } else {
+          sessionsArr.push(String(raw));
+        }
+      }
+      const sessions = sessionsArr.length > 0
+        ? `[${sessionsArr.map(s => { const n = s.startsWith('[[') ? s : `[[${s}]]`; return `"${n}"`; }).join(', ')}]`
+        : '[]';
       const currentAct = existingFm?.current_act || 1;
 
       const updatedFrontmatter = `---
@@ -24030,8 +24097,8 @@ class SceneCreationModal extends Modal {
         const existingSessions = (() => {
           const raw = existingFm?.sessions;
           if (!raw) return '[]';
-          if (Array.isArray(raw)) return JSON.stringify(raw);
-          return String(raw);
+          const arr: string[] = Array.isArray(raw) ? raw.map(String) : [String(raw)];
+          return `[${arr.map(s => { const n = s.startsWith('[[') ? s : `[[${s}]]`; return `"${n}"`; }).join(', ')}]`;
         })();
         const existingTemplateVersion = existingFm?.template_version || '2.2.0';
 
