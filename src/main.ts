@@ -5421,6 +5421,177 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let wallDragOffsetStartY = 0;
 			let wallDragOffsetEndX = 0;
 			let wallDragOffsetEndY = 0;
+			// Wall selection rectangle state (for bulk wall height assignment)
+			let wallSelectionRect: { startX: number; startY: number; endX: number; endY: number } | null = null;
+			let selectedWallIndices: number[] = [];
+			let wallClickStartPos: { x: number; y: number } | null = null; // For detecting click vs drag on walls
+			
+			// Find all walls connected to a starting wall via shared endpoints
+			const findConnectedWalls = (startIdx: number, walls: any[]): number[] => {
+				const EPSILON = 2; // tolerance in pixels for endpoint matching
+				const visited = new Set<number>();
+				const queue = [startIdx];
+				visited.add(startIdx);
+				while (queue.length > 0) {
+					const idx = queue.shift()!;
+					const w = walls[idx];
+					for (let i = 0; i < walls.length; i++) {
+						if (visited.has(i)) continue;
+						const other = walls[i];
+						// Check if any endpoint of 'other' is near any endpoint of 'w'
+						const points = [
+							[w.start, other.start], [w.start, other.end],
+							[w.end, other.start], [w.end, other.end]
+						];
+						for (const [a, b] of points) {
+							if (Math.abs(a.x - b.x) <= EPSILON && Math.abs(a.y - b.y) <= EPSILON) {
+								visited.add(i);
+								queue.push(i);
+								break;
+							}
+						}
+					}
+				}
+				return Array.from(visited);
+			};
+			
+			// Helper to build the current height summary for selected walls
+			const getWallHeightSummary = (indices: number[], walls: any[]): string => {
+				const heightMap = new Map<string, number>();
+				for (const wi of indices) {
+					const w = walls[wi];
+					if (!w) continue;
+					const key = w.height !== undefined && w.height !== null ? `${w.height} ft` : '∞ (infinite)';
+					heightMap.set(key, (heightMap.get(key) || 0) + 1);
+				}
+				if (heightMap.size === 0) return 'No walls';
+				if (heightMap.size === 1) {
+					const entry = [...heightMap.entries()][0]!;
+					const label = entry[0];
+					const count = entry[1];
+					return `All ${count} wall${count > 1 ? 's' : ''}: ${label}`;
+				}
+				// Mixed heights
+				const parts: string[] = [];
+				for (const [label, count] of heightMap.entries()) {
+					parts.push(`${count}× ${label}`);
+				}
+				return `Mixed: ${parts.join(', ')}`;
+			};
+			
+			// Shared popup for wall height assignment (used by rect-select, click-select-segment)
+			const showWallHeightPopup = (indices: number[]) => {
+				selectedWallIndices = indices;
+				redrawAnnotations();
+				
+				const popup = document.createElement('div');
+				popup.addClass('dnd-map-context-menu');
+				popup.style.position = 'fixed';
+				popup.style.zIndex = '10000';
+				
+				const header = popup.createDiv({ cls: 'dnd-map-context-menu-header' });
+				header.textContent = `↕️ Set Height for ${indices.length} Wall${indices.length > 1 ? 's' : ''}`;
+				
+				// Current height indicator
+				const currentRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				currentRow.style.padding = '4px 8px';
+				currentRow.style.fontSize = '11px';
+				currentRow.style.opacity = '0.8';
+				currentRow.style.fontStyle = 'italic';
+				currentRow.textContent = `Current: ${getWallHeightSummary(indices, config.walls)}`;
+				
+				const heightRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				heightRow.style.display = 'flex';
+				heightRow.style.alignItems = 'center';
+				heightRow.style.gap = '6px';
+				heightRow.style.padding = '6px 8px';
+				
+				const hInput = heightRow.createEl('input', {
+					attr: { type: 'number', min: '0', max: '500', step: '5', placeholder: '∞ (infinite)' }
+				});
+				hInput.style.width = '100px';
+				hInput.style.textAlign = 'center';
+				hInput.addClass('dnd-map-darkvision-input');
+				// Pre-fill with current uniform height if all walls share the same finite height
+				const heights = indices.map(wi => config.walls[wi]?.height).filter((h: any) => h !== undefined && h !== null);
+				if (heights.length > 0 && heights.every((h: any) => h === heights[0])) {
+					hInput.value = String(heights[0]);
+				}
+				heightRow.createEl('span', { text: 'ft' });
+				
+				const btnRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				btnRow.style.display = 'flex';
+				btnRow.style.gap = '6px';
+				btnRow.style.padding = '4px 8px';
+				
+				const applyBtn = btnRow.createEl('button', { text: 'Apply', cls: 'mod-cta' });
+				const infiniteBtn = btnRow.createEl('button', { text: '∞ Infinite' });
+				const cancelBtn = btnRow.createEl('button', { text: 'Cancel' });
+				
+				const closePopup = () => {
+					if (popup.parentNode) document.body.removeChild(popup);
+					wallSelectionRect = null;
+					selectedWallIndices = [];
+					wallClickStartPos = null;
+					viewport.style.cursor = 'default';
+					redrawAnnotations();
+				};
+				
+				applyBtn.addEventListener('click', () => {
+					const val = parseInt(hInput.value);
+					if (!isNaN(val) && val > 0) {
+						saveToHistory();
+						indices.forEach(wi => {
+							if (config.walls[wi]) config.walls[wi].height = val;
+						});
+						new Notice(`Set ${indices.length} wall${indices.length > 1 ? 's' : ''} to ${val} ft`);
+						this.saveMapAnnotations(config, el);
+						if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					} else {
+						new Notice('Enter a valid height in feet');
+						return;
+					}
+					closePopup();
+				});
+				
+				infiniteBtn.addEventListener('click', () => {
+					saveToHistory();
+					indices.forEach(wi => {
+						if (config.walls[wi]) delete config.walls[wi].height;
+					});
+					new Notice(`Set ${indices.length} wall${indices.length > 1 ? 's' : ''} to infinite height`);
+					this.saveMapAnnotations(config, el);
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					closePopup();
+				});
+				
+				cancelBtn.addEventListener('click', closePopup);
+				hInput.addEventListener('click', (ev) => ev.stopPropagation());
+				hInput.addEventListener('keydown', (ev: KeyboardEvent) => {
+					if (ev.key === 'Enter') applyBtn.click();
+					if (ev.key === 'Escape') closePopup();
+				});
+				
+				document.body.appendChild(popup);
+				// Center the popup
+				const popupRect = popup.getBoundingClientRect();
+				popup.style.left = `${Math.max(10, (window.innerWidth - popupRect.width) / 2)}px`;
+				popup.style.top = `${Math.max(10, (window.innerHeight - popupRect.height) / 2)}px`;
+				
+				// Auto-focus input
+				setTimeout(() => hInput.focus(), 50);
+				
+				// Close on outside click
+				setTimeout(() => {
+					const outsideClick = (ev: MouseEvent) => {
+						if (!popup.contains(ev.target as Node)) {
+							closePopup();
+							document.removeEventListener('click', outsideClick);
+						}
+					};
+					document.addEventListener('click', outsideClick);
+				}, 50);
+			};
 			// Wall types for dynamic lighting
 			const WALL_TYPES = {
 				wall: { name: 'Wall', icon: '🧱', color: '#ff4500', style: 'solid', blocksSight: true, blocksMovement: true },
@@ -7880,9 +8051,61 @@ export default class DndCampaignHubPlugin extends Plugin {
 							ctx.stroke();
 						}
 						
+						// Show wall height label (DM view only) for walls with finite height
+						if (wall.height !== undefined && wall.height !== null) {
+							ctx.save();
+							ctx.font = 'bold 9px sans-serif';
+							ctx.textAlign = 'center';
+							ctx.textBaseline = 'bottom';
+							const heightLabel = `${wall.height}'`;
+							// Draw with outline for readability
+							ctx.strokeStyle = '#000000';
+							ctx.lineWidth = 3;
+							ctx.strokeText(heightLabel, midX, midY - 6);
+							ctx.fillStyle = wallDef.color;
+							ctx.fillText(heightLabel, midX, midY - 6);
+							ctx.restore();
+						}
+						
 						ctx.setLineDash([]);
 					});
 				}
+				
+				// Draw selection rectangle overlay and highlight selected walls
+				if (wallSelectionRect && activeTool === 'select') {
+					const sr = wallSelectionRect;
+					const srMinX = Math.min(sr.startX, sr.endX);
+					const srMinY = Math.min(sr.startY, sr.endY);
+					const srW = Math.abs(sr.endX - sr.startX);
+					const srH = Math.abs(sr.endY - sr.startY);
+					ctx.save();
+					ctx.strokeStyle = '#4fc3f7';
+					ctx.lineWidth = 2 / scale;
+					ctx.setLineDash([6 / scale, 4 / scale]);
+					ctx.strokeRect(srMinX, srMinY, srW, srH);
+					ctx.fillStyle = 'rgba(79, 195, 247, 0.12)';
+					ctx.fillRect(srMinX, srMinY, srW, srH);
+					ctx.setLineDash([]);
+					ctx.restore();
+				}
+
+				// Highlight selected walls (after rectangle selection completes)
+				if (selectedWallIndices.length > 0 && config.walls) {
+					ctx.save();
+					selectedWallIndices.forEach(wi => {
+						const sw = config.walls[wi];
+						if (!sw) return;
+						ctx.beginPath();
+						ctx.moveTo(sw.start.x, sw.start.y);
+						ctx.lineTo(sw.end.x, sw.end.y);
+						ctx.strokeStyle = '#4fc3f7';
+						ctx.lineWidth = 6;
+						ctx.lineCap = 'round';
+						ctx.stroke();
+					});
+					ctx.restore();
+				}
+
 				// Draw wall preview (chain drawing)
 				if (activeTool === 'walls' && wallPoints.length > 0) {
 					const previewWallDef = WALL_TYPES[selectedWallType];
@@ -10086,11 +10309,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 								wallDragOffsetStartY = wall.start.y - mapPos.y;
 								wallDragOffsetEndX = wall.end.x - mapPos.x;
 								wallDragOffsetEndY = wall.end.y - mapPos.y;
+								wallClickStartPos = { x: e.clientX, y: e.clientY };
 								viewport.style.cursor = 'grabbing';
 								redrawAnnotations();
 								break;
 							}
 						}
+					}
+					// If nothing was clicked, start a wall selection rectangle
+					if (!foundMarker && draggingLightIndex < 0 && draggingWallIndex < 0) {
+						wallSelectionRect = { startX: mapPos.x, startY: mapPos.y, endX: mapPos.x, endY: mapPos.y };
+						selectedWallIndices = [];
+						viewport.style.cursor = 'crosshair';
 					}
 				} else if (activeTool === 'highlight') {
 					// Toggle grid highlight on clicked tile
@@ -10926,6 +11156,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 					draggedWall.end.x = mapPos.x + wallDragOffsetEndX;
 					draggedWall.end.y = mapPos.y + wallDragOffsetEndY;
 					redrawAnnotations();
+				} else if (activeTool === 'select' && wallSelectionRect) {
+					// Updating wall selection rectangle
+					wallSelectionRect.endX = mapPos.x;
+					wallSelectionRect.endY = mapPos.y;
+					redrawAnnotations();
 				} else if (activeTool === 'draw' && isDrawing) {
 					currentPath.push({ x: mapPos.x, y: mapPos.y });
 					redrawAnnotations();
@@ -11278,14 +11513,71 @@ export default class DndCampaignHubPlugin extends Plugin {
 						(viewport as any)._syncPlayerView();
 					}
 				} else if (activeTool === 'select' && draggingWallIndex >= 0) {
-					// Drop wall/door/window: save position
+					// Wall mouseup: check if it was a click (no drag) or an actual drag
+					const clickedIdx = draggingWallIndex;
+					const wasDrag = wallClickStartPos ? (
+						Math.abs(e.clientX - wallClickStartPos.x) > 5 || Math.abs(e.clientY - wallClickStartPos.y) > 5
+					) : true;
+					
 					draggingWallIndex = -1;
+					wallClickStartPos = null;
 					viewport.style.cursor = 'default';
-					redrawAnnotations();
-					this.saveMapAnnotations(config, el);
-					// Sync to player views
-					if ((viewport as any)._syncPlayerView) {
-						(viewport as any)._syncPlayerView();
+					
+					if (!wasDrag && config.walls && config.walls.length > 0) {
+						// Click on wall without drag → select connected segment
+						const connected = findConnectedWalls(clickedIdx, config.walls);
+						if (connected.length > 0) {
+							showWallHeightPopup(connected);
+						}
+					} else {
+						// Actual drag → save new wall position
+						redrawAnnotations();
+						this.saveMapAnnotations(config, el);
+						if ((viewport as any)._syncPlayerView) {
+							(viewport as any)._syncPlayerView();
+						}
+					}
+				} else if (activeTool === 'select' && wallSelectionRect) {
+					// Finish wall selection rectangle
+					const rect = wallSelectionRect;
+					const minX = Math.min(rect.startX, rect.endX);
+					const maxX = Math.max(rect.startX, rect.endX);
+					const minY = Math.min(rect.startY, rect.endY);
+					const maxY = Math.max(rect.startY, rect.endY);
+					const rectWidth = maxX - minX;
+					const rectHeight = maxY - minY;
+					
+					// Only process if rectangle is large enough (not just a click)
+					if (rectWidth > 5 && rectHeight > 5 && config.walls && config.walls.length > 0) {
+						// Find walls that have any part inside the selection rectangle
+						const foundIndices: number[] = [];
+						for (let wi = 0; wi < config.walls.length; wi++) {
+							const w = config.walls[wi];
+							const startInside = w.start.x >= minX && w.start.x <= maxX && w.start.y >= minY && w.start.y <= maxY;
+							const endInside = w.end.x >= minX && w.end.x <= maxX && w.end.y >= minY && w.end.y <= maxY;
+							const midX = (w.start.x + w.end.x) / 2;
+							const midY = (w.start.y + w.end.y) / 2;
+							const midInside = midX >= minX && midX <= maxX && midY >= minY && midY <= maxY;
+							if (startInside || endInside || midInside) {
+								foundIndices.push(wi);
+							}
+						}
+						
+						if (foundIndices.length > 0) {
+							wallSelectionRect = null;
+							showWallHeightPopup(foundIndices);
+						} else {
+							wallSelectionRect = null;
+							selectedWallIndices = [];
+							viewport.style.cursor = 'default';
+							redrawAnnotations();
+						}
+					} else {
+						// Click was too small, just clear selection
+						wallSelectionRect = null;
+						selectedWallIndices = [];
+						viewport.style.cursor = 'default';
+						redrawAnnotations();
 					}
 				} else if (activeTool === 'move-grid' && isDragging) {
 					isDragging = false;
@@ -12711,6 +13003,65 @@ export default class DndCampaignHubPlugin extends Plugin {
 								
 								contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
 							}
+							
+							// Wall height setting
+							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+							const heightHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+							heightHeader.textContent = '↕️ Wall Height';
+							
+							const heightRow = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+							heightRow.style.display = 'flex';
+							heightRow.style.alignItems = 'center';
+							heightRow.style.gap = '6px';
+							heightRow.style.padding = '4px 8px';
+							
+							const heightInput = heightRow.createEl('input', {
+								attr: { 
+									type: 'number', 
+									min: '0', 
+									max: '500',
+									step: '5',
+									placeholder: '∞ (infinite)',
+									value: wall.height !== undefined && wall.height !== null ? String(wall.height) : ''
+								}
+							});
+							heightInput.style.width = '80px';
+							heightInput.style.textAlign = 'center';
+							heightInput.addClass('dnd-map-darkvision-input');
+							
+							heightRow.createEl('span', { text: 'ft' });
+							
+							const infiniteBtn = heightRow.createEl('button', { text: '∞', cls: 'mod-cta' });
+							infiniteBtn.style.padding = '2px 8px';
+							infiniteBtn.style.fontSize = '14px';
+							infiniteBtn.title = 'Set to infinite height (default)';
+							
+							heightInput.addEventListener('change', () => {
+								saveToHistory();
+								const val = parseInt(heightInput.value);
+								if (!isNaN(val) && val > 0) {
+									wall.height = val;
+								} else {
+									delete wall.height;
+									heightInput.value = '';
+								}
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								new Notice(wall.height ? `Wall height: ${wall.height} ft` : 'Wall height: infinite');
+							});
+							
+							infiniteBtn.addEventListener('click', () => {
+								saveToHistory();
+								delete wall.height;
+								heightInput.value = '';
+								redrawAnnotations();
+								this.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								new Notice('Wall height: infinite');
+							});
+							
+							heightInput.addEventListener('click', (e) => e.stopPropagation());
 							
 							// Change wall type header
 							const typeHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
@@ -32680,7 +33031,9 @@ class PlayerMapView extends ItemView {
             if (this.hasLineOfSight(
               pt.position.x, pt.position.y,
               m.position.x, m.position.y,
-              sightBlockingWalls
+              sightBlockingWalls,
+              (pt.elevation?.height || 0) - (pt.elevation?.depth || 0),
+              (m.elevation?.height || 0) - (m.elevation?.depth || 0)
             )) {
               canBeSeenByAnyPlayer = true;
               break;
@@ -34316,10 +34669,12 @@ class PlayerMapView extends ItemView {
     fogCtx.fillStyle = 'white';
 
     for (const pt of visionTokens) {
+      const viewerElev = (pt.elevation?.height || 0) - (pt.elevation?.depth || 0);
       const visPoly = this.computeVisibilityPolygon(
         pt.position.x, pt.position.y,
         10000, // effectively infinite range for daylight
-        walls
+        walls,
+        viewerElev
       );
 
       if (visPoly.length >= 3) {
@@ -34427,7 +34782,8 @@ class PlayerMapView extends ItemView {
             bright: marker.light.bright,
             dim: marker.light.dim,
             name: marker.light.name || 'Token Light',
-            attachedToMarker: marker.id
+            attachedToMarker: marker.id,
+            elevation: (marker.elevation?.height || 0) - (marker.elevation?.depth || 0)
           });
         }
       });
@@ -34437,7 +34793,7 @@ class PlayerMapView extends ItemView {
     // If selectedVisionTokenId is set, use ONLY that token (any type: player, creature, NPC)
     // Otherwise, use all player-type tokens + visibleToPlayers tokens (default combined vision)
     // SKIP tokens in tunnels (underground) - they don't reveal above-ground fog
-    const playerTokens: { x: number; y: number; darkvision: number }[] = [];
+    const playerTokens: { x: number; y: number; darkvision: number; elevation: number }[] = [];
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
         if (!marker.markerId) return;
@@ -34465,7 +34821,8 @@ class PlayerMapView extends ItemView {
           playerTokens.push({
             x: marker.position.x,
             y: marker.position.y,
-            darkvision: marker.darkvision || 0
+            darkvision: marker.darkvision || 0,
+            elevation: (marker.elevation?.height || 0) - (marker.elevation?.depth || 0)
           });
         }
       });
@@ -34512,7 +34869,7 @@ class PlayerMapView extends ItemView {
       playerTokens.forEach((pt: any) => {
         // Normal vision extends very far (simulate infinite by using large radius)
         const normalVisionRadius = 10000; // px, effectively infinite
-        const visPoly = this.computeVisibilityPolygon(pt.x, pt.y, normalVisionRadius, walls);
+        const visPoly = this.computeVisibilityPolygon(pt.x, pt.y, normalVisionRadius, walls, pt.elevation);
         if (visPoly.length >= 3) {
           playerVisionCtx.beginPath();
           const first = visPoly[0];
@@ -34540,7 +34897,7 @@ class PlayerMapView extends ItemView {
       playerTokens.forEach((pt: any) => {
         if (pt.darkvision > 0) {
           const radiusPx = pt.darkvision * pixelsPerFoot;
-          const visPoly = this.computeVisibilityPolygon(pt.x, pt.y, radiusPx, walls);
+          const visPoly = this.computeVisibilityPolygon(pt.x, pt.y, radiusPx, walls, pt.elevation);
           if (visPoly.length >= 3) {
             playerDarkvisionCtx.beginPath();
             const first = visPoly[0];
@@ -34585,7 +34942,7 @@ class PlayerMapView extends ItemView {
           lightCtx.save();
           
           // Compute light visibility with wall occlusion
-          const lightVisPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadiusPx, walls);
+          const lightVisPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadiusPx, walls, light.elevation || 0);
           
           if (lightVisPoly.length >= 3) {
             // Clip to light visibility
@@ -34666,7 +35023,8 @@ class PlayerMapView extends ItemView {
           darkvisionMarkers.push({
             x: marker.position.x,
             y: marker.position.y,
-            range: marker.darkvision
+            range: marker.darkvision,
+            elevation: (marker.elevation?.height || 0) - (marker.elevation?.depth || 0)
           });
         }
       });
@@ -34692,9 +35050,9 @@ class PlayerMapView extends ItemView {
       darkvisionMarkers.forEach((dv: any, i: number) => {
         const radiusPx = dv.range * pixelsPerFoot;
         if (radiusPx > 0) {
-          console.log(`[PV] Darkvision ${i}: Revealing ${dv.range}ft (${radiusPx.toFixed(1)}px) radius at (${dv.x.toFixed(1)}, ${dv.y.toFixed(1)})`);
-          // Darkvision reveals fog with wall occlusion
-          this.drawLightWithShadows(fogCtx, dv.x, dv.y, radiusPx, 0, walls);
+          console.log(`[PV] Darkvision ${i}: Revealing ${dv.range}ft (${radiusPx.toFixed(1)}px) radius at (${dv.x.toFixed(1)}, ${dv.y.toFixed(1)}) elevation=${dv.elevation || 0}`);
+          // Darkvision reveals fog with wall occlusion (pass elevation so elevated tokens see over low walls)
+          this.drawLightWithShadows(fogCtx, dv.x, dv.y, radiusPx, 0, walls, dv.elevation || 0);
         }
       });
       
@@ -34727,7 +35085,7 @@ class PlayerMapView extends ItemView {
           
           if (lightCtx) {
             // Compute light visibility with wall occlusion
-            const lightVisPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadiusPx, walls);
+            const lightVisPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadiusPx, walls, light.elevation || 0);
             
             if (lightVisPoly.length >= 3) {
               lightCtx.save();
@@ -34803,13 +35161,14 @@ class PlayerMapView extends ItemView {
     lightY: number,
     brightRadius: number,
     dimRadius: number,
-    walls: any[]
+    walls: any[],
+    viewerElevation: number = 0
   ) {
     const totalRadius = brightRadius + dimRadius;
     if (totalRadius <= 0) return;
 
-    // Compute visibility polygon using ray casting
-    const visibilityPoly = this.computeVisibilityPolygon(lightX, lightY, totalRadius, walls);
+    // Compute visibility polygon using ray casting (pass elevation so elevated viewers see over low walls)
+    const visibilityPoly = this.computeVisibilityPolygon(lightX, lightY, totalRadius, walls, viewerElevation);
     
     if (visibilityPoly.length < 3) {
       // No walls or no valid polygon - just draw full circle
@@ -34881,7 +35240,9 @@ class PlayerMapView extends ItemView {
   private hasLineOfSight(
     x1: number, y1: number,
     x2: number, y2: number,
-    walls: any[]
+    walls: any[],
+    viewerElevation: number = 0,
+    targetElevation: number = 0
   ): boolean {
     const dx = x2 - x1;
     const dy = y2 - y1;
@@ -34895,6 +35256,16 @@ class PlayerMapView extends ItemView {
     // Check if ray from (x1,y1) to (x2,y2) intersects any wall
     for (const wall of walls) {
       if (!wall.start || !wall.end) continue;
+      
+      // D&D wall height model: if EITHER the viewer OR the target is above the wall,
+      // the wall doesn't block line of sight.
+      // - Viewer above: looking down over the wall (flying creature sees ground targets)
+      // - Target above: visible above the wall from below (ground creature sees flyer)
+      // This matches computeVisibilityPolygon's simple model and D&D 5e expectations.
+      if (wall.height !== undefined && wall.height !== null) {
+        const maxElevation = Math.max(viewerElevation, targetElevation);
+        if (maxElevation > wall.height) continue;
+      }
       
       const t = this.raySegmentIntersection(
         x1, y1, dirX, dirY,
@@ -34999,7 +35370,8 @@ class PlayerMapView extends ItemView {
     originX: number,
     originY: number,
     maxRadius: number,
-    walls: any[]
+    walls: any[],
+    viewerElevation: number = 0
   ): { x: number; y: number }[] {
     // Collect all wall segments within range
     const segments: { p1: { x: number; y: number }; p2: { x: number; y: number } }[] = [];
@@ -35018,6 +35390,9 @@ class PlayerMapView extends ItemView {
     // Add wall segments
     walls.forEach((wall: any) => {
       if (!wall.start || !wall.end) return;
+      
+      // Wall height check: viewer above this wall can see over it
+      if (wall.height !== undefined && wall.height !== null && viewerElevation > wall.height) return;
       
       // Only consider walls that might be within range
       const dx1 = wall.start.x - originX;

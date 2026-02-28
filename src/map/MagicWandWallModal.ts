@@ -16,6 +16,7 @@ export interface MagicWandWall {
   start: { x: number; y: number };
   end: { x: number; y: number };
   open: boolean;
+  height?: number;  // Height in feet. undefined = infinite
 }
 
 /**
