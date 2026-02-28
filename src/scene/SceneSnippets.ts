@@ -14,6 +14,7 @@ import {
   EditorSuggestTriggerInfo,
   TFile,
 } from 'obsidian';
+import type DndCampaignHubPlugin from '../main';
 
 /* ─── Snippet definition ─────────────────────────────────── */
 
@@ -30,6 +31,8 @@ export interface SceneSnippet {
   category: 'narrative' | 'mechanics' | 'combat' | 'planning' | 'reference';
   /** The markdown text to insert. `{{CURSOR}}` marks where the cursor should land. */
   body: string;
+  /** When true, selecting this snippet opens a picker modal instead of inserting body text */
+  dynamic?: boolean;
 }
 
 /* ─── Built-in snippets ──────────────────────────────────── */
@@ -665,6 +668,15 @@ export const SCENE_SNIPPETS: SceneSnippet[] = [
 `,
   },
   {
+    id: 'insert-encounter-widget',
+    label: 'Insert Encounter Widget',
+    icon: '⚔️',
+    description: 'Insert an encounter widget with tracker & edit buttons',
+    category: 'combat',
+    body: '',
+    dynamic: true,
+  },
+  {
     id: 'chase-sequence',
     label: 'Chase Sequence',
     icon: '🛡️',
@@ -1055,8 +1067,11 @@ When damage reduces you to 0 HP and there is **remaining damage**, you die insta
 const TRIGGER = '/dnd';
 
 export class SceneSnippetSuggest extends EditorSuggest<SceneSnippet> {
-  constructor(app: App) {
+  private plugin: DndCampaignHubPlugin;
+
+  constructor(app: App, plugin: DndCampaignHubPlugin) {
     super(app);
+    this.plugin = plugin;
     this.limit = 55;
 
     this.setInstructions([
@@ -1122,6 +1137,16 @@ export class SceneSnippetSuggest extends EditorSuggest<SceneSnippet> {
 
     // Remove the trigger text
     editor.replaceRange('', start, end);
+
+    // Handle dynamic snippets that open a picker modal
+    if (snippet.dynamic && snippet.id === 'insert-encounter-widget') {
+      import('../encounter/InsertEncounterWidgetModal').then(({ InsertEncounterWidgetModal }) => {
+        new InsertEncounterWidgetModal(this.app, this.plugin, (codeblock) => {
+          editor.replaceRange(codeblock + '\n', start);
+        }).open();
+      });
+      return;
+    }
 
     // Find cursor placeholder position
     const body = snippet.body;

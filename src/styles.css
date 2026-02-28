@@ -546,6 +546,19 @@
   filter: brightness(1.1);
 }
 
+.dnd-encounter-btn.mod-muted {
+  opacity: 0.6;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.dnd-encounter-btn.mod-muted:hover {
+  opacity: 1;
+  background: var(--background-modifier-hover);
+}
+
 .dnd-encounter-block-error {
   padding: 12px;
   background: rgba(255, 0, 0, 0.1);

@@ -2806,7 +2806,7 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     // Register /dnd slash-command snippets for quick scene authoring
-    this.registerEditorSuggest(new SceneSnippetSuggest(this.app));
+    this.registerEditorSuggest(new SceneSnippetSuggest(this.app, this));
 
     console.log("D&D Campaign Hub: Plugin loaded");
 
@@ -3402,6 +3402,18 @@ export default class DndCampaignHubPlugin extends Plugin {
       id: "create-encounter",
       name: "Create New Encounter",
       callback: () => this.createEncounter(),
+    });
+
+    this.addCommand({
+      id: "insert-encounter-widget",
+      name: "⚔️ Insert Encounter Widget",
+      editorCallback: (editor) => {
+        import('./encounter/InsertEncounterWidgetModal').then(({ InsertEncounterWidgetModal }) => {
+          new InsertEncounterWidgetModal(this.app, this, (codeblock) => {
+            editor.replaceSelection(codeblock + '\n');
+          }).open();
+        });
+      },
     });
 
     this.addCommand({
@@ -13557,9 +13569,9 @@ if (wikiMatch && wikiMatch[1]) {
 			// Action buttons
 			const buttonRow = container.createDiv({ cls: 'dnd-encounter-block-actions' });
 			
-			// Load in Initiative Tracker button
+			// Load in Initiative Tracker button (primary CTA)
 			const loadBtn = buttonRow.createEl('button', { 
-				text: '⚔️ Load in Tracker',
+				text: '⚔️ Run Encounter',
 				cls: 'dnd-encounter-btn mod-cta'
 			});
 			loadBtn.addEventListener('click', async () => {
@@ -13572,7 +13584,7 @@ if (wikiMatch && wikiMatch[1]) {
 				const encounterName = fm.name || encounterFile!.basename;
 				const encounter = initiativeTracker.data?.encounters?.[encounterName];
 				if (!encounter) {
-					new Notice(`Encounter "${encounterName}" not found in Initiative Tracker. Try re-saving.`);
+					new Notice(`Encounter "${encounterName}" not found in Initiative Tracker. Try re-saving the encounter.`);
 					return;
 				}
 				
@@ -13581,28 +13593,19 @@ if (wikiMatch && wikiMatch[1]) {
 						initiativeTracker.tracker.new(initiativeTracker, encounter);
 						new Notice(`✅ Loaded: ${encounterName}`);
 					}
-          (this.app as any).commands?.executeCommandById("initiative-tracker:open-tracker");				
-        } catch (e) {
+					(this.app as any).commands?.executeCommandById("initiative-tracker:open-tracker");
+				} catch (e) {
 					new Notice(`⚠️ Could not load encounter: ${(e as Error).message}`);
 				}
 			});
 			
-			// Edit button
+			// Edit button (secondary / less prominent)
 			const editBtn = buttonRow.createEl('button', { 
 				text: '✏️ Edit',
-				cls: 'dnd-encounter-btn'
+				cls: 'dnd-encounter-btn mod-muted'
 			});
 			editBtn.addEventListener('click', () => {
 				this.editEncounter(encounterFile!.path);
-			});
-			
-			// Open note button
-			const openBtn = buttonRow.createEl('button', { 
-				text: '📄 Open',
-				cls: 'dnd-encounter-btn'
-			});
-			openBtn.addEventListener('click', () => {
-				this.app.workspace.openLinkText(encounterFile!.path, ctx.sourcePath);
 			});
 			
 		} catch (error) {
