@@ -7071,7 +7071,7 @@ export default class DndCampaignHubPlugin extends Plugin {
       (viewport as any)._syncPlayerView = () => {
         if (this._playerMapViews && this._playerMapViews.size > 0) {
           // Build drag ruler data if a marker is being dragged
-          let dragRuler: { origin: { x: number; y: number }; current: { x: number; y: number }; pathCells?: { col: number; row: number; dist: number }[]; totalDist?: number } | null = null;
+          let dragRuler: { origin: { x: number; y: number }; current: { x: number; y: number }; pathCells?: { col: number; row: number; dist: number }[]; totalDist?: number; climbDist?: number } | null = null;
           if (markerDragOrigin && draggingMarkerIndex >= 0 && config.markers[draggingMarkerIndex]) {
             const currentPos = config.markers[draggingMarkerIndex].position;
             const pathResult = computeGridMovePath(markerDragOrigin, currentPos);
@@ -7079,7 +7079,8 @@ export default class DndCampaignHubPlugin extends Plugin {
               origin: { x: markerDragOrigin.x, y: markerDragOrigin.y },
               current: { x: currentPos.x, y: currentPos.y },
               pathCells: pathResult.cells,
-              totalDist: pathResult.totalDist
+              totalDist: pathResult.totalDist,
+              climbDist: pathResult.climbDist
             };
           }
           // Build measure ruler data if ruler is active
@@ -8553,10 +8554,23 @@ export default class DndCampaignHubPlugin extends Plugin {
 						Math.pow(rulerEnd.y - rulerStart.y, 2)
 					);
 					const gridDistance = distance / config.gridSize;
-					const realDistance = gridDistance * config.scale.value;
+					const horizontalFeet = gridDistance * config.scale.value;
+					
+					// Get tile elevation at start and end points for 3D distance
+					const rulerStartElev = getTileElevationAt(rulerStart.x, rulerStart.y);
+					const rulerEndElev = getTileElevationAt(rulerEnd.x, rulerEnd.y);
+					const rulerVerticalFeet = Math.abs(rulerEndElev - rulerStartElev);
+					const realDistance = rulerVerticalFeet > 0
+						? Math.sqrt(horizontalFeet * horizontalFeet + rulerVerticalFeet * rulerVerticalFeet)
+						: horizontalFeet;
+					
 					const textX = (rulerStart.x + rulerEnd.x) / 2;
 					const textY = (rulerStart.y + rulerEnd.y) / 2 - 10;
-					const text = `${realDistance.toFixed(1)} ${config.scale.unit}`;
+					let text = `${realDistance.toFixed(1)} ${config.scale.unit}`;
+					if (rulerVerticalFeet > 0) {
+						const arrow = rulerEndElev > rulerStartElev ? '↑' : '↓';
+						text += ` (${arrow}${rulerVerticalFeet}ft)`;
+					}
 					
 					ctx.font = 'bold 18px sans-serif';
 					ctx.textAlign = 'center';
@@ -9185,6 +9199,61 @@ export default class DndCampaignHubPlugin extends Plugin {
 				return { x, y };
 			};
 
+			// Helper: get tile ground elevation (in feet) at a pixel position
+			const getTileElevationAt = (x: number, y: number): number => {
+				if (!config.tileElevations) return 0;
+				const gs = config.gridSize || 70;
+				const ox = config.gridOffsetX || 0;
+				const oy = config.gridOffsetY || 0;
+				const col = Math.floor((x - ox) / gs);
+				const row = Math.floor((y - oy) / gs);
+				const key = `${col},${row}`;
+				return config.tileElevations[key] || 0;
+			};
+
+			// Helper: apply tile ground elevation to a marker (only if not flying/burrowing)
+			const applyTileElevation = (marker: any) => {
+				const tileElev = getTileElevationAt(marker.position.x, marker.position.y);
+				// Skip if the token is flying (user-set height above ground) or burrowing
+				if (marker.elevation?.isBurrowing) return;
+				// If the token has user-set flying height (height > 0 but no tile induced it),
+				// we consider it "flying" and don't override
+				if (marker.elevation?.height && marker.elevation.height > 0 && !marker.elevation._groundHeight) return;
+
+				if (!marker.elevation) marker.elevation = {};
+
+				if (tileElev > 0) {
+					marker.elevation.height = tileElev;
+					marker.elevation._groundHeight = tileElev; // Track that this height came from ground
+					delete marker.elevation.depth;
+				} else if (tileElev < 0) {
+					marker.elevation.depth = Math.abs(tileElev);
+					marker.elevation._groundHeight = tileElev;
+					delete marker.elevation.height;
+				} else {
+					// Ground level tile — clear ground-induced elevation
+					if (marker.elevation._groundHeight) {
+						delete marker.elevation.height;
+						delete marker.elevation.depth;
+						delete marker.elevation._groundHeight;
+					}
+				}
+
+				// Update layer assignment
+				const elevation = marker.elevation;
+				if (!elevation || (!elevation.height && !elevation.depth)) {
+					marker.layer = 'Player';
+				} else if (elevation.depth && elevation.depth > 0) {
+					if (elevation.isBurrowing) {
+						marker.layer = 'DM';
+					} else {
+						marker.layer = 'Subterranean';
+					}
+				} else if (elevation.height && elevation.height > 0) {
+					marker.layer = 'Elevated';
+				}
+			};
+
 			// Helper: snap distance to grid multiples
 			const snapDistanceToGrid = (pixelDist: number): number => {
 				const gs = config.gridSize || 70;
@@ -9193,13 +9262,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			/**
 			 * Compute grid-based movement path from pixelOrigin to pixelCurrent.
-			 * Returns cell coords traversed + total D&D distance.
+			 * Returns cell coords traversed + total D&D distance + cumulative climb distance.
 			 * Uses optional 5/10/5/10 diagonal rule (Variant: Diagonals from DMG).
 			 */
 			const computeGridMovePath = (
 				originPx: { x: number; y: number },
 				currentPx: { x: number; y: number },
-			): { cells: { col: number; row: number; dist: number }[]; totalDist: number } => {
+			): { cells: { col: number; row: number; dist: number }[]; totalDist: number; climbDist: number } => {
 				const gs = config.gridSize || 70;
 				const ox = config.gridOffsetX || 0;
 				const oy = config.gridOffsetY || 0;
@@ -9212,8 +9281,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 				const endRow = Math.floor((currentPx.y - oy) / gs);
 
 				if (startCol === endCol && startRow === endRow) {
-					return { cells: [], totalDist: 0 };
+					return { cells: [], totalDist: 0, climbDist: 0 };
 				}
+
+				// Track elevation along path for 3D distance
+				let prevElevation = config.tileElevations ? (config.tileElevations[`${startCol},${startRow}`] || 0) : 0;
+				let climbDist = 0;
 
 				// Bresenham-like line through grid cells
 				const cells: { col: number; row: number; dist: number }[] = [];
@@ -9248,6 +9321,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 						} else {
 							totalDist += scaleVal;
 						}
+						// Track elevation change
+						const cellElev = config.tileElevations ? (config.tileElevations[`${c},${r}`] || 0) : 0;
+						climbDist += Math.abs(cellElev - prevElevation);
+						prevElevation = cellElev;
 						cells.push({ col: c, row: r, dist: totalDist });
 					}
 				} else {
@@ -9269,27 +9346,33 @@ export default class DndCampaignHubPlugin extends Plugin {
 						} else {
 							totalDist += scaleVal;
 						}
+						// Track elevation change
+						const cellElev = config.tileElevations ? (config.tileElevations[`${c},${r}`] || 0) : 0;
+						climbDist += Math.abs(cellElev - prevElevation);
+						prevElevation = cellElev;
 						cells.push({ col: c, row: r, dist: totalDist });
 					}
 				}
 
-				return { cells, totalDist };
+				return { cells, totalDist, climbDist };
 			};
 
 			/**
 			 * Draw movement path tile highlighting and distance label.
 			 * Used by both GM view and (via sync) player view.
+			 * Now includes elevation-aware 3D distance when tiles have elevation.
 			 */
 			const drawMovementPath = (
 				ctx: CanvasRenderingContext2D,
 				originPx: { x: number; y: number },
 				currentPx: { x: number; y: number },
-				pathData?: { cells: { col: number; row: number; dist: number }[]; totalDist: number },
+				pathData?: { cells: { col: number; row: number; dist: number }[]; totalDist: number; climbDist?: number },
 			) => {
 				const gs = config.gridSize || 70;
 				const ox = config.gridOffsetX || 0;
 				const oy = config.gridOffsetY || 0;
 				const scaleUnit = config.scale?.unit || 'feet';
+				const scaleVal = config.scale?.value || 5;
 
 				const path = pathData || computeGridMovePath(originPx, currentPx);
 				if (path.cells.length === 0) return;
@@ -9317,8 +9400,22 @@ export default class DndCampaignHubPlugin extends Plugin {
 				ctx.stroke();
 				ctx.setLineDash([]);
 
+				// Calculate 3D distance including climb
+				const climbDist = path.climbDist || 0;
+				let displayDist: number;
+				if (climbDist > 0) {
+					// 3D Pythagorean: sqrt(horizontal² + vertical²), rounded to nearest grid unit
+					const raw3D = Math.sqrt(path.totalDist * path.totalDist + climbDist * climbDist);
+					displayDist = Math.max(scaleVal, Math.round(raw3D / scaleVal) * scaleVal);
+				} else {
+					displayDist = path.totalDist;
+				}
+
 				// Distance label — big, near the current position
-				const labelText = `${path.totalDist} ${scaleUnit}`;
+				let labelText = `${displayDist} ${scaleUnit}`;
+				if (climbDist > 0) {
+					labelText += ` (↕${climbDist}ft)`;
+				}
 				ctx.font = 'bold 22px sans-serif';
 				ctx.textAlign = 'center';
 				ctx.textBaseline = 'middle';
@@ -10549,6 +10646,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 						(markerRef as any).darkvision = mDef.darkvision;
 					}
 					
+					// Auto-apply tile ground elevation (if token is a creature on an elevated tile)
+					if (mDef && ['player', 'npc', 'creature'].includes(mDef.type)) {
+						applyTileElevation(markerRef);
+					}
+					
 					saveToHistory();
 					config.markers.push(markerRef);
 					console.log('Placed marker:', markerRef);
@@ -11449,6 +11551,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 								}
 							});
 						}
+						
+						// Auto-apply tile ground elevation after snap
+						applyTileElevation(m);
 					}
 					
 					// THEN finalize tunnel path AFTER token is snapped
@@ -33908,10 +34013,12 @@ class PlayerMapView extends ItemView {
     const ox = config.gridOffsetX || 0;
     const oy = config.gridOffsetY || 0;
     const scaleUnit = config.scale?.unit || 'feet';
+    const scaleVal = config.scale?.value || 5;
 
     // Use pre-computed path data from sync payload, or compute locally
     let pathCells: { col: number; row: number; dist: number }[] = config.dragRuler.pathCells || [];
     let totalDist: number = config.dragRuler.totalDist ?? 0;
+    let climbDist: number = config.dragRuler.climbDist ?? 0;
 
     // If no pre-computed path, compute locally (fallback)
     if (pathCells.length === 0 && (origin.x !== current.x || origin.y !== current.y)) {
@@ -33977,8 +34084,18 @@ class PlayerMapView extends ItemView {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Distance label — big pill above current position
-    const labelText = `${totalDist} ${scaleUnit}`;
+    // Distance label — big pill above current position, with 3D elevation awareness
+    let displayDist: number;
+    if (climbDist > 0) {
+      const raw3D = Math.sqrt(totalDist * totalDist + climbDist * climbDist);
+      displayDist = Math.max(scaleVal, Math.round(raw3D / scaleVal) * scaleVal);
+    } else {
+      displayDist = totalDist;
+    }
+    let labelText = `${displayDist} ${scaleUnit}`;
+    if (climbDist > 0) {
+      labelText += ` (↕${climbDist}ft)`;
+    }
     ctx.font = 'bold 22px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
