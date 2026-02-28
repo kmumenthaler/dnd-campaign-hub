@@ -32650,21 +32650,32 @@ class PlayerMapView extends ItemView {
       // In daylight (no fog) you can see far, but not through solid walls.
       // When fog IS enabled the fog-of-war polygon already handles this, so
       // we only need the explicit check when fog is OFF.
+      // Filter walls the same way drawFogOfWar does: open doors, windows,
+      // and terrain don't block line of sight.
       if (!hasFog && config.walls && config.walls.length > 0 && visionRelevantTokens.length > 0) {
-        let canBeSeenByAnyPlayer = false;
-        for (const pt of visionRelevantTokens) {
-          if (this.hasLineOfSight(
-            pt.position.x, pt.position.y,
-            m.position.x, m.position.y,
-            config.walls
-          )) {
-            canBeSeenByAnyPlayer = true;
-            break;
+        const sightBlockingWalls = config.walls.filter((wall: any) => {
+          const type = wall.type || 'wall';
+          if ((type === 'door' || type === 'secret') && wall.open) return false;
+          if (type === 'window') return false;
+          if (type === 'terrain') return false;
+          return true;
+        });
+        if (sightBlockingWalls.length > 0) {
+          let canBeSeenByAnyPlayer = false;
+          for (const pt of visionRelevantTokens) {
+            if (this.hasLineOfSight(
+              pt.position.x, pt.position.y,
+              m.position.x, m.position.y,
+              sightBlockingWalls
+            )) {
+              canBeSeenByAnyPlayer = true;
+              break;
+            }
           }
-        }
-        if (!canBeSeenByAnyPlayer) {
-          console.log('[Wall Occlusion] Token hidden behind wall in daylight:', m.id);
-          return; // Wall blocks line of sight from every player token
+          if (!canBeSeenByAnyPlayer) {
+            console.log('[Wall Occlusion] Token hidden behind wall in daylight:', m.id);
+            return; // Wall blocks line of sight from every player token
+          }
         }
       }
       
@@ -32679,9 +32690,16 @@ class PlayerMapView extends ItemView {
     // Draw Fog of War (Player view: fully opaque black with light source revelation)
     // Fog must be enabled for darkness to appear - lights reveal areas within the fog
     console.log('[PV] Fog draw check:', { fogOfWar: !!config.fogOfWar, enabled: config.fogOfWar?.enabled, lightSources: config.lightSources?.length || 0 });
-    if (config.fogOfWar && config.fogOfWar.enabled) {
+    const hasFogGlobal = config.fogOfWar && config.fogOfWar.enabled;
+    if (hasFogGlobal) {
       console.log('[PV] Drawing fog of war with lights');
       this.drawFogOfWar(ctx, this.canvas!.width, this.canvas!.height, config);
+    } else if (config.walls && config.walls.length > 0 && visionRelevantTokens.length > 0) {
+      // No fog of war, but walls exist — draw wall-occlusion overlay.
+      // In daylight, players can see infinitely far EXCEPT through walls.
+      // Areas behind walls are darkened so the DM's hidden content stays hidden.
+      console.log('[PV] Drawing wall-occlusion overlay (no fog, walls present)');
+      this.drawWallOcclusion(ctx, this.canvas!.width, this.canvas!.height, config, visionRelevantTokens);
     }
 
     // Redraw tunnel paths ON TOP of fog for underground players
@@ -34241,6 +34259,115 @@ class PlayerMapView extends ItemView {
     if (container) {
       (container as HTMLElement).empty();
     }
+  }
+
+  /**
+   * Draw wall-occlusion overlay for daylight (no fog) mode.
+   * Covers areas behind walls with opaque black so the player
+   * cannot see through solid walls.  Uses the same visibility-polygon
+   * algorithm as the full fog-of-war system but without darkvision /
+   * light-source mechanics — in daylight vision is infinite, only
+   * blocked by walls.
+   */
+  private drawWallOcclusion(
+    ctx: CanvasRenderingContext2D,
+    w: number, h: number,
+    config: any,
+    visionTokens: any[]
+  ) {
+    const fogCanvas = document.createElement('canvas');
+    fogCanvas.width = w;
+    fogCanvas.height = h;
+    const fogCtx = fogCanvas.getContext('2d');
+    if (!fogCtx) return;
+
+    // Start fully black (everything is hidden)
+    fogCtx.fillStyle = '#000000';
+    fogCtx.fillRect(0, 0, w, h);
+
+    // Filter walls: open doors, windows, and terrain don't block vision
+    const walls = (config.walls || []).filter((wall: any) => {
+      const type = wall.type || 'wall';
+      if ((type === 'door' || type === 'secret') && wall.open) return false;
+      if (type === 'window') return false;
+      if (type === 'terrain') return false;
+      return true;
+    });
+
+    if (walls.length === 0) return; // Nothing to occlude
+
+    // For each vision-relevant player token, compute visibility polygon
+    // (infinite range — only limited by walls) and cut it out of the fog.
+    fogCtx.globalCompositeOperation = 'destination-out';
+    fogCtx.fillStyle = 'white';
+
+    for (const pt of visionTokens) {
+      const visPoly = this.computeVisibilityPolygon(
+        pt.position.x, pt.position.y,
+        10000, // effectively infinite range for daylight
+        walls
+      );
+
+      if (visPoly.length >= 3) {
+        fogCtx.beginPath();
+        const first = visPoly[0];
+        if (first) {
+          fogCtx.moveTo(first.x, first.y);
+          for (let i = 1; i < visPoly.length; i++) {
+            const p = visPoly[i];
+            if (p) fogCtx.lineTo(p.x, p.y);
+          }
+          fogCtx.closePath();
+          fogCtx.fill();
+        }
+      }
+    }
+
+    // Also cut out light source visibility (torches on walls etc.
+    // illuminate their side even when no player is nearby)
+    const allLights: any[] = [];
+    if (config.lightSources && config.lightSources.length > 0) {
+      allLights.push(...config.lightSources.filter((l: any) => l.active !== false));
+    }
+    if (config.markers && config.markers.length > 0) {
+      config.markers.forEach((marker: any) => {
+        if (marker.light && marker.light.bright !== undefined && !marker.tunnelState) {
+          allLights.push({
+            x: marker.position.x,
+            y: marker.position.y,
+            bright: marker.light.bright,
+            dim: marker.light.dim
+          });
+        }
+      });
+    }
+    const pixelsPerFoot = config.gridSize && config.scale?.value
+      ? config.gridSize / config.scale.value : 1;
+    for (const light of allLights) {
+      const totalRadius = ((light.bright || 0) + (light.dim || 0)) * pixelsPerFoot;
+      if (totalRadius <= 0) continue;
+      const visPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadius, walls);
+      if (visPoly.length >= 3) {
+        fogCtx.beginPath();
+        const first = visPoly[0];
+        if (first) {
+          fogCtx.moveTo(first.x, first.y);
+          for (let i = 1; i < visPoly.length; i++) {
+            const p = visPoly[i];
+            if (p) fogCtx.lineTo(p.x, p.y);
+          }
+          fogCtx.closePath();
+          fogCtx.fill();
+        }
+      }
+    }
+
+    // Composite the occlusion overlay onto the main canvas
+    fogCtx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(fogCanvas, 0, 0);
+
+    console.log('[PV] Wall-occlusion overlay drawn - walls:', walls.length,
+      'visionTokens:', visionTokens.length);
   }
 
   private drawFogOfWar(ctx: CanvasRenderingContext2D, w: number, h: number, config: any) {
