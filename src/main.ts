@@ -58,6 +58,17 @@ import {
   hLoc,
   EncounterBattlemapModal,
 } from './hexcrawl';
+import { EnvAssetLibrary } from './envasset/EnvAssetLibrary';
+import { showEnvAssetContextMenu } from './envasset/EnvAssetContextMenu';
+import type {
+  EnvAssetInstance,
+  EnvAssetDefinition,
+  TransformHandle,
+} from './envasset/EnvAssetTypes';
+import {
+  TRANSFORM_HANDLE_SIZE,
+  ROTATION_HANDLE_OFFSET,
+} from './envasset/EnvAssetTypes';
 import type {
   TerrainType,
   HexTerrain,
@@ -3087,6 +3098,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   encounterBuilder!: EncounterBuilder;
   mapManager!: MapManager;
   markerLibrary!: MarkerLibrary;
+  envAssetLibrary!: EnvAssetLibrary;
   musicPlayer!: MusicPlayer;
   private _musicStatusBarEl: HTMLElement | null = null;
   private _musicStatusBarCleanup: (() => void) | null = null;
@@ -3145,6 +3157,10 @@ export default class DndCampaignHubPlugin extends Plugin {
     // Initialize the marker library
     this.markerLibrary = new MarkerLibrary(this.app, this.manifest.id);
     await this.markerLibrary.load();
+
+    // Initialize the environment asset library
+    this.envAssetLibrary = new EnvAssetLibrary(this.app, this.manifest.id);
+    await this.envAssetLibrary.load();
 
     // Initialize the migration manager (after marker library)
     this.migrationManager = new MigrationManager(this.app, this.markerLibrary);
@@ -5671,6 +5687,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Load difficult terrain tiles (Background layer)
 			config.difficultTerrain = savedData.difficultTerrain || {};
 
+			// Load environment assets (Background layer)
+			config.envAssets = savedData.envAssets || [];
+
 			// Load active layer (defaults to Player)
 			config.activeLayer = savedData.activeLayer || 'Player';
 
@@ -5722,7 +5741,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' = 'pan';
+    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | 'env-asset' = 'pan';
 		let selectedColor = '#ff0000';
       // GM player-view rect drag state
       let gmDragStart: { x: number; y: number } | null = null;
@@ -5734,6 +5753,37 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let dragOffsetX = 0;
 		let dragOffsetY = 0;
 		let markerDragOrigin: { x: number; y: number } | null = null; // Original position when dragging a marker
+
+		// ── Environment Asset state ──────────────────────────────────────────
+		let selectedEnvAssetId: string | null = null; // Library definition id selected for placement
+		let selectedEnvAssetInstanceId: string | null = null; // Currently selected instance on the map
+		let envAssetDragOffset: { x: number; y: number } | null = null;
+		let envAssetDragOrigin: { x: number; y: number } | null = null;
+		let envAssetTransformHandle: TransformHandle | null = null; // Currently grabbed handle
+		let envAssetTransformStart: { x: number; y: number; w: number; h: number; rot: number } | null = null;
+		let envAssetRotateStart: number | null = null;
+		// Image cache for env assets
+		const envAssetImageCache: Map<string, HTMLImageElement> = new Map();
+		// Helper to get/load image
+		const getEnvAssetImage = (path: string): HTMLImageElement | null => {
+			if (envAssetImageCache.has(path)) {
+				const img = envAssetImageCache.get(path)!;
+				return img.complete && img.naturalWidth > 0 ? img : null;
+			}
+			try {
+				const rp = this.app.vault.adapter.getResourcePath(path);
+				const img = new Image();
+				img.src = rp;
+				envAssetImageCache.set(path, img);
+				img.onload = () => redrawAnnotations();
+				return null; // Will show on next redraw after onload fires
+			} catch {
+				return null;
+			}
+		};
+		// Initialise config.envAssets if missing
+		if (!config.envAssets) config.envAssets = [];
+
 		// Light dragging state
 		let draggingLightIndex = -1; // Index of light being dragged (-1 = none)
 		let lightDragOffsetX = 0;
@@ -6045,6 +6095,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				highlights: any[];
 				aoeEffects: any[];
 				tunnels: any[];
+				envAssets: any[];
 			}
 			const undoStack: HistoryState[] = [];
 			const redoStack: HistoryState[] = [];
@@ -6063,7 +6114,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					fogOfWar: JSON.parse(JSON.stringify(config.fogOfWar || { enabled: true, regions: [] })),
 					highlights: JSON.parse(JSON.stringify(config.highlights || [])),
 					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || [])),
-					tunnels: JSON.parse(JSON.stringify(config.tunnels || []))
+					tunnels: JSON.parse(JSON.stringify(config.tunnels || [])),
+					envAssets: JSON.parse(JSON.stringify(config.envAssets || []))
 				};
 				undoStack.push(state);
 				if (undoStack.length > MAX_HISTORY) undoStack.shift();
@@ -6087,7 +6139,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					fogOfWar: JSON.parse(JSON.stringify(config.fogOfWar || { enabled: true, regions: [] })),
 					highlights: JSON.parse(JSON.stringify(config.highlights || [])),
 					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || [])),
-					tunnels: JSON.parse(JSON.stringify(config.tunnels || []))
+					tunnels: JSON.parse(JSON.stringify(config.tunnels || [])),
+					envAssets: JSON.parse(JSON.stringify(config.envAssets || []))
 				};
 				redoStack.push(currentState);
 				
@@ -6101,6 +6154,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				config.highlights = prevState.highlights;
 				config.aoeEffects = prevState.aoeEffects;
 				config.tunnels = prevState.tunnels;
+				config.envAssets = prevState.envAssets || [];
 				
 				redrawAnnotations();
 				this.saveMapAnnotations(config, el);
@@ -6124,7 +6178,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					fogOfWar: JSON.parse(JSON.stringify(config.fogOfWar || { enabled: true, regions: [] })),
 					highlights: JSON.parse(JSON.stringify(config.highlights || [])),
 					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || [])),
-					tunnels: JSON.parse(JSON.stringify(config.tunnels || []))
+					tunnels: JSON.parse(JSON.stringify(config.tunnels || [])),
+					envAssets: JSON.parse(JSON.stringify(config.envAssets || []))
 				};
 				undoStack.push(currentState);
 				
@@ -6138,6 +6193,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				config.highlights = nextState.highlights;
 				config.aoeEffects = nextState.aoeEffects;
 				config.tunnels = nextState.tunnels;
+				config.envAssets = nextState.envAssets || [];
 				
 				redrawAnnotations();
 				this.saveMapAnnotations(config, el);
@@ -6412,6 +6468,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const lightsBtn = createToolBtn(visionContent, '💡', 'Lights');
 		const elevationPaintBtn = createToolBtn(visionContent, '⛰️', 'Tile Elevation');
 		const difficultTerrainBtn = createToolBtn(visionContent, '🌿', 'Difficult Terrain');
+		const envAssetBtn = createToolBtn(visionContent, '📦', 'Env Assets');
 		// Toggle vision section visibility based on layer (hidden entirely for hexcrawl maps)
 		visionSectionHeader.toggleClass('hidden', config.activeLayer !== 'Background' || isHexcrawlMap);
 		visionContent.toggleClass('hidden', config.activeLayer !== 'Background' || isHexcrawlMap);
@@ -6726,6 +6783,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		lightsBtn.toggleClass('hidden', config.activeLayer !== 'Background');
 		elevationPaintBtn.toggleClass('hidden', config.activeLayer !== 'Background');
 		difficultTerrainBtn.toggleClass('hidden', config.activeLayer !== 'Background');
+		envAssetBtn.toggleClass('hidden', config.activeLayer !== 'Background');
 
 		// Wall type picker sub-menu (shown when walls tool is active)
 		const wallsPicker = wallsBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
@@ -7381,6 +7439,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						lightsBtn.removeClass('hidden');
 						elevationPaintBtn.removeClass('hidden');
 						difficultTerrainBtn.removeClass('hidden');
+						envAssetBtn.removeClass('hidden');
 					}
 					// Show/hide Tunnels section based on layer (only available on Subterranean, hidden for hexcrawl)
 					if (layer !== 'Subterranean' || isHexcrawlMap) {
@@ -7393,7 +7452,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						tunnelsSectionHeader.removeClass('collapsed');
 						tunnelsContent.removeClass('collapsed');
 					}
-					if (layer !== 'Background' && (activeTool === 'fog' || activeTool === 'walls' || activeTool === 'lights' || activeTool === 'elevation-paint' || activeTool === 'difficult-terrain')) {
+					if (layer !== 'Background' && (activeTool === 'fog' || activeTool === 'walls' || activeTool === 'lights' || activeTool === 'elevation-paint' || activeTool === 'difficult-terrain' || activeTool === 'env-asset')) {
 						setActiveTool('pan');
 					}
 					// Terrain/climate canvas follows Background layer visibility
@@ -7575,6 +7634,7 @@ export default class DndCampaignHubPlugin extends Plugin {
             hexClimates: config.hexClimates,
             tileElevations: config.tileElevations || {},
             difficultTerrain: config.difficultTerrain || {},
+            envAssets: config.envAssets || [],
             hexcrawlState: config.hexcrawlState,
             hexcrawlRangeOverlay: (activeTool === 'hexcrawl-move' && config.hexcrawlState?.enabled && config.hexcrawlState?.partyPosition) ? {
               active: true,
@@ -7624,7 +7684,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let startX = 0;
 		let startY = 0;
 		// Middle mouse button temporary pan state
-		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | null = null;
+		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | 'env-asset' | null = null;
 		let isTemporaryPan = false;
 		let gridCanvas: HTMLCanvasElement | null = null;
 		let terrainCanvas: HTMLCanvasElement | null = null;
@@ -8032,6 +8092,66 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			};
 
+			// ══════════════════════════════════════════════════════════════
+			// ENV ASSET helpers (hit-testing, transform handles)
+			// ══════════════════════════════════════════════════════════════
+
+			/** Find the topmost env-asset instance whose bounding box contains the point. */
+			const findEnvAssetAtPoint = (px: number, py: number): EnvAssetInstance | null => {
+				if (!config.envAssets || config.envAssets.length === 0) return null;
+				// Iterate reverse (top-most first by zIndex sorting rendered last)
+				const sorted = [...config.envAssets].sort((a: EnvAssetInstance, b: EnvAssetInstance) => (b.zIndex || 0) - (a.zIndex || 0));
+				for (const inst of sorted) {
+					if (isPointInEnvAsset(px, py, inst)) return inst;
+				}
+				return null;
+			};
+
+			/** OBB point-in-rectangle test accounting for rotation. */
+			const isPointInEnvAsset = (px: number, py: number, inst: EnvAssetInstance): boolean => {
+				// Transform point into local (unrotated) space
+				const dx = px - inst.position.x;
+				const dy = py - inst.position.y;
+				const rad = -(inst.rotation || 0) * Math.PI / 180;
+				const lx = dx * Math.cos(rad) - dy * Math.sin(rad);
+				const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
+				const hw = inst.width / 2;
+				const hh = inst.height / 2;
+				return lx >= -hw && lx <= hw && ly >= -hh && ly <= hh;
+			};
+
+			/** Determine which transform handle (if any) is at the given map-space point. */
+			const hitTestTransformHandle = (px: number, py: number, inst: EnvAssetInstance): TransformHandle | null => {
+				const dx = px - inst.position.x;
+				const dy = py - inst.position.y;
+				const rad = -(inst.rotation || 0) * Math.PI / 180;
+				const lx = dx * Math.cos(rad) - dy * Math.sin(rad);
+				const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
+				const hw = inst.width / 2;
+				const hh = inst.height / 2;
+				const hs = TRANSFORM_HANDLE_SIZE + 4; // tolerance
+
+				// Rotation handle
+				const rotY = -hh - ROTATION_HANDLE_OFFSET;
+				if (Math.abs(lx) < hs && Math.abs(ly - rotY) < hs) return 'rotate';
+
+				// Corner & edge handles
+				const handles: { handle: TransformHandle; x: number; y: number }[] = [
+					{ handle: 'top-left',    x: -hw, y: -hh },
+					{ handle: 'top',         x: 0,   y: -hh },
+					{ handle: 'top-right',   x: hw,  y: -hh },
+					{ handle: 'right',       x: hw,  y: 0 },
+					{ handle: 'bottom-right', x: hw,  y: hh },
+					{ handle: 'bottom',       x: 0,   y: hh },
+					{ handle: 'bottom-left',  x: -hw, y: hh },
+					{ handle: 'left',         x: -hw, y: 0 },
+				];
+				for (const { handle, x, y } of handles) {
+					if (Math.abs(lx - x) < hs && Math.abs(ly - y) < hs) return handle;
+				}
+				return null;
+			};
+
 			// Function to redraw annotations
 			const redrawAnnotations = () => {
 				console.log('redrawAnnotations called, annotationCanvas exists:', !!annotationCanvas);
@@ -8272,6 +8392,141 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 				
 				// Draw token auras (behind markers)
+
+				// ══════════════════════════════════════════════════════════════
+				// ENVIRONMENT ASSETS (Background layer objects)
+				// ══════════════════════════════════════════════════════════════
+				if (config.envAssets && config.envAssets.length > 0) {
+					// Sort by zIndex ascending (lower = drawn first = further back)
+					const sorted = [...config.envAssets].sort((a: EnvAssetInstance, b: EnvAssetInstance) => (a.zIndex || 0) - (b.zIndex || 0));
+					sorted.forEach((inst: EnvAssetInstance) => {
+						const def = this.envAssetLibrary.getAsset(inst.assetId);
+						if (!def) return;
+						const img = getEnvAssetImage(def.imageFile);
+
+						ctx.save();
+						ctx.translate(inst.position.x, inst.position.y);
+						ctx.rotate((inst.rotation || 0) * Math.PI / 180);
+
+						const hw = inst.width / 2;
+						const hh = inst.height / 2;
+
+						// For doors: apply open-angle or slide offset
+						if (def.category === 'door' && inst.doorConfig) {
+							const dc = inst.doorConfig;
+							if (dc.isOpen && dc.behaviour !== 'sliding' && dc.openAngle) {
+								// Calculate pivot point
+								let px = -hw, py = 0; // default: left edge
+								if (dc.behaviour === 'normal' && dc.pivotEdge === 'right') {
+									px = hw;
+								} else if (dc.behaviour === 'custom-pivot' && dc.customPivot) {
+									px = (dc.customPivot.x - 0.5) * inst.width;
+									py = (dc.customPivot.y - 0.5) * inst.height;
+								}
+								ctx.translate(px, py);
+								ctx.rotate((dc.openAngle || 0) * Math.PI / 180);
+								ctx.translate(-px, -py);
+							}
+							if (dc.isOpen && dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
+								// Slide offset along the path (linear interpolation between first two waypoints)
+								const p0 = dc.slidePath[0];
+								const p1 = dc.slidePath[dc.slidePath.length - 1];
+								const t = dc.slidePosition;
+								ctx.translate((p1.x - p0.x) * t, (p1.y - p0.y) * t);
+							}
+						}
+
+						// Draw the image (or placeholder)
+						if (img) {
+							ctx.drawImage(img, -hw, -hh, inst.width, inst.height);
+						} else {
+							// Placeholder while loading
+							ctx.fillStyle = 'rgba(100,100,100,0.3)';
+							ctx.fillRect(-hw, -hh, inst.width, inst.height);
+							ctx.strokeStyle = '#888';
+							ctx.lineWidth = 1;
+							ctx.setLineDash([4, 4]);
+							ctx.strokeRect(-hw, -hh, inst.width, inst.height);
+							ctx.setLineDash([]);
+						}
+
+						// Lock indicator
+						if (inst.locked) {
+							ctx.fillStyle = 'rgba(0,0,0,0.5)';
+							ctx.font = '16px sans-serif';
+							ctx.textAlign = 'center';
+							ctx.textBaseline = 'middle';
+							ctx.fillText('🔒', 0, 0);
+						}
+
+						ctx.restore();
+
+						// ── Selection frame & transform handles ──────────
+						if (selectedEnvAssetInstanceId === inst.id && activeTool === 'env-asset') {
+							ctx.save();
+							ctx.translate(inst.position.x, inst.position.y);
+							ctx.rotate((inst.rotation || 0) * Math.PI / 180);
+
+							const hw2 = inst.width / 2;
+							const hh2 = inst.height / 2;
+
+							// Dashed selection frame
+							ctx.strokeStyle = '#00aaff';
+							ctx.lineWidth = 2;
+							ctx.setLineDash([6, 4]);
+							ctx.strokeRect(-hw2, -hh2, inst.width, inst.height);
+							ctx.setLineDash([]);
+
+							// Resize handles (corners + edges)
+							const hs = TRANSFORM_HANDLE_SIZE;
+							const handles: { handle: TransformHandle; x: number; y: number }[] = [
+								{ handle: 'top-left',     x: -hw2,  y: -hh2 },
+								{ handle: 'top',          x: 0,     y: -hh2 },
+								{ handle: 'top-right',    x: hw2,   y: -hh2 },
+								{ handle: 'right',        x: hw2,   y: 0 },
+								{ handle: 'bottom-right',  x: hw2,   y: hh2 },
+								{ handle: 'bottom',        x: 0,     y: hh2 },
+								{ handle: 'bottom-left',   x: -hw2,  y: hh2 },
+								{ handle: 'left',          x: -hw2,  y: 0 },
+							];
+							handles.forEach(({ x, y }) => {
+								ctx.fillStyle = '#ffffff';
+								ctx.strokeStyle = '#00aaff';
+								ctx.lineWidth = 2;
+								ctx.fillRect(x - hs / 2, y - hs / 2, hs, hs);
+								ctx.strokeRect(x - hs / 2, y - hs / 2, hs, hs);
+							});
+
+							// Rotation handle (circle above the frame)
+							const rotY = -hh2 - ROTATION_HANDLE_OFFSET;
+							// Line from top-center to rotation handle
+							ctx.strokeStyle = '#00aaff';
+							ctx.lineWidth = 1;
+							ctx.beginPath();
+							ctx.moveTo(0, -hh2);
+							ctx.lineTo(0, rotY);
+							ctx.stroke();
+							// Circle handle
+							ctx.beginPath();
+							ctx.arc(0, rotY, hs / 2 + 2, 0, Math.PI * 2);
+							ctx.fillStyle = '#ffffff';
+							ctx.fill();
+							ctx.strokeStyle = '#00aaff';
+							ctx.lineWidth = 2;
+							ctx.stroke();
+							// Rotation icon
+							ctx.fillStyle = '#00aaff';
+							ctx.font = 'bold 10px sans-serif';
+							ctx.textAlign = 'center';
+							ctx.textBaseline = 'middle';
+							ctx.fillText('↻', 0, rotY);
+
+							ctx.restore();
+						}
+					});
+				}
+				// ══════════════════════════════════════════════════════════════
+
 				if (config.markers) {
 					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
 					config.markers.forEach((marker: any) => {
@@ -10335,7 +10590,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
-			[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, viewBtn, fogBtn, wallsBtn, lightsBtn, elevationPaintBtn, moveGridBtn, terrainPaintBtn, climatePaintBtn, setStartHexBtn, hexDescBtn].forEach(btn => btn.removeClass('active'));
+			[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, viewBtn, fogBtn, wallsBtn, lightsBtn, elevationPaintBtn, moveGridBtn, terrainPaintBtn, climatePaintBtn, setStartHexBtn, hexDescBtn, envAssetBtn].forEach(btn => btn.removeClass('active'));
 
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
@@ -10499,6 +10754,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 					hexDescBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
 					new Notice(hLoc(hcLang, 'clickHexEditDesc'), 3000);
+				} else if (tool === 'env-asset') {
+					envAssetBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+					new Notice('Environment Assets: Click to place, click to select, right-click for options', 4000);
+				}
+
+				// Deselect env asset instance when switching tools
+				if (tool !== 'env-asset') {
+					selectedEnvAssetInstanceId = null;
+					envAssetTransformHandle = null;
 				}
 			
 				// Clear ruler when switching tools
@@ -10643,6 +10908,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else {
 					setActiveTool('difficult-terrain');
 				}
+			});
+			envAssetBtn.addEventListener('click', async () => {
+				console.log('Env Asset button clicked');
+				// Show env asset picker to select or create asset, then enter placement mode
+				const { EnvAssetPickerModal } = await import('./envasset/EnvAssetPickerModal');
+				new EnvAssetPickerModal(this.app, this.envAssetLibrary, (assetId: string) => {
+					selectedEnvAssetId = assetId;
+					setActiveTool('env-asset');
+				}).open();
 			});
 			setStartHexBtn.addEventListener('click', () => {
 				console.log('Set Starting Hex button clicked');
@@ -11173,6 +11447,88 @@ export default class DndCampaignHubPlugin extends Plugin {
 					updateGridToolsVisibility();
 					refreshVisionSelector();
 					new Notice('Marker placed');
+				} else if (activeTool === 'env-asset') {
+					// ── Env Asset: click to place, select, drag, or transform ──
+					// 1) If an instance is already selected, check for transform handle grab
+					if (selectedEnvAssetInstanceId) {
+						const selInst = (config.envAssets || []).find((a: EnvAssetInstance) => a.id === selectedEnvAssetInstanceId);
+						if (selInst && !selInst.locked) {
+							const handle = hitTestTransformHandle(mapPos.x, mapPos.y, selInst);
+							if (handle) {
+								// Start transform operation
+								saveToHistory();
+								envAssetTransformHandle = handle;
+								envAssetTransformStart = {
+									x: selInst.position.x,
+									y: selInst.position.y,
+									w: selInst.width,
+									h: selInst.height,
+									rot: selInst.rotation || 0
+								};
+								if (handle === 'rotate') {
+									envAssetRotateStart = Math.atan2(mapPos.y - selInst.position.y, mapPos.x - selInst.position.x);
+								}
+								viewport.style.cursor = handle === 'rotate' ? 'grab' : 'nwse-resize';
+								e.preventDefault();
+								return;
+							}
+						}
+					}
+					// 2) Check if clicking on an instance body → start drag or select
+					const hitInst = findEnvAssetAtPoint(mapPos.x, mapPos.y);
+					if (hitInst) {
+						if (hitInst.id !== selectedEnvAssetInstanceId) {
+							// Select this instance
+							selectedEnvAssetInstanceId = hitInst.id;
+							redrawAnnotations();
+						}
+						if (!hitInst.locked) {
+							// Start drag
+							saveToHistory();
+							envAssetDragOffset = {
+								x: hitInst.position.x - mapPos.x,
+								y: hitInst.position.y - mapPos.y
+							};
+							envAssetDragOrigin = { x: hitInst.position.x, y: hitInst.position.y };
+							viewport.style.cursor = 'grabbing';
+						}
+					} else if (selectedEnvAssetId) {
+						// Place new instance
+						const assetDef = this.envAssetLibrary.getAsset(selectedEnvAssetId);
+						if (assetDef) {
+							saveToHistory();
+							const newInst: EnvAssetInstance = {
+								id: `envai_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+								assetId: selectedEnvAssetId,
+								position: { x: mapPos.x, y: mapPos.y },
+								width: assetDef.defaultWidth,
+								height: assetDef.defaultHeight,
+								rotation: 0,
+								zIndex: (config.envAssets || []).length,
+								placedAt: Date.now(),
+							};
+							// Inherit category-specific config from definition
+							if (assetDef.category === 'door' && assetDef.doorConfig) {
+								newInst.doorConfig = JSON.parse(JSON.stringify(assetDef.doorConfig));
+							}
+							if (assetDef.category === 'scatter' && assetDef.scatterConfig) {
+								newInst.scatterConfig = JSON.parse(JSON.stringify(assetDef.scatterConfig));
+							}
+							if (assetDef.category === 'trap' && assetDef.trapConfig) {
+								newInst.trapConfig = JSON.parse(JSON.stringify(assetDef.trapConfig));
+							}
+							config.envAssets.push(newInst);
+							selectedEnvAssetInstanceId = newInst.id;
+							redrawAnnotations();
+							if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+							this.saveMapAnnotations(config, el);
+							new Notice(`Placed: ${assetDef.name}`);
+						}
+					} else {
+						// No asset selected — deselect
+						selectedEnvAssetInstanceId = null;
+						redrawAnnotations();
+					}
 				} else if (activeTool === 'aoe') {
 					if (!aoeOrigin && lastPlacedAoeId) {
 						// Third click: remove the last placed AoE
@@ -11806,6 +12162,76 @@ export default class DndCampaignHubPlugin extends Plugin {
 					wallSelectionRect.endX = mapPos.x;
 					wallSelectionRect.endY = mapPos.y;
 					redrawAnnotations();
+				} else if (activeTool === 'env-asset' && selectedEnvAssetInstanceId && (envAssetTransformHandle || envAssetDragOffset)) {
+					// ── Env Asset: drag or transform in progress ──
+					const inst = (config.envAssets || []).find((a: EnvAssetInstance) => a.id === selectedEnvAssetInstanceId);
+					if (inst) {
+						if (envAssetTransformHandle === 'rotate' && envAssetTransformStart && envAssetRotateStart !== null) {
+							// Rotate
+							const angle = Math.atan2(mapPos.y - inst.position.y, mapPos.x - inst.position.x);
+							const delta = (angle - envAssetRotateStart) * 180 / Math.PI;
+							inst.rotation = ((envAssetTransformStart.rot + delta) % 360 + 360) % 360;
+							redrawAnnotations();
+						} else if (envAssetTransformHandle && envAssetTransformStart) {
+							// Resize via handle
+							const s = envAssetTransformStart;
+							// Transform mouse into local (unrotated) coords relative to original center
+							const dx = mapPos.x - s.x;
+							const dy = mapPos.y - s.y;
+							const rad = -(s.rot || 0) * Math.PI / 180;
+							const lx = dx * Math.cos(rad) - dy * Math.sin(rad);
+							const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
+							const hw = s.w / 2;
+							const hh = s.h / 2;
+							let newW = s.w;
+							let newH = s.h;
+							let newCx = s.x;
+							let newCy = s.y;
+
+							// Compute new dimensions based on handle
+							switch (envAssetTransformHandle) {
+								case 'right':
+									newW = Math.max(10, hw + lx) * 2;
+									break;
+								case 'left':
+									newW = Math.max(10, hw - lx) * 2;
+									break;
+								case 'bottom':
+									newH = Math.max(10, hh + ly) * 2;
+									break;
+								case 'top':
+									newH = Math.max(10, hh - ly) * 2;
+									break;
+								case 'bottom-right':
+									newW = Math.max(10, hw + lx) * 2;
+									newH = Math.max(10, hh + ly) * 2;
+									break;
+								case 'bottom-left':
+									newW = Math.max(10, hw - lx) * 2;
+									newH = Math.max(10, hh + ly) * 2;
+									break;
+								case 'top-right':
+									newW = Math.max(10, hw + lx) * 2;
+									newH = Math.max(10, hh - ly) * 2;
+									break;
+								case 'top-left':
+									newW = Math.max(10, hw - lx) * 2;
+									newH = Math.max(10, hh - ly) * 2;
+									break;
+							}
+							inst.width = newW;
+							inst.height = newH;
+							inst.position.x = newCx;
+							inst.position.y = newCy;
+							redrawAnnotations();
+						} else if (envAssetDragOffset) {
+							// Drag (move)
+							inst.position.x = mapPos.x + envAssetDragOffset.x;
+							inst.position.y = mapPos.y + envAssetDragOffset.y;
+							redrawAnnotations();
+							if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+						}
+					}
 				} else if (activeTool === 'draw' && isDrawing) {
 					currentPath.push({ x: mapPos.x, y: mapPos.y });
 					redrawAnnotations();
@@ -12076,6 +12502,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 					}
 					fogDragStart = null;
 					fogDragEnd = null;
+				} else if (activeTool === 'env-asset' && selectedEnvAssetInstanceId && (envAssetTransformHandle || envAssetDragOffset)) {
+					// ── Env Asset: finish drag or transform ──
+					envAssetTransformHandle = null;
+					envAssetTransformStart = null;
+					envAssetRotateStart = null;
+					envAssetDragOffset = null;
+					envAssetDragOrigin = null;
+					viewport.style.cursor = 'crosshair';
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
 					// Drop marker: snap creature types to grid
 					const m = config.markers[draggingMarkerIndex];
@@ -12332,6 +12769,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (activeTool === 'select' && draggingWallIndex >= 0) {
 					draggingWallIndex = -1;
 					viewport.style.cursor = 'default';
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
+				} else if (activeTool === 'env-asset' && (envAssetTransformHandle || envAssetDragOffset)) {
+					// Finalize env-asset drag/transform on mouseleave
+					envAssetTransformHandle = null;
+					envAssetTransformStart = null;
+					envAssetRotateStart = null;
+					envAssetDragOffset = null;
+					envAssetDragOrigin = null;
+					viewport.style.cursor = 'crosshair';
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
 				} else if (activeTool === 'move-grid' && isDragging) {
@@ -12606,6 +13053,49 @@ export default class DndCampaignHubPlugin extends Plugin {
 					}
 					return nearest;
 				};
+				
+				// ── Env Asset context menu (check before markers) ──
+				if (activeTool === 'env-asset') {
+					const hitEnvAsset = findEnvAssetAtPoint(mapPos.x, mapPos.y);
+					if (hitEnvAsset) {
+						e.preventDefault();
+						selectedEnvAssetInstanceId = hitEnvAsset.id;
+						redrawAnnotations();
+						import('./envasset/EnvAssetContextMenu').then(({ showEnvAssetContextMenu }) => {
+							const assetDef = this.envAssetLibrary.getAsset(hitEnvAsset.assetId);
+							showEnvAssetContextMenu(
+								this.app,
+								e,
+								hitEnvAsset,
+								assetDef ?? undefined,
+								this.envAssetLibrary,
+								{
+									onUpdate: (_inst: any) => {
+										// Instance is updated in-place via the context menu; just save & redraw
+										redrawAnnotations();
+										this.saveMapAnnotations(config, el);
+										if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									},
+									onDelete: (instId: string) => {
+										saveToHistory();
+										const idx = config.envAssets.findIndex((a: EnvAssetInstance) => a.id === instId);
+										if (idx >= 0) config.envAssets.splice(idx, 1);
+										if (selectedEnvAssetInstanceId === instId) selectedEnvAssetInstanceId = null;
+										redrawAnnotations();
+										this.saveMapAnnotations(config, el);
+										if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									},
+									onRedraw: () => redrawAnnotations(),
+									onSave: () => {
+										this.saveMapAnnotations(config, el);
+										if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									}
+								}
+							);
+						});
+						return; // Don't fall through to marker menu
+					}
+				}
 				
 				for (let i = config.markers.length - 1; i >= 0; i--) {
 					const m = config.markers[i];
@@ -14763,6 +15253,7 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 				lightSources: config.lightSources || [],
 				tileElevations: config.tileElevations || {},
 				difficultTerrain: config.difficultTerrain || {},
+				envAssets: config.envAssets || [],
 				// Template system
 				isTemplate: config.isTemplate || false,
 				templateTags: config.templateTags || undefined,
@@ -34090,6 +34581,33 @@ class PlayerMapView extends ItemView {
           if (type === 'terrain') return false;
           return true;
         });
+        // Add env asset vision-blocking walls
+        if (config.envAssets && config.envAssets.length > 0) {
+          for (const inst of config.envAssets) {
+            let shouldBlock = false;
+            if (inst.doorConfig && !inst.doorConfig.isOpen) shouldBlock = true;
+            if (inst.scatterConfig && inst.scatterConfig.blocksVision) shouldBlock = true;
+            if (!shouldBlock) continue;
+            const cx = inst.position.x;
+            const cy = inst.position.y;
+            const hw = inst.width / 2;
+            const hh = inst.height / 2;
+            const rad = (inst.rotation || 0) * Math.PI / 180;
+            const cosR = Math.cos(rad);
+            const sinR = Math.sin(rad);
+            const corners = [
+              { x: cx + (-hw) * cosR - (-hh) * sinR, y: cy + (-hw) * sinR + (-hh) * cosR },
+              { x: cx + ( hw) * cosR - (-hh) * sinR, y: cy + ( hw) * sinR + (-hh) * cosR },
+              { x: cx + ( hw) * cosR - ( hh) * sinR, y: cy + ( hw) * sinR + ( hh) * cosR },
+              { x: cx + (-hw) * cosR - ( hh) * sinR, y: cy + (-hw) * sinR + ( hh) * cosR },
+            ];
+            for (let ei = 0; ei < 4; ei++) {
+              const s = corners[ei]!;
+              const e = corners[(ei + 1) % 4]!;
+              sightBlockingWalls.push({ type: 'wall', start: s, end: e, open: false });
+            }
+          }
+        }
         if (sightBlockingWalls.length > 0) {
           let canBeSeenByAnyPlayer = false;
           for (const pt of visionRelevantTokens) {
@@ -34126,7 +34644,7 @@ class PlayerMapView extends ItemView {
     if (hasFogGlobal) {
       console.log('[PV] Drawing fog of war with lights');
       this.drawFogOfWar(ctx, this.canvas!.width, this.canvas!.height, config);
-    } else if (config.walls && config.walls.length > 0 && visionRelevantTokens.length > 0) {
+    } else if (((config.walls && config.walls.length > 0) || (config.envAssets && config.envAssets.some((a: any) => (a.doorConfig && !a.doorConfig.isOpen) || (a.scatterConfig && a.scatterConfig.blocksVision)))) && visionRelevantTokens.length > 0) {
       // No fog of war, but walls exist — draw wall-occlusion overlay.
       // In daylight, players can see infinitely far EXCEPT through walls.
       // Areas behind walls are darkened so the DM's hidden content stays hidden.
@@ -35744,7 +36262,56 @@ class PlayerMapView extends ItemView {
       return true;
     });
 
-    if (walls.length === 0) return; // Nothing to occlude
+    // Generate virtual walls from env-asset door/scatter instances
+    const envAssetWalls: any[] = [];
+    if (config.envAssets && config.envAssets.length > 0) {
+      for (const inst of config.envAssets) {
+        let shouldBlock = false;
+        let wallHeight = 10;
+        // Doors block vision when closed
+        if (inst.doorConfig && !inst.doorConfig.isOpen) {
+          shouldBlock = true;
+          wallHeight = inst.doorConfig.wallHeight || 10;
+        }
+        // Scatter blocks vision if configured
+        if (inst.scatterConfig && inst.scatterConfig.blocksVision) {
+          shouldBlock = true;
+          wallHeight = inst.scatterConfig.wallHeight || 10;
+        }
+        if (!shouldBlock) continue;
+
+        // Generate wall segments along the edges of the rotated bounding box
+        const cx = inst.position.x;
+        const cy = inst.position.y;
+        const hw = inst.width / 2;
+        const hh = inst.height / 2;
+        const rad = (inst.rotation || 0) * Math.PI / 180;
+        const cosR = Math.cos(rad);
+        const sinR = Math.sin(rad);
+        // Four corners (rotated)
+        const corners = [
+          { x: cx + (-hw) * cosR - (-hh) * sinR, y: cy + (-hw) * sinR + (-hh) * cosR }, // top-left
+          { x: cx + ( hw) * cosR - (-hh) * sinR, y: cy + ( hw) * sinR + (-hh) * cosR }, // top-right
+          { x: cx + ( hw) * cosR - ( hh) * sinR, y: cy + ( hw) * sinR + ( hh) * cosR }, // bottom-right
+          { x: cx + (-hw) * cosR - ( hh) * sinR, y: cy + (-hw) * sinR + ( hh) * cosR }, // bottom-left
+        ];
+        for (let i = 0; i < 4; i++) {
+          const s = corners[i]!;
+          const e = corners[(i + 1) % 4]!;
+          envAssetWalls.push({
+            id: `env_wall_${inst.id}_${i}`,
+            type: 'wall',
+            start: { x: s.x, y: s.y },
+            end: { x: e.x, y: e.y },
+            height: wallHeight,
+            open: false
+          });
+        }
+      }
+    }
+    const allWalls = walls.concat(envAssetWalls);
+
+    if (allWalls.length === 0) return; // Nothing to occlude
 
     // For each vision-relevant player token, compute visibility polygon
     // (infinite range — only limited by walls) and cut it out of the fog.
@@ -35756,7 +36323,7 @@ class PlayerMapView extends ItemView {
       const visPoly = this.computeVisibilityPolygon(
         pt.position.x, pt.position.y,
         10000, // effectively infinite range for daylight
-        walls,
+        allWalls,
         viewerElev
       );
 
@@ -35798,7 +36365,7 @@ class PlayerMapView extends ItemView {
     for (const light of allLights) {
       const totalRadius = ((light.bright || 0) + (light.dim || 0)) * pixelsPerFoot;
       if (totalRadius <= 0) continue;
-      const visPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadius, walls);
+      const visPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadius, allWalls);
       if (visPoly.length >= 3) {
         fogCtx.beginPath();
         const first = visPoly[0];
@@ -35818,7 +36385,7 @@ class PlayerMapView extends ItemView {
     fogCtx.globalCompositeOperation = 'source-over';
     ctx.drawImage(fogCanvas, 0, 0);
 
-    console.log('[PV] Wall-occlusion overlay drawn - walls:', walls.length,
+    console.log('[PV] Wall-occlusion overlay drawn - walls:', allWalls.length,
       'visionTokens:', visionTokens.length);
   }
 
