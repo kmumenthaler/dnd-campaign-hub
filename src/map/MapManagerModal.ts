@@ -34,7 +34,7 @@ export class MapManagerModal extends Modal {
   private maps: StoredMapInfo[] = [];
   private listContainer: HTMLElement | null = null;
   private searchQuery = '';
-  private filterMode: 'all' | 'templates' | 'active' = 'all';
+  private filterMode: 'templates' | 'active' = 'templates';
 
   constructor(app: App, plugin: DndCampaignHubPlugin, mapManager: MapManager) {
     super(app);
@@ -77,7 +77,6 @@ export class MapManagerModal extends Modal {
     tabBar.style.gap = '4px';
 
     const tabs: Array<{ id: 'all' | 'templates' | 'active'; label: string; icon: string }> = [
-      { id: 'all',       label: 'All Maps',  icon: '📋' },
       { id: 'templates', label: 'Templates', icon: '🏗️' },
       { id: 'active',    label: 'Active',    icon: '⚔️' },
     ];
@@ -403,7 +402,12 @@ export class MapManagerModal extends Modal {
       tagBtn.style.cursor = 'pointer';
       tagBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.editTemplateTags(map);
+        // If tags are missing, add defaults first then open editor
+        if (!map.templateTags) {
+          this.addMissingTags(map);
+        } else {
+          this.editTemplateTags(map);
+        }
       });
 
       const unmarkBtn = actions.createEl('button', { text: '❌ Unmark', attr: { title: 'Remove template status' } });
@@ -414,16 +418,6 @@ export class MapManagerModal extends Modal {
       unmarkBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         this.unmarkAsTemplate(map);
-      });
-    } else {
-      const templateBtn = actions.createEl('button', { text: '🏗️ Make Template', attr: { title: 'Mark as template' } });
-      templateBtn.style.padding = '4px 10px';
-      templateBtn.style.fontSize = '12px';
-      templateBtn.style.borderRadius = '4px';
-      templateBtn.style.cursor = 'pointer';
-      templateBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.markAsTemplate(map);
       });
     }
 
@@ -540,23 +534,19 @@ export class MapManagerModal extends Modal {
   }
 
   /**
-   * Mark a map as a template and create a template note in z_BattlemapTemplates/.
+   * Add missing default tags to a template that doesn't have them yet,
+   * then open the tag editor.
    */
-  private async markAsTemplate(map: StoredMapInfo): Promise<void> {
+  private async addMissingTags(map: StoredMapInfo): Promise<void> {
     const fullData = await this.plugin.loadMapAnnotations(map.mapId);
 
-    fullData.isTemplate = true;
     fullData.templateTags = createDefaultTemplateTags();
 
     await this.plugin.saveMapAnnotations(fullData, document.createElement('div'));
 
-    map.isTemplate = true;
     map.templateTags = fullData.templateTags;
 
-    // Create a template note in z_BattlemapTemplates/ if one doesn't exist
-    await this.ensureTemplateNote(map);
-
-    new Notice(`✅ "${map.name}" marked as template`);
+    new Notice(`✅ Default tags added to "${map.name}"`);
 
     // Open tag editor immediately
     this.editTemplateTags(map);

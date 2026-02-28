@@ -336,6 +336,7 @@ export class TemplatePickerModal extends Modal {
         fogOfWar: JSON.parse(JSON.stringify(templateData.fogOfWar || { enabled: false, regions: [] })),
         drawings: JSON.parse(JSON.stringify(templateData.drawings || [])),
         tileElevations: JSON.parse(JSON.stringify(templateData.tileElevations || {})),
+        difficultTerrain: JSON.parse(JSON.stringify(templateData.difficultTerrain || {})),
         tunnels: JSON.parse(JSON.stringify(templateData.tunnels || [])),
 
         // Markers (furniture, traps, etc.) – FULLY COPIED from template

@@ -5272,6 +5272,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Load tile elevations (Background layer only)
 			config.tileElevations = savedData.tileElevations || {};
 
+			// Load difficult terrain tiles (Background layer)
+			config.difficultTerrain = savedData.difficultTerrain || {};
+
 			// Load active layer (defaults to Player)
 			config.activeLayer = savedData.activeLayer || 'Player';
 
@@ -5323,7 +5326,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' = 'pan';
+    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' = 'pan';
 		let selectedColor = '#ff0000';
       // GM player-view rect drag state
       let gmDragStart: { x: number; y: number } | null = null;
@@ -5362,6 +5365,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Elevation paint tool state
 			let elevationPaintValue: number = 0;
 			let isPaintingElevation = false;
+			// Difficult terrain paint tool state
+			let isDifficultTerrainEraser = false;
+			let isPaintingDifficultTerrain = false;
 			let hexcrawlMoveHoverHex: { col: number; row: number } | null = null;
 
 			// Hex distance helper for offset-coordinate hex grids (used for movement range)
@@ -6009,6 +6015,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const wallsBtn = createToolBtn(visionContent, '🧱', 'Walls');
 		const lightsBtn = createToolBtn(visionContent, '💡', 'Lights');
 		const elevationPaintBtn = createToolBtn(visionContent, '⛰️', 'Tile Elevation');
+		const difficultTerrainBtn = createToolBtn(visionContent, '🌿', 'Difficult Terrain');
 		// Toggle vision section visibility based on layer (hidden entirely for hexcrawl maps)
 		visionSectionHeader.toggleClass('hidden', config.activeLayer !== 'Background' || isHexcrawlMap);
 		visionContent.toggleClass('hidden', config.activeLayer !== 'Background' || isHexcrawlMap);
@@ -6322,6 +6329,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		wallsBtn.toggleClass('hidden', config.activeLayer !== 'Background');
 		lightsBtn.toggleClass('hidden', config.activeLayer !== 'Background');
 		elevationPaintBtn.toggleClass('hidden', config.activeLayer !== 'Background');
+		difficultTerrainBtn.toggleClass('hidden', config.activeLayer !== 'Background');
 
 		// Wall type picker sub-menu (shown when walls tool is active)
 		const wallsPicker = wallsBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
@@ -6495,6 +6503,33 @@ export default class DndCampaignHubPlugin extends Plugin {
 			elevationPaintValue = 0;
 			elevationInput.value = '0';
 			new Notice('Elevation eraser active (0 ft)');
+		});
+
+		// Difficult Terrain picker sub-menu (shown when difficult-terrain tool is active)
+		const difficultTerrainPicker = difficultTerrainBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
+		const dtPaintBtn = difficultTerrainPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn active',
+			attr: { title: 'Paint difficult terrain' }
+		});
+		dtPaintBtn.createEl('span', { text: '🌿' });
+		const dtEraseBtn = difficultTerrainPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn',
+			attr: { title: 'Erase difficult terrain' }
+		});
+		dtEraseBtn.createEl('span', { text: '🗑️' });
+		dtPaintBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			isDifficultTerrainEraser = false;
+			dtPaintBtn.addClass('active');
+			dtEraseBtn.removeClass('active');
+			new Notice('Difficult terrain brush active');
+		});
+		dtEraseBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			isDifficultTerrainEraser = true;
+			dtEraseBtn.addClass('active');
+			dtPaintBtn.removeClass('active');
+			new Notice('Difficult terrain eraser active');
 		});
 
 		// Player View controls picker sub-menu (shown when player-view tool is active)
@@ -6949,6 +6984,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						wallsBtn.removeClass('hidden');
 						lightsBtn.removeClass('hidden');
 						elevationPaintBtn.removeClass('hidden');
+						difficultTerrainBtn.removeClass('hidden');
 					}
 					// Show/hide Tunnels section based on layer (only available on Subterranean, hidden for hexcrawl)
 					if (layer !== 'Subterranean' || isHexcrawlMap) {
@@ -6961,7 +6997,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						tunnelsSectionHeader.removeClass('collapsed');
 						tunnelsContent.removeClass('collapsed');
 					}
-					if (layer !== 'Background' && (activeTool === 'fog' || activeTool === 'walls' || activeTool === 'lights' || activeTool === 'elevation-paint')) {
+					if (layer !== 'Background' && (activeTool === 'fog' || activeTool === 'walls' || activeTool === 'lights' || activeTool === 'elevation-paint' || activeTool === 'difficult-terrain')) {
 						setActiveTool('pan');
 					}
 					// Terrain/climate canvas follows Background layer visibility
@@ -7142,6 +7178,7 @@ export default class DndCampaignHubPlugin extends Plugin {
             hexTerrains: config.hexTerrains,
             hexClimates: config.hexClimates,
             tileElevations: config.tileElevations || {},
+            difficultTerrain: config.difficultTerrain || {},
             hexcrawlState: config.hexcrawlState,
             hexcrawlRangeOverlay: (activeTool === 'hexcrawl-move' && config.hexcrawlState?.enabled && config.hexcrawlState?.partyPosition) ? {
               active: true,
@@ -7191,7 +7228,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let startX = 0;
 		let startY = 0;
 		// Middle mouse button temporary pan state
-		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | null = null;
+		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | null = null;
 		let isTemporaryPan = false;
 		let gridCanvas: HTMLCanvasElement | null = null;
 		let terrainCanvas: HTMLCanvasElement | null = null;
@@ -7644,6 +7681,56 @@ export default class DndCampaignHubPlugin extends Plugin {
 							ctx.textBaseline = 'top';
 							ctx.fillStyle = getElevationColor(elev, 1.0);
 							ctx.fillText(label, cellX + gs - 3, cellY + 2);
+						}
+					}
+					
+					ctx.restore();
+				}
+
+				// Draw difficult terrain tiles
+				if (config.difficultTerrain && Object.keys(config.difficultTerrain).length > 0) {
+					const gs = config.gridSize || 70;
+					const ox = config.gridOffsetX || 0;
+					const oy = config.gridOffsetY || 0;
+					const isBackgroundLayer = config.activeLayer === 'Background';
+					
+					ctx.save();
+					if (!isBackgroundLayer) ctx.globalAlpha = 0.15; // Very subtle on other layers
+					
+					for (const key of Object.keys(config.difficultTerrain)) {
+						const parts = key.split(',');
+						const col = parseInt(parts[0] ?? '0');
+						const row = parseInt(parts[1] ?? '0');
+						const cellX = col * gs + ox;
+						const cellY = row * gs + oy;
+						
+						// Fill tile with semi-transparent brown/tan hatching pattern
+						ctx.fillStyle = 'rgba(139, 90, 43, 0.25)';
+						ctx.fillRect(cellX, cellY, gs, gs);
+						
+						// Draw diagonal hatching lines for visual texture
+						ctx.strokeStyle = 'rgba(139, 90, 43, 0.4)';
+						ctx.lineWidth = 1;
+						const step = gs / 4;
+						ctx.beginPath();
+						for (let d = -gs; d <= gs; d += step) {
+							ctx.moveTo(cellX + Math.max(0, d), cellY + Math.max(0, -d));
+							ctx.lineTo(cellX + Math.min(gs, d + gs), cellY + Math.min(gs, gs - d));
+						}
+						ctx.stroke();
+						
+						// Draw border
+						ctx.strokeStyle = 'rgba(139, 90, 43, 0.5)';
+						ctx.lineWidth = 1.5;
+						ctx.strokeRect(cellX + 0.5, cellY + 0.5, gs - 1, gs - 1);
+						
+						// Draw label (only on Background layer)
+						if (isBackgroundLayer) {
+							ctx.font = 'bold 9px sans-serif';
+							ctx.textAlign = 'left';
+							ctx.textBaseline = 'bottom';
+							ctx.fillStyle = 'rgba(139, 90, 43, 0.9)';
+							ctx.fillText('DT', cellX + 3, cellY + gs - 2);
 						}
 					}
 					
@@ -9315,11 +9402,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 							movedDiag = true;
 						}
 						c += stepC;
-						if (movedDiag) {
-							diagCount++;
-							totalDist += (diagCount % 2 === 1) ? scaleVal : scaleVal * 2;
-						} else {
-							totalDist += scaleVal;
+						{
+							let stepCost: number;
+							if (movedDiag) {
+								diagCount++;
+								stepCost = (diagCount % 2 === 1) ? scaleVal : scaleVal * 2;
+							} else {
+								stepCost = scaleVal;
+							}
+							// Double cost for difficult terrain (D&D 5e PHB)
+							if (config.difficultTerrain && config.difficultTerrain[`${c},${r}`]) {
+								stepCost *= 2;
+							}
+							totalDist += stepCost;
 						}
 						// Track elevation change
 						const cellElev = config.tileElevations ? (config.tileElevations[`${c},${r}`] || 0) : 0;
@@ -9340,11 +9435,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 							movedDiag = true;
 						}
 						r += stepR;
-						if (movedDiag) {
-							diagCount++;
-							totalDist += (diagCount % 2 === 1) ? scaleVal : scaleVal * 2;
-						} else {
-							totalDist += scaleVal;
+						{
+							let stepCost: number;
+							if (movedDiag) {
+								diagCount++;
+								stepCost = (diagCount % 2 === 1) ? scaleVal : scaleVal * 2;
+							} else {
+								stepCost = scaleVal;
+							}
+							// Double cost for difficult terrain (D&D 5e PHB)
+							if (config.difficultTerrain && config.difficultTerrain[`${c},${r}`]) {
+								stepCost *= 2;
+							}
+							totalDist += stepCost;
 						}
 						// Track elevation change
 						const cellElev = config.tileElevations ? (config.tileElevations[`${c},${r}`] || 0) : 0;
@@ -9904,6 +10007,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 				lightsPicker.toggleClass('hidden', tool !== 'lights');
 				// Show/hide Elevation Paint picker
 				elevationPicker.toggleClass('hidden', tool !== 'elevation-paint');
+				// Show/hide Difficult Terrain picker
+				difficultTerrainPicker.toggleClass('hidden', tool !== 'difficult-terrain');
 				// Show/hide Player View controls picker
 				pvPicker.toggleClass('hidden', tool !== 'player-view');
 				// Show/hide Terrain picker
@@ -9971,6 +10076,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 					elevationPaintBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
 					new Notice('Elevation Paint: Click or drag to set tile elevation', 3000);
+				} else if (tool === 'difficult-terrain') {
+					difficultTerrainBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+					new Notice('Difficult Terrain: Click or drag to mark tiles. Movement costs double.', 3000);
 				} else if (tool === 'poi') {
 					poiBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
@@ -10129,6 +10238,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 					elevationPicker.toggleClass('hidden', !elevationPicker.hasClass('hidden'));
 				} else {
 					setActiveTool('elevation-paint');
+				}
+			});
+			difficultTerrainBtn.addEventListener('click', () => {
+				console.log('Difficult Terrain button clicked');
+				if (activeTool === 'difficult-terrain') {
+					difficultTerrainPicker.toggleClass('hidden', !difficultTerrainPicker.hasClass('hidden'));
+				} else {
+					setActiveTool('difficult-terrain');
 				}
 			});
 			setStartHexBtn.addEventListener('click', () => {
@@ -10900,6 +11017,24 @@ export default class DndCampaignHubPlugin extends Plugin {
 					isPaintingElevation = true;
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
+				} else if (activeTool === 'difficult-terrain') {
+					// Paint or erase difficult terrain on clicked grid square
+					const gs = config.gridSize || 70;
+					const ox = config.gridOffsetX || 0;
+					const oy = config.gridOffsetY || 0;
+					const col = Math.floor((mapPos.x - ox) / gs);
+					const row = Math.floor((mapPos.y - oy) / gs);
+					const key = `${col},${row}`;
+					saveToHistory();
+					if (!config.difficultTerrain) config.difficultTerrain = {};
+					if (isDifficultTerrainEraser) {
+						delete config.difficultTerrain[key];
+					} else {
+						config.difficultTerrain[key] = true;
+					}
+					isPaintingDifficultTerrain = true;
+					redrawAnnotations();
+					this.saveMapAnnotations(config, el);
 				} else if (activeTool === 'hexcrawl-move') {
 					// Travel to clicked hex using per-hex procedure
 					const hex = pixelToHex(mapPos.x, mapPos.y);
@@ -11337,6 +11472,26 @@ export default class DndCampaignHubPlugin extends Plugin {
 							redrawAnnotations();
 						}
 					}
+				} else if (activeTool === 'difficult-terrain' && isPaintingDifficultTerrain) {
+					// Drag-paint difficult terrain
+					const gs = config.gridSize || 70;
+					const ox = config.gridOffsetX || 0;
+					const oy = config.gridOffsetY || 0;
+					const col = Math.floor((mapPos.x - ox) / gs);
+					const row = Math.floor((mapPos.y - oy) / gs);
+					const key = `${col},${row}`;
+					if (!config.difficultTerrain) config.difficultTerrain = {};
+					if (isDifficultTerrainEraser) {
+						if (config.difficultTerrain[key]) {
+							delete config.difficultTerrain[key];
+							redrawAnnotations();
+						}
+					} else {
+						if (!config.difficultTerrain[key]) {
+							config.difficultTerrain[key] = true;
+							redrawAnnotations();
+						}
+					}
 				} else if (activeTool === 'walls' && wallPoints.length > 0) {
 					// Update wall preview position
 					wallPreviewPos = { x: mapPos.x, y: mapPos.y };
@@ -11482,6 +11637,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (activeTool === 'elevation-paint' && isPaintingElevation) {
 					// Finalize elevation painting drag
 					isPaintingElevation = false;
+					this.saveMapAnnotations(config, el);
+				} else if (activeTool === 'difficult-terrain' && isPaintingDifficultTerrain) {
+					// Finalize difficult terrain painting drag
+					isPaintingDifficultTerrain = false;
 					this.saveMapAnnotations(config, el);
 				} else if (activeTool === 'fog' && fogDragStart && fogDragEnd) {
 					// Finalize fog region from drag
@@ -13545,6 +13704,30 @@ export default class DndCampaignHubPlugin extends Plugin {
 				new MapCreationModal(this.app, this, this.mapManager, config, el).open();
 			});
 
+			// Delete button
+			const deleteButton = controls.createDiv({ cls: 'dnd-map-delete-btn-container' });
+			const deleteBtn = deleteButton.createEl('button', {
+				text: '🗑️ Delete Map',
+				cls: 'dnd-map-toggle-btn'
+			});
+			deleteBtn.style.color = 'var(--text-error)';
+			deleteBtn.addEventListener('click', () => {
+				new DeleteMapConfirmModal(
+					this.app,
+					this,
+					config.mapId,
+					config.name || 'Unnamed Map',
+					notePath,
+					() => {
+						el.empty();
+						el.createEl('div', {
+							text: '🗑️ Map has been deleted.',
+							cls: 'dnd-map-deleted-notice'
+						});
+					}
+				).open();
+			});
+
 		} catch (error) {
 			console.error('Error rendering dnd-map:', error);
 			el.createEl('div', { 
@@ -14183,6 +14366,7 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 				walls: config.walls || [],
 				lightSources: config.lightSources || [],
 				tileElevations: config.tileElevations || {},
+				difficultTerrain: config.difficultTerrain || {},
 				// Template system
 				isTemplate: config.isTemplate || false,
 				templateTags: config.templateTags || undefined,
@@ -16068,6 +16252,145 @@ class ClearDrawingsConfirmModal extends Modal {
     });
 
     confirmButton.focus();
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+/**
+ * Confirmation modal for deleting a map from its rendered view
+ */
+class DeleteMapConfirmModal extends Modal {
+  private plugin: DndCampaignHubPlugin;
+  private mapId: string;
+  private mapName: string;
+  private sourcePath: string;
+  private onDeleted: () => void;
+
+  constructor(
+    app: App,
+    plugin: DndCampaignHubPlugin,
+    mapId: string,
+    mapName: string,
+    sourcePath: string,
+    onDeleted: () => void
+  ) {
+    super(app);
+    this.plugin = plugin;
+    this.mapId = mapId;
+    this.mapName = mapName;
+    this.sourcePath = sourcePath;
+    this.onDeleted = onDeleted;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl('h2', { text: '🗑️ Delete Map' });
+
+    contentEl.createEl('p', {
+      text: `Are you sure you want to delete "${this.mapName}"?`
+    });
+
+    contentEl.createEl('p', {
+      text: 'This will remove all map data including markers, drawings, fog of war, walls, and other annotations. This cannot be undone.',
+      cls: 'setting-item-description'
+    });
+
+    contentEl.createEl('p', {
+      text: 'Note: The map image file will not be deleted from your vault.',
+      cls: 'setting-item-description'
+    });
+
+    // Checkbox to also remove code block from note
+    const removeCodeBlockContainer = contentEl.createDiv();
+    removeCodeBlockContainer.style.marginTop = '12px';
+    removeCodeBlockContainer.style.marginBottom = '12px';
+
+    const checkbox = removeCodeBlockContainer.createEl('input', {
+      type: 'checkbox',
+      attr: { id: 'delete-map-remove-codeblock' }
+    }) as HTMLInputElement;
+    checkbox.checked = false;
+
+    const label = removeCodeBlockContainer.createEl('label', {
+      text: ' Also remove the map code block from this note',
+      attr: { for: 'delete-map-remove-codeblock' }
+    });
+    label.style.marginLeft = '6px';
+
+    const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+    buttonContainer.style.display = 'flex';
+    buttonContainer.style.justifyContent = 'flex-end';
+    buttonContainer.style.gap = '10px';
+    buttonContainer.style.marginTop = '16px';
+
+    const cancelButton = buttonContainer.createEl('button', { text: 'Cancel' });
+    cancelButton.addEventListener('click', () => {
+      this.close();
+    });
+
+    const deleteButton = buttonContainer.createEl('button', {
+      text: 'Delete Map',
+      cls: 'mod-warning'
+    });
+    deleteButton.style.backgroundColor = 'var(--background-modifier-error)';
+    deleteButton.style.color = 'var(--text-on-accent)';
+    deleteButton.style.borderRadius = '4px';
+
+    deleteButton.addEventListener('click', async () => {
+      await this.performDelete(checkbox.checked);
+      this.close();
+    });
+  }
+
+  private async performDelete(removeCodeBlock: boolean): Promise<void> {
+    try {
+      // Delete annotation JSON file
+      const annotationPath = this.plugin.getMapAnnotationPath(this.mapId);
+      if (await this.app.vault.adapter.exists(annotationPath)) {
+        await this.app.vault.adapter.remove(annotationPath);
+      }
+
+      // Optionally remove the dnd-map code block from the note
+      if (removeCodeBlock && this.sourcePath) {
+        await this.removeCodeBlockFromNote();
+      }
+
+      new Notice(`✅ Map "${this.mapName}" deleted`);
+      this.onDeleted();
+    } catch (err) {
+      console.error('[DeleteMap] Error deleting map:', err);
+      new Notice('❌ Failed to delete map');
+    }
+  }
+
+  private async removeCodeBlockFromNote(): Promise<void> {
+    try {
+      const file = this.app.vault.getAbstractFileByPath(this.sourcePath);
+      if (!(file instanceof TFile)) return;
+
+      const content = await this.app.vault.read(file);
+
+      // Find and remove the dnd-map code block containing this mapId
+      const escapedId = this.mapId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const codeBlockRegex = new RegExp(
+        '```dnd-map\\s*\\n[\\s\\S]*?"mapId"\\s*:\\s*"' + escapedId + '"[\\s\\S]*?\\n```',
+        'g'
+      );
+
+      const newContent = content.replace(codeBlockRegex, '');
+
+      if (newContent !== content) {
+        await this.app.vault.modify(file, newContent);
+      }
+    } catch (err) {
+      console.error('[DeleteMap] Error removing code block:', err);
+    }
   }
 
   onClose() {
@@ -32564,6 +32887,37 @@ class PlayerMapView extends ItemView {
     const playerHighlights = (config.highlights || []).filter((h: any) => visibleLayers.includes(h.layer || 'Player'));
     const playerPoiRefs = (config.poiReferences || []).filter((p: any) => (p.layer || 'DM') === 'Player');
 
+    // Draw difficult terrain tiles (visible to players as subtle overlay)
+    if (config.difficultTerrain && Object.keys(config.difficultTerrain).length > 0) {
+      const gs = config.gridSize || 70;
+      const ox = config.gridOffsetX || 0;
+      const oy = config.gridOffsetY || 0;
+      ctx.save();
+      ctx.globalAlpha = 0.2;
+      for (const key of Object.keys(config.difficultTerrain)) {
+        const parts = key.split(',');
+        const col = parseInt(parts[0] ?? '0');
+        const row = parseInt(parts[1] ?? '0');
+        const cellX = col * gs + ox;
+        const cellY = row * gs + oy;
+        ctx.fillStyle = 'rgba(139, 90, 43, 0.25)';
+        ctx.fillRect(cellX, cellY, gs, gs);
+        ctx.strokeStyle = 'rgba(139, 90, 43, 0.4)';
+        ctx.lineWidth = 1;
+        const step = gs / 4;
+        ctx.beginPath();
+        for (let d = -gs; d <= gs; d += step) {
+          ctx.moveTo(cellX + Math.max(0, d), cellY + Math.max(0, -d));
+          ctx.lineTo(cellX + Math.min(gs, d + gs), cellY + Math.min(gs, gs - d));
+        }
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(139, 90, 43, 0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(cellX + 0.5, cellY + 0.5, gs - 1, gs - 1);
+      }
+      ctx.restore();
+    }
+
     // Draw highlights
     playerHighlights.forEach((h: any) => this.drawHighlight(ctx, h));
 
@@ -34040,8 +34394,11 @@ class PlayerMapView extends ItemView {
             let movedDiag = false;
             if (err < 0) { r += stepR; err += absDc; movedDiag = true; }
             c += stepC;
-            if (movedDiag) { diagCount++; totalDist += (diagCount % 2 === 1) ? scaleVal : scaleVal * 2; }
-            else { totalDist += scaleVal; }
+            let stepCost: number;
+            if (movedDiag) { diagCount++; stepCost = (diagCount % 2 === 1) ? scaleVal : scaleVal * 2; }
+            else { stepCost = scaleVal; }
+            if (config.difficultTerrain && config.difficultTerrain[`${c},${r}`]) { stepCost *= 2; }
+            totalDist += stepCost;
             pathCells.push({ col: c, row: r, dist: totalDist });
           }
         } else {
@@ -34051,8 +34408,11 @@ class PlayerMapView extends ItemView {
             let movedDiag = false;
             if (err < 0) { c += stepC; err += absDr; movedDiag = true; }
             r += stepR;
-            if (movedDiag) { diagCount++; totalDist += (diagCount % 2 === 1) ? scaleVal : scaleVal * 2; }
-            else { totalDist += scaleVal; }
+            let stepCost: number;
+            if (movedDiag) { diagCount++; stepCost = (diagCount % 2 === 1) ? scaleVal : scaleVal * 2; }
+            else { stepCost = scaleVal; }
+            if (config.difficultTerrain && config.difficultTerrain[`${c},${r}`]) { stepCost *= 2; }
+            totalDist += stepCost;
             pathCells.push({ col: c, row: r, dist: totalDist });
           }
         }
