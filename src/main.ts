@@ -32645,6 +32645,28 @@ class PlayerMapView extends ItemView {
           return; // Skip rendering this token
         }
       }
+
+      // Wall-occlusion check: walls always block vision regardless of fog.
+      // In daylight (no fog) you can see far, but not through solid walls.
+      // When fog IS enabled the fog-of-war polygon already handles this, so
+      // we only need the explicit check when fog is OFF.
+      if (!hasFog && config.walls && config.walls.length > 0 && visionRelevantTokens.length > 0) {
+        let canBeSeenByAnyPlayer = false;
+        for (const pt of visionRelevantTokens) {
+          if (this.hasLineOfSight(
+            pt.position.x, pt.position.y,
+            m.position.x, m.position.y,
+            config.walls
+          )) {
+            canBeSeenByAnyPlayer = true;
+            break;
+          }
+        }
+        if (!canBeSeenByAnyPlayer) {
+          console.log('[Wall Occlusion] Token hidden behind wall in daylight:', m.id);
+          return; // Wall blocks line of sight from every player token
+        }
+      }
       
       this.drawMarker(ctx, m);
     });
