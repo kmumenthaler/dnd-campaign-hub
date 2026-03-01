@@ -339,6 +339,9 @@ export class TemplatePickerModal extends Modal {
         difficultTerrain: JSON.parse(JSON.stringify(templateData.difficultTerrain || {})),
         tunnels: JSON.parse(JSON.stringify(templateData.tunnels || [])),
 
+        // Environment assets (doors, windows, etc.) – FULLY COPIED from template
+        envAssets: JSON.parse(JSON.stringify(templateData.envAssets || [])),
+
         // Markers (furniture, traps, etc.) – FULLY COPIED from template
         markers: JSON.parse(JSON.stringify(templateData.markers || [])),
 

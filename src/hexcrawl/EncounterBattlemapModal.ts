@@ -476,6 +476,9 @@ export class EncounterBattlemapModal extends Modal {
         drawings: JSON.parse(JSON.stringify(templateData.drawings || [])),
         tileElevations: JSON.parse(JSON.stringify(templateData.tileElevations || {})),
         tunnels: JSON.parse(JSON.stringify(templateData.tunnels || [])),
+        difficultTerrain: JSON.parse(JSON.stringify(templateData.difficultTerrain || {})),
+        // Environment assets (doors, windows, etc.) – FULLY COPIED from template
+        envAssets: JSON.parse(JSON.stringify(templateData.envAssets || [])),
         // Markers (furniture, traps, etc.) – FULLY COPIED from template
         markers: JSON.parse(JSON.stringify(templateData.markers || [])),
         highlights: [],
