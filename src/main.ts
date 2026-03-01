@@ -8466,7 +8466,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						ctx.restore();
 
 						// ── Selection frame & transform handles ──────────
-						if (selectedEnvAssetInstanceId === inst.id && activeTool === 'env-asset') {
+						if (selectedEnvAssetInstanceId === inst.id && (activeTool === 'env-asset' || activeTool === 'select')) {
 							ctx.save();
 							ctx.translate(inst.position.x, inst.position.y);
 							ctx.rotate((inst.rotation || 0) * Math.PI / 180);
@@ -10764,8 +10764,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					new Notice('Environment Assets: Click to place, click to select, right-click for options', 4000);
 				}
 
-				// Deselect env asset instance when switching tools
-				if (tool !== 'env-asset') {
+				// Deselect env asset instance when switching to a tool that doesn't handle them
+				if (tool !== 'env-asset' && tool !== 'select') {
 					selectedEnvAssetInstanceId = null;
 					envAssetTransformHandle = null;
 				}
@@ -11216,8 +11216,60 @@ export default class DndCampaignHubPlugin extends Plugin {
 							}
 						}
 					}
-					// If nothing was clicked, start a wall selection rectangle
+					// Check if clicking on an env asset for select / drag / transform
+					let foundEnvAsset = false;
 					if (!foundMarker && draggingLightIndex < 0 && draggingWallIndex < 0) {
+						// First, if an env asset is already selected, check transform handles
+						if (selectedEnvAssetInstanceId) {
+							const selInst = (config.envAssets || []).find((a: EnvAssetInstance) => a.id === selectedEnvAssetInstanceId);
+							if (selInst && !selInst.locked) {
+								const handle = hitTestTransformHandle(mapPos.x, mapPos.y, selInst);
+								if (handle) {
+									saveToHistory();
+									envAssetTransformHandle = handle;
+									envAssetTransformStart = {
+										x: selInst.position.x,
+										y: selInst.position.y,
+										w: selInst.width,
+										h: selInst.height,
+										rot: selInst.rotation || 0
+									};
+									if (handle === 'rotate') {
+										envAssetRotateStart = Math.atan2(mapPos.y - selInst.position.y, mapPos.x - selInst.position.x);
+									}
+									viewport.style.cursor = handle === 'rotate' ? 'grab' : 'nwse-resize';
+									foundEnvAsset = true;
+									e.preventDefault();
+								}
+							}
+						}
+						// Then check if clicking on an env asset body
+						if (!foundEnvAsset) {
+							const hitInst = findEnvAssetAtPoint(mapPos.x, mapPos.y);
+							if (hitInst) {
+								selectedEnvAssetInstanceId = hitInst.id;
+								foundEnvAsset = true;
+								if (!hitInst.locked) {
+									saveToHistory();
+									envAssetDragOffset = {
+										x: hitInst.position.x - mapPos.x,
+										y: hitInst.position.y - mapPos.y
+									};
+									envAssetDragOrigin = { x: hitInst.position.x, y: hitInst.position.y };
+									viewport.style.cursor = 'grabbing';
+								}
+								redrawAnnotations();
+							} else {
+								// Clicked empty space — deselect env asset
+								if (selectedEnvAssetInstanceId) {
+									selectedEnvAssetInstanceId = null;
+									redrawAnnotations();
+								}
+							}
+						}
+					}
+					// If nothing was clicked, start a wall selection rectangle
+					if (!foundMarker && draggingLightIndex < 0 && draggingWallIndex < 0 && !foundEnvAsset) {
 						wallSelectionRect = { startX: mapPos.x, startY: mapPos.y, endX: mapPos.x, endY: mapPos.y };
 						selectedWallIndices = [];
 						viewport.style.cursor = 'crosshair';
@@ -12161,25 +12213,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 					draggedWall.end.x = mapPos.x + wallDragOffsetEndX;
 					draggedWall.end.y = mapPos.y + wallDragOffsetEndY;
 					redrawAnnotations();
-				} else if (activeTool === 'select' && wallSelectionRect) {
-					// Updating wall selection rectangle
-					wallSelectionRect.endX = mapPos.x;
-					wallSelectionRect.endY = mapPos.y;
-					redrawAnnotations();
-				} else if (activeTool === 'env-asset' && selectedEnvAssetInstanceId && (envAssetTransformHandle || envAssetDragOffset)) {
-					// ── Env Asset: drag or transform in progress ──
+				} else if ((activeTool === 'select' || activeTool === 'env-asset') && selectedEnvAssetInstanceId && (envAssetTransformHandle || envAssetDragOffset)) {
+					// ── Env asset drag / transform in progress (select or env-asset tool) ──
 					const inst = (config.envAssets || []).find((a: EnvAssetInstance) => a.id === selectedEnvAssetInstanceId);
 					if (inst) {
 						if (envAssetTransformHandle === 'rotate' && envAssetTransformStart && envAssetRotateStart !== null) {
-							// Rotate
 							const angle = Math.atan2(mapPos.y - inst.position.y, mapPos.x - inst.position.x);
 							const delta = (angle - envAssetRotateStart) * 180 / Math.PI;
 							inst.rotation = ((envAssetTransformStart.rot + delta) % 360 + 360) % 360;
 							redrawAnnotations();
 						} else if (envAssetTransformHandle && envAssetTransformStart) {
-							// Resize via handle
 							const s = envAssetTransformStart;
-							// Transform mouse into local (unrotated) coords relative to original center
 							const dx = mapPos.x - s.x;
 							const dy = mapPos.y - s.y;
 							const rad = -(s.rot || 0) * Math.PI / 180;
@@ -12189,53 +12233,31 @@ export default class DndCampaignHubPlugin extends Plugin {
 							const hh = s.h / 2;
 							let newW = s.w;
 							let newH = s.h;
-							let newCx = s.x;
-							let newCy = s.y;
-
-							// Compute new dimensions based on handle
 							switch (envAssetTransformHandle) {
-								case 'right':
-									newW = Math.max(10, hw + lx) * 2;
-									break;
-								case 'left':
-									newW = Math.max(10, hw - lx) * 2;
-									break;
-								case 'bottom':
-									newH = Math.max(10, hh + ly) * 2;
-									break;
-								case 'top':
-									newH = Math.max(10, hh - ly) * 2;
-									break;
-								case 'bottom-right':
-									newW = Math.max(10, hw + lx) * 2;
-									newH = Math.max(10, hh + ly) * 2;
-									break;
-								case 'bottom-left':
-									newW = Math.max(10, hw - lx) * 2;
-									newH = Math.max(10, hh + ly) * 2;
-									break;
-								case 'top-right':
-									newW = Math.max(10, hw + lx) * 2;
-									newH = Math.max(10, hh - ly) * 2;
-									break;
-								case 'top-left':
-									newW = Math.max(10, hw - lx) * 2;
-									newH = Math.max(10, hh - ly) * 2;
-									break;
+								case 'right':        newW = Math.max(10, hw + lx) * 2; break;
+								case 'left':         newW = Math.max(10, hw - lx) * 2; break;
+								case 'bottom':       newH = Math.max(10, hh + ly) * 2; break;
+								case 'top':          newH = Math.max(10, hh - ly) * 2; break;
+								case 'bottom-right': newW = Math.max(10, hw + lx) * 2; newH = Math.max(10, hh + ly) * 2; break;
+								case 'bottom-left':  newW = Math.max(10, hw - lx) * 2; newH = Math.max(10, hh + ly) * 2; break;
+								case 'top-right':    newW = Math.max(10, hw + lx) * 2; newH = Math.max(10, hh - ly) * 2; break;
+								case 'top-left':     newW = Math.max(10, hw - lx) * 2; newH = Math.max(10, hh - ly) * 2; break;
 							}
 							inst.width = newW;
 							inst.height = newH;
-							inst.position.x = newCx;
-							inst.position.y = newCy;
 							redrawAnnotations();
 						} else if (envAssetDragOffset) {
-							// Drag (move)
 							inst.position.x = mapPos.x + envAssetDragOffset.x;
 							inst.position.y = mapPos.y + envAssetDragOffset.y;
 							redrawAnnotations();
 							if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 						}
 					}
+				} else if (activeTool === 'select' && wallSelectionRect) {
+					// Updating wall selection rectangle
+					wallSelectionRect.endX = mapPos.x;
+					wallSelectionRect.endY = mapPos.y;
+					redrawAnnotations();
 				} else if (activeTool === 'draw' && isDrawing) {
 					currentPath.push({ x: mapPos.x, y: mapPos.y });
 					redrawAnnotations();
@@ -12506,14 +12528,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 					}
 					fogDragStart = null;
 					fogDragEnd = null;
-				} else if (activeTool === 'env-asset' && selectedEnvAssetInstanceId && (envAssetTransformHandle || envAssetDragOffset)) {
+				} else if ((activeTool === 'env-asset' || activeTool === 'select') && selectedEnvAssetInstanceId && (envAssetTransformHandle || envAssetDragOffset)) {
 					// ── Env Asset: finish drag or transform ──
 					envAssetTransformHandle = null;
 					envAssetTransformStart = null;
 					envAssetRotateStart = null;
 					envAssetDragOffset = null;
 					envAssetDragOrigin = null;
-					viewport.style.cursor = 'crosshair';
+					viewport.style.cursor = activeTool === 'env-asset' ? 'crosshair' : 'default';
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
 					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
@@ -12775,14 +12797,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
-				} else if (activeTool === 'env-asset' && (envAssetTransformHandle || envAssetDragOffset)) {
+				} else if ((activeTool === 'env-asset' || activeTool === 'select') && (envAssetTransformHandle || envAssetDragOffset)) {
 					// Finalize env-asset drag/transform on mouseleave
 					envAssetTransformHandle = null;
 					envAssetTransformStart = null;
 					envAssetRotateStart = null;
 					envAssetDragOffset = null;
 					envAssetDragOrigin = null;
-					viewport.style.cursor = 'crosshair';
+					viewport.style.cursor = activeTool === 'env-asset' ? 'crosshair' : 'default';
 					redrawAnnotations();
 					this.saveMapAnnotations(config, el);
 				} else if (activeTool === 'move-grid' && isDragging) {
@@ -13059,7 +13081,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				};
 				
 				// ── Env Asset context menu (check before markers) ──
-				if (activeTool === 'env-asset') {
+				if (activeTool === 'env-asset' || activeTool === 'select') {
 					const hitEnvAsset = findEnvAssetAtPoint(mapPos.x, mapPos.y);
 					if (hitEnvAsset) {
 						e.preventDefault();
