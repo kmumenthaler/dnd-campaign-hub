@@ -102,6 +102,47 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   musicPlaybackState: { ...DEFAULT_PLAYBACK_STATE },
 };
 
+// ── Module-Level Light Flicker Utilities ──
+// Shared by both the GM-view closure and the player-view class methods.
+// Light types that exhibit flame-like flickering
+const FLICKER_LIGHT_TYPES_SET = new Set<string>(['candle', 'torch', 'dancing', 'continual']);
+
+/**
+ * Compute a flicker multiplier for a given light at the current time.
+ * Uses layered sine waves at incommensurate frequencies for organic, flame-like motion.
+ * @param seed  Unique per-light seed (prevents all flames moving in sync)
+ * @param time  Current timestamp in seconds
+ * @param intensity 'high' for candle/torch, 'low' for gentler sources
+ * @returns { radius: 0.82–1.0, alpha: 0.78–1.0 } for 'high'; { radius: 0.92–1.0, alpha: 0.90–1.0 } for 'low'
+ */
+function computeLightFlicker(seed: number, time: number, intensity: 'low' | 'high' = 'high'): { radius: number; alpha: number } {
+  const t = time + seed;
+  const wave1 = Math.sin(t * 8.7);                   // fast primary flicker
+  const wave2 = Math.sin(t * 5.1 + 1.3);             // medium secondary
+  const wave3 = Math.sin(t * 13.3 + 2.7);            // rapid flutter
+  const wave4 = Math.sin(t * 2.3 + 0.5);             // slow drift
+  const combined = wave1 * 0.4 + wave2 * 0.25 + wave3 * 0.15 + wave4 * 0.2;
+  const normalized = (combined + 1) * 0.5; // [0..1]
+
+  if (intensity === 'high') {
+    return { radius: 0.82 + normalized * 0.18, alpha: 0.78 + normalized * 0.22 };
+  } else {
+    return { radius: 0.92 + normalized * 0.08, alpha: 0.90 + normalized * 0.10 };
+  }
+}
+
+// Per-light flicker seed cache (deterministic but unique per light instance)
+const _flickerSeedMap = new Map<string, number>();
+let _flickerSeedCounter = 0;
+function getFlickerSeedForKey(key: string): number {
+  let seed = _flickerSeedMap.get(key);
+  if (seed === undefined) {
+    seed = _flickerSeedCounter++ * 137.508; // golden angle offset
+    _flickerSeedMap.set(key, seed);
+  }
+  return seed;
+}
+
 /**
  * Grid Calibration Modal
  *
@@ -5852,16 +5893,71 @@ export default class DndCampaignHubPlugin extends Plugin {
 			
 			// D&D 5e Light Source Definitions
 			const LIGHT_SOURCES = {
-				candle: { name: 'Candle', bright: 5, dim: 5, icon: '🕯️' },
-				torch: { name: 'Torch', bright: 20, dim: 20, icon: '🔥' },
+				candle: { name: 'Candle', bright: 5, dim: 5, icon: '🕯️', flicker: true },
+				torch: { name: 'Torch', bright: 20, dim: 20, icon: '🔥', flicker: true },
 				lantern: { name: 'Lantern', bright: 30, dim: 30, icon: '🏮' },
 				bullseye: { name: 'Bullseye Lantern', bright: 60, dim: 60, cone: true, icon: '🔦' },
 				light: { name: 'Light Spell', bright: 20, dim: 20, icon: '✨' },
-				dancing: { name: 'Dancing Lights', bright: 0, dim: 10, icon: '💫' },
-				continual: { name: 'Continual Flame', bright: 20, dim: 20, icon: '🔥' },
+				dancing: { name: 'Dancing Lights', bright: 0, dim: 10, icon: '💫', flicker: true },
+				continual: { name: 'Continual Flame', bright: 20, dim: 20, icon: '🔥', flicker: true },
 				daylight: { name: 'Daylight Spell', bright: 60, dim: 60, icon: '☀️' }
 			} as const;
 			type LightSourceType = keyof typeof LIGHT_SOURCES;
+			
+			// ── Light Flicker Animation System ──
+			// Delegates to module-level computeLightFlicker() and getFlickerSeedForKey().
+			// The closure only manages the animation loop lifecycle.
+			const FLICKER_LIGHT_TYPES = FLICKER_LIGHT_TYPES_SET;
+			const getFlickerSeed = getFlickerSeedForKey;
+			const computeFlicker = computeLightFlicker;
+			
+			// Flicker animation state
+			let flickerAnimFrameId: number | null = null;
+			let lastFlickerRedraw = 0;
+			const FLICKER_FPS = 14; // ~14 fps for flickering — smooth enough without being expensive
+			const FLICKER_INTERVAL = 1000 / FLICKER_FPS;
+			
+			// Check if any flickering lights exist (standalone or marker-attached)
+			const hasFlickeringLights = (): boolean => {
+				if (config.lightSources) {
+					for (const light of config.lightSources) {
+						if (light.active !== false && FLICKER_LIGHT_TYPES.has(light.type)) return true;
+					}
+				}
+				if (config.markers) {
+					for (const marker of config.markers as any[]) {
+						if (marker.light && FLICKER_LIGHT_TYPES.has(marker.light.type)) return true;
+					}
+				}
+				return false;
+			};
+			
+			// Animation loop — only runs when flickering lights are present
+			const flickerAnimLoop = (timestamp: number) => {
+				if (!el.isConnected) {
+					flickerAnimFrameId = null;
+					return; // Map view removed from DOM, stop
+				}
+				if (timestamp - lastFlickerRedraw >= FLICKER_INTERVAL) {
+					lastFlickerRedraw = timestamp;
+					redrawAnnotations();
+				}
+				flickerAnimFrameId = requestAnimationFrame(flickerAnimLoop);
+			};
+			
+			// Start/stop flicker animation based on whether flickering lights exist
+			const updateFlickerAnimation = () => {
+				if (hasFlickeringLights()) {
+					if (flickerAnimFrameId === null) {
+						flickerAnimFrameId = requestAnimationFrame(flickerAnimLoop);
+					}
+				} else {
+					if (flickerAnimFrameId !== null) {
+						cancelAnimationFrame(flickerAnimFrameId);
+						flickerAnimFrameId = null;
+					}
+				}
+			};
 			// Fog of War tool state
 			let selectedFogShape: 'circle' | 'rect' | 'polygon' | 'brush' = 'brush';
 			let fogMode: 'reveal' | 'hide' = 'reveal'; // Whether fog tool reveals or hides
@@ -7976,6 +8072,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						removed = true;
 					}
 				}
+				updateFlickerAnimation();
 			}
 
 			// Erase markers near the point
@@ -8230,6 +8327,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('Got canvas context:', !!ctx);
 				if (!ctx) return;
 				
+				// Ensure flicker animation runs when needed
+				updateFlickerAnimation();
+				
 				ctx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
 
 				// Helper: determine opacity for a background element group based on active edit view
@@ -8439,25 +8539,49 @@ export default class DndCampaignHubPlugin extends Plugin {
 				// Draw light glow around markers that have lights attached
 				if (config.markers) {
 					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
-					config.markers.forEach((marker: any) => {
+					config.markers.forEach((marker: any, mIdx: number) => {
 						if (marker.light && marker.light.bright !== undefined) {
-							const brightRadiusPx = marker.light.bright * pixelsPerFoot;
-							const dimRadiusPx = marker.light.dim * pixelsPerFoot;
+							const baseBrightPx = marker.light.bright * pixelsPerFoot;
+							const baseDimPx = marker.light.dim * pixelsPerFoot;
 							
-							// Draw light glow behind marker
-							if (brightRadiusPx > 0) {
-								ctx.globalAlpha = 0.2;
-								ctx.fillStyle = '#ffff88';
+							// Compute flicker for flame-based marker lights
+							const flickerKey = `marker_${marker.id || mIdx}`;
+							const shouldFlicker = FLICKER_LIGHT_TYPES.has(marker.light.type);
+							const flickerTime = performance.now() / 1000;
+							const flicker = shouldFlicker
+								? computeFlicker(getFlickerSeed(flickerKey), flickerTime, marker.light.type === 'candle' || marker.light.type === 'dancing' ? 'high' : 'high')
+								: { radius: 1, alpha: 1 };
+							
+							const brightRadiusPx = baseBrightPx * flicker.radius;
+							const dimRadiusPx = baseDimPx * flicker.radius;
+							const totalRadiusPx = brightRadiusPx + dimRadiusPx;
+							
+							// Draw light glow behind marker with smooth gradient
+							if (totalRadiusPx > 0) {
+								ctx.globalAlpha = flicker.alpha;
+								const grad = ctx.createRadialGradient(
+									marker.position.x, marker.position.y, 0,
+									marker.position.x, marker.position.y, totalRadiusPx
+								);
+								if (brightRadiusPx > 0 && dimRadiusPx > 0) {
+									const bRatio = brightRadiusPx / totalRadiusPx;
+									grad.addColorStop(0, 'rgba(255, 255, 136, 0.25)');
+									grad.addColorStop(bRatio * 0.75, 'rgba(255, 255, 136, 0.18)');
+									grad.addColorStop(bRatio, 'rgba(200, 200, 80, 0.10)');
+									grad.addColorStop(Math.min(bRatio + (1 - bRatio) * 0.5, 0.95), 'rgba(170, 170, 68, 0.04)');
+									grad.addColorStop(1, 'rgba(170, 170, 68, 0)');
+								} else if (brightRadiusPx > 0) {
+									grad.addColorStop(0, 'rgba(255, 255, 136, 0.25)');
+									grad.addColorStop(0.7, 'rgba(255, 255, 136, 0.12)');
+									grad.addColorStop(1, 'rgba(255, 255, 136, 0)');
+								} else {
+									grad.addColorStop(0, 'rgba(170, 170, 68, 0.12)');
+									grad.addColorStop(0.6, 'rgba(170, 170, 68, 0.05)');
+									grad.addColorStop(1, 'rgba(170, 170, 68, 0)');
+								}
+								ctx.fillStyle = grad;
 								ctx.beginPath();
-								ctx.arc(marker.position.x, marker.position.y, brightRadiusPx, 0, Math.PI * 2);
-								ctx.fill();
-								ctx.globalAlpha = 1.0;
-							}
-							if (dimRadiusPx > 0) {
-								ctx.globalAlpha = 0.1;
-								ctx.fillStyle = '#aaaa44';
-								ctx.beginPath();
-								ctx.arc(marker.position.x, marker.position.y, brightRadiusPx + dimRadiusPx, 0, Math.PI * 2);
+								ctx.arc(marker.position.x, marker.position.y, totalRadiusPx, 0, Math.PI * 2);
 								ctx.fill();
 								ctx.globalAlpha = 1.0;
 							}
@@ -9205,25 +9329,46 @@ export default class DndCampaignHubPlugin extends Plugin {
 						
 						// Only draw light radii if the light is active
 						if (isActive) {
-							// Draw light radius (bright light) - subtle on Background layer
-							if (brightRadiusPx > 0) {
-								ctx.globalAlpha = la(0.12);
-								ctx.fillStyle = '#ffff88';
-								ctx.beginPath();
-								ctx.arc(light.x, light.y, brightRadiusPx, 0, Math.PI * 2);
-								ctx.fill();
-								ctx.globalAlpha = la(1.0);
-							}
-							
-							// Draw dim light radius - very subtle on Background layer
-							if (dimRadiusPx > 0) {
-								ctx.globalAlpha = la(0.06);
-								ctx.fillStyle = '#aaaa44';
-								ctx.beginPath();
-								ctx.arc(light.x, light.y, brightRadiusPx + dimRadiusPx, 0, Math.PI * 2);
-								ctx.fill();
-								ctx.globalAlpha = la(1.0);
-							}
+								// Compute flicker modulation for flame-based lights
+								const flickerKey = `standalone_${idx}`;
+								const shouldFlicker = FLICKER_LIGHT_TYPES.has(light.type);
+								const flickerTime = performance.now() / 1000;
+								const flicker = shouldFlicker
+									? computeFlicker(getFlickerSeed(flickerKey), flickerTime, light.type === 'candle' || light.type === 'dancing' ? 'high' : 'high')
+									: { radius: 1, alpha: 1 };
+								
+								const flickBrightPx = brightRadiusPx * flicker.radius;
+								const flickDimPx = dimRadiusPx * flicker.radius;
+								const totalRadiusPx = flickBrightPx + flickDimPx;
+								// Draw combined light with smooth radial gradient
+								if (totalRadiusPx > 0) {
+									ctx.globalAlpha = la(flicker.alpha);
+									const grad = ctx.createRadialGradient(
+										light.x, light.y, 0,
+										light.x, light.y, totalRadiusPx
+									);
+									if (flickBrightPx > 0 && flickDimPx > 0) {
+										const bRatio = flickBrightPx / totalRadiusPx;
+										grad.addColorStop(0, 'rgba(255, 255, 136, 0.18)');
+										grad.addColorStop(bRatio * 0.75, 'rgba(255, 255, 136, 0.14)');
+										grad.addColorStop(bRatio, 'rgba(200, 200, 80, 0.09)');
+										grad.addColorStop(Math.min(bRatio + (1 - bRatio) * 0.5, 0.95), 'rgba(170, 170, 68, 0.04)');
+										grad.addColorStop(1, 'rgba(170, 170, 68, 0)');
+									} else if (flickBrightPx > 0) {
+										grad.addColorStop(0, 'rgba(255, 255, 136, 0.18)');
+										grad.addColorStop(0.7, 'rgba(255, 255, 136, 0.10)');
+										grad.addColorStop(1, 'rgba(255, 255, 136, 0)');
+									} else {
+										grad.addColorStop(0, 'rgba(170, 170, 68, 0.10)');
+										grad.addColorStop(0.6, 'rgba(170, 170, 68, 0.05)');
+										grad.addColorStop(1, 'rgba(170, 170, 68, 0)');
+									}
+									ctx.fillStyle = grad;
+									ctx.beginPath();
+									ctx.arc(light.x, light.y, totalRadiusPx, 0, Math.PI * 2);
+									ctx.fill();
+									ctx.globalAlpha = la(1.0);
+								}
 							
 							// Draw cone for bullseye lantern (showing direction) - subtle
 							if (light.cone) {
@@ -10752,26 +10897,47 @@ export default class DndCampaignHubPlugin extends Plugin {
 					fogCtx.globalCompositeOperation = 'destination-out';
 					fogCtx.fillStyle = '#ffffff';
 					
-					config.lightSources.forEach((light: any) => {
-						// Convert feet to pixels
-						const brightRadiusPx = light.bright * pixelsPerFoot;
-						const totalRadiusPx = (light.bright + light.dim) * pixelsPerFoot;
+					config.lightSources.forEach((light: any, fogLightIdx: number) => {
+						// Apply flicker for flame-based lights in GM fog view
+						const fogFlickerKey = `fog_${fogLightIdx}`;
+						const fogShouldFlicker = FLICKER_LIGHT_TYPES.has(light.type);
+						const fogFlickerTime = performance.now() / 1000;
+						const fogFlicker = fogShouldFlicker
+							? computeFlicker(getFlickerSeed(fogFlickerKey), fogFlickerTime, 'high')
+							: { radius: 1, alpha: 1 };
 						
-						// Reveal area with gradient (bright + dim light)
+						// Convert feet to pixels with flicker modulation
+						const brightRadiusPx = light.bright * pixelsPerFoot * fogFlicker.radius;
+						const dimRadiusPx = light.dim * pixelsPerFoot * fogFlicker.radius;
+						const totalRadiusPx = brightRadiusPx + dimRadiusPx;
+						
+						// Reveal area with smooth gradient (bright + dim light)
 						if (totalRadiusPx > 0) {
+							// Use slightly oversized radius for soft outer edge
+							const featherRadius = totalRadiusPx * 1.08;
 							const gradient = fogCtx.createRadialGradient(
 								light.x, light.y, 0,
-								light.x, light.y, totalRadiusPx
+								light.x, light.y, featherRadius
 							);
 							gradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
-							if (brightRadiusPx > 0) {
-								gradient.addColorStop(brightRadiusPx / totalRadiusPx, 'rgba(255, 255, 255, 1.0)');
+							if (brightRadiusPx > 0 && dimRadiusPx > 0) {
+								const bRatio = brightRadiusPx / featherRadius;
+								gradient.addColorStop(bRatio * 0.85, 'rgba(255, 255, 255, 1.0)');
+								gradient.addColorStop(bRatio, 'rgba(255, 255, 255, 0.82)');
+								gradient.addColorStop(bRatio + (1 - bRatio) * 0.5, 'rgba(255, 255, 255, 0.4)');
+								gradient.addColorStop(totalRadiusPx / featherRadius, 'rgba(255, 255, 255, 0.15)');
+							} else if (brightRadiusPx > 0) {
+								gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.85)');
+								gradient.addColorStop(totalRadiusPx / featherRadius, 'rgba(255, 255, 255, 0.2)');
+							} else {
+								gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.5)');
+								gradient.addColorStop(totalRadiusPx / featherRadius, 'rgba(255, 255, 255, 0.15)');
 							}
-							gradient.addColorStop(1, 'rgba(255, 255, 255, 0.5)');
+							gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
 							
 							fogCtx.fillStyle = gradient;
 							fogCtx.beginPath();
-							fogCtx.arc(light.x, light.y, totalRadiusPx, 0, Math.PI * 2);
+							fogCtx.arc(light.x, light.y, featherRadius, 0, Math.PI * 2);
 							fogCtx.fill();
 						}
 					});
@@ -11995,6 +12161,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						};
 						saveToHistory();
 						config.lightSources.push(light);
+						updateFlickerAnimation();
 						redrawAnnotations();
 						this.saveMapAnnotations(config, el);
 						
@@ -13631,6 +13798,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							offBtn.addEventListener('click', () => {
 								saveToHistory();
 								delete m.light;
+								updateFlickerAnimation();
 								redrawAnnotations();
 								this.saveMapAnnotations(config, el);
 								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
@@ -13655,6 +13823,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 										dim: lightDef.dim,
 										name: lightDef.name
 									};
+									updateFlickerAnimation();
 									redrawAnnotations();
 									this.saveMapAnnotations(config, el);
 									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
@@ -14321,6 +14490,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								: `<span>💡</span> Inactive (click to ignite)`;
 							toggleOption.addEventListener('click', () => {
 								light.active = !isActive;
+								updateFlickerAnimation();
 								redrawAnnotations();
 								this.saveMapAnnotations(config, el);
 								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
@@ -14358,6 +14528,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 									light.dim = lightDef.dim;
 									light.name = lightDef.name;
 									light.cone = 'cone' in lightDef ? lightDef.cone : false;
+									updateFlickerAnimation();
 									redrawAnnotations();
 									this.saveMapAnnotations(config, el);
 									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
@@ -14455,6 +14626,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							deleteOption.addEventListener('click', () => {
 								saveToHistory();
 								config.lightSources.splice(i, 1);
+								updateFlickerAnimation();
 								redrawAnnotations();
 								this.saveMapAnnotations(config, el);
 								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
@@ -33492,6 +33664,8 @@ class PlayerMapView extends ItemView {
   private mapContainer: HTMLDivElement | null = null;
   private syncCanvasToImage: (() => void) | null = null;
   private isFullscreen: boolean = false; // Track fullscreen state
+  private _pvFlickerFrameId: number | null = null; // Flicker animation loop for player view
+  private _pvFlickerWin: Window | null = null; // Window context for flicker animation (popout-safe)
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -34272,6 +34446,47 @@ class PlayerMapView extends ItemView {
       canvas.height = img.naturalHeight;
       requestAnimationFrame(syncCanvasToImage);
     }
+    
+    // ── Player-View Flicker Animation Loop ──
+    // Continuously redraws at ~14fps when flickering lights are present.
+    const PV_FLICKER_INTERVAL = 1000 / 14;
+    let pvLastFlickerRedraw = 0;
+    const pvHasFlickeringLights = (): boolean => {
+      const cfg = this.mapConfig;
+      if (!cfg) return false;
+      if (cfg.lightSources) {
+        for (const l of cfg.lightSources) {
+          if (l.active !== false && FLICKER_LIGHT_TYPES_SET.has(l.type)) return true;
+        }
+      }
+      if (cfg.markers) {
+        for (const m of cfg.markers as any[]) {
+          if (m.light && FLICKER_LIGHT_TYPES_SET.has(m.light.type)) return true;
+        }
+      }
+      return false;
+    };
+    // Use the correct window context (popout windows have their own rAF)
+    const flickerWin: Window = (this.containerEl as any).win || window;
+    this._pvFlickerWin = flickerWin;
+    const pvFlickerLoop = (timestamp: number) => {
+      if (!this.canvas || !this.containerEl.isConnected) {
+        this._pvFlickerFrameId = null;
+        return;
+      }
+      if (timestamp - pvLastFlickerRedraw >= PV_FLICKER_INTERVAL) {
+        pvLastFlickerRedraw = timestamp;
+        if (pvHasFlickeringLights()) {
+          this.redrawAnnotations();
+        }
+      }
+      this._pvFlickerFrameId = flickerWin.requestAnimationFrame(pvFlickerLoop);
+    };
+    // Start the flicker loop
+    if (this._pvFlickerFrameId !== null) {
+      (this._pvFlickerWin || window).cancelAnimationFrame(this._pvFlickerFrameId);
+    }
+    this._pvFlickerFrameId = flickerWin.requestAnimationFrame(pvFlickerLoop);
   }
 
   private loadMarkerImage(path: string): HTMLImageElement | null {
@@ -36629,6 +36844,13 @@ class PlayerMapView extends ItemView {
   }
 
   async onClose() {
+    // Cancel flicker animation loop (use correct window context for popout windows)
+    if (this._pvFlickerFrameId !== null) {
+      (this._pvFlickerWin || window).cancelAnimationFrame(this._pvFlickerFrameId);
+      this._pvFlickerFrameId = null;
+      this._pvFlickerWin = null;
+    }
+    
     // Clean up the plugin reference to this view
     if (this.plugin._playerMapViews) {
       this.plugin._playerMapViews.delete(this as any);
@@ -36900,6 +37122,7 @@ class PlayerMapView extends ItemView {
             y: marker.position.y,
             bright: marker.light.bright,
             dim: marker.light.dim,
+            type: marker.light.type || '',
             name: marker.light.name || 'Token Light',
             attachedToMarker: marker.id,
             elevation: (marker.elevation?.height || 0) - (marker.elevation?.depth || 0)
@@ -37087,8 +37310,16 @@ class PlayerMapView extends ItemView {
       console.log('[PV] Drawing lights intersected with player vision:',{ lights: allLights.length, playerTokens: playerTokens.length });
       
       allLights.forEach((light: any, i: number) => {
-        const brightRadiusPx = light.bright * pixelsPerFoot;
-        const dimRadiusPx = light.dim * pixelsPerFoot;
+        // Apply flicker modulation for flame-based lights
+        const pvFlickerKey = `pv_light_${light.attachedToMarker || i}`;
+        const pvShouldFlicker = FLICKER_LIGHT_TYPES_SET.has(light.type);
+        const pvFlickerTime = performance.now() / 1000;
+        const pvFlicker = pvShouldFlicker
+          ? computeLightFlicker(getFlickerSeedForKey(pvFlickerKey), pvFlickerTime, 'high')
+          : { radius: 1, alpha: 1 };
+        
+        const brightRadiusPx = light.bright * pixelsPerFoot * pvFlicker.radius;
+        const dimRadiusPx = light.dim * pixelsPerFoot * pvFlicker.radius;
         const totalRadiusPx = brightRadiusPx + dimRadiusPx;
         
         if (totalRadiusPx <= 0) {
@@ -37125,20 +37356,35 @@ class PlayerMapView extends ItemView {
               lightCtx.clip();
             }
             
-            // Draw light as white circles
-            if (brightRadiusPx > 0) {
-              lightCtx.fillStyle = 'rgba(255, 255, 255, 1.0)';
-              lightCtx.beginPath();
-              lightCtx.arc(light.x, light.y, brightRadiusPx, 0, Math.PI * 2);
-              lightCtx.fill();
+            // Draw light with smooth radial gradient (bright → dim → fade)
+            const featherR = totalRadiusPx * 1.06;
+            const lightGrad = lightCtx.createRadialGradient(
+              light.x, light.y, 0,
+              light.x, light.y, featherR
+            );
+            if (brightRadiusPx > 0 && dimRadiusPx > 0) {
+              const bR = brightRadiusPx / featherR;
+              lightGrad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+              lightGrad.addColorStop(bR * 0.8, 'rgba(255, 255, 255, 1.0)');
+              lightGrad.addColorStop(bR, 'rgba(255, 255, 255, 0.78)');
+              lightGrad.addColorStop(bR + (1 - bR) * 0.45, 'rgba(255, 255, 255, 0.45)');
+              lightGrad.addColorStop(totalRadiusPx / featherR, 'rgba(255, 255, 255, 0.18)');
+              lightGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            } else if (brightRadiusPx > 0) {
+              lightGrad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+              lightGrad.addColorStop(0.65, 'rgba(255, 255, 255, 0.85)');
+              lightGrad.addColorStop(totalRadiusPx / featherR, 'rgba(255, 255, 255, 0.2)');
+              lightGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            } else {
+              lightGrad.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
+              lightGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.45)');
+              lightGrad.addColorStop(totalRadiusPx / featherR, 'rgba(255, 255, 255, 0.1)');
+              lightGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
             }
-            
-            if (dimRadiusPx > 0) {
-              lightCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-              lightCtx.beginPath();
-              lightCtx.arc(light.x, light.y, totalRadiusPx, 0, Math.PI * 2);
-              lightCtx.fill();
-            }
+            lightCtx.fillStyle = lightGrad;
+            lightCtx.beginPath();
+            lightCtx.arc(light.x, light.y, featherR, 0, Math.PI * 2);
+            lightCtx.fill();
           }
           
           lightCtx.restore();
@@ -37237,9 +37483,17 @@ class PlayerMapView extends ItemView {
       // SECOND: Cut out areas where actual lights are visible to players - those should be full color
       grayCtx.globalCompositeOperation = 'destination-out';
       if (allLights.length > 0 && playerVisionCtx) {
-        allLights.forEach((light: any) => {
-          const brightRadiusPx = light.bright * pixelsPerFoot;
-          const dimRadiusPx = light.dim * pixelsPerFoot;
+        allLights.forEach((light: any, li: number) => {
+          // Apply flicker modulation for flame-based lights (grayscale cutout)
+          const gsFlickerKey = `pv_light_${light.attachedToMarker || li}`;
+          const gsShouldFlicker = FLICKER_LIGHT_TYPES_SET.has(light.type);
+          const gsFlickerTime = performance.now() / 1000;
+          const gsFlicker = gsShouldFlicker
+            ? computeLightFlicker(getFlickerSeedForKey(gsFlickerKey), gsFlickerTime, 'high')
+            : { radius: 1, alpha: 1 };
+          
+          const brightRadiusPx = light.bright * pixelsPerFoot * gsFlicker.radius;
+          const dimRadiusPx = light.dim * pixelsPerFoot * gsFlicker.radius;
           const totalRadiusPx = brightRadiusPx + dimRadiusPx;
           
           if (totalRadiusPx <= 0) return;
@@ -37270,20 +37524,35 @@ class PlayerMapView extends ItemView {
                 lightCtx.clip();
               }
               
-              // Draw light as white (where light IS present)
-              if (brightRadiusPx > 0) {
-                lightCtx.fillStyle = 'rgba(255, 255, 255, 1.0)';
-                lightCtx.beginPath();
-                lightCtx.arc(light.x, light.y, brightRadiusPx, 0, Math.PI * 2);
-                lightCtx.fill();
+              // Draw light with smooth gradient (where light IS present)
+              const gFeatherR = totalRadiusPx * 1.06;
+              const gGrad = lightCtx.createRadialGradient(
+                light.x, light.y, 0,
+                light.x, light.y, gFeatherR
+              );
+              if (brightRadiusPx > 0 && dimRadiusPx > 0) {
+                const gBR = brightRadiusPx / gFeatherR;
+                gGrad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+                gGrad.addColorStop(gBR * 0.8, 'rgba(255, 255, 255, 1.0)');
+                gGrad.addColorStop(gBR, 'rgba(255, 255, 255, 0.78)');
+                gGrad.addColorStop(gBR + (1 - gBR) * 0.45, 'rgba(255, 255, 255, 0.45)');
+                gGrad.addColorStop(totalRadiusPx / gFeatherR, 'rgba(255, 255, 255, 0.18)');
+                gGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+              } else if (brightRadiusPx > 0) {
+                gGrad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+                gGrad.addColorStop(0.65, 'rgba(255, 255, 255, 0.85)');
+                gGrad.addColorStop(totalRadiusPx / gFeatherR, 'rgba(255, 255, 255, 0.2)');
+                gGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+              } else {
+                gGrad.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
+                gGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.45)');
+                gGrad.addColorStop(totalRadiusPx / gFeatherR, 'rgba(255, 255, 255, 0.1)');
+                gGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
               }
-              
-              if (dimRadiusPx > 0) {
-                lightCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-                lightCtx.beginPath();
-                lightCtx.arc(light.x, light.y, totalRadiusPx, 0, Math.PI * 2);
-                lightCtx.fill();
-              }
+              lightCtx.fillStyle = gGrad;
+              lightCtx.beginPath();
+              lightCtx.arc(light.x, light.y, gFeatherR, 0, Math.PI * 2);
+              lightCtx.fill();
               
               lightCtx.restore();
               
@@ -37338,24 +37607,38 @@ class PlayerMapView extends ItemView {
     const visibilityPoly = this.computeVisibilityPolygon(lightX, lightY, totalRadius, walls, viewerElevation);
     
     if (visibilityPoly.length < 3) {
-      // No walls or no valid polygon - just draw full circle
+      // No walls or no valid polygon - draw full circle with smooth gradient
       fogCtx.save();
       fogCtx.globalCompositeOperation = 'destination-out';
       
-      if (brightRadius > 0) {
-        fogCtx.fillStyle = 'rgba(255, 255, 255, 1.0)';
-        fogCtx.beginPath();
-        fogCtx.arc(lightX, lightY, brightRadius, 0, Math.PI * 2);
-        fogCtx.fill();
+      const featherR = totalRadius * 1.06;
+      const grad = fogCtx.createRadialGradient(
+        lightX, lightY, 0,
+        lightX, lightY, featherR
+      );
+      if (brightRadius > 0 && dimRadius > 0) {
+        const bR = brightRadius / featherR;
+        grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+        grad.addColorStop(bR * 0.8, 'rgba(255, 255, 255, 1.0)');
+        grad.addColorStop(bR, 'rgba(255, 255, 255, 0.78)');
+        grad.addColorStop(bR + (1 - bR) * 0.45, 'rgba(255, 255, 255, 0.45)');
+        grad.addColorStop(totalRadius / featherR, 'rgba(255, 255, 255, 0.18)');
+        grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      } else if (brightRadius > 0) {
+        grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+        grad.addColorStop(0.65, 'rgba(255, 255, 255, 0.85)');
+        grad.addColorStop(totalRadius / featherR, 'rgba(255, 255, 255, 0.2)');
+        grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      } else {
+        grad.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
+        grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.45)');
+        grad.addColorStop(totalRadius / featherR, 'rgba(255, 255, 255, 0.1)');
+        grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
       }
-      
-      if (dimRadius > 0) {
-        fogCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-        fogCtx.beginPath();
-        fogCtx.arc(lightX, lightY, totalRadius, 0, Math.PI * 2);
-        fogCtx.arc(lightX, lightY, brightRadius, 0, Math.PI * 2, true);
-        fogCtx.fill();
-      }
+      fogCtx.fillStyle = grad;
+      fogCtx.beginPath();
+      fogCtx.arc(lightX, lightY, featherR, 0, Math.PI * 2);
+      fogCtx.fill();
       
       fogCtx.restore();
       return;
@@ -37376,23 +37659,37 @@ class PlayerMapView extends ItemView {
     fogCtx.closePath();
     fogCtx.clip();
     
-    // Draw light within clipped area
+    // Draw light within clipped area with smooth gradient
     fogCtx.globalCompositeOperation = 'destination-out';
     
-    if (brightRadius > 0) {
-      fogCtx.fillStyle = 'rgba(255, 255, 255, 1.0)';
-      fogCtx.beginPath();
-      fogCtx.arc(lightX, lightY, brightRadius, 0, Math.PI * 2);
-      fogCtx.fill();
+    const featherRClip = totalRadius * 1.06;
+    const gradClip = fogCtx.createRadialGradient(
+      lightX, lightY, 0,
+      lightX, lightY, featherRClip
+    );
+    if (brightRadius > 0 && dimRadius > 0) {
+      const bR = brightRadius / featherRClip;
+      gradClip.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+      gradClip.addColorStop(bR * 0.8, 'rgba(255, 255, 255, 1.0)');
+      gradClip.addColorStop(bR, 'rgba(255, 255, 255, 0.78)');
+      gradClip.addColorStop(bR + (1 - bR) * 0.45, 'rgba(255, 255, 255, 0.45)');
+      gradClip.addColorStop(totalRadius / featherRClip, 'rgba(255, 255, 255, 0.18)');
+      gradClip.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    } else if (brightRadius > 0) {
+      gradClip.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+      gradClip.addColorStop(0.65, 'rgba(255, 255, 255, 0.85)');
+      gradClip.addColorStop(totalRadius / featherRClip, 'rgba(255, 255, 255, 0.2)');
+      gradClip.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    } else {
+      gradClip.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
+      gradClip.addColorStop(0.5, 'rgba(255, 255, 255, 0.45)');
+      gradClip.addColorStop(totalRadius / featherRClip, 'rgba(255, 255, 255, 0.1)');
+      gradClip.addColorStop(1, 'rgba(255, 255, 255, 0)');
     }
-    
-    if (dimRadius > 0) {
-      fogCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-      fogCtx.beginPath();
-      fogCtx.arc(lightX, lightY, totalRadius, 0, Math.PI * 2);
-      fogCtx.arc(lightX, lightY, brightRadius, 0, Math.PI * 2, true);
-      fogCtx.fill();
-    }
+    fogCtx.fillStyle = gradClip;
+    fogCtx.beginPath();
+    fogCtx.arc(lightX, lightY, featherRClip, 0, Math.PI * 2);
+    fogCtx.fill();
     
     fogCtx.restore();
   }
