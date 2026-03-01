@@ -3648,6 +3648,7 @@
   flex-direction: column;
   gap: 10px;
   align-items: flex-start;
+  max-height: calc(100% - 20px);
 }
 
 /* Floating toolbar container */
@@ -3660,19 +3661,22 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
-  width: 96px;
+  width: 140px;
+  max-height: 100%;
+  min-height: 0;
 }
 
 .dnd-map-toolbar.collapsed {
-  width: 96px;
+  width: 140px;
 }
 
 .dnd-map-toolbar.collapsed .dnd-map-toolbar-content {
-  max-height: 0;
+  max-height: 0 !important;
   opacity: 0;
   padding: 0;
   margin: 0;
   overflow: hidden;
+  flex: 0 0 0;
 }
 
 .dnd-map-toolbar-header {
@@ -3706,19 +3710,35 @@
 }
 
 .dnd-map-toolbar-content {
-  max-height: 800px;
   opacity: 1;
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: visible;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Thin custom scrollbar for the toolbar */
+.dnd-map-toolbar-content::-webkit-scrollbar {
+  width: 4px;
+}
+.dnd-map-toolbar-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dnd-map-toolbar-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+.dnd-map-toolbar-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .dnd-map-tool-group {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 6px;
 }
 
@@ -3772,12 +3792,9 @@
 }
 
 /* Tooltip-style label that appears to the right */
+/* Tooltip labels: use position:fixed so they escape scrollable overflow */
 .dnd-map-tool-btn-label {
-  position: absolute;
-  left: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  margin-left: 8px;
+  position: fixed;
   padding: 6px 10px;
   background: rgba(0, 0, 0, 0.9);
   border-radius: 6px;
@@ -3785,25 +3802,15 @@
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: all 0.2s ease;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
   white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 9999;
 }
 
 .dnd-map-tool-btn:hover .dnd-map-tool-btn-label {
   opacity: 1;
   visibility: visible;
-  margin-left: 12px;
-  z-index: 1001;
-}
-
-/* Right column tooltips go to the right with extra offset */
-.dnd-map-tool-btn-label.right-column-tooltip {
-  margin-left: 16px;
-}
-
-.dnd-map-tool-btn:hover .dnd-map-tool-btn-label.right-column-tooltip {
-  margin-left: 20px;
 }
 
 .dnd-map-tool-btn.full-width {
@@ -3858,7 +3865,7 @@
 .dnd-map-section-content {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 6px;
   max-height: 400px;
   opacity: 1;
@@ -3876,6 +3883,39 @@
 
 .dnd-map-section-content.hidden {
   display: none;
+}
+
+/* ── Background Edit-View filter chips ──────────────────────── */
+.dnd-map-bg-view-row {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 2px 0 4px;
+}
+
+.dnd-map-bg-view-chip {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 5px;
+  color: rgba(255, 255, 255, 0.7);
+  transition: all 0.15s ease;
+}
+
+.dnd-map-bg-view-chip:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(124, 58, 237, 0.5);
+}
+
+.dnd-map-bg-view-chip.active {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.7), rgba(99, 102, 241, 0.7));
+  color: #fff;
+  border-color: rgba(124, 58, 237, 0.8);
+  box-shadow: 0 2px 6px rgba(124, 58, 237, 0.3);
 }
 
 .dnd-map-section-content.single-column {
@@ -4214,11 +4254,9 @@
 }
 
 /* AoE Shape Picker */
+/* Pickers: use position:fixed so they escape scrollable overflow */
 .dnd-map-aoe-picker {
-  position: absolute;
-  left: calc(100% + 8px);
-  top: 50%;
-  transform: translateY(-50%);
+  position: fixed;
   display: flex;
   flex-direction: row;
   gap: 4px;
@@ -4228,7 +4266,7 @@
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   white-space: nowrap;
-  z-index: 1002;
+  z-index: 9999;
   transition: opacity 0.2s ease;
 }
 
@@ -5062,10 +5100,6 @@
 
 .dnd-creature-rename:hover {
   background-color: var(--interactive-hover);
-}
-
-  max-width: 90vw;
-  max-height: 80vh;
 }
 
 .poi-search-container {

@@ -3,7 +3,6 @@ import {
 	EnvAssetDefinition,
 	EnvAssetCategory,
 	DoorBehaviour,
-	DoorPivotEdge,
 	DoorConfig,
 	ScatterConfig,
 	ENV_ASSET_CATEGORIES,
@@ -23,8 +22,6 @@ export class EnvAssetLibraryModal extends Modal {
 
 	// ── Door config UI elements (toggled by category) ────────────────────────
 	private doorConfigEl!: HTMLElement;
-	private doorPivotEdgeEl!: HTMLElement;
-	private doorCustomPivotEl!: HTMLElement;
 	private doorSlideEl!: HTMLElement;
 	// ── Scatter config UI elements ───────────────────────────────────────────
 	private scatterConfigEl!: HTMLElement;
@@ -38,10 +35,7 @@ export class EnvAssetLibraryModal extends Modal {
 	private defaultHeight = 70;
 
 	// Door form values
-	private doorBehaviour: DoorBehaviour = 'normal';
-	private doorPivotEdge: DoorPivotEdge = 'left';
-	private doorCustomPivotX = 0;
-	private doorCustomPivotY = 0.5;
+	private doorBehaviour: DoorBehaviour = 'pivot';
 
 	// Scatter form values
 	private scatterBlocksVision = false;
@@ -66,10 +60,9 @@ export class EnvAssetLibraryModal extends Modal {
 			this.defaultHeight = asset.defaultHeight;
 
 			if (asset.doorConfig) {
-				this.doorBehaviour = asset.doorConfig.behaviour;
-				this.doorPivotEdge = asset.doorConfig.pivotEdge || 'left';
-				this.doorCustomPivotX = asset.doorConfig.customPivot?.x ?? 0;
-				this.doorCustomPivotY = asset.doorConfig.customPivot?.y ?? 0.5;
+				// Migrate legacy 'normal'/'custom-pivot' to 'pivot'
+				const b = asset.doorConfig.behaviour;
+				this.doorBehaviour = (b === 'normal' || b === 'custom-pivot') ? 'pivot' : b;
 			}
 			if (asset.scatterConfig) {
 				this.scatterBlocksVision = asset.scatterConfig.blocksVision;
@@ -229,36 +222,12 @@ export class EnvAssetLibraryModal extends Modal {
 				});
 			});
 
-		// Pivot edge (normal door)
-		this.doorPivotEdgeEl = this.doorConfigEl.createDiv();
-		new Setting(this.doorPivotEdgeEl)
-			.setName('Pivot Edge')
-			.setDesc('Which edge the door hinges on')
-			.addDropdown(dd => dd
-				.addOption('left', 'Left Edge')
-				.addOption('right', 'Right Edge')
-				.setValue(this.doorPivotEdge)
-				.onChange(v => { this.doorPivotEdge = v as DoorPivotEdge; })
-			);
-
-		// Custom pivot point (custom-pivot door)
-		this.doorCustomPivotEl = this.doorConfigEl.createDiv();
-		new Setting(this.doorCustomPivotEl)
-			.setName('Custom Pivot X')
-			.setDesc('Normalised X position (0 = left, 1 = right)')
-			.addText(t => t
-				.setValue(String(this.doorCustomPivotX))
-				.setPlaceholder('0')
-				.onChange(v => { this.doorCustomPivotX = Math.max(0, Math.min(1, parseFloat(v) || 0)); })
-			);
-		new Setting(this.doorCustomPivotEl)
-			.setName('Custom Pivot Y')
-			.setDesc('Normalised Y position (0 = top, 1 = bottom)')
-			.addText(t => t
-				.setValue(String(this.doorCustomPivotY))
-				.setPlaceholder('0.5')
-				.onChange(v => { this.doorCustomPivotY = Math.max(0, Math.min(1, parseFloat(v) || 0.5)); })
-			);
+		// Pivot info (pivot door)
+		const pivotInfoEl = this.doorConfigEl.createDiv();
+		pivotInfoEl.createEl('p', {
+			text: 'Pivot point is set on the map — select the door and drag the yellow handle.',
+			cls: 'setting-item-description'
+		});
 
 		// Sliding path info (set on the map later)
 		this.doorSlideEl = this.doorConfigEl.createDiv();
@@ -313,8 +282,6 @@ export class EnvAssetLibraryModal extends Modal {
 	}
 
 	private toggleDoorSubControls() {
-		this.doorPivotEdgeEl.style.display = this.doorBehaviour === 'normal' ? '' : 'none';
-		this.doorCustomPivotEl.style.display = this.doorBehaviour === 'custom-pivot' ? '' : 'none';
 		this.doorSlideEl.style.display = this.doorBehaviour === 'sliding' ? '' : 'none';
 	}
 
@@ -397,10 +364,9 @@ export class EnvAssetLibraryModal extends Modal {
 
 		if (this.category === 'door') {
 			const dc: DoorConfig = { behaviour: this.doorBehaviour };
-			if (this.doorBehaviour === 'normal') {
-				dc.pivotEdge = this.doorPivotEdge;
-			} else if (this.doorBehaviour === 'custom-pivot') {
-				dc.customPivot = { x: this.doorCustomPivotX, y: this.doorCustomPivotY };
+			if (this.doorBehaviour !== 'sliding') {
+				// Default pivot: left edge center
+				dc.customPivot = { x: 0, y: 0.5 };
 			}
 			def.doorConfig = dc;
 		} else if (this.category === 'scatter') {

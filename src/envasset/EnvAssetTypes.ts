@@ -21,14 +21,15 @@ export type EnvAssetCategory = 'scatter' | 'door' | 'trap';
 
 /**
  * Specific door behaviour.
- * - normal:       Pivots on left or right edge (configurable)
- * - custom-pivot: Pivots on an arbitrary point set by the user
+ * - normal:       (Legacy) treated as 'pivot' at runtime
+ * - custom-pivot: (Legacy) treated as 'pivot' at runtime
+ * - pivot:        Pivots on a user-draggable point (default: left edge)
  * - sliding:      Slides along a user-defined path (animated in player view)
  */
-export type DoorBehaviour = 'normal' | 'custom-pivot' | 'sliding';
+export type DoorBehaviour = 'normal' | 'custom-pivot' | 'pivot' | 'sliding';
 
 /**
- * Which edge the door pivots on (for 'normal' doors).
+ * @deprecated Kept for backward compatibility — use customPivot instead.
  */
 export type DoorPivotEdge = 'left' | 'right';
 
@@ -45,6 +46,8 @@ export interface DoorConfig {
 	slidePath?: Array<{ x: number; y: number }>;
 	/** Current open-angle in degrees (0 = closed). Persisted per-instance. */
 	openAngle?: number;
+	/** Preferred swing direction: 1 = default, -1 = reversed. Persisted per-instance. */
+	openDirection?: number;
 	/** Whether the door is currently open */
 	isOpen?: boolean;
 	/** Slide position (0 = start, 1 = end of slidePath). Persisted per-instance. */
@@ -151,7 +154,8 @@ export type TransformHandle =
 	| 'top-left' | 'top' | 'top-right'
 	| 'right' | 'bottom-right' | 'bottom' | 'bottom-left'
 	| 'left'
-	| 'rotate';
+	| 'rotate'
+	| 'pivot';
 
 /**
  * Size of transform handles in CSS pixels.
@@ -182,7 +186,9 @@ export const DOOR_BEHAVIOURS: Array<{
 	icon: string;
 	description: string;
 }> = [
-	{ value: 'normal',       label: 'Normal Door',  icon: '🚪', description: 'Pivots on left or right edge' },
-	{ value: 'custom-pivot', label: 'Custom Pivot',  icon: '📌', description: 'Pivots on a user-defined point' },
-	{ value: 'sliding',      label: 'Sliding Door',  icon: '↔️',  description: 'Slides along a defined path' },
+	{ value: 'pivot',   label: 'Pivot Door',   icon: '🚪', description: 'Pivots on a draggable point (default: left edge)' },
+	{ value: 'sliding', label: 'Sliding Door',  icon: '↔️',  description: 'Slides along a defined path' },
 ];
+
+/** Size of the pivot handle in CSS pixels. */
+export const PIVOT_HANDLE_SIZE = 10;

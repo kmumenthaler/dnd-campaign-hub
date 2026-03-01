@@ -2,8 +2,6 @@ import { App, Menu, Notice } from 'obsidian';
 import {
 	EnvAssetInstance,
 	EnvAssetDefinition,
-	DoorBehaviour,
-	DoorPivotEdge,
 	DOOR_BEHAVIOURS,
 } from './EnvAssetTypes';
 import { EnvAssetLibrary } from './EnvAssetLibrary';
@@ -98,10 +96,20 @@ export function showEnvAssetContextMenu(
 
 		// Ensure instance has a doorConfig (inherit from definition)
 		if (!instance.doorConfig) {
-			instance.doorConfig = { ...(definition.doorConfig || { behaviour: 'normal', pivotEdge: 'left' }) };
+			instance.doorConfig = { ...(definition.doorConfig || { behaviour: 'pivot' }) };
 		}
-
+		// Migrate legacy behaviours
 		const dc = instance.doorConfig!;
+		if (dc.behaviour === 'normal' || dc.behaviour === 'custom-pivot') {
+			if (dc.behaviour === 'normal') {
+				// Convert pivotEdge to customPivot
+				dc.customPivot = dc.pivotEdge === 'right' ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 };
+			}
+			dc.behaviour = 'pivot';
+		}
+		if (dc.behaviour !== 'sliding' && !dc.customPivot) {
+			dc.customPivot = { x: 0, y: 0.5 };
+		}
 
 		// Open / Close toggle
 		menu.addItem(item => item
@@ -112,7 +120,10 @@ export function showEnvAssetContextMenu(
 					dc.openAngle = 0;
 					if (dc.behaviour === 'sliding') dc.slidePosition = 0;
 				} else {
-					if (dc.behaviour !== 'sliding') dc.openAngle = 90;
+					if (dc.behaviour !== 'sliding') {
+						const dir = dc.openDirection || 1;
+						dc.openAngle = dir * 90;
+					}
 					if (dc.behaviour === 'sliding') dc.slidePosition = 1;
 				}
 				callbacks.onUpdate(instance);
@@ -121,13 +132,17 @@ export function showEnvAssetContextMenu(
 			})
 		);
 
-		// Behaviour submenu
-		for (const b of DOOR_BEHAVIOURS) {
+		// Open to the other side (reverse swing direction)
+		if (dc.behaviour !== 'sliding') {
 			menu.addItem(item => item
-				.setTitle(`${dc.behaviour === b.value ? '● ' : '○ '}${b.icon} ${b.label}`)
+				.setTitle('↔️ Reverse Open Direction')
 				.onClick(() => {
-					dc.behaviour = b.value;
-					if (b.value === 'normal' && !dc.pivotEdge) dc.pivotEdge = 'left';
+					// Flip the persisted direction
+					dc.openDirection = (dc.openDirection || 1) * -1;
+					dc.openAngle = dc.openDirection * 90;
+					if (!dc.isOpen) {
+						dc.isOpen = true;
+					}
 					callbacks.onUpdate(instance);
 					callbacks.onRedraw();
 					callbacks.onSave();
@@ -135,20 +150,20 @@ export function showEnvAssetContextMenu(
 			);
 		}
 
-		// Pivot edge (normal doors)
-		if (dc.behaviour === 'normal') {
-			menu.addSeparator();
-			for (const edge of ['left', 'right'] as DoorPivotEdge[]) {
-				menu.addItem(item => item
-					.setTitle(`${dc.pivotEdge === edge ? '● ' : '○ '}Pivot: ${edge.charAt(0).toUpperCase() + edge.slice(1)} Edge`)
-					.onClick(() => {
-						dc.pivotEdge = edge;
-						callbacks.onUpdate(instance);
-						callbacks.onRedraw();
-						callbacks.onSave();
-					})
-				);
-			}
+		// Behaviour submenu
+		for (const b of DOOR_BEHAVIOURS) {
+			menu.addItem(item => item
+				.setTitle(`${dc.behaviour === b.value ? '● ' : '○ '}${b.icon} ${b.label}`)
+				.onClick(() => {
+					dc.behaviour = b.value;
+					if (b.value !== 'sliding' && !dc.customPivot) {
+						dc.customPivot = { x: 0, y: 0.5 };
+					}
+					callbacks.onUpdate(instance);
+					callbacks.onRedraw();
+					callbacks.onSave();
+				})
+			);
 		}
 	}
 

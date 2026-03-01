@@ -68,6 +68,7 @@ import type {
 import {
   TRANSFORM_HANDLE_SIZE,
   ROTATION_HANDLE_OFFSET,
+  PIVOT_HANDLE_SIZE,
 } from './envasset/EnvAssetTypes';
 import type {
   TerrainType,
@@ -5746,6 +5747,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Tool state
     let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | 'env-asset' = 'pan';
+		// Background editing view — controls which element type is prominent and interactable
+		type BackgroundEditView = 'all' | 'walls' | 'lights' | 'fog' | 'elevation' | 'difficult-terrain' | 'env-assets';
+		let backgroundEditView: BackgroundEditView = 'all';
 		let selectedColor = '#ff0000';
       // GM player-view rect drag state
       let gmDragStart: { x: number; y: number } | null = null;
@@ -6303,6 +6307,22 @@ export default class DndCampaignHubPlugin extends Plugin {
 		// === COMMON TOOLS (2-column grid, always visible) ===
 		const commonToolGroup = toolbarContent.createDiv({ cls: 'dnd-map-tool-group' });
 		
+		// Helper: position a fixed-position picker flyout relative to its parent button
+		const positionPicker = (picker: HTMLElement) => {
+			const btn = picker.parentElement;
+			if (!btn) return;
+			const rect = btn.getBoundingClientRect();
+			picker.style.left = `${rect.right + 8}px`;
+			picker.style.top = `${rect.top + rect.height / 2}px`;
+			picker.style.transform = 'translateY(-50%)';
+		};
+
+		// Wrapper to toggle a picker and reposition it when showing
+		const togglePicker = (picker: HTMLElement, show: boolean) => {
+			picker.toggleClass('hidden', !show);
+			if (show) positionPicker(picker);
+		};
+
 		// Helper to create icon-only buttons with hover labels
 		const createToolBtn = (parent: HTMLElement, icon: string, label: string, isActive = false, fullWidth = false): HTMLButtonElement => {
 			const btn = parent.createEl('button', { 
@@ -6310,18 +6330,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 			});
 			btn.createEl('span', { text: icon, cls: 'dnd-map-tool-btn-icon' });
 			const labelSpan = btn.createEl('span', { text: label, cls: 'dnd-map-tool-btn-label' });
-			// Check if button will be in the right column (every even button in 2-column grid)
-			// We'll mark right-column buttons to adjust tooltip position
-			setTimeout(() => {
-				const parentGrid = btn.parentElement;
-				if (parentGrid && parentGrid.classList.contains('dnd-map-tool-group')) {
-					const buttons = Array.from(parentGrid.querySelectorAll('.dnd-map-tool-btn:not(.full-width)'));
-					const index = buttons.indexOf(btn);
-					if (index % 2 === 1) {
-						labelSpan.classList.add('right-column-tooltip');
-					}
-				}
-			}, 0);
+			// Position tooltip (fixed) on mouseenter relative to button
+			btn.addEventListener('mouseenter', () => {
+				const rect = btn.getBoundingClientRect();
+				labelSpan.style.left = `${rect.right + 12}px`;
+				labelSpan.style.top = `${rect.top + rect.height / 2}px`;
+				labelSpan.style.transform = 'translateY(-50%)';
+			});
 			return btn;
 		};
 		
@@ -6466,6 +6481,45 @@ export default class DndCampaignHubPlugin extends Plugin {
 		visionSectionHeader.createEl('span', { text: 'Vision', cls: 'dnd-map-section-title' });
 		visionSectionHeader.createEl('span', { text: '▼', cls: 'dnd-map-section-toggle' });
 		const visionContent = toolbarContent.createDiv({ cls: 'dnd-map-section-content' });
+
+		// ── Background Edit-View filter chips ────────────────────────────────
+		const bgViewRow = visionContent.createDiv({ cls: 'dnd-map-bg-view-row' });
+		const bgViewChips: Record<string, HTMLButtonElement> = {};
+		const bgViews: { key: BackgroundEditView; icon: string; tip: string }[] = [
+			{ key: 'all',               icon: '👁',  tip: 'Show All' },
+			{ key: 'walls',             icon: '🧱', tip: 'Walls' },
+			{ key: 'lights',            icon: '💡', tip: 'Lights' },
+			{ key: 'fog',               icon: '🌫️', tip: 'Fog' },
+			{ key: 'elevation',         icon: '⛰️', tip: 'Elevation' },
+			{ key: 'difficult-terrain', icon: '🌿', tip: 'Difficult Terrain' },
+			{ key: 'env-assets',        icon: '📦', tip: 'Env Assets' },
+		];
+		const setBackgroundEditView = (view: BackgroundEditView) => {
+			backgroundEditView = view;
+			for (const [k, chip] of Object.entries(bgViewChips)) {
+				chip.toggleClass('active', k === view);
+			}
+			// Deselect elements that are no longer interactable in the new view
+			if (view !== 'all' && view !== 'env-assets') {
+				selectedEnvAssetInstanceId = null;
+				envAssetTransformHandle = null;
+			}
+			if (view !== 'all' && view !== 'walls') {
+				selectedWallIndices = [];
+				wallSelectionRect = null;
+				draggingWallIndex = -1;
+			}
+			redrawAnnotations();
+		};
+		for (const v of bgViews) {
+			const chip = bgViewRow.createEl('button', {
+				cls: 'dnd-map-bg-view-chip' + (v.key === backgroundEditView ? ' active' : ''),
+				attr: { title: v.tip },
+			});
+			chip.textContent = v.icon;
+			chip.addEventListener('click', () => setBackgroundEditView(v.key));
+			bgViewChips[v.key] = chip;
+		}
 		
 		const fogBtn = createToolBtn(visionContent, '🌫️', 'Fog');
 		const wallsBtn = createToolBtn(visionContent, '🧱', 'Walls');
@@ -7431,6 +7485,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					if (layer !== 'Background' || isHexcrawlMap) {
 						visionSectionHeader.addClass('hidden');
 						visionContent.addClass('hidden');
+						// Reset background edit view when leaving Background layer
+						setBackgroundEditView('all');
 					} else {
 						visionSectionHeader.removeClass('hidden');
 						visionContent.removeClass('hidden');
@@ -8139,6 +8195,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 				const rotY = -hh - ROTATION_HANDLE_OFFSET;
 				if (Math.abs(lx) < hs && Math.abs(ly - rotY) < hs) return 'rotate';
 
+				// Pivot handle (for non-sliding doors)
+				const def = inst.assetId ? this.envAssetLibrary.getAsset(inst.assetId) : null;
+				if (def?.category === 'door' && inst.doorConfig && inst.doorConfig.behaviour !== 'sliding') {
+					const pivot = inst.doorConfig.customPivot || { x: 0, y: 0.5 };
+					const pvX = (pivot.x - 0.5) * inst.width;
+					const pvY = (pivot.y - 0.5) * inst.height;
+					const pvTol = PIVOT_HANDLE_SIZE / 2 + 4;
+					if (Math.abs(lx - pvX) < pvTol && Math.abs(ly - pvY) < pvTol) return 'pivot';
+				}
+
 				// Corner & edge handles
 				const handles: { handle: TransformHandle; x: number; y: number }[] = [
 					{ handle: 'top-left',    x: -hw, y: -hh },
@@ -8165,7 +8231,91 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (!ctx) return;
 				
 				ctx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
-				
+
+				// Helper: determine opacity for a background element group based on active edit view
+				const isOnBgLayer = config.activeLayer === 'Background';
+				const bgViewDimAlpha = 0.12;
+				const bgViewAlpha = (group: BackgroundEditView): number => {
+					if (!isOnBgLayer) return 1; // non-bg layer: always full (or handled per-section)
+					if (backgroundEditView === 'all') return 1;
+					return backgroundEditView === group ? 1 : bgViewDimAlpha;
+				};
+
+				// ── Helper: compute door-wall segments for env-asset doors ──
+				// Returns a single wall segment per door, spanning the width of the
+				// door asset with a small inset, transformed by position, rotation,
+				// and the door's open state (pivot / slide).
+				const computeDoorWallSegments = (): { id: string; type: string; start: { x: number; y: number }; end: { x: number; y: number }; open: boolean; linkedDoorId: string }[] => {
+					const result: { id: string; type: string; start: { x: number; y: number }; end: { x: number; y: number }; open: boolean; linkedDoorId: string }[] = [];
+					if (!config.envAssets || config.envAssets.length === 0) return result;
+					for (const inst of config.envAssets as EnvAssetInstance[]) {
+						const def = this.envAssetLibrary.getAsset(inst.assetId);
+						if (!def || def.category !== 'door') continue;
+						const dc = inst.doorConfig;
+
+						// Open sliding doors don't block – the doorway is clear
+						if (dc && dc.isOpen && dc.behaviour === 'sliding') continue;
+
+						const pad = 2; // inset padding in pixels
+						// Span the largest dimension of the door asset
+						const useWidth = inst.width >= inst.height;
+						const halfSpan = (useWidth ? inst.width : inst.height) / 2 - pad;
+
+						// Wall endpoints in local space along the longest axis
+						let p1x = useWidth ? -halfSpan : 0, p1y = useWidth ? 0 : -halfSpan;
+						let p2x = useWidth ?  halfSpan : 0, p2y = useWidth ? 0 :  halfSpan;
+
+						// Apply door open transform (pivot rotation or slide offset)
+						if (dc && dc.isOpen) {
+							if (dc.behaviour !== 'sliding' && dc.openAngle) {
+								const pivot = dc.customPivot || { x: 0, y: 0.5 };
+								const pvX = (pivot.x - 0.5) * inst.width;
+								const pvY = (pivot.y - 0.5) * inst.height;
+								const a = (dc.openAngle || 0) * Math.PI / 180;
+								const cosA = Math.cos(a), sinA = Math.sin(a);
+								// Rotate p1 around pivot
+								let rx = p1x - pvX, ry = p1y - pvY;
+								p1x = pvX + rx * cosA - ry * sinA;
+								p1y = pvY + rx * sinA + ry * cosA;
+								// Rotate p2 around pivot
+								rx = p2x - pvX; ry = p2y - pvY;
+								p2x = pvX + rx * cosA - ry * sinA;
+								p2y = pvY + rx * sinA + ry * cosA;
+							}
+							if (dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
+								const sp0 = dc.slidePath[0]!;
+								const sp1 = dc.slidePath[dc.slidePath.length - 1]!;
+								const t = dc.slidePosition;
+								const sdx = (sp1.x - sp0.x) * t;
+								const sdy = (sp1.y - sp0.y) * t;
+								p1x += sdx; p1y += sdy;
+								p2x += sdx; p2y += sdy;
+							}
+						}
+
+						// Apply instance rotation + position to get world coordinates
+						const rad = (inst.rotation || 0) * Math.PI / 180;
+						const cosR = Math.cos(rad), sinR = Math.sin(rad);
+						const worldP1 = {
+							x: inst.position.x + p1x * cosR - p1y * sinR,
+							y: inst.position.y + p1x * sinR + p1y * cosR,
+						};
+						const worldP2 = {
+							x: inst.position.x + p2x * cosR - p2y * sinR,
+							y: inst.position.y + p2x * sinR + p2y * cosR,
+						};
+						result.push({
+							id: `door_wall_${inst.id}`,
+							type: 'wall',
+							start: worldP1,
+							end: worldP2,
+							open: !!(dc && dc.isOpen),
+							linkedDoorId: inst.id,
+						});
+					}
+					return result;
+				};
+
 				// Draw tile elevations (Background layer visualization)
 				if (config.tileElevations && Object.keys(config.tileElevations).length > 0) {
 					const gs = config.gridSize || 70;
@@ -8174,7 +8324,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const isBackgroundLayer = config.activeLayer === 'Background';
 					
 					ctx.save();
-					if (!isBackgroundLayer) ctx.globalAlpha = 0.15; // Very subtle on other layers
+					if (!isBackgroundLayer) {
+						ctx.globalAlpha = 0.15; // Very subtle on other layers
+					} else {
+						ctx.globalAlpha = bgViewAlpha('elevation');
+					}
 					
 					for (const [key, elevation] of Object.entries(config.tileElevations)) {
 						const parts = key.split(',');
@@ -8215,7 +8369,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const isBackgroundLayer = config.activeLayer === 'Background';
 					
 					ctx.save();
-					if (!isBackgroundLayer) ctx.globalAlpha = 0.15; // Very subtle on other layers
+					if (!isBackgroundLayer) {
+						ctx.globalAlpha = 0.15; // Very subtle on other layers
+					} else {
+						ctx.globalAlpha = bgViewAlpha('difficult-terrain');
+					}
 					
 					for (const key of Object.keys(config.difficultTerrain)) {
 						const parts = key.split(',');
@@ -8401,6 +8559,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				// ENVIRONMENT ASSETS (Background layer objects)
 				// ══════════════════════════════════════════════════════════════
 				if (config.envAssets && config.envAssets.length > 0) {
+					const envAlpha = bgViewAlpha('env-assets');
 					// Sort by zIndex ascending (lower = drawn first = further back)
 					const sorted = [...config.envAssets].sort((a: EnvAssetInstance, b: EnvAssetInstance) => (a.zIndex || 0) - (b.zIndex || 0));
 					sorted.forEach((inst: EnvAssetInstance) => {
@@ -8409,27 +8568,36 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const img = getEnvAssetImage(def.imageFile);
 
 						ctx.save();
+						ctx.globalAlpha = envAlpha;
 						ctx.translate(inst.position.x, inst.position.y);
 						ctx.rotate((inst.rotation || 0) * Math.PI / 180);
 
 						const hw = inst.width / 2;
 						const hh = inst.height / 2;
 
-						// For doors: apply open-angle or slide offset
-						if (def.category === 'door' && inst.doorConfig) {
+						// For doors: ensure doorConfig exists and apply open-angle or slide offset
+						if (def.category === 'door') {
+							if (!inst.doorConfig) {
+								inst.doorConfig = { behaviour: 'pivot', customPivot: { x: 0, y: 0.5 } };
+							}
 							const dc = inst.doorConfig;
-							if (dc.isOpen && dc.behaviour !== 'sliding' && dc.openAngle) {
-								// Calculate pivot point
-								let px = -hw, py = 0; // default: left edge
-								if (dc.behaviour === 'normal' && dc.pivotEdge === 'right') {
-									px = hw;
-								} else if (dc.behaviour === 'custom-pivot' && dc.customPivot) {
-									px = (dc.customPivot.x - 0.5) * inst.width;
-									py = (dc.customPivot.y - 0.5) * inst.height;
+							// Runtime migration: convert legacy normal/custom-pivot to unified pivot
+							if (dc.behaviour === 'normal' || dc.behaviour === 'custom-pivot') {
+								if (dc.behaviour === 'normal' && !dc.customPivot) {
+									dc.customPivot = (dc as any).pivotEdge === 'right' ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 };
 								}
-								ctx.translate(px, py);
+								dc.behaviour = 'pivot';
+							}
+							if (dc.behaviour !== 'sliding' && !dc.customPivot) {
+								dc.customPivot = { x: 0, y: 0.5 };
+							}
+							if (dc.isOpen && dc.behaviour !== 'sliding' && dc.openAngle) {
+								// Resolve pivot point from customPivot
+								const pivotX = (dc.customPivot!.x - 0.5) * inst.width;
+								const pivotY = (dc.customPivot!.y - 0.5) * inst.height;
+								ctx.translate(pivotX, pivotY);
 								ctx.rotate((dc.openAngle || 0) * Math.PI / 180);
-								ctx.translate(-px, -py);
+								ctx.translate(-pivotX, -pivotY);
 							}
 							if (dc.isOpen && dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
 								// Slide offset along the path (linear interpolation between first two waypoints)
@@ -8465,9 +8633,29 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 						ctx.restore();
 
-						// ── Selection frame & transform handles ──────────
-						if (selectedEnvAssetInstanceId === inst.id && (activeTool === 'env-asset' || activeTool === 'select')) {
+						// ── Env-asset view highlight outline ──────────
+						if (backgroundEditView === 'env-assets') {
 							ctx.save();
+							ctx.globalAlpha = 1;
+							ctx.translate(inst.position.x, inst.position.y);
+							ctx.rotate((inst.rotation || 0) * Math.PI / 180);
+							const hlHw = inst.width / 2;
+							const hlHh = inst.height / 2;
+							const pad = 3; // padding outside the asset rect
+							// Glow
+							ctx.shadowColor = '#00ccff';
+							ctx.shadowBlur = 10;
+							ctx.strokeStyle = 'rgba(0,204,255,0.7)';
+							ctx.lineWidth = 2;
+							ctx.strokeRect(-hlHw - pad, -hlHh - pad, inst.width + pad * 2, inst.height + pad * 2);
+							ctx.shadowBlur = 0;
+							ctx.restore();
+						}
+
+						// ── Selection frame & transform handles ──────────
+						if (selectedEnvAssetInstanceId === inst.id && (activeTool === 'env-asset' || activeTool === 'select') && envAlpha >= 1) {
+							ctx.save();
+							ctx.globalAlpha = 1;
 							ctx.translate(inst.position.x, inst.position.y);
 							ctx.rotate((inst.rotation || 0) * Math.PI / 180);
 
@@ -8524,6 +8712,31 @@ export default class DndCampaignHubPlugin extends Plugin {
 							ctx.textAlign = 'center';
 							ctx.textBaseline = 'middle';
 							ctx.fillText('↻', 0, rotY);
+
+							// ── Pivot handle (yellow dot for non-sliding doors) ──
+							if (def.category === 'door' && inst.doorConfig && inst.doorConfig.behaviour !== 'sliding') {
+								const pivot = inst.doorConfig.customPivot || { x: 0, y: 0.5 };
+								const pvX = (pivot.x - 0.5) * inst.width;
+								const pvY = (pivot.y - 0.5) * inst.height;
+								const pvR = PIVOT_HANDLE_SIZE / 2;
+								// Yellow filled circle with dark outline
+								ctx.beginPath();
+								ctx.arc(pvX, pvY, pvR, 0, Math.PI * 2);
+								ctx.fillStyle = '#ffcc00';
+								ctx.fill();
+								ctx.strokeStyle = '#886600';
+								ctx.lineWidth = 2;
+								ctx.stroke();
+								// Small cross-hair inside
+								ctx.strokeStyle = '#886600';
+								ctx.lineWidth = 1;
+								ctx.beginPath();
+								ctx.moveTo(pvX - pvR * 0.5, pvY);
+								ctx.lineTo(pvX + pvR * 0.5, pvY);
+								ctx.moveTo(pvX, pvY - pvR * 0.5);
+								ctx.lineTo(pvX, pvY + pvR * 0.5);
+								ctx.stroke();
+							}
 
 							ctx.restore();
 						}
@@ -8632,7 +8845,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 				// Draw Fog of War (GM view: semi-transparent)
 				if (config.fogOfWar && config.fogOfWar.enabled) {
+					const fogAlpha = bgViewAlpha('fog');
+					if (fogAlpha < 1) ctx.globalAlpha = fogAlpha;
 					drawFogOfWar(ctx, annotationCanvas.width, annotationCanvas.height, false);
+					if (fogAlpha < 1) ctx.globalAlpha = 1;
 				}
 				// Draw fog preview during drag
 				if (activeTool === 'fog') {
@@ -8646,6 +8862,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 				// Draw Dynamic Lighting Walls (only on Background layer)
 				if (config.activeLayer === 'Background' && config.walls && config.walls.length > 0) {
+					const wallAlpha = bgViewAlpha('walls');
+					ctx.save();
+					ctx.globalAlpha = wallAlpha;
 					config.walls.forEach((wall: any) => {
 						const wallType = wall.type || 'wall';
 						const wallDef = WALL_TYPES[wallType as WallType] || WALL_TYPES.wall;
@@ -8824,8 +9043,42 @@ export default class DndCampaignHubPlugin extends Plugin {
 						
 						ctx.setLineDash([]);
 					});
+					ctx.restore();
 				}
-				
+
+				// ── Draw door-wall segments from env-asset doors (visible in wall view) ──
+				if (config.activeLayer === 'Background') {
+					const doorWalls = computeDoorWallSegments();
+					if (doorWalls.length > 0) {
+						const wallAlpha = bgViewAlpha('walls');
+						ctx.save();
+						ctx.globalAlpha = wallAlpha;
+						ctx.strokeStyle = '#ff4500'; // same red as regular wall
+						ctx.lineWidth = 4;
+						ctx.lineCap = 'round';
+						ctx.setLineDash([]);
+						for (const dw of doorWalls) {
+							// Open doors: draw as dashed + semi-transparent
+							if (dw.open) {
+								ctx.save();
+								ctx.globalAlpha = wallAlpha * 0.35;
+								ctx.setLineDash([6, 4]);
+								ctx.beginPath();
+								ctx.moveTo(dw.start.x, dw.start.y);
+								ctx.lineTo(dw.end.x, dw.end.y);
+								ctx.stroke();
+								ctx.restore();
+							} else {
+								ctx.beginPath();
+								ctx.moveTo(dw.start.x, dw.start.y);
+								ctx.lineTo(dw.end.x, dw.end.y);
+								ctx.stroke();
+							}
+						}
+						ctx.restore();
+					}
+				}
+
 				// Draw selection rectangle overlay and highlight selected walls
 				if (wallSelectionRect && activeTool === 'select') {
 					const sr = wallSelectionRect;
@@ -8936,6 +9189,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 				// Draw Dynamic Lighting (only on Background layer)
 				if (config.activeLayer === 'Background' && config.lightSources && config.lightSources.length > 0) {
+					const lightAlpha = bgViewAlpha('lights');
+					// Helper to scale any alpha value by the view dim factor
+					const la = (a: number) => a * lightAlpha;
 					// Calculate pixels per foot based on grid settings
 					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
 					
@@ -8951,22 +9207,22 @@ export default class DndCampaignHubPlugin extends Plugin {
 						if (isActive) {
 							// Draw light radius (bright light) - subtle on Background layer
 							if (brightRadiusPx > 0) {
-								ctx.globalAlpha = 0.12;
+								ctx.globalAlpha = la(0.12);
 								ctx.fillStyle = '#ffff88';
 								ctx.beginPath();
 								ctx.arc(light.x, light.y, brightRadiusPx, 0, Math.PI * 2);
 								ctx.fill();
-								ctx.globalAlpha = 1.0;
+								ctx.globalAlpha = la(1.0);
 							}
 							
 							// Draw dim light radius - very subtle on Background layer
 							if (dimRadiusPx > 0) {
-								ctx.globalAlpha = 0.06;
+								ctx.globalAlpha = la(0.06);
 								ctx.fillStyle = '#aaaa44';
 								ctx.beginPath();
 								ctx.arc(light.x, light.y, brightRadiusPx + dimRadiusPx, 0, Math.PI * 2);
 								ctx.fill();
-								ctx.globalAlpha = 1.0;
+								ctx.globalAlpha = la(1.0);
 							}
 							
 							// Draw cone for bullseye lantern (showing direction) - subtle
@@ -8974,20 +9230,20 @@ export default class DndCampaignHubPlugin extends Plugin {
 								const direction = (light.direction || 0) * Math.PI / 180; // Convert degrees to radians
 								const coneAngle = Math.PI / 6; // 30 degree half-angle (60 degree total cone)
 								
-								ctx.globalAlpha = 0.1;
+								ctx.globalAlpha = la(0.1);
 								ctx.fillStyle = '#ffffff';
 								ctx.beginPath();
 								ctx.moveTo(light.x, light.y);
 								ctx.arc(light.x, light.y, brightRadiusPx, direction - coneAngle, direction + coneAngle);
 								ctx.closePath();
 								ctx.fill();
-								ctx.globalAlpha = 1.0;
+								ctx.globalAlpha = la(1.0);
 							}
 						}
 						
 // Draw dashed selection rectangle to show clickable area
 							const selectionPadding = 15; // Same as lightClickRadius
-							ctx.globalAlpha = 0.5;
+							ctx.globalAlpha = la(0.5);
 							ctx.strokeStyle = isDragging ? '#00ff00' : '#888888';
 							ctx.lineWidth = 1;
 							ctx.setLineDash([4, 4]);
@@ -8998,11 +9254,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 								selectionPadding * 2
 							);
 							ctx.setLineDash([]);
-							ctx.globalAlpha = 1.0;
+							ctx.globalAlpha = la(1.0);
 							
 							// Draw light source icon (subtle light bulb) - always visible for editing
 						const iconRadius = 12;
-						ctx.globalAlpha = isDragging ? 1.0 : (isActive ? 0.8 : 0.4);
+						ctx.globalAlpha = la(isDragging ? 1.0 : (isActive ? 0.8 : 0.4));
 						
 						// Draw bulb body (circle)
 						ctx.fillStyle = isActive ? '#ffdd44' : '#666666';
@@ -9075,7 +9331,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							}
 						}
 						
-						ctx.globalAlpha = 1.0;
+						ctx.globalAlpha = la(1.0);
 					});
 				}
 
@@ -10594,6 +10850,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
 				console.log('activeTool is now:', activeTool);
+
+				// Auto-switch background edit view when picking a background tool
+				const bgToolViewMap: Record<string, BackgroundEditView> = {
+					'walls': 'walls', 'magic-wand': 'walls',
+					'lights': 'lights', 'fog': 'fog',
+					'elevation-paint': 'elevation',
+					'difficult-terrain': 'difficult-terrain',
+					'env-asset': 'env-assets',
+				};
+				if (bgToolViewMap[tool]) {
+					setBackgroundEditView(bgToolViewMap[tool]);
+				}
+
 			[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, viewBtn, fogBtn, wallsBtn, lightsBtn, elevationPaintBtn, moveGridBtn, terrainPaintBtn, climatePaintBtn, setStartHexBtn, hexDescBtn, envAssetBtn].forEach(btn => btn.removeClass('active'));
 
 				// Cancel calibration when switching tools
@@ -10651,25 +10920,25 @@ export default class DndCampaignHubPlugin extends Plugin {
 				colorSeparator.toggleClass('hidden', !showColorPicker);
 
 				// Show/hide AoE shape picker
-				aoePicker.toggleClass('hidden', tool !== 'aoe');
+				togglePicker(aoePicker, tool === 'aoe');
 				// Show/hide Fog shape picker
-				fogPicker.toggleClass('hidden', tool !== 'fog');
+				togglePicker(fogPicker, tool === 'fog');
 				// Show/hide Walls type picker
-				wallsPicker.toggleClass('hidden', tool !== 'walls' && tool !== 'magic-wand');
+				togglePicker(wallsPicker, tool === 'walls' || tool === 'magic-wand');
 				// Show/hide Magic Wand settings inside walls picker
 				mwSettingsDiv.toggleClass('hidden', tool !== 'magic-wand');
 				// Show/hide Lights picker
-				lightsPicker.toggleClass('hidden', tool !== 'lights');
+				togglePicker(lightsPicker, tool === 'lights');
 				// Show/hide Elevation Paint picker
-				elevationPicker.toggleClass('hidden', tool !== 'elevation-paint');
+				togglePicker(elevationPicker, tool === 'elevation-paint');
 				// Show/hide Difficult Terrain picker
-				difficultTerrainPicker.toggleClass('hidden', tool !== 'difficult-terrain');
+				togglePicker(difficultTerrainPicker, tool === 'difficult-terrain');
 				// Show/hide Player View controls picker
-				pvPicker.toggleClass('hidden', tool !== 'player-view');
+				togglePicker(pvPicker, tool === 'player-view');
 				// Show/hide Terrain picker
-				terrainPicker.toggleClass('hidden', tool !== 'terrain-paint');
+				togglePicker(terrainPicker, tool === 'terrain-paint');
 				// Show/hide Climate picker
-				climatePicker.toggleClass('hidden', tool !== 'climate-paint');
+				togglePicker(climatePicker, tool === 'climate-paint');
 
 
 				
@@ -10843,7 +11112,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			aoeBtn.addEventListener('click', () => {
 				console.log('AoE button clicked');
 				if (activeTool === 'aoe') {
-					aoePicker.toggleClass('hidden', !aoePicker.hasClass('hidden'));
+					togglePicker(aoePicker, aoePicker.hasClass('hidden'));
 				} else {
 					setActiveTool('aoe');
 				}
@@ -10855,7 +11124,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			fogBtn.addEventListener('click', () => {
 				console.log('Fog button clicked');
 				if (activeTool === 'fog') {
-					fogPicker.toggleClass('hidden', !fogPicker.hasClass('hidden'));
+					togglePicker(fogPicker, fogPicker.hasClass('hidden'));
 				} else {
 					setActiveTool('fog');
 				}
@@ -10864,7 +11133,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				console.log('Walls button clicked');
 				if (activeTool === 'walls') {
 					// Toggle picker visibility if walls tool is already active
-					wallsPicker.toggleClass('hidden', !wallsPicker.hasClass('hidden'));
+					togglePicker(wallsPicker, wallsPicker.hasClass('hidden'));
 				} else {
 					setActiveTool('walls');
 				}
@@ -10872,7 +11141,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			lightsBtn.addEventListener('click', () => {
 				console.log('Lights button clicked');
 				if (activeTool === 'lights') {
-					lightsPicker.toggleClass('hidden', !lightsPicker.hasClass('hidden'));
+					togglePicker(lightsPicker, lightsPicker.hasClass('hidden'));
 				} else {
 					setActiveTool('lights');
 				}
@@ -10884,7 +11153,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			terrainPaintBtn.addEventListener('click', () => {
 				console.log('Terrain Paint button clicked');
 				if (activeTool === 'terrain-paint') {
-					terrainPicker.toggleClass('hidden', !terrainPicker.hasClass('hidden'));
+					togglePicker(terrainPicker, terrainPicker.hasClass('hidden'));
 				} else {
 					setActiveTool('terrain-paint');
 				}
@@ -10892,7 +11161,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			climatePaintBtn.addEventListener('click', () => {
 				console.log('Climate Paint button clicked');
 				if (activeTool === 'climate-paint') {
-					climatePicker.toggleClass('hidden', !climatePicker.hasClass('hidden'));
+					togglePicker(climatePicker, climatePicker.hasClass('hidden'));
 				} else {
 					setActiveTool('climate-paint');
 				}
@@ -10900,7 +11169,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			elevationPaintBtn.addEventListener('click', () => {
 				console.log('Elevation Paint button clicked');
 				if (activeTool === 'elevation-paint') {
-					elevationPicker.toggleClass('hidden', !elevationPicker.hasClass('hidden'));
+					togglePicker(elevationPicker, elevationPicker.hasClass('hidden'));
 				} else {
 					setActiveTool('elevation-paint');
 				}
@@ -10908,7 +11177,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			difficultTerrainBtn.addEventListener('click', () => {
 				console.log('Difficult Terrain button clicked');
 				if (activeTool === 'difficult-terrain') {
-					difficultTerrainPicker.toggleClass('hidden', !difficultTerrainPicker.hasClass('hidden'));
+					togglePicker(difficultTerrainPicker, difficultTerrainPicker.hasClass('hidden'));
 				} else {
 					setActiveTool('difficult-terrain');
 				}
@@ -10934,7 +11203,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		viewBtn.addEventListener('click', () => {
 			console.log('Player View button clicked');
 			if (activeTool === 'player-view') {
-				pvPicker.toggleClass('hidden', !pvPicker.hasClass('hidden'));
+				togglePicker(pvPicker, pvPicker.hasClass('hidden'));
 			} else {
 				setActiveTool('player-view');
 			}
@@ -11162,8 +11431,67 @@ export default class DndCampaignHubPlugin extends Plugin {
 							break;
 						}
 					}
-					// Check if clicking on a light for drag (only if no marker found)
-					if (!foundMarker && config.lightSources && config.lightSources.length > 0) {
+					// Check if clicking on an env asset for select / drag / transform
+					// (checked before walls & lights so visible objects take priority)
+					// Only interactable when on Background layer with matching view
+					const canInteractEnvAssets = config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'env-assets');
+					let foundEnvAsset = false;
+					if (!foundMarker && canInteractEnvAssets) {
+						// First, if an env asset is already selected, check transform handles
+						if (selectedEnvAssetInstanceId) {
+							const selInst = (config.envAssets || []).find((a: EnvAssetInstance) => a.id === selectedEnvAssetInstanceId);
+							if (selInst && !selInst.locked) {
+								const handle = hitTestTransformHandle(mapPos.x, mapPos.y, selInst);
+								if (handle) {
+									saveToHistory();
+									envAssetTransformHandle = handle;
+									envAssetTransformStart = {
+										x: selInst.position.x,
+										y: selInst.position.y,
+										w: selInst.width,
+										h: selInst.height,
+										rot: selInst.rotation || 0
+									};
+									if (handle === 'rotate') {
+										envAssetRotateStart = Math.atan2(mapPos.y - selInst.position.y, mapPos.x - selInst.position.x);
+									}
+									if (handle === 'pivot' && selInst.doorConfig) {
+										if (!selInst.doorConfig.customPivot) selInst.doorConfig.customPivot = { x: 0, y: 0.5 };
+									}
+									viewport.style.cursor = handle === 'rotate' ? 'grab' : handle === 'pivot' ? 'move' : 'nwse-resize';
+									foundEnvAsset = true;
+									e.preventDefault();
+								}
+							}
+						}
+						// Then check if clicking on an env asset body
+						if (!foundEnvAsset) {
+							const hitInst = findEnvAssetAtPoint(mapPos.x, mapPos.y);
+							if (hitInst) {
+								selectedEnvAssetInstanceId = hitInst.id;
+								foundEnvAsset = true;
+								if (!hitInst.locked) {
+									saveToHistory();
+									envAssetDragOffset = {
+										x: hitInst.position.x - mapPos.x,
+										y: hitInst.position.y - mapPos.y
+									};
+									envAssetDragOrigin = { x: hitInst.position.x, y: hitInst.position.y };
+									viewport.style.cursor = 'grabbing';
+								}
+								redrawAnnotations();
+							} else {
+								// Clicked empty space — deselect env asset
+								if (selectedEnvAssetInstanceId) {
+									selectedEnvAssetInstanceId = null;
+									redrawAnnotations();
+								}
+							}
+						}
+					}
+					// Check if clicking on a light for drag (only if no marker or env asset found)
+					const canInteractLights = config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'lights');
+					if (!foundMarker && !foundEnvAsset && canInteractLights && config.lightSources && config.lightSources.length > 0) {
 						const lightClickRadius = 15; // Radius for detecting light clicks
 						for (let i = config.lightSources.length - 1; i >= 0; i--) {
 							const light = config.lightSources[i];
@@ -11180,8 +11508,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 							}
 						}
 					}
-					// Check if clicking on a wall/door/window for drag (only if no marker or light found)
-					if (!foundMarker && draggingLightIndex < 0 && config.walls && config.walls.length > 0) {
+					// Check if clicking on a wall/door/window for drag (only if no marker, env asset, or light found)
+					const canInteractWalls = config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'walls');
+					if (!foundMarker && !foundEnvAsset && draggingLightIndex < 0 && canInteractWalls && config.walls && config.walls.length > 0) {
 						const wallClickRadius = 12; // Radius for detecting wall clicks
 						for (let i = config.walls.length - 1; i >= 0; i--) {
 							const wall = config.walls[i];
@@ -11216,60 +11545,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 							}
 						}
 					}
-					// Check if clicking on an env asset for select / drag / transform
-					let foundEnvAsset = false;
-					if (!foundMarker && draggingLightIndex < 0 && draggingWallIndex < 0) {
-						// First, if an env asset is already selected, check transform handles
-						if (selectedEnvAssetInstanceId) {
-							const selInst = (config.envAssets || []).find((a: EnvAssetInstance) => a.id === selectedEnvAssetInstanceId);
-							if (selInst && !selInst.locked) {
-								const handle = hitTestTransformHandle(mapPos.x, mapPos.y, selInst);
-								if (handle) {
-									saveToHistory();
-									envAssetTransformHandle = handle;
-									envAssetTransformStart = {
-										x: selInst.position.x,
-										y: selInst.position.y,
-										w: selInst.width,
-										h: selInst.height,
-										rot: selInst.rotation || 0
-									};
-									if (handle === 'rotate') {
-										envAssetRotateStart = Math.atan2(mapPos.y - selInst.position.y, mapPos.x - selInst.position.x);
-									}
-									viewport.style.cursor = handle === 'rotate' ? 'grab' : 'nwse-resize';
-									foundEnvAsset = true;
-									e.preventDefault();
-								}
-							}
-						}
-						// Then check if clicking on an env asset body
-						if (!foundEnvAsset) {
-							const hitInst = findEnvAssetAtPoint(mapPos.x, mapPos.y);
-							if (hitInst) {
-								selectedEnvAssetInstanceId = hitInst.id;
-								foundEnvAsset = true;
-								if (!hitInst.locked) {
-									saveToHistory();
-									envAssetDragOffset = {
-										x: hitInst.position.x - mapPos.x,
-										y: hitInst.position.y - mapPos.y
-									};
-									envAssetDragOrigin = { x: hitInst.position.x, y: hitInst.position.y };
-									viewport.style.cursor = 'grabbing';
-								}
-								redrawAnnotations();
-							} else {
-								// Clicked empty space — deselect env asset
-								if (selectedEnvAssetInstanceId) {
-									selectedEnvAssetInstanceId = null;
-									redrawAnnotations();
-								}
-							}
-						}
-					}
-					// If nothing was clicked, start a wall selection rectangle
-					if (!foundMarker && draggingLightIndex < 0 && draggingWallIndex < 0 && !foundEnvAsset) {
+					// If nothing was clicked, start a wall selection rectangle (only in walls view)
+					if (!foundMarker && !foundEnvAsset && draggingLightIndex < 0 && draggingWallIndex < 0 && canInteractWalls) {
 						wallSelectionRect = { startX: mapPos.x, startY: mapPos.y, endX: mapPos.x, endY: mapPos.y };
 						selectedWallIndices = [];
 						viewport.style.cursor = 'crosshair';
@@ -11524,7 +11801,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 								if (handle === 'rotate') {
 									envAssetRotateStart = Math.atan2(mapPos.y - selInst.position.y, mapPos.x - selInst.position.x);
 								}
-								viewport.style.cursor = handle === 'rotate' ? 'grab' : 'nwse-resize';
+								if (handle === 'pivot' && selInst.doorConfig) {
+									if (!selInst.doorConfig.customPivot) selInst.doorConfig.customPivot = { x: 0, y: 0.5 };
+								}
+								viewport.style.cursor = handle === 'rotate' ? 'grab' : handle === 'pivot' ? 'move' : 'nwse-resize';
 								e.preventDefault();
 								return;
 							}
@@ -11566,6 +11846,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 							// Inherit category-specific config from definition
 							if (assetDef.category === 'door' && assetDef.doorConfig) {
 								newInst.doorConfig = JSON.parse(JSON.stringify(assetDef.doorConfig));
+								// Migrate legacy behaviours
+								const dc = newInst.doorConfig!;
+								if (dc.behaviour === 'normal' || dc.behaviour === 'custom-pivot') {
+									if (dc.behaviour === 'normal' && !dc.customPivot) {
+										dc.customPivot = dc.pivotEdge === 'right' ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 };
+									}
+									dc.behaviour = 'pivot';
+								}
+								if (dc.behaviour !== 'sliding' && !dc.customPivot) {
+									dc.customPivot = { x: 0, y: 0.5 };
+								}
 							}
 							if (assetDef.category === 'scatter' && assetDef.scatterConfig) {
 								newInst.scatterConfig = JSON.parse(JSON.stringify(assetDef.scatterConfig));
@@ -12221,6 +12512,20 @@ export default class DndCampaignHubPlugin extends Plugin {
 							const angle = Math.atan2(mapPos.y - inst.position.y, mapPos.x - inst.position.x);
 							const delta = (angle - envAssetRotateStart) * 180 / Math.PI;
 							inst.rotation = ((envAssetTransformStart.rot + delta) % 360 + 360) % 360;
+							redrawAnnotations();
+						} else if (envAssetTransformHandle === 'pivot' && inst.doorConfig) {
+							// Drag pivot handle: convert mouse to local normalised coords
+							const dxP = mapPos.x - inst.position.x;
+							const dyP = mapPos.y - inst.position.y;
+							const radP = -(inst.rotation || 0) * Math.PI / 180;
+							const localX = dxP * Math.cos(radP) - dyP * Math.sin(radP);
+							const localY = dxP * Math.sin(radP) + dyP * Math.cos(radP);
+							// Normalise to 0–1 and clamp within the asset bounds
+							const nx = Math.max(0, Math.min(1, (localX / inst.width) + 0.5));
+							const ny = Math.max(0, Math.min(1, (localY / inst.height) + 0.5));
+							if (!inst.doorConfig.customPivot) inst.doorConfig.customPivot = { x: 0, y: 0.5 };
+							inst.doorConfig.customPivot.x = nx;
+							inst.doorConfig.customPivot.y = ny;
 							redrawAnnotations();
 						} else if (envAssetTransformHandle && envAssetTransformStart) {
 							// Anchored-edge resize: the opposite edge stays fixed
@@ -13126,7 +13431,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 				};
 				
 				// ── Env Asset context menu (check before markers) ──
-				if (activeTool === 'env-asset' || activeTool === 'select') {
+				// Only available on Background layer with matching view
+				if ((activeTool === 'env-asset' || activeTool === 'select') &&
+					config.activeLayer === 'Background' &&
+					(backgroundEditView === 'all' || backgroundEditView === 'env-assets')) {
 					const hitEnvAsset = findEnvAssetAtPoint(mapPos.x, mapPos.y);
 					if (hitEnvAsset) {
 						e.preventDefault();
@@ -13983,8 +14291,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					}
 				}
 				
-				// Check if right-clicking on a light source
-				if (config.lightSources && config.lightSources.length > 0) {
+				// Check if right-clicking on a light source (only in lights view)
+				if (config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'lights') && config.lightSources && config.lightSources.length > 0) {
 					const lightClickRadius = 15;
 					for (let i = config.lightSources.length - 1; i >= 0; i--) {
 						const light = config.lightSources[i];
@@ -14179,8 +14487,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 					}
 				}
 				
-				// Check if right-clicking on a wall segment
-				if (config.walls && config.walls.length > 0) {
+				// Check if right-clicking on a wall segment (only in walls view)
+				if (config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'walls') && config.walls && config.walls.length > 0) {
 					const wallClickRadius = 10;
 					for (let i = config.walls.length - 1; i >= 0; i--) {
 						const wall = config.walls[i];
@@ -34644,8 +34952,8 @@ class PlayerMapView extends ItemView {
       // we only need the explicit check when fog is OFF.
       // Filter walls the same way drawFogOfWar does: open doors, windows,
       // and terrain don't block line of sight.
-      if (!hasFog && config.walls && config.walls.length > 0 && visionRelevantTokens.length > 0) {
-        const sightBlockingWalls = config.walls.filter((wall: any) => {
+      if (!hasFog && ((config.walls && config.walls.length > 0) || (config.envAssets && config.envAssets.length > 0)) && visionRelevantTokens.length > 0) {
+        const sightBlockingWalls = (config.walls || []).filter((wall: any) => {
           const type = wall.type || 'wall';
           if ((type === 'door' || type === 'secret') && wall.open) return false;
           if (type === 'window') return false;
@@ -34654,28 +34962,72 @@ class PlayerMapView extends ItemView {
         });
         // Add env asset vision-blocking walls
         if (config.envAssets && config.envAssets.length > 0) {
-          for (const inst of config.envAssets) {
-            let shouldBlock = false;
-            if (inst.doorConfig && !inst.doorConfig.isOpen) shouldBlock = true;
-            if (inst.scatterConfig && inst.scatterConfig.blocksVision) shouldBlock = true;
-            if (!shouldBlock) continue;
-            const cx = inst.position.x;
-            const cy = inst.position.y;
-            const hw = inst.width / 2;
-            const hh = inst.height / 2;
-            const rad = (inst.rotation || 0) * Math.PI / 180;
-            const cosR = Math.cos(rad);
-            const sinR = Math.sin(rad);
-            const corners = [
-              { x: cx + (-hw) * cosR - (-hh) * sinR, y: cy + (-hw) * sinR + (-hh) * cosR },
-              { x: cx + ( hw) * cosR - (-hh) * sinR, y: cy + ( hw) * sinR + (-hh) * cosR },
-              { x: cx + ( hw) * cosR - ( hh) * sinR, y: cy + ( hw) * sinR + ( hh) * cosR },
-              { x: cx + (-hw) * cosR - ( hh) * sinR, y: cy + (-hw) * sinR + ( hh) * cosR },
-            ];
-            for (let ei = 0; ei < 4; ei++) {
-              const s = corners[ei]!;
-              const e = corners[(ei + 1) % 4]!;
-              sightBlockingWalls.push({ type: 'wall', start: s, end: e, open: false });
+          for (const inst of config.envAssets as EnvAssetInstance[]) {
+            // ── Doors: single wall segment across the door width ──
+            if (inst.doorConfig) {
+              const def = this.plugin.envAssetLibrary.getAsset(inst.assetId);
+              if (def && def.category === 'door') {
+                // Open sliding doors don't block – the doorway is clear
+                if (inst.doorConfig.isOpen && inst.doorConfig.behaviour === 'sliding') continue;
+                const pad = 2;
+                const useW = inst.width >= inst.height;
+                const halfSpan = (useW ? inst.width : inst.height) / 2 - pad;
+                let p1x = useW ? -halfSpan : 0, p1y = useW ? 0 : -halfSpan, p2x = useW ? halfSpan : 0, p2y = useW ? 0 : halfSpan;
+                const dc = inst.doorConfig;
+                // Apply door open transform (pivot rotation or slide offset)
+                if (dc.isOpen) {
+                  if (dc.behaviour !== 'sliding' && dc.openAngle) {
+                    const pivot = dc.customPivot || { x: 0, y: 0.5 };
+                    const pvX = (pivot.x - 0.5) * inst.width;
+                    const pvY = (pivot.y - 0.5) * inst.height;
+                    const a = (dc.openAngle || 0) * Math.PI / 180;
+                    const cosA = Math.cos(a), sinA = Math.sin(a);
+                    let rx = p1x - pvX, ry = p1y - pvY;
+                    p1x = pvX + rx * cosA - ry * sinA;
+                    p1y = pvY + rx * sinA + ry * cosA;
+                    rx = p2x - pvX; ry = p2y - pvY;
+                    p2x = pvX + rx * cosA - ry * sinA;
+                    p2y = pvY + rx * sinA + ry * cosA;
+                  }
+                  if (dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
+                    const sp0 = dc.slidePath[0]!;
+                    const sp1 = dc.slidePath[dc.slidePath.length - 1]!;
+                    const t = dc.slidePosition;
+                    p1x += (sp1.x - sp0.x) * t; p1y += (sp1.y - sp0.y) * t;
+                    p2x += (sp1.x - sp0.x) * t; p2y += (sp1.y - sp0.y) * t;
+                  }
+                }
+                const rad = (inst.rotation || 0) * Math.PI / 180;
+                const cosR = Math.cos(rad), sinR = Math.sin(rad);
+                sightBlockingWalls.push({
+                  type: 'wall',
+                  start: { x: inst.position.x + p1x * cosR - p1y * sinR, y: inst.position.y + p1x * sinR + p1y * cosR },
+                  end:   { x: inst.position.x + p2x * cosR - p2y * sinR, y: inst.position.y + p2x * sinR + p2y * cosR },
+                  open: false,
+                });
+                continue;
+              }
+            }
+            // ── Scatter: 4-edge bounding box ──
+            if (inst.scatterConfig && inst.scatterConfig.blocksVision) {
+              const cx = inst.position.x;
+              const cy = inst.position.y;
+              const hw = inst.width / 2;
+              const hh = inst.height / 2;
+              const rad = (inst.rotation || 0) * Math.PI / 180;
+              const cosR = Math.cos(rad);
+              const sinR = Math.sin(rad);
+              const corners = [
+                { x: cx + (-hw) * cosR - (-hh) * sinR, y: cy + (-hw) * sinR + (-hh) * cosR },
+                { x: cx + ( hw) * cosR - (-hh) * sinR, y: cy + ( hw) * sinR + (-hh) * cosR },
+                { x: cx + ( hw) * cosR - ( hh) * sinR, y: cy + ( hw) * sinR + ( hh) * cosR },
+                { x: cx + (-hw) * cosR - ( hh) * sinR, y: cy + (-hw) * sinR + ( hh) * cosR },
+              ];
+              for (let ei = 0; ei < 4; ei++) {
+                const s = corners[ei]!;
+                const e = corners[(ei + 1) % 4]!;
+                sightBlockingWalls.push({ type: 'wall', start: s, end: e, open: false });
+              }
             }
           }
         }
@@ -34715,7 +35067,7 @@ class PlayerMapView extends ItemView {
     if (hasFogGlobal) {
       console.log('[PV] Drawing fog of war with lights');
       this.drawFogOfWar(ctx, this.canvas!.width, this.canvas!.height, config);
-    } else if (((config.walls && config.walls.length > 0) || (config.envAssets && config.envAssets.some((a: any) => (a.doorConfig && !a.doorConfig.isOpen) || (a.scatterConfig && a.scatterConfig.blocksVision)))) && visionRelevantTokens.length > 0) {
+    } else if (((config.walls && config.walls.length > 0) || (config.envAssets && config.envAssets.some((a: any) => (a.doorConfig && (!a.doorConfig.isOpen || a.doorConfig.behaviour !== 'sliding')) || (a.scatterConfig && a.scatterConfig.blocksVision)))) && visionRelevantTokens.length > 0) {
       // No fog of war, but walls exist — draw wall-occlusion overlay.
       // In daylight, players can see infinitely far EXCEPT through walls.
       // Areas behind walls are darkened so the DM's hidden content stays hidden.
@@ -36337,46 +36689,92 @@ class PlayerMapView extends ItemView {
     const envAssetWalls: any[] = [];
     if (config.envAssets && config.envAssets.length > 0) {
       for (const inst of config.envAssets) {
-        let shouldBlock = false;
-        let wallHeight = 10;
-        // Doors block vision when closed
-        if (inst.doorConfig && !inst.doorConfig.isOpen) {
-          shouldBlock = true;
-          wallHeight = inst.doorConfig.wallHeight || 10;
-        }
-        // Scatter blocks vision if configured
-        if (inst.scatterConfig && inst.scatterConfig.blocksVision) {
-          shouldBlock = true;
-          wallHeight = inst.scatterConfig.wallHeight || 10;
-        }
-        if (!shouldBlock) continue;
+        // ── Doors: single wall segment across the door width (moves with open state) ──
+        if (inst.doorConfig) {
+          const def = this.plugin.envAssetLibrary.getAsset(inst.assetId);
+          if (!def || def.category !== 'door') continue;
 
-        // Generate wall segments along the edges of the rotated bounding box
-        const cx = inst.position.x;
-        const cy = inst.position.y;
-        const hw = inst.width / 2;
-        const hh = inst.height / 2;
-        const rad = (inst.rotation || 0) * Math.PI / 180;
-        const cosR = Math.cos(rad);
-        const sinR = Math.sin(rad);
-        // Four corners (rotated)
-        const corners = [
-          { x: cx + (-hw) * cosR - (-hh) * sinR, y: cy + (-hw) * sinR + (-hh) * cosR }, // top-left
-          { x: cx + ( hw) * cosR - (-hh) * sinR, y: cy + ( hw) * sinR + (-hh) * cosR }, // top-right
-          { x: cx + ( hw) * cosR - ( hh) * sinR, y: cy + ( hw) * sinR + ( hh) * cosR }, // bottom-right
-          { x: cx + (-hw) * cosR - ( hh) * sinR, y: cy + (-hw) * sinR + ( hh) * cosR }, // bottom-left
-        ];
-        for (let i = 0; i < 4; i++) {
-          const s = corners[i]!;
-          const e = corners[(i + 1) % 4]!;
+          // Open sliding doors don't block – the doorway is clear
+          if (inst.doorConfig.isOpen && inst.doorConfig.behaviour === 'sliding') continue;
+
+          const pad = 2;
+          const useW = inst.width >= inst.height;
+          const halfSpan = (useW ? inst.width : inst.height) / 2 - pad;
+          let p1x = useW ? -halfSpan : 0, p1y = useW ? 0 : -halfSpan;
+          let p2x = useW ?  halfSpan : 0, p2y = useW ? 0 :  halfSpan;
+          const dc = inst.doorConfig;
+
+          // Apply door open transform (pivot rotation or slide offset)
+          if (dc.isOpen) {
+            if (dc.behaviour !== 'sliding' && dc.openAngle) {
+              const pivot = dc.customPivot || { x: 0, y: 0.5 };
+              const pvX = (pivot.x - 0.5) * inst.width;
+              const pvY = (pivot.y - 0.5) * inst.height;
+              const a = (dc.openAngle || 0) * Math.PI / 180;
+              const cosA = Math.cos(a), sinA = Math.sin(a);
+              let rx = p1x - pvX, ry = p1y - pvY;
+              p1x = pvX + rx * cosA - ry * sinA;
+              p1y = pvY + rx * sinA + ry * cosA;
+              rx = p2x - pvX; ry = p2y - pvY;
+              p2x = pvX + rx * cosA - ry * sinA;
+              p2y = pvY + rx * sinA + ry * cosA;
+            }
+            if (dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
+              const sp0 = dc.slidePath[0]!;
+              const sp1 = dc.slidePath[dc.slidePath.length - 1]!;
+              const t = dc.slidePosition;
+              p1x += (sp1.x - sp0.x) * t; p1y += (sp1.y - sp0.y) * t;
+              p2x += (sp1.x - sp0.x) * t; p2y += (sp1.y - sp0.y) * t;
+            }
+          }
+
+          const rad = (inst.rotation || 0) * Math.PI / 180;
+          const cosR = Math.cos(rad), sinR = Math.sin(rad);
           envAssetWalls.push({
-            id: `env_wall_${inst.id}_${i}`,
+            id: `door_wall_${inst.id}`,
             type: 'wall',
-            start: { x: s.x, y: s.y },
-            end: { x: e.x, y: e.y },
-            height: wallHeight,
-            open: false
+            start: {
+              x: inst.position.x + p1x * cosR - p1y * sinR,
+              y: inst.position.y + p1x * sinR + p1y * cosR,
+            },
+            end: {
+              x: inst.position.x + p2x * cosR - p2y * sinR,
+              y: inst.position.y + p2x * sinR + p2y * cosR,
+            },
+            height: dc.wallHeight || 10,
+            open: false,
           });
+          continue;
+        }
+
+        // ── Scatter: 4-edge bounding box (existing behaviour) ──
+        if (inst.scatterConfig && inst.scatterConfig.blocksVision) {
+          const wallHeight = inst.scatterConfig.wallHeight || 10;
+          const cx = inst.position.x;
+          const cy = inst.position.y;
+          const hw = inst.width / 2;
+          const hh = inst.height / 2;
+          const rad = (inst.rotation || 0) * Math.PI / 180;
+          const cosR = Math.cos(rad);
+          const sinR = Math.sin(rad);
+          const corners = [
+            { x: cx + (-hw) * cosR - (-hh) * sinR, y: cy + (-hw) * sinR + (-hh) * cosR },
+            { x: cx + ( hw) * cosR - (-hh) * sinR, y: cy + ( hw) * sinR + (-hh) * cosR },
+            { x: cx + ( hw) * cosR - ( hh) * sinR, y: cy + ( hw) * sinR + ( hh) * cosR },
+            { x: cx + (-hw) * cosR - ( hh) * sinR, y: cy + (-hw) * sinR + ( hh) * cosR },
+          ];
+          for (let i = 0; i < 4; i++) {
+            const s = corners[i]!;
+            const e = corners[(i + 1) % 4]!;
+            envAssetWalls.push({
+              id: `env_wall_${inst.id}_${i}`,
+              type: 'wall',
+              start: { x: s.x, y: s.y },
+              end: { x: e.x, y: e.y },
+              height: wallHeight,
+              open: false,
+            });
+          }
         }
       }
     }
@@ -36577,6 +36975,54 @@ class PlayerMapView extends ItemView {
       }
       return true;
     });
+
+    // Add door-wall segments from env-asset doors
+    if (config.envAssets && config.envAssets.length > 0) {
+      for (const inst of config.envAssets as EnvAssetInstance[]) {
+        if (!inst.doorConfig) continue;
+        const def = this.plugin.envAssetLibrary.getAsset(inst.assetId);
+        if (!def || def.category !== 'door') continue;
+        // Open sliding doors don't block – the doorway is clear
+        if (inst.doorConfig.isOpen && inst.doorConfig.behaviour === 'sliding') continue;
+        const pad = 2;
+        const useW = inst.width >= inst.height;
+        const halfSpan = (useW ? inst.width : inst.height) / 2 - pad;
+        let p1x = useW ? -halfSpan : 0, p1y = useW ? 0 : -halfSpan, p2x = useW ? halfSpan : 0, p2y = useW ? 0 : halfSpan;
+        // Apply door open transform (pivot rotation or slide offset)
+        const dc = inst.doorConfig;
+        if (dc.isOpen) {
+          if (dc.behaviour !== 'sliding' && dc.openAngle) {
+            const pivot = dc.customPivot || { x: 0, y: 0.5 };
+            const pvX = (pivot.x - 0.5) * inst.width;
+            const pvY = (pivot.y - 0.5) * inst.height;
+            const a = (dc.openAngle || 0) * Math.PI / 180;
+            const cosA = Math.cos(a), sinA = Math.sin(a);
+            let rx = p1x - pvX, ry = p1y - pvY;
+            p1x = pvX + rx * cosA - ry * sinA;
+            p1y = pvY + rx * sinA + ry * cosA;
+            rx = p2x - pvX; ry = p2y - pvY;
+            p2x = pvX + rx * cosA - ry * sinA;
+            p2y = pvY + rx * sinA + ry * cosA;
+          }
+          if (dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
+            const sp0 = dc.slidePath[0]!;
+            const sp1 = dc.slidePath[dc.slidePath.length - 1]!;
+            const t = dc.slidePosition;
+            p1x += (sp1.x - sp0.x) * t; p1y += (sp1.y - sp0.y) * t;
+            p2x += (sp1.x - sp0.x) * t; p2y += (sp1.y - sp0.y) * t;
+          }
+        }
+        const rad = (inst.rotation || 0) * Math.PI / 180;
+        const cosR = Math.cos(rad), sinR = Math.sin(rad);
+        walls.push({
+          id: `door_wall_${inst.id}`,
+          type: 'wall',
+          start: { x: inst.position.x + p1x * cosR - p1y * sinR, y: inst.position.y + p1x * sinR + p1y * cosR },
+          end:   { x: inst.position.x + p2x * cosR - p2y * sinR, y: inst.position.y + p2x * sinR + p2y * cosR },
+          open: false,
+        });
+      }
+    }
     
     // Create player NORMAL VISION mask - union of all player vision cones
     // Normal vision allows players to see lights from any distance (only blocked by walls)
