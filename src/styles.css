@@ -9255,3 +9255,132 @@
   padding: 40px 20px;
   font-size: 14px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GM MAP SIDE PANEL
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Side Panel Button (📌) — positioned left of Player View button */
+.dnd-map-side-panel-btn {
+  position: absolute;
+  top: 10px;
+  right: 190px;
+  background: linear-gradient(135deg, rgba(30, 27, 75, 0.95), rgba(25, 20, 55, 0.95));
+  backdrop-filter: blur(12px);
+  color: white;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 1002;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4),
+              0 1px 4px rgba(0, 0, 0, 0.2),
+              inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1;
+}
+
+.dnd-map-side-panel-btn:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.6), rgba(37, 99, 235, 0.6));
+  border-color: rgba(59, 130, 246, 0.8);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4),
+              0 2px 8px rgba(0, 0, 0, 0.3);
+  transform: translateY(-1px);
+}
+
+.dnd-map-side-panel-btn:active {
+  transform: none;
+}
+
+/* Inline Placeholder (shown when map is open in side panel) */
+.dnd-map-inline-placeholder-active {
+  min-height: 120px !important;
+  max-height: 120px !important;
+  overflow: hidden;
+}
+
+.dnd-map-inline-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  background: linear-gradient(135deg,
+    var(--background-secondary) 0%,
+    var(--background-primary) 100%);
+  border: 2px dashed var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 24px;
+}
+
+.dnd-map-placeholder-content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+}
+
+.dnd-map-placeholder-icon {
+  font-size: 24px;
+}
+
+.dnd-map-placeholder-text {
+  font-size: 13px;
+  font-style: italic;
+}
+
+.dnd-map-placeholder-focus-btn,
+.dnd-map-placeholder-restore-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.dnd-map-placeholder-focus-btn {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.dnd-map-placeholder-focus-btn:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.dnd-map-placeholder-restore-btn {
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+
+.dnd-map-placeholder-restore-btn:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+
+/* GM Map Side Leaf Container — fill the entire leaf */
+.dnd-gm-map-container {
+  height: 100%;
+  overflow: hidden;
+  padding: 0;
+}
+
+.dnd-gm-map-container .dnd-map-viewer {
+  height: 100%;
+}
+
+.dnd-gm-map-container .dnd-map-viewport {
+  height: 100%;
+}
+
+/* In side-leaf mode, hide the side-panel button itself (already in panel) */
+.dnd-map-side-leaf .dnd-map-side-panel-btn {
+  display: none;
+}

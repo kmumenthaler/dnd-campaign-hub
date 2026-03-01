@@ -3156,6 +3156,7 @@ const SESSION_PREP_VIEW_TYPE = "session-prep-dashboard";
 const SESSION_RUN_VIEW_TYPE = "session-run-dashboard";
 const DM_SCREEN_VIEW_TYPE = "dm-screen";
 const PLAYER_MAP_VIEW_TYPE = "dnd-player-map-view";
+const GM_MAP_VIEW_TYPE = "dnd-gm-map-view";
 
 /**
  * A media element (image or video) that exposes image-compatible dimension properties.
@@ -3183,6 +3184,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   private _musicStatusBarEl: HTMLElement | null = null;
   private _musicStatusBarCleanup: (() => void) | null = null;
   _playerMapViews: Set<PlayerMapView> = new Set();
+  _gmMapViews: Set<GmMapView> = new Set();
   _hexcrawlBridge: HexcrawlBridge | null = null;
 
   async onload() {
@@ -3226,6 +3228,16 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.registerView(
       MUSIC_PLAYER_VIEW_TYPE,
       (leaf) => new MusicPlayerLeafView(leaf, this)
+    );
+
+    // Register the GM Map View (side panel for interactive map editing)
+    this.registerView(
+      GM_MAP_VIEW_TYPE,
+      (leaf) => {
+        const view = new GmMapView(leaf, this);
+        this._gmMapViews.add(view);
+        return view;
+      }
     );
 
     // Initialize the encounter builder
@@ -4352,6 +4364,13 @@ export default class DndCampaignHubPlugin extends Plugin {
         try { pv.leaf?.detach(); } catch (e) { /* ignore */ }
       });
       this._playerMapViews.clear();
+    }
+    // Close all GM map side leaves
+    if (this._gmMapViews) {
+      this._gmMapViews.forEach((gv: any) => {
+        try { gv.leaf?.detach(); } catch (e) { /* ignore */ }
+      });
+      this._gmMapViews.clear();
     }
   }
 
@@ -7890,6 +7909,89 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}, 200);
 			
 			new Notice('Player view opened');
+		});
+
+		// Add "Open in Side Panel" button (top right, left of Player View)
+		const sidePanelBtn = viewport.createEl('button', {
+			cls: 'dnd-map-side-panel-btn',
+			attr: { title: 'Open Map in Side Panel' }
+		});
+		sidePanelBtn.innerHTML = '📌';
+
+		sidePanelBtn.addEventListener('click', async () => {
+			const mapId = config.mapId || resourcePath;
+			const sourceConfig = JSON.stringify({ mapId: config.mapId });
+
+			// Check if already open in a side panel
+			const existingLeaves = this.app.workspace.getLeavesOfType(GM_MAP_VIEW_TYPE);
+			const existingGmLeaf = existingLeaves.find((leaf: any) => {
+				const view = leaf.view as GmMapView;
+				return view.getMapId() === mapId;
+			});
+
+			if (existingGmLeaf) {
+				// Already open — focus it
+				this.app.workspace.setActiveLeaf(existingGmLeaf);
+				new Notice('Map already open in side panel');
+				return;
+			}
+
+			// Open in a right split leaf
+			const rightLeaf = this.app.workspace.getLeaf('split', 'vertical');
+
+			await rightLeaf.setViewState({
+				type: GM_MAP_VIEW_TYPE,
+				active: true,
+				state: {
+					mapId: mapId,
+					notePath: ctx?.sourcePath || '',
+					sourceConfig: sourceConfig
+				}
+			});
+
+			// Update inline map with a compact placeholder
+			const viewer = el.querySelector('.dnd-map-viewer') as HTMLElement;
+			if (viewer) {
+				// Store original children for restoration
+				const originalChildren: Node[] = [];
+				viewer.childNodes.forEach(n => originalChildren.push(n));
+
+				// Clear and create placeholder
+				viewer.empty();
+				viewer.addClass('dnd-map-inline-placeholder-active');
+
+				const placeholder = viewer.createDiv({ cls: 'dnd-map-inline-placeholder' });
+				const content = placeholder.createDiv({ cls: 'dnd-map-placeholder-content' });
+				content.createSpan({ cls: 'dnd-map-placeholder-icon', text: '📌' });
+				content.createSpan({ cls: 'dnd-map-placeholder-text', text: `"${config.name || 'Map'}" is open in side panel` });
+
+				const focusBtn = content.createEl('button', {
+					cls: 'dnd-map-placeholder-focus-btn',
+					text: 'Focus Map'
+				});
+				focusBtn.addEventListener('click', () => {
+					const leaves = this.app.workspace.getLeavesOfType(GM_MAP_VIEW_TYPE);
+					const targetLeaf = leaves.find((l: any) => (l.view as GmMapView).getMapId() === mapId);
+					if (targetLeaf) this.app.workspace.setActiveLeaf(targetLeaf);
+				});
+
+				const restoreBtn = content.createEl('button', {
+					cls: 'dnd-map-placeholder-restore-btn',
+					text: 'Restore Inline'
+				});
+				restoreBtn.addEventListener('click', () => {
+					// Close the side leaf
+					const leaves = this.app.workspace.getLeavesOfType(GM_MAP_VIEW_TYPE);
+					const targetLeaf = leaves.find((l: any) => (l.view as GmMapView).getMapId() === mapId);
+					if (targetLeaf) targetLeaf.detach();
+					// Restore original inline content
+					viewer.empty();
+					viewer.removeClass('dnd-map-inline-placeholder-active');
+					originalChildren.forEach(n => viewer.appendChild(n));
+				});
+			}
+
+			new Notice('Map opened in side panel');
 		});
 
 		// State for zoom and pan
@@ -34348,6 +34450,110 @@ class TabletopCalibrationModal extends Modal {
 
   onClose() {
     this.contentEl.empty();
+  }
+}
+
+/**
+ * GmMapView - Renders the full interactive GM battle map in a workspace leaf.
+ * Allows the GM to keep the map visible in a side panel while scrolling
+ * through notes in the main editor. Delegates to the existing renderMapView()
+ * method to reuse all map editing functionality.
+ */
+class GmMapView extends ItemView {
+  plugin: DndCampaignHubPlugin;
+  private mapId: string = '';
+  private notePath: string = '';
+  private sourceConfig: string = '';
+  private mapContainer: HTMLElement | null = null;
+
+  constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
+    super(leaf);
+    this.plugin = plugin;
+  }
+
+  getViewType(): string {
+    return GM_MAP_VIEW_TYPE;
+  }
+
+  getDisplayText(): string {
+    return `GM Map${this.mapId ? ` — ${this.mapId}` : ''}`;
+  }
+
+  getIcon(): string {
+    return "map";
+  }
+
+  getMapId(): string {
+    return this.mapId;
+  }
+
+  async setState(state: any, result: any) {
+    if (state.mapId) this.mapId = state.mapId;
+    if (state.notePath) this.notePath = state.notePath;
+    if (state.sourceConfig) this.sourceConfig = state.sourceConfig;
+    await super.setState(state, result);
+    if (this.mapId && this.sourceConfig) {
+      await this.renderMap();
+    }
+  }
+
+  getState() {
+    return {
+      mapId: this.mapId,
+      notePath: this.notePath,
+      sourceConfig: this.sourceConfig
+    };
+  }
+
+  async onOpen() {
+    const container = this.containerEl.children[1] as HTMLElement;
+    container.empty();
+    container.addClass('dnd-gm-map-container');
+    this.mapContainer = container;
+
+    if (this.mapId && this.sourceConfig) {
+      await this.renderMap();
+    }
+  }
+
+  private async renderMap() {
+    if (!this.mapContainer) return;
+    this.mapContainer.empty();
+
+    // Build a minimal MarkdownPostProcessorContext shim
+    const ctx = {
+      sourcePath: this.notePath || '',
+      getSectionInfo: () => null,
+      addChild: (_child: any) => {},
+      frontmatter: undefined
+    };
+
+    // Render the full interactive GM map into this leaf's container
+    await this.plugin.renderMapView(this.sourceConfig, this.mapContainer, ctx as any);
+
+    // Mark this container for side-leaf-specific CSS tweaks
+    this.mapContainer.addClass('dnd-map-side-leaf');
+
+    // Try to get a friendlier display name from the rendered map config
+    try {
+      const parsed = JSON.parse(this.sourceConfig);
+      if (parsed.mapId) {
+        const savedData = await this.plugin.loadMapAnnotations(parsed.mapId);
+        if (savedData?.name) {
+          this.mapId = parsed.mapId;
+          // Update the leaf header title
+          (this.leaf as any).tabHeaderInnerTitleEl?.setText?.(`GM Map — ${savedData.name}`);
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  async onClose() {
+    // Remove from tracking set
+    if (this.plugin._gmMapViews) {
+      this.plugin._gmMapViews.delete(this);
+    }
+    this.mapContainer = null;
   }
 }
 
