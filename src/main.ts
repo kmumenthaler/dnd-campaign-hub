@@ -31231,13 +31231,13 @@ class CreatureCreationModal extends Modal {
     // Import section
     contentEl.createEl("h3", { text: "Import from Text" });
     contentEl.createEl("p", { 
-      text: "Paste a D&D Beyond or similar statblock below to auto-fill the form:",
+      text: "Paste a statblock below to auto-fill the form. Supports both 2014 (D&D Beyond classic) and 2024 (new Monster Manual) formats:",
       cls: "setting-item-description"
     });
 
     const importContainer = contentEl.createDiv({ cls: "creature-import-container" });
     const importTextArea = importContainer.createEl("textarea", {
-      placeholder: "Paste creature statblock here (e.g., from D&D Beyond)...",
+      placeholder: "Paste creature statblock here (supports 2014 & 2024 formats)...",
       attr: { rows: "8", style: "width: 100%; margin-bottom: 10px;" }
     });
 
@@ -31628,8 +31628,166 @@ class CreatureCreationModal extends Modal {
       return;
     }
 
-    // Extract creature name (first line)
     const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+    // ── Detect 2024 vs legacy format ──
+    // 2024 uses "AC <num>" and "HP <num>" instead of "Armor Class <num>" and "Hit Points <num>"
+    const is2024 = /^AC\s+\d+/m.test(text) || /^HP\s+\d+/m.test(text) || /^CR\s+[\d/]+/m.test(text);
+
+    if (is2024) {
+      this.parse2024Statblock(text, lines);
+    } else {
+      this.parseLegacyStatblock(text, lines);
+    }
+
+    console.log("Parsed creature:", this.creatureName, is2024 ? "(2024 format)" : "(legacy format)");
+  }
+
+  /**
+   * Parse 2024-style statblock (e.g. 2024 Monster Manual / D&D Beyond 2024).
+   *
+   * Example format:
+   *   Poltergeist
+   *   Medium Or Small Undead, Chaotic Neutral
+   *   AC 12    Initiative +2 (12)
+   *   HP 22 (5d8)
+   *   Speed 5 ft., fly 50 ft. (hover)
+   *   Mod	Save
+   *   STR	1	-5	-5
+   *   DEX	14	+2	+2
+   *   ...
+   *   Resistances Acid, Cold, Fire, ...
+   *   Immunities Necrotic, Poison; Charmed, Exhaustion, ...
+   *   Senses Darkvision 60 ft., Passive Perception 10
+   *   Languages Common
+   *   CR 2 (XP 450; PB +2)
+   *   Traits
+   *   Incorporeal Movement. The poltergeist can move ...
+   *   Actions
+   *   Multiattack. ...
+   *   Bonus Actions
+   *   Vanish. ...
+   */
+  parse2024Statblock(text: string, lines: string[]) {
+    // ── Creature name (first line) ──
+    if (lines.length > 0 && lines[0]) {
+      this.creatureName = lines[0];
+    }
+
+    // ── Size, type, alignment ──
+    // 2024 may have multi-size like "Medium Or Small Undead, Chaotic Neutral"
+    const sizeTypeLine = text.match(/^((?:(?:Tiny|Small|Medium|Large|Huge|Gargantuan)\s*(?:Or\s+)?)+)\s+(.+?),\s*(.+)$/m);
+    if (sizeTypeLine && sizeTypeLine[1] && sizeTypeLine[2] && sizeTypeLine[3]) {
+      // Take the first listed size for the field (e.g. "Medium Or Small" → "Medium")
+      const sizeStr = sizeTypeLine[1].trim();
+      const firstSize = sizeStr.match(/^(Tiny|Small|Medium|Large|Huge|Gargantuan)/);
+      if (firstSize && firstSize[1]) this.size = firstSize[1] as any;
+      this.type = sizeTypeLine[2].trim();
+      this.alignment = sizeTypeLine[3].trim();
+    }
+
+    // ── AC (+ optional Initiative) ──
+    const acMatch = text.match(/^AC\s+(\d+)/m);
+    if (acMatch && acMatch[1]) this.ac = acMatch[1];
+
+    // ── HP and Hit Dice ──
+    const hpMatch = text.match(/^HP\s+(\d+)/m);
+    if (hpMatch && hpMatch[1]) this.hp = hpMatch[1];
+
+    const hitDiceMatch = text.match(/^HP\s+\d+\s+\(([^)]+)\)/m);
+    if (hitDiceMatch && hitDiceMatch[1]) this.hitDice = hitDiceMatch[1];
+
+    // ── Speed ──
+    const speedMatch = text.match(/^Speed\s+(.+)$/m);
+    if (speedMatch && speedMatch[1]) this.speed = speedMatch[1].trim();
+
+    // ── Ability scores & saves (2024 tabular format) ──
+    // Format: STR	1	-5	-5  (score, mod, save)
+    // or:     STR	10	+0	+0
+    const abilityPattern = /^(STR|DEX|CON|INT|WIS|CHA)\s+(\d+)\s+([+-]?\d+)\s+([+-]?\d+)/gm;
+    const abilityMods: Record<string, number> = {};
+    const abilitySaves: Record<string, number> = {};
+    let abilityMatch: RegExpExecArray | null;
+    while ((abilityMatch = abilityPattern.exec(text)) !== null) {
+      const ability = abilityMatch[1]?.toUpperCase();
+      const score = parseInt(abilityMatch[2] || '10');
+      const mod = parseInt(abilityMatch[3] || '0');
+      const save = parseInt(abilityMatch[4] || '0');
+      if (ability) {
+        switch (ability) {
+          case 'STR': this.str = score; break;
+          case 'DEX': this.dex = score; break;
+          case 'CON': this.con = score; break;
+          case 'INT': this.int = score; break;
+          case 'WIS': this.wis = score; break;
+          case 'CHA': this.cha = score; break;
+        }
+        abilityMods[ability] = mod;
+        abilitySaves[ability] = save;
+      }
+    }
+
+    // Derive saving throw proficiencies: save differs from mod → proficient
+    this.saves = [];
+    for (const [ability, save] of Object.entries(abilitySaves)) {
+      const mod = abilityMods[ability] ?? 0;
+      if (save !== mod) {
+        const sign = save >= 0 ? '+' : '';
+        this.saves.push(`${ability.charAt(0)}${ability.slice(1).toLowerCase()} ${sign}${save}`);
+      }
+    }
+
+    // ── Skills (2024 keeps same format as legacy) ──
+    const skillsMatch2024 = text.match(/^Skills\s+(.+)$/m);
+    if (skillsMatch2024 && skillsMatch2024[1]) {
+      this.skills = skillsMatch2024[1].trim().split(',').map(s => s.trim());
+    }
+
+    // ── Resistances (2024 uses "Resistances" without "Damage" prefix) ──
+    const resistMatch2024 = text.match(/^Resistances\s+(.+)$/m);
+    if (resistMatch2024 && resistMatch2024[1]) this.resistances = resistMatch2024[1].trim();
+
+    // ── Immunities (2024 combines damage & condition with semicolons) ──
+    // e.g. "Immunities Necrotic, Poison; Charmed, Exhaustion, Grappled, ..."
+    const immuneMatch2024 = text.match(/^Immunities\s+(.+)$/m);
+    if (immuneMatch2024 && immuneMatch2024[1]) {
+      const immuneStr = immuneMatch2024[1].trim();
+      const semiParts = immuneStr.split(';').map(s => s.trim());
+      if (semiParts.length >= 2) {
+        // First part = damage immunities, second part = condition immunities
+        this.immunities = semiParts[0] || '';
+        this.conditionImmunities = semiParts.slice(1).join('; ');
+      } else {
+        // No semicolons — try to heuristically split damage vs condition
+        this.immunities = immuneStr;
+      }
+    }
+
+    // ── Vulnerabilities ──
+    const vulnMatch2024 = text.match(/^Vulnerabilities\s+(.+)$/m);
+    if (vulnMatch2024 && vulnMatch2024[1]) this.vulnerabilities = vulnMatch2024[1].trim();
+
+    // ── Senses ──
+    const sensesMatch = text.match(/^Senses\s+(.+)$/m);
+    if (sensesMatch && sensesMatch[1]) this.senses = sensesMatch[1].trim();
+
+    // ── Languages ──
+    const langMatch = text.match(/^Languages\s+(.+)$/m);
+    if (langMatch && langMatch[1]) this.languages = langMatch[1].trim();
+
+    // ── CR (2024: "CR 2 (XP 450; PB +2)") ──
+    const crMatch = text.match(/^CR\s+([\d/]+)/m);
+    if (crMatch && crMatch[1]) this.cr = crMatch[1];
+
+    // ── Extract sections by header keywords ──
+    this.parseActionSections(text);
+  }
+
+  /**
+   * Parse legacy (2014 / D&D Beyond classic) statblock format.
+   */
+  parseLegacyStatblock(text: string, lines: string[]) {
+    // Extract creature name (first line)
     if (lines.length > 0 && lines[0]) {
       this.creatureName = lines[0];
     }
@@ -31713,50 +31871,107 @@ class CreatureCreationModal extends Modal {
     const crMatch = text.match(/Challenge\s+([\d/]+)/i);
     if (crMatch && crMatch[1]) this.cr = crMatch[1];
 
-    // Extract traits (features before Actions)
-    this.traits = [];
-    const actionsIndex = text.indexOf("Actions");
-    const traitsSection = actionsIndex > 0 ? text.substring(0, actionsIndex) : text;
+    // Extract traits and actions using shared section parser
+    this.parseActionSections(text);
+  }
+
+  /**
+   * Shared parser for traits, actions, bonus actions, reactions, and legendary actions.
+   * Works with both 2024 ("Traits" header) and legacy (traits after CR line) formats.
+   */
+  parseActionSections(text: string) {
+    // Define section headers (order matters — we split text by these)
+    const sectionHeaders = ['Traits', 'Actions', 'Bonus Actions', 'Reactions', 'Legendary Actions'];
     
-    // Look for trait patterns after CR line
-    const crIndex = text.indexOf("Challenge");
-    if (crIndex > 0) {
-      const traitsText = traitsSection.substring(crIndex);
-      const traitMatches = traitsText.matchAll(/^([A-Z][^\.]+?)\.\s+(.+?)(?=\n\n|\n[A-Z][^\.]+?\.|Actions|$)/gms);
-      
-      for (const match of traitMatches) {
-        if (match[1] && match[2]) {
-          const name = match[1].trim();
-          const desc = match[2].trim();
-          if (name && desc && !name.startsWith("Challenge") && !name.startsWith("Proficiency")) {
-            this.traits.push({ name, desc });
-          }
+    // Build a map of section start indices
+    const sections: Array<{ name: string; start: number }> = [];
+    for (const header of sectionHeaders) {
+      // Match header at start of a line (exact word boundary)
+      const headerRegex = new RegExp(`^${header}\\s*$`, 'm');
+      const match = headerRegex.exec(text);
+      if (match) {
+        sections.push({ name: header, start: match.index });
+      }
+    }
+    // Sort by position in text
+    sections.sort((a, b) => a.start - b.start);
+
+    // Extract each section's content
+    const getSectionContent = (sectionName: string): string => {
+      const idx = sections.findIndex(s => s.name === sectionName);
+      if (idx < 0) return '';
+      const sectionStart = sections[idx]!.start;
+      const sectionEnd = idx + 1 < sections.length ? sections[idx + 1]!.start : text.length;
+      // Strip the header line itself
+      return text.substring(sectionStart, sectionEnd).replace(new RegExp(`^${sectionName}\\s*\\n`, 'i'), '').trim();
+    };
+
+    // Helper: parse "Name. Description..." patterns from a section.
+    // Uses a two-pass approach: first find all entry start positions, then
+    // extract each entry's description up to the next entry (or end of section).
+    const parseEntries = (sectionText: string): Array<{ name: string; desc: string }> => {
+      if (!sectionText) return [];
+      const entries: Array<{ name: string; desc: string }> = [];
+
+      // Find all entry start positions: "Name. " at start of line
+      const entryStarts: Array<{ index: number; name: string; descStart: number }> = [];
+      const startPattern = /^([A-Z][^\n.]+?)\.\s+/gm;
+      let sm: RegExpExecArray | null;
+      while ((sm = startPattern.exec(sectionText)) !== null) {
+        entryStarts.push({ index: sm.index, name: sm[1]!.trim(), descStart: sm.index + sm[0].length });
+      }
+
+      for (let i = 0; i < entryStarts.length; i++) {
+        const entry = entryStarts[i]!;
+        const end = i + 1 < entryStarts.length ? entryStarts[i + 1]!.index : sectionText.length;
+        const desc = sectionText.substring(entry.descStart, end).trim().replace(/\n/g, ' ');
+        if (entry.name && desc) {
+          entries.push({ name: entry.name, desc });
+        }
+      }
+      return entries;
+    };
+
+    // ── Traits ──
+    this.traits = [];
+    const traitsContent = getSectionContent('Traits');
+    if (traitsContent) {
+      // 2024 format: explicit "Traits" section header
+      this.traits = parseEntries(traitsContent);
+    } else {
+      // Legacy format: traits appear between CR line and Actions header
+      const actionsIdx = sections.find(s => s.name === 'Actions')?.start ?? -1;
+      const traitsSection = actionsIdx > 0 ? text.substring(0, actionsIdx) : text;
+      const crIndex = text.search(/^(Challenge|CR)\s+/m);
+      if (crIndex > 0) {
+        // Find the end of the CR line
+        const afterCR = text.indexOf('\n', crIndex);
+        if (afterCR > 0) {
+          const traitsText = traitsSection.substring(afterCR).trim();
+          this.traits = parseEntries(traitsText).filter(
+            t => !t.name.startsWith('Challenge') && !t.name.startsWith('Proficiency') && !t.name.startsWith('CR')
+          );
         }
       }
     }
 
-    // Extract actions
-    this.actions = [];
-    if (actionsIndex > 0) {
-      const actionsText = text.substring(actionsIndex);
-      // Skip the 'Actions' header line
-      const actionsContent = actionsText.replace(/^Actions\s*\n/i, '');
-      
-      // Match action patterns: Name. Description
-      const actionMatches = actionsContent.matchAll(/^([A-Z][A-Za-z\s]+?)\.\s+(.+?)(?=\n\n|\n[A-Z][A-Za-z\s]+?\.|Bonus Actions|Reactions|Legendary Actions|$)/gms);
-      
-      for (const match of actionMatches) {
-        if (match[1] && match[2]) {
-          const name = match[1].trim();
-          const desc = match[2].trim().replace(/\n/g, ' ');
-          if (name && desc) {
-            this.actions.push({ name, desc });
-          }
-        }
-      }
-    }
+    // ── Actions ──
+    this.actions = parseEntries(getSectionContent('Actions'));
 
-    console.log("Parsed creature:", this.creatureName);
+    // ── Bonus Actions ──
+    this.bonusActions = parseEntries(getSectionContent('Bonus Actions'));
+
+    // ── Reactions ──
+    this.reactions = parseEntries(getSectionContent('Reactions'));
+
+    // ── Legendary Actions ──
+    // Filter out preamble text that matches the Name. Desc pattern:
+    // 2024: "Legendary Action Uses: 3 (4 in Lair). Immediately after..."
+    // Legacy: "The lich can take 3 legendary actions, choosing from..."
+    this.legendaryActions = parseEntries(getSectionContent('Legendary Actions')).filter(
+      a => !a.name.startsWith('Legendary Action Uses')
+        && !a.name.toLowerCase().includes('legendary action')
+    );
   }
 
   refreshUI() {
@@ -32095,8 +32310,32 @@ fage_stats:
     }
 
     frontmatter += `\nlegendary_actions:`;
+    if (this.legendaryActions.length > 0) {
+      this.legendaryActions.forEach(la => {
+        if (la.name && la.desc) {
+          frontmatter += `\n  - name: ${la.name}`;
+          frontmatter += `\n    desc: "${la.desc.replace(/"/g, '\\"')}"`;
+        }
+      });
+    }
     frontmatter += `\nbonus_actions:`;
+    if (this.bonusActions.length > 0) {
+      this.bonusActions.forEach(ba => {
+        if (ba.name && ba.desc) {
+          frontmatter += `\n  - name: ${ba.name}`;
+          frontmatter += `\n    desc: "${ba.desc.replace(/"/g, '\\"')}"`;
+        }
+      });
+    }
     frontmatter += `\nreactions:`;
+    if (this.reactions.length > 0) {
+      this.reactions.forEach(r => {
+        if (r.name && r.desc) {
+          frontmatter += `\n  - name: ${r.name}`;
+          frontmatter += `\n    desc: "${r.desc.replace(/"/g, '\\"')}"`;
+        }
+      });
+    }
     frontmatter += `\ntoken_id: ${this.tokenId}`;
     frontmatter += `\n---\n\n`;
 
@@ -32168,9 +32407,9 @@ deleteBtn.addEventListener("click", () => {
         cr: this.cr,
         traits: this.traits.filter(t => t.name && t.desc),
         actions: this.actions.filter(a => a.name && a.desc),
-        legendary_actions: [],
-        bonus_actions: [],
-        reactions: []
+        legendary_actions: this.legendaryActions.filter(a => a.name && a.desc),
+        bonus_actions: this.bonusActions.filter(a => a.name && a.desc),
+        reactions: this.reactions.filter(a => a.name && a.desc)
       };
 
       // Parse saves
