@@ -5651,6 +5651,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 			if (savedData.gridSizeH !== undefined) config.gridSizeH = savedData.gridSizeH;
 			if (savedData.gridVisible !== undefined) config.gridVisible = savedData.gridVisible;
 			if (savedData.isVideo !== undefined) config.isVideo = savedData.isVideo;
+
+			// Load template system fields
+			if (savedData.isTemplate !== undefined) config.isTemplate = savedData.isTemplate;
+			if (savedData.templateTags) config.templateTags = savedData.templateTags;
 			
 			// Ensure grid offset defaults
 			if (config.gridOffsetX === undefined) config.gridOffsetX = 0;
@@ -8429,8 +8433,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 							}
 							if (dc.isOpen && dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
 								// Slide offset along the path (linear interpolation between first two waypoints)
-								const p0 = dc.slidePath[0];
-								const p1 = dc.slidePath[dc.slidePath.length - 1];
+								const p0 = dc.slidePath[0]!;
+								const p1 = dc.slidePath[dc.slidePath.length - 1]!;
 								const t = dc.slidePosition;
 								ctx.translate((p1.x - p0.x) * t, (p1.y - p0.y) * t);
 							}
