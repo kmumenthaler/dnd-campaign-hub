@@ -979,11 +979,41 @@ class ImageSelectorModal extends Modal {
   private listContainer: HTMLElement | null = null;
   private searchQuery: string = '';
   private resultCountEl: HTMLElement | null = null;
+  /** All unique subfolder paths (relative to z_Assets/Maps) */
+  private folderPaths: string[] = [];
+  /** Currently selected folder filter (empty string = all) */
+  private selectedFolder: string = '';
+  private folderChipsContainer: HTMLElement | null = null;
 
   constructor(app: App, files: TFile[], onSelect: (file: TFile) => void) {
     super(app);
     this.files = files;
     this.onSelect = onSelect;
+    // Build unique subfolder list relative to root map folder
+    this.buildFolderList();
+  }
+
+  /** Collect every unique sub-folder path relative to z_Assets/Maps. */
+  private buildFolderList() {
+    const root = 'z_Assets/Maps';
+    const folderSet = new Set<string>();
+    for (const f of this.files) {
+      const parentPath = f.parent?.path || '';
+      if (parentPath === root) {
+        // Files directly in root — no subfolder
+        continue;
+      }
+      // Get relative subfolder path
+      if (parentPath.startsWith(root + '/')) {
+        const rel = parentPath.slice(root.length + 1);
+        // Add this folder and every ancestor
+        const parts = rel.split('/');
+        for (let i = 1; i <= parts.length; i++) {
+          folderSet.add(parts.slice(0, i).join('/'));
+        }
+      }
+    }
+    this.folderPaths = Array.from(folderSet).sort((a, b) => a.localeCompare(b));
   }
 
   onOpen() {
@@ -1005,6 +1035,12 @@ class ImageSelectorModal extends Modal {
     });
     this.resultCountEl = searchContainer.createDiv({ cls: 'image-selector-result-count' });
 
+    // Folder filter chips (only show when there are subfolders)
+    if (this.folderPaths.length > 0) {
+      this.folderChipsContainer = contentEl.createDiv({ cls: 'image-selector-folder-chips' });
+      this.renderFolderChips();
+    }
+
     // Action bar with upload button
     const actionBar = contentEl.createDiv({ cls: 'image-selector-actions' });
     const uploadBtn = actionBar.createEl('button', {
@@ -1014,11 +1050,11 @@ class ImageSelectorModal extends Modal {
     uploadBtn.innerHTML = '📁 Upload from Computer';
     uploadBtn.addEventListener('click', () => this.uploadFromExplorer());
 
-    // File list
-    this.listContainer = contentEl.createDiv({ cls: 'image-file-list' });
+    // File grid (card layout with previews)
+    this.listContainer = contentEl.createDiv({ cls: 'image-file-grid' });
 
     // Render initial list
-    this.renderFileList(this.files);
+    this.filterAndRender();
 
     // Wire up search
     searchInput.addEventListener('input', () => {
@@ -1030,17 +1066,57 @@ class ImageSelectorModal extends Modal {
     setTimeout(() => searchInput.focus(), 50);
   }
 
+  /** Render the folder-filter chip bar. */
+  private renderFolderChips() {
+    if (!this.folderChipsContainer) return;
+    this.folderChipsContainer.empty();
+
+    // "All" chip
+    const allChip = this.folderChipsContainer.createEl('button', {
+      cls: `image-selector-folder-chip${this.selectedFolder === '' ? ' is-active' : ''}`,
+      text: '📂 All',
+    });
+    allChip.addEventListener('click', () => {
+      this.selectedFolder = '';
+      this.renderFolderChips();
+      this.filterAndRender();
+    });
+
+    // One chip per subfolder
+    for (const folder of this.folderPaths) {
+      const label = folder.split('/').pop() || folder;
+      const depth = folder.split('/').length;
+      const chip = this.folderChipsContainer.createEl('button', {
+        cls: `image-selector-folder-chip${this.selectedFolder === folder ? ' is-active' : ''}`,
+        text: `${'  '.repeat(depth - 1)}📁 ${label}`,
+      });
+      chip.dataset.folder = folder;
+      chip.addEventListener('click', () => {
+        this.selectedFolder = folder;
+        this.renderFolderChips();
+        this.filterAndRender();
+      });
+    }
+  }
+
   private filterAndRender() {
-    if (!this.searchQuery) {
-      this.renderFileList(this.files);
-      return;
+    const root = 'z_Assets/Maps';
+    let filtered = this.files;
+
+    // Apply folder filter
+    if (this.selectedFolder) {
+      const folderPrefix = `${root}/${this.selectedFolder}/`;
+      filtered = filtered.filter(f => f.path.startsWith(folderPrefix));
     }
 
-    const terms = this.searchQuery.split(/\s+/);
-    const filtered = this.files.filter(file => {
-      const haystack = file.path.toLowerCase();
-      return terms.every(term => haystack.includes(term));
-    });
+    // Apply search filter
+    if (this.searchQuery) {
+      const terms = this.searchQuery.split(/\s+/);
+      filtered = filtered.filter(file => {
+        const haystack = file.path.toLowerCase();
+        return terms.every(term => haystack.includes(term));
+      });
+    }
 
     this.renderFileList(filtered);
   }
@@ -1051,35 +1127,51 @@ class ImageSelectorModal extends Modal {
 
     // Update result count
     if (this.resultCountEl) {
-      if (this.searchQuery) {
-        this.resultCountEl.setText(`${files.length} of ${this.files.length} files`);
-        this.resultCountEl.style.display = 'block';
+      if (this.searchQuery || this.selectedFolder) {
+        this.resultCountEl.setText(`${files.length} of ${this.files.length} maps`);
       } else {
-        this.resultCountEl.setText(`${files.length} files`);
-        this.resultCountEl.style.display = 'block';
+        this.resultCountEl.setText(`${files.length} maps`);
       }
+      this.resultCountEl.style.display = 'block';
     }
 
     if (files.length === 0) {
       const empty = this.listContainer.createDiv({ cls: 'image-file-list-empty' });
-      empty.setText(this.searchQuery ? 'No files match your search' : 'No image files found in vault');
+      empty.setText(this.searchQuery || this.selectedFolder ? 'No maps match your filters' : 'No map files found in z_Assets/Maps');
       return;
     }
 
     files.forEach(file => {
-      const item = this.listContainer!.createDiv({ cls: 'image-file-item' });
+      const card = this.listContainer!.createDiv({ cls: 'image-file-card' });
 
-      // Icon based on file type
+      // Thumbnail preview
+      const thumb = card.createDiv({ cls: 'image-file-card-thumb' });
       const ext = file.extension.toLowerCase();
       const isVideo = ['mp4', 'webm'].includes(ext);
-      const icon = item.createSpan({ cls: 'image-file-icon' });
-      icon.setText(isVideo ? '🎬' : '🖼️');
+      try {
+        const resourcePath = this.app.vault.adapter.getResourcePath(file.path);
+        if (isVideo) {
+          const video = thumb.createEl('video', { attr: { src: resourcePath, muted: 'true', preload: 'metadata' } });
+          video.addEventListener('loadeddata', () => {
+            // Seek to first frame for thumbnail
+            video.currentTime = 0.1;
+          });
+        } else {
+          thumb.createEl('img', { attr: { src: resourcePath, loading: 'lazy', alt: file.name } });
+        }
+      } catch {
+        // Fallback icon when resource cannot be resolved
+        thumb.createDiv({ cls: 'image-file-card-thumb-fallback', text: isVideo ? '🎬' : '🖼️' });
+      }
 
-      const info = item.createDiv({ cls: 'image-file-info' });
-      info.createDiv({ cls: 'image-file-name', text: file.name });
-      info.createDiv({ cls: 'image-file-path', text: file.parent?.path || '/' });
+      // Info bar below thumb
+      const info = card.createDiv({ cls: 'image-file-card-info' });
+      info.createDiv({ cls: 'image-file-card-name', text: file.basename });
+      // Show subfolder relative to z_Assets/Maps
+      const relFolder = (file.parent?.path || '').replace(/^z_Assets\/Maps\/?/, '') || '/';
+      info.createDiv({ cls: 'image-file-card-folder', text: `📁 ${relFolder}` });
 
-      item.onClickEvent(() => {
+      card.addEventListener('click', () => {
         this.onSelect(file);
         this.close();
       });
@@ -1127,8 +1219,9 @@ class ImageSelectorModal extends Modal {
 
         new Notice(`✅ Uploaded "${file.name}" to ${destPath}`);
 
-        // Add to our file list, select it, and close
+        // Add to our file list, rebuild folder index, select it, and close
         this.files.unshift(created);
+        this.buildFolderList();
         this.onSelect(created);
         this.close();
       } catch (err) {
