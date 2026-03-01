@@ -102,6 +102,41 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   musicPlaybackState: { ...DEFAULT_PLAYBACK_STATE },
 };
 
+// ── Reusable Canvas Pool (eliminates per-frame GC jank) ──
+// Hot-path rendering functions allocate many temporary canvases every frame.
+// This pool lets callers acquire pre-existing canvases (resized as needed)
+// and return them for reuse, avoiding repeated DOM allocation + GC pressure.
+class CanvasPool {
+  private pool: HTMLCanvasElement[] = [];
+
+  /** Get a canvas of at least (w × h). It is cleared and ready to draw. */
+  acquire(w: number, h: number): HTMLCanvasElement {
+    let c = this.pool.pop();
+    if (!c) {
+      c = document.createElement('canvas');
+    }
+    if (c.width !== w) c.width = w;
+    if (c.height !== h) c.height = h;
+    // clearRect is needed because resizing only clears when dimensions change
+    const ctx = c.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, w, h);
+    return c;
+  }
+
+  /** Return a canvas to the pool for later reuse. */
+  release(c: HTMLCanvasElement): void {
+    this.pool.push(c);
+  }
+
+  /** Return many canvases at once (convenience for functions that use several). */
+  releaseAll(...canvases: (HTMLCanvasElement | null | undefined)[]): void {
+    for (const c of canvases) {
+      if (c) this.pool.push(c);
+    }
+  }
+}
+const _canvasPool = new CanvasPool();
+
 // ── Module-Level Light Flicker Utilities ──
 // Shared by both the GM-view closure and the player-view class methods.
 // Light types that exhibit flame-like flickering
@@ -9481,9 +9516,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				// Draw Magic Wand selection overlay
 				if (activeTool === 'magic-wand' && mwMask && mwMaskW > 0 && mwMaskH > 0) {
 					// Draw a semi-transparent tint over the selected (flood-filled) region
-					const overlayCanvas = document.createElement('canvas');
-					overlayCanvas.width = mwMaskW;
-					overlayCanvas.height = mwMaskH;
+					const overlayCanvas = _canvasPool.acquire(mwMaskW, mwMaskH);
 					const oCtx = overlayCanvas.getContext('2d');
 					if (oCtx) {
 						const oData = oCtx.createImageData(mwMaskW, mwMaskH);
@@ -9500,6 +9533,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						ctx.drawImage(overlayCanvas, 0, 0);
 						ctx.globalAlpha = 1.0;
 					}
+					_canvasPool.release(overlayCanvas);
 				}
 
 				// Draw Eraser brush cursor
@@ -10252,9 +10286,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				// Draw icon onto a temporary canvas first, then composite with alpha
 				// (emoji fillText doesn't always respect globalAlpha in Electron)
 				const tmpSize = 48;
-				const tmpCanvas = document.createElement('canvas');
-				tmpCanvas.width = tmpSize;
-				tmpCanvas.height = tmpSize;
+				const tmpCanvas = _canvasPool.acquire(tmpSize, tmpSize);
 				const tmpCtx = tmpCanvas.getContext('2d');
 				if (tmpCtx) {
 					tmpCtx.font = '24px sans-serif';
@@ -10267,6 +10299,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				ctx.globalAlpha = poiAlpha;
 				ctx.drawImage(tmpCanvas, centerX - tmpSize / 2, centerY - tmpSize / 2);
 				ctx.restore();
+				_canvasPool.release(tmpCanvas);
 			};
 
 			// Helper: get marker pixel radius for a given marker definition
@@ -10969,11 +11002,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 				};
 
 				// For each candidate grid cell, sample coverage using isPointInPath
-				const osc = document.createElement('canvas');
-				osc.width = 1;
-				osc.height = 1;
+				const osc = _canvasPool.acquire(1, 1);
 				const oCtx = osc.getContext('2d');
-				if (!oCtx) return;
+				if (!oCtx) { _canvasPool.release(osc); return; }
 
 				// Build path once on the offscreen context (we only need isPointInPath)
 				buildAoePath(oCtx, origin.x, origin.y);
@@ -11015,6 +11046,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 
 				ctx.restore();
+				_canvasPool.release(osc);
 			};
 
 			// Draw an AoE shape (used for both preview and saved effects)
@@ -11162,12 +11194,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const drawFogOfWar = (ctx: CanvasRenderingContext2D, w: number, h: number, isPlayerView: boolean) => {
 				const fogAlpha = isPlayerView ? 1.0 : 0.45;
 				
-				// Create offscreen fog canvas
-				const fogCanvas = document.createElement('canvas');
-				fogCanvas.width = w;
-				fogCanvas.height = h;
+				// Create offscreen fog canvas (pooled)
+				const fogCanvas = _canvasPool.acquire(w, h);
 				const fogCtx = fogCanvas.getContext('2d');
-				if (!fogCtx) return;
+				if (!fogCtx) { _canvasPool.release(fogCanvas); return; }
 				
 				// Start fully black
 				fogCtx.fillStyle = '#000000';
@@ -11286,6 +11316,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				ctx.globalAlpha = fogAlpha;
 				ctx.drawImage(fogCanvas, 0, 0);
 				ctx.restore();
+				_canvasPool.release(fogCanvas);
 			};
 
 			// Draw fog preview while dragging
@@ -37223,8 +37254,7 @@ class PlayerMapView extends ItemView {
       const centered = !!aoe.anchorMarkerId;
 
       // Build AoE path on a tiny offscreen canvas for isPointInPath
-      const osc = document.createElement('canvas');
-      osc.width = 1; osc.height = 1;
+      const osc = _canvasPool.acquire(1, 1);
       const oCtx = osc.getContext('2d');
       if (oCtx) {
         oCtx.beginPath();
@@ -37273,6 +37303,7 @@ class PlayerMapView extends ItemView {
         }
         ctx.restore();
       }
+      _canvasPool.release(osc);
       ctx.save(); // re-open save for the label section below
     }
 
@@ -37805,11 +37836,9 @@ class PlayerMapView extends ItemView {
     config: any,
     visionTokens: any[]
   ) {
-    const fogCanvas = document.createElement('canvas');
-    fogCanvas.width = w;
-    fogCanvas.height = h;
+    const fogCanvas = _canvasPool.acquire(w, h);
     const fogCtx = fogCanvas.getContext('2d');
-    if (!fogCtx) return;
+    if (!fogCtx) { _canvasPool.release(fogCanvas); return; }
 
     // Start fully black (everything is hidden)
     fogCtx.fillStyle = '#000000';
@@ -37992,17 +38021,16 @@ class PlayerMapView extends ItemView {
     // Composite the occlusion overlay onto the main canvas
     fogCtx.globalCompositeOperation = 'source-over';
     ctx.drawImage(fogCanvas, 0, 0);
+    _canvasPool.release(fogCanvas);
 
     console.log('[PV] Wall-occlusion overlay drawn - walls:', allWalls.length,
       'visionTokens:', visionTokens.length);
   }
 
   private drawFogOfWar(ctx: CanvasRenderingContext2D, w: number, h: number, config: any) {
-    const fogCanvas = document.createElement('canvas');
-    fogCanvas.width = w;
-    fogCanvas.height = h;
+    const fogCanvas = _canvasPool.acquire(w, h);
     const fogCtx = fogCanvas.getContext('2d');
-    if (!fogCtx) return;
+    if (!fogCtx) { _canvasPool.release(fogCanvas); return; }
 
     // Start fully black (darkness covers everything)
     fogCtx.fillStyle = '#000000';
@@ -38167,9 +38195,7 @@ class PlayerMapView extends ItemView {
     
     // Create player NORMAL VISION mask - union of all player vision cones
     // Normal vision allows players to see lights from any distance (only blocked by walls)
-    const playerVisionCanvas = document.createElement('canvas');
-    playerVisionCanvas.width = w;
-    playerVisionCanvas.height = h;
+    const playerVisionCanvas = _canvasPool.acquire(w, h);
     const playerVisionCtx = playerVisionCanvas.getContext('2d');
     
     if (playerVisionCtx && playerTokens.length > 0) {
@@ -38195,9 +38221,7 @@ class PlayerMapView extends ItemView {
     }
     
     // Create player DARKVISION mask (for grayscale overlay later)
-    const playerDarkvisionCanvas = document.createElement('canvas');
-    playerDarkvisionCanvas.width = w;
-    playerDarkvisionCanvas.height = h;
+    const playerDarkvisionCanvas = _canvasPool.acquire(w, h);
     const playerDarkvisionCtx = playerDarkvisionCanvas.getContext('2d');
     
     if (playerDarkvisionCtx && playerTokens.length > 0) {
@@ -38251,9 +38275,7 @@ class PlayerMapView extends ItemView {
         console.log(`[PV] Light ${i} at (${light.x.toFixed(1)}, ${light.y.toFixed(1)}): bright=${light.bright}ft (${brightRadiusPx.toFixed(1)}px), dim=${light.dim}ft (${dimRadiusPx.toFixed(1)}px) - DRAWING WITH PLAYER VISION CLIP`);
         
         // Create temp canvas for this light
-        const lightCanvas = document.createElement('canvas');
-        lightCanvas.width = w;
-        lightCanvas.height = h;
+        const lightCanvas = _canvasPool.acquire(w, h);
         const lightCtx = lightCanvas.getContext('2d');
         
         if (lightCtx) {
@@ -38372,6 +38394,7 @@ class PlayerMapView extends ItemView {
           fogCtx.globalCompositeOperation = 'source-over';
           
           console.log(`[PV] Light ${i}: Applied to fog (intersection of light rays + player vision)`);
+          _canvasPool.release(lightCanvas);
         }
       });
     }
@@ -38424,9 +38447,7 @@ class PlayerMapView extends ItemView {
     });
     
     // Create grayscale overlay canvas (for darkvision-only areas)
-    const grayscaleCanvas = document.createElement('canvas');
-    grayscaleCanvas.width = w;
-    grayscaleCanvas.height = h;
+    const grayscaleCanvas = _canvasPool.acquire(w, h);
     const grayCtx = grayscaleCanvas.getContext('2d');
     
     if (darkvisionMarkers.length > 0 && grayCtx) {
@@ -38475,9 +38496,7 @@ class PlayerMapView extends ItemView {
           if (totalRadiusPx <= 0) return;
           
           // Create temp canvas for this light's illuminated area
-          const lightCanvas = document.createElement('canvas');
-          lightCanvas.width = w;
-          lightCanvas.height = h;
+          const lightCanvas = _canvasPool.acquire(w, h);
           const lightCtx = lightCanvas.getContext('2d');
           
           if (lightCtx) {
@@ -38599,6 +38618,7 @@ class PlayerMapView extends ItemView {
             }
             } // end else (point light grayscale cutout)
           }
+          _canvasPool.release(lightCanvas);
         });
       }
     }
@@ -38608,12 +38628,11 @@ class PlayerMapView extends ItemView {
     ctx.globalAlpha = 1.0;
     ctx.drawImage(fogCanvas, 0, 0);
     ctx.restore();
+    _canvasPool.release(fogCanvas);
     
     // Draw coloured light glow overlay (visible through revealed fog areas)
     if (allLights.length > 0 && playerVisionCtx) {
-      const lightColorCanvas = document.createElement('canvas');
-      lightColorCanvas.width = w;
-      lightColorCanvas.height = h;
+      const lightColorCanvas = _canvasPool.acquire(w, h);
       const lcCtx = lightColorCanvas.getContext('2d');
       if (lcCtx) {
         allLights.forEach((light: any, li: number) => {
@@ -38640,11 +38659,9 @@ class PlayerMapView extends ItemView {
           if (totalPx <= 0) return;
 
           // Temp canvas for this single light glow
-          const singleCanvas = document.createElement('canvas');
-          singleCanvas.width = w;
-          singleCanvas.height = h;
+          const singleCanvas = _canvasPool.acquire(w, h);
           const sCtx = singleCanvas.getContext('2d');
-          if (!sCtx) return;
+          if (!sCtx) { _canvasPool.release(singleCanvas); return; }
 
           if (light.start && light.end && light.type === 'walllight') {
             // --- Wall light colour overlay: sample along line ---
@@ -38744,6 +38761,7 @@ class PlayerMapView extends ItemView {
 
           // Accumulate onto shared light-color canvas
           lcCtx.drawImage(singleCanvas, 0, 0);
+          _canvasPool.release(singleCanvas);
         });
 
         // Composite colour overlay onto the main canvas (over fog)
@@ -38751,6 +38769,7 @@ class PlayerMapView extends ItemView {
         ctx.globalCompositeOperation = 'source-over';
         ctx.drawImage(lightColorCanvas, 0, 0);
         ctx.restore();
+        _canvasPool.release(lightColorCanvas);
       }
     }
     
@@ -38765,6 +38784,7 @@ class PlayerMapView extends ItemView {
     } else {
       console.log('[PV] Not applying grayscale overlay:', { darkvisionMarkers: darkvisionMarkers.length, hasGrayCtx: !!grayCtx });
     }
+    _canvasPool.releaseAll(playerVisionCanvas, playerDarkvisionCanvas, grayscaleCanvas);
   }
 
   /**
