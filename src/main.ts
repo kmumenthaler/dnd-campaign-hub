@@ -10574,10 +10574,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 					}
 				}
 
-				// Update layer assignment
+				// Update layer assignment based on elevation — only override
+				// elevation-driven layers; preserve manually-assigned layers (DM, Background)
 				const elevation = marker.elevation;
 				if (!elevation || (!elevation.height && !elevation.depth)) {
-					marker.layer = 'Player';
+					// Only reset to Player if the token was on an elevation-driven layer
+					if (marker.layer === 'Elevated' || marker.layer === 'Subterranean') {
+						marker.layer = 'Player';
+					}
 				} else if (elevation.depth && elevation.depth > 0) {
 					if (elevation.isBurrowing) {
 						marker.layer = 'DM';
@@ -14285,11 +14289,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 							console.log('[Elevation Debug] Context menu opened. Marker:', m.id, 'Elevation:', JSON.stringify(m.elevation, null, 2), 'mDef:', mDef?.name);
 							
 							// Helper function to update token layer based on elevation
+							// Only overrides elevation-driven layers; preserves manually-assigned layers (DM, Background)
 							const updateTokenLayer = (marker: any) => {
 								const elevation = marker.elevation;
 								
 								if (!elevation || (!elevation.height && !elevation.depth)) {
-									marker.layer = 'Player';
+									// Only reset to Player if the token was on an elevation-driven layer
+									if (marker.layer === 'Elevated' || marker.layer === 'Subterranean') {
+										marker.layer = 'Player';
+									}
 								} else if (elevation.depth && elevation.depth > 0) {
 									if (elevation.isBurrowing) {
 										marker.layer = 'DM';  // Hidden from players
