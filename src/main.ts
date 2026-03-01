@@ -12223,6 +12223,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							inst.rotation = ((envAssetTransformStart.rot + delta) % 360 + 360) % 360;
 							redrawAnnotations();
 						} else if (envAssetTransformHandle && envAssetTransformStart) {
+							// Anchored-edge resize: the opposite edge stays fixed
 							const s = envAssetTransformStart;
 							const dx = mapPos.x - s.x;
 							const dy = mapPos.y - s.y;
@@ -12231,20 +12232,64 @@ export default class DndCampaignHubPlugin extends Plugin {
 							const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
 							const hw = s.w / 2;
 							const hh = s.h / 2;
+							const MIN_SZ = 4;
 							let newW = s.w;
 							let newH = s.h;
+							let localOffX = 0;
+							let localOffY = 0;
+
 							switch (envAssetTransformHandle) {
-								case 'right':        newW = Math.max(10, hw + lx) * 2; break;
-								case 'left':         newW = Math.max(10, hw - lx) * 2; break;
-								case 'bottom':       newH = Math.max(10, hh + ly) * 2; break;
-								case 'top':          newH = Math.max(10, hh - ly) * 2; break;
-								case 'bottom-right': newW = Math.max(10, hw + lx) * 2; newH = Math.max(10, hh + ly) * 2; break;
-								case 'bottom-left':  newW = Math.max(10, hw - lx) * 2; newH = Math.max(10, hh + ly) * 2; break;
-								case 'top-right':    newW = Math.max(10, hw + lx) * 2; newH = Math.max(10, hh - ly) * 2; break;
-								case 'top-left':     newW = Math.max(10, hw - lx) * 2; newH = Math.max(10, hh - ly) * 2; break;
+								case 'right':
+									newW = Math.max(MIN_SZ, lx + hw);
+									localOffX = -hw + newW / 2;
+									break;
+								case 'left':
+									newW = Math.max(MIN_SZ, hw - lx);
+									localOffX = hw - newW / 2;
+									break;
+								case 'bottom':
+									newH = Math.max(MIN_SZ, ly + hh);
+									localOffY = -hh + newH / 2;
+									break;
+								case 'top':
+									newH = Math.max(MIN_SZ, hh - ly);
+									localOffY = hh - newH / 2;
+									break;
+								case 'bottom-right':
+									newW = Math.max(MIN_SZ, lx + hw);
+									newH = Math.max(MIN_SZ, ly + hh);
+									localOffX = -hw + newW / 2;
+									localOffY = -hh + newH / 2;
+									break;
+								case 'bottom-left':
+									newW = Math.max(MIN_SZ, hw - lx);
+									newH = Math.max(MIN_SZ, ly + hh);
+									localOffX = hw - newW / 2;
+									localOffY = -hh + newH / 2;
+									break;
+								case 'top-right':
+									newW = Math.max(MIN_SZ, lx + hw);
+									newH = Math.max(MIN_SZ, hh - ly);
+									localOffX = -hw + newW / 2;
+									localOffY = hh - newH / 2;
+									break;
+								case 'top-left':
+									newW = Math.max(MIN_SZ, hw - lx);
+									newH = Math.max(MIN_SZ, hh - ly);
+									localOffX = hw - newW / 2;
+									localOffY = hh - newH / 2;
+									break;
 							}
+
+							// Convert local center offset back to world space
+							const fwdRad = (s.rot || 0) * Math.PI / 180;
+							const worldDx2 = localOffX * Math.cos(fwdRad) - localOffY * Math.sin(fwdRad);
+							const worldDy2 = localOffX * Math.sin(fwdRad) + localOffY * Math.cos(fwdRad);
+
 							inst.width = newW;
 							inst.height = newH;
+							inst.position.x = s.x + worldDx2;
+							inst.position.y = s.y + worldDy2;
 							redrawAnnotations();
 						} else if (envAssetDragOffset) {
 							inst.position.x = mapPos.x + envAssetDragOffset.x;
