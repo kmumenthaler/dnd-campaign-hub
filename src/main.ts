@@ -137,6 +137,46 @@ class CanvasPool {
 }
 const _canvasPool = new CanvasPool();
 
+// ── Visibility Polygon Memoization Cache ──
+// computeVisibilityPolygon is O(segments²) and called 10-20+ times per frame.
+// Many calls are duplicates — the same light is computed for fog-punch,
+// grayscale-cutout, and colour-glow passes with near-identical params.
+// This cache deduplicates within-frame AND preserves results across frames
+// when walls haven't changed.
+
+/** Fast walls-array fingerprint (cached per array reference via WeakMap). */
+const _wallsHashWM = new WeakMap<any[], string>();
+function _getWallsHash(walls: any[]): string {
+  let h = _wallsHashWM.get(walls);
+  if (h !== undefined) return h;
+  const n = walls.length;
+  if (n === 0) { h = '0'; _wallsHashWM.set(walls, h); return h; }
+  // Sample up to 8 evenly-spaced walls for a compact signature.
+  // Wall count changes when doors open/close (filtered out before reaching here),
+  // and sampled coordinates catch position edits.
+  const parts: string[] = [String(n)];
+  const samples = Math.min(n, 8);
+  for (let i = 0; i < samples; i++) {
+    const w = walls[Math.floor(i * n / samples)];
+    if (w?.start && w?.end) {
+      parts.push(`${w.start.x | 0},${w.start.y | 0},${w.end.x | 0},${w.end.y | 0}`);
+    }
+  }
+  h = parts.join('|');
+  _wallsHashWM.set(walls, h);
+  return h;
+}
+
+/** Quantised cache key.  Position→1 px, radius→16 px buckets, elevation→int. */
+function _visCacheKey(
+  ox: number, oy: number, r: number, elev: number, wallsHash: string
+): string {
+  return `${ox | 0}|${oy | 0}|${(r + 8) >> 4}|${elev | 0}|${wallsHash}`;
+}
+
+const _visCacheMap = new Map<string, { x: number; y: number }[]>();
+const _VIS_CACHE_MAX = 256;
+
 // ── Module-Level Light Flicker Utilities ──
 // Shared by both the GM-view closure and the player-view class methods.
 // Light types that exhibit flame-like flickering
@@ -39037,6 +39077,12 @@ class PlayerMapView extends ItemView {
     walls: any[],
     viewerElevation: number = 0
   ): { x: number; y: number }[] {
+    // ── Memoization: check cache before doing O(n²) work ──
+    const _wHash = _getWallsHash(walls);
+    const _cKey  = _visCacheKey(originX, originY, maxRadius, viewerElevation, _wHash);
+    const _cached = _visCacheMap.get(_cKey);
+    if (_cached) return _cached;
+
     // Collect all wall segments within range
     const segments: { p1: { x: number; y: number }; p2: { x: number; y: number } }[] = [];
     
@@ -39181,6 +39227,9 @@ class PlayerMapView extends ItemView {
       }
     }
     
+    // ── Populate cache (cap size to prevent unbounded growth) ──
+    if (_visCacheMap.size >= _VIS_CACHE_MAX) _visCacheMap.clear();
+    _visCacheMap.set(_cKey, uniquePoints);
     return uniquePoints;
   }
 
