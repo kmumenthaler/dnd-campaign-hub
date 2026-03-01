@@ -105,7 +105,9 @@ const DEFAULT_SETTINGS: DndCampaignHubSettings = {
 // ── Module-Level Light Flicker Utilities ──
 // Shared by both the GM-view closure and the player-view class methods.
 // Light types that exhibit flame-like flickering
-const FLICKER_LIGHT_TYPES_SET = new Set<string>(['candle', 'torch', 'dancing', 'continual']);
+const FLICKER_LIGHT_TYPES_SET = new Set<string>(['candle', 'torch', 'dancing', 'continual', 'fluorescent']);
+// Subset: lights that use neon-buzz animation instead of flame flicker
+const BUZZ_LIGHT_TYPES_SET = new Set<string>(['fluorescent']);
 
 /**
  * Compute a flicker multiplier for a given light at the current time.
@@ -129,6 +131,42 @@ function computeLightFlicker(seed: number, time: number, intensity: 'low' | 'hig
   } else {
     return { radius: 0.92 + normalized * 0.08, alpha: 0.90 + normalized * 0.10 };
   }
+}
+
+/**
+ * Compute a neon-buzz flicker for fluorescent lights.
+ * Simulates a subtle static electrical buzz – the light never goes out,
+ * just has rapid tiny brightness variations like a real fluorescent tube.
+ * @param seed  Unique per-light seed
+ * @param time  Current timestamp in seconds
+ * @returns { radius: 0.99–1.0, alpha: 0.88–1.0 }
+ */
+function computeNeonBuzz(seed: number, time: number): { radius: number; alpha: number } {
+  const t = time + seed;
+  // High-frequency buzz (simulated 60 Hz hum) – very subtle
+  const buzz60 = Math.sin(t * 60 * 2 * Math.PI);
+  // Layered low-frequency modulation for slight intensity drifts
+  const drift1 = Math.sin(t * 4.3 + 1.7);
+  const drift2 = Math.sin(t * 7.1 + 2.9);
+  const driftCombined = drift1 * 0.4 + drift2 * 0.6;
+  // Alpha stays between 0.88 and 1.0 – never goes dark
+  const buzzComponent = buzz60 * 0.03;          // ±0.03 from 60 Hz
+  const driftComponent = driftCombined * 0.04;   // ±0.04 from slow drift
+  const alpha = Math.max(0.88, Math.min(1.0, 0.96 + buzzComponent + driftComponent));
+  // Radius barely changes – stable light source
+  const radius = 0.99 + driftCombined * 0.005;   // 0.99–1.0
+  return { radius, alpha };
+}
+
+/**
+ * Convert a hex colour string to RGB components.
+ * Falls back to warm yellow (255,255,136) on invalid input.
+ */
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return m
+    ? { r: parseInt(m[1]!, 16), g: parseInt(m[2]!, 16), b: parseInt(m[3]!, 16) }
+    : { r: 255, g: 255, b: 136 };
 }
 
 // Per-light flicker seed cache (deterministic but unique per light instance)
@@ -5787,7 +5825,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Tool state
-    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | 'env-asset' = 'pan';
+    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'walllight-draw' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | 'env-asset' = 'pan';
 		// Background editing view — controls which element type is prominent and interactable
 		type BackgroundEditView = 'all' | 'walls' | 'lights' | 'fog' | 'elevation' | 'difficult-terrain' | 'env-assets';
 		let backgroundEditView: BackgroundEditView = 'all';
@@ -5900,7 +5938,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 				light: { name: 'Light Spell', bright: 20, dim: 20, icon: '✨' },
 				dancing: { name: 'Dancing Lights', bright: 0, dim: 10, icon: '💫', flicker: true },
 				continual: { name: 'Continual Flame', bright: 20, dim: 20, icon: '🔥', flicker: true },
-				daylight: { name: 'Daylight Spell', bright: 60, dim: 60, icon: '☀️' }
+				daylight: { name: 'Daylight Spell', bright: 60, dim: 60, icon: '☀️' },
+				fluorescent: { name: 'Fluorescent', bright: 30, dim: 10, icon: '💡', flicker: true },
+				walllight: { name: 'Wall Light', bright: 15, dim: 15, icon: '📏', isLine: true }
 			} as const;
 			type LightSourceType = keyof typeof LIGHT_SOURCES;
 			
@@ -5908,8 +5948,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Delegates to module-level computeLightFlicker() and getFlickerSeedForKey().
 			// The closure only manages the animation loop lifecycle.
 			const FLICKER_LIGHT_TYPES = FLICKER_LIGHT_TYPES_SET;
+			const BUZZ_LIGHT_TYPES = BUZZ_LIGHT_TYPES_SET;
 			const getFlickerSeed = getFlickerSeedForKey;
 			const computeFlicker = computeLightFlicker;
+			const computeBuzz = computeNeonBuzz;
 			
 			// Flicker animation state
 			let flickerAnimFrameId: number | null = null;
@@ -5969,6 +6011,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			let wallPoints: { x: number; y: number }[] = [];
 			let wallPreviewPos: { x: number; y: number } | null = null;
 			if (!config.walls) config.walls = [];
+			// Wall light drawing state
+			let wallLightPoints: { x: number; y: number }[] = [];
+			let wallLightPreviewPos: { x: number; y: number } | null = null;
 			// Magic Wand tool state
 			let mwThreshold = 60;           // Brightness cutoff (0-255)
 			let mwTolerance = 35;           // Flood-fill tolerance
@@ -7049,7 +7094,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			{ type: 'light', source: LIGHT_SOURCES.light },
 			{ type: 'dancing', source: LIGHT_SOURCES.dancing },
 			{ type: 'continual', source: LIGHT_SOURCES.continual },
-			{ type: 'daylight', source: LIGHT_SOURCES.daylight }
+			{ type: 'daylight', source: LIGHT_SOURCES.daylight },
+			{ type: 'fluorescent', source: LIGHT_SOURCES.fluorescent }
 		];
 		const lightTypeButtons: Map<string, HTMLButtonElement> = new Map();
 		lightTypes.forEach(({ type, source }) => {
@@ -7063,9 +7109,23 @@ export default class DndCampaignHubPlugin extends Plugin {
 				e.stopPropagation();
 				selectedLightSource = type as LightSourceType;
 				lightTypeButtons.forEach((b) => b.removeClass('active'));
+				wallLightBtn.removeClass('active');
 				btn.addClass('active');
 				lightsPicker.addClass('hidden');
 			});
+		});
+		// Wall Light button (special — switches to line-draw mode)
+		const wallLightBtn = lightsPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn',
+			attr: { title: 'Wall Light — Click two points to draw a light strip (15ft bright + 15ft dim)' }
+		});
+		wallLightBtn.createEl('span', { text: '📏' });
+		wallLightBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			lightTypeButtons.forEach((b) => b.removeClass('active'));
+			wallLightBtn.addClass('active');
+			lightsPicker.addClass('hidden');
+			setActiveTool('walllight-draw');
 		});
 		// Clear All Lights button
 		const clearLightsBtn = lightsPicker.createEl('button', {
@@ -7608,7 +7668,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						tunnelsSectionHeader.removeClass('collapsed');
 						tunnelsContent.removeClass('collapsed');
 					}
-					if (layer !== 'Background' && (activeTool === 'fog' || activeTool === 'walls' || activeTool === 'lights' || activeTool === 'elevation-paint' || activeTool === 'difficult-terrain' || activeTool === 'env-asset')) {
+					if (layer !== 'Background' && (activeTool === 'fog' || activeTool === 'walls' || activeTool === 'lights' || activeTool === 'walllight-draw' || activeTool === 'elevation-paint' || activeTool === 'difficult-terrain' || activeTool === 'env-asset')) {
 						setActiveTool('pan');
 					}
 					// Terrain/climate canvas follows Background layer visibility
@@ -7840,7 +7900,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		let startX = 0;
 		let startY = 0;
 		// Middle mouse button temporary pan state
-		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | 'env-asset' | null = null;
+		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'walllight-draw' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | 'env-asset' | null = null;
 		let isTemporaryPan = false;
 		let gridCanvas: HTMLCanvasElement | null = null;
 		let terrainCanvas: HTMLCanvasElement | null = null;
@@ -8544,17 +8604,24 @@ export default class DndCampaignHubPlugin extends Plugin {
 							const baseBrightPx = marker.light.bright * pixelsPerFoot;
 							const baseDimPx = marker.light.dim * pixelsPerFoot;
 							
-							// Compute flicker for flame-based marker lights
+							// Compute flicker/buzz for marker lights
 							const flickerKey = `marker_${marker.id || mIdx}`;
+							const isBuzz = BUZZ_LIGHT_TYPES.has(marker.light.type);
 							const shouldFlicker = FLICKER_LIGHT_TYPES.has(marker.light.type);
 							const flickerTime = performance.now() / 1000;
 							const flicker = shouldFlicker
-								? computeFlicker(getFlickerSeed(flickerKey), flickerTime, marker.light.type === 'candle' || marker.light.type === 'dancing' ? 'high' : 'high')
+								? (isBuzz
+									? computeBuzz(getFlickerSeed(flickerKey), flickerTime)
+									: computeFlicker(getFlickerSeed(flickerKey), flickerTime, 'high'))
 								: { radius: 1, alpha: 1 };
 							
 							const brightRadiusPx = baseBrightPx * flicker.radius;
 							const dimRadiusPx = baseDimPx * flicker.radius;
 							const totalRadiusPx = brightRadiusPx + dimRadiusPx;
+							
+							// Resolve light colour
+							const mlc = hexToRgb(marker.light.customColor || (marker.light.type === 'fluorescent' ? '#00ffff' : '#ffff88'));
+							const mlcDim = { r: Math.floor(mlc.r * 0.67), g: Math.floor(mlc.g * 0.67), b: Math.floor(mlc.b * 0.48) };
 							
 							// Draw light glow behind marker with smooth gradient
 							if (totalRadiusPx > 0) {
@@ -8565,19 +8632,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 								);
 								if (brightRadiusPx > 0 && dimRadiusPx > 0) {
 									const bRatio = brightRadiusPx / totalRadiusPx;
-									grad.addColorStop(0, 'rgba(255, 255, 136, 0.25)');
-									grad.addColorStop(bRatio * 0.75, 'rgba(255, 255, 136, 0.18)');
-									grad.addColorStop(bRatio, 'rgba(200, 200, 80, 0.10)');
-									grad.addColorStop(Math.min(bRatio + (1 - bRatio) * 0.5, 0.95), 'rgba(170, 170, 68, 0.04)');
-									grad.addColorStop(1, 'rgba(170, 170, 68, 0)');
+									grad.addColorStop(0, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0.25)`);
+									grad.addColorStop(bRatio * 0.75, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0.18)`);
+									grad.addColorStop(bRatio, `rgba(${mlcDim.r}, ${mlcDim.g}, ${mlcDim.b}, 0.10)`);
+									grad.addColorStop(Math.min(bRatio + (1 - bRatio) * 0.5, 0.95), `rgba(${mlcDim.r}, ${mlcDim.g}, ${mlcDim.b}, 0.04)`);
+									grad.addColorStop(1, `rgba(${mlcDim.r}, ${mlcDim.g}, ${mlcDim.b}, 0)`);
 								} else if (brightRadiusPx > 0) {
-									grad.addColorStop(0, 'rgba(255, 255, 136, 0.25)');
-									grad.addColorStop(0.7, 'rgba(255, 255, 136, 0.12)');
-									grad.addColorStop(1, 'rgba(255, 255, 136, 0)');
+									grad.addColorStop(0, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0.25)`);
+									grad.addColorStop(0.7, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0.12)`);
+									grad.addColorStop(1, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0)`);
 								} else {
-									grad.addColorStop(0, 'rgba(170, 170, 68, 0.12)');
-									grad.addColorStop(0.6, 'rgba(170, 170, 68, 0.05)');
-									grad.addColorStop(1, 'rgba(170, 170, 68, 0)');
+									grad.addColorStop(0, `rgba(${mlcDim.r}, ${mlcDim.g}, ${mlcDim.b}, 0.12)`);
+									grad.addColorStop(0.6, `rgba(${mlcDim.r}, ${mlcDim.g}, ${mlcDim.b}, 0.05)`);
+									grad.addColorStop(1, `rgba(${mlcDim.r}, ${mlcDim.g}, ${mlcDim.b}, 0)`);
 								}
 								ctx.fillStyle = grad;
 								ctx.beginPath();
@@ -9258,6 +9325,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 						ctx.moveTo(wallPoints[wallPoints.length - 1]!.x, wallPoints[wallPoints.length - 1]!.y);
 						ctx.lineTo(wallPreviewPos.x, wallPreviewPos.y);
 						ctx.stroke();
+						// Draw snap indicator (bright ring when snapped to existing endpoint)
+						if ((wallPreviewPos as any)._snapped) {
+							ctx.save();
+							ctx.strokeStyle = '#00ff88';
+							ctx.lineWidth = 3;
+							ctx.setLineDash([]);
+							ctx.beginPath();
+							ctx.arc(wallPreviewPos.x, wallPreviewPos.y, 8, 0, Math.PI * 2);
+							ctx.stroke();
+							ctx.restore();
+						}
 					}
 					ctx.setLineDash([]);
 					// Draw points
@@ -9267,6 +9345,35 @@ export default class DndCampaignHubPlugin extends Plugin {
 						ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
 						ctx.fill();
 					});
+				}
+
+				// Draw wall light preview (two-point line drawing)
+				if (activeTool === 'walllight-draw' && wallLightPoints.length > 0) {
+					ctx.save();
+					ctx.strokeStyle = '#ffff88';
+					ctx.lineWidth = 8;
+					ctx.lineCap = 'round';
+					ctx.setLineDash([10, 5]);
+					ctx.globalAlpha = 0.6;
+					ctx.beginPath();
+					ctx.moveTo(wallLightPoints[0]!.x, wallLightPoints[0]!.y);
+					if (wallLightPreviewPos) {
+						ctx.lineTo(wallLightPreviewPos.x, wallLightPreviewPos.y);
+					}
+					ctx.stroke();
+					ctx.setLineDash([]);
+					// Draw start point marker
+					ctx.globalAlpha = 0.9;
+					ctx.fillStyle = '#ffff88';
+					ctx.beginPath();
+					ctx.arc(wallLightPoints[0]!.x, wallLightPoints[0]!.y, 6, 0, Math.PI * 2);
+					ctx.fill();
+					if (wallLightPreviewPos) {
+						ctx.beginPath();
+						ctx.arc(wallLightPreviewPos.x, wallLightPreviewPos.y, 6, 0, Math.PI * 2);
+						ctx.fill();
+					}
+					ctx.restore();
 				}
 
 				// Draw Magic Wand selection overlay
@@ -9329,19 +9436,75 @@ export default class DndCampaignHubPlugin extends Plugin {
 						
 						// Only draw light radii if the light is active
 						if (isActive) {
-								// Compute flicker modulation for flame-based lights
+								// Compute flicker/buzz modulation
 								const flickerKey = `standalone_${idx}`;
+								const isBuzz = BUZZ_LIGHT_TYPES.has(light.type);
 								const shouldFlicker = FLICKER_LIGHT_TYPES.has(light.type);
 								const flickerTime = performance.now() / 1000;
 								const flicker = shouldFlicker
-									? computeFlicker(getFlickerSeed(flickerKey), flickerTime, light.type === 'candle' || light.type === 'dancing' ? 'high' : 'high')
+									? (isBuzz
+										? computeBuzz(getFlickerSeed(flickerKey), flickerTime)
+										: computeFlicker(getFlickerSeed(flickerKey), flickerTime, 'high'))
 									: { radius: 1, alpha: 1 };
 								
 								const flickBrightPx = brightRadiusPx * flicker.radius;
 								const flickDimPx = dimRadiusPx * flicker.radius;
 								const totalRadiusPx = flickBrightPx + flickDimPx;
-								// Draw combined light with smooth radial gradient
-								if (totalRadiusPx > 0) {
+								// Resolve light colour (custom for fluorescent, warm yellow default)
+								const lc = hexToRgb(light.customColor || (light.type === 'fluorescent' ? '#00ffff' : '#ffff88'));
+								const lcDim = { r: Math.floor(lc.r * 0.67), g: Math.floor(lc.g * 0.67), b: Math.floor(lc.b * 0.48) };
+
+								// ── Wall Light (line source) ──
+								if (light.start && light.end && light.type === 'walllight') {
+									const dx = light.end.x - light.start.x;
+									const dy = light.end.y - light.start.y;
+									const length = Math.sqrt(dx * dx + dy * dy);
+									const stepSize = Math.min(totalRadiusPx * 0.4, 20);
+									const steps = Math.max(2, Math.ceil(length / stepSize));
+									const stepAlpha = 1.0 / Math.sqrt(steps * 0.7);
+									ctx.globalAlpha = la(flicker.alpha * Math.min(stepAlpha, 0.7));
+									for (let s = 0; s <= steps; s++) {
+										const t = s / steps;
+										const px = light.start.x + dx * t;
+										const py = light.start.y + dy * t;
+										const grad = ctx.createRadialGradient(px, py, 0, px, py, totalRadiusPx);
+										if (flickBrightPx > 0 && flickDimPx > 0) {
+											const bRatio = flickBrightPx / totalRadiusPx;
+											grad.addColorStop(0, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0.18)`);
+											grad.addColorStop(bRatio * 0.75, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0.14)`);
+											grad.addColorStop(bRatio, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.09)`);
+											grad.addColorStop(Math.min(bRatio + (1 - bRatio) * 0.5, 0.95), `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.04)`);
+											grad.addColorStop(1, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0)`);
+										} else if (flickBrightPx > 0) {
+											grad.addColorStop(0, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0.18)`);
+											grad.addColorStop(0.7, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0.10)`);
+											grad.addColorStop(1, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0)`);
+										} else {
+											grad.addColorStop(0, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.10)`);
+											grad.addColorStop(0.6, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.05)`);
+											grad.addColorStop(1, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0)`);
+										}
+										ctx.fillStyle = grad;
+										ctx.beginPath();
+										ctx.arc(px, py, totalRadiusPx, 0, Math.PI * 2);
+										ctx.fill();
+									}
+									// Draw the glowing strip line on top
+									ctx.globalAlpha = la(0.7);
+									ctx.strokeStyle = `rgb(${lc.r}, ${lc.g}, ${lc.b})`;
+									ctx.lineWidth = 6;
+									ctx.lineCap = 'round';
+									ctx.shadowColor = `rgb(${lc.r}, ${lc.g}, ${lc.b})`;
+									ctx.shadowBlur = 12;
+									ctx.beginPath();
+									ctx.moveTo(light.start.x, light.start.y);
+									ctx.lineTo(light.end.x, light.end.y);
+									ctx.stroke();
+									ctx.shadowBlur = 0;
+									ctx.globalAlpha = la(1.0);
+								}
+								// ── Point Light (standard) ──
+								else if (totalRadiusPx > 0) {
 									ctx.globalAlpha = la(flicker.alpha);
 									const grad = ctx.createRadialGradient(
 										light.x, light.y, 0,
@@ -9349,19 +9512,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 									);
 									if (flickBrightPx > 0 && flickDimPx > 0) {
 										const bRatio = flickBrightPx / totalRadiusPx;
-										grad.addColorStop(0, 'rgba(255, 255, 136, 0.18)');
-										grad.addColorStop(bRatio * 0.75, 'rgba(255, 255, 136, 0.14)');
-										grad.addColorStop(bRatio, 'rgba(200, 200, 80, 0.09)');
-										grad.addColorStop(Math.min(bRatio + (1 - bRatio) * 0.5, 0.95), 'rgba(170, 170, 68, 0.04)');
-										grad.addColorStop(1, 'rgba(170, 170, 68, 0)');
+										grad.addColorStop(0, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0.18)`);
+										grad.addColorStop(bRatio * 0.75, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0.14)`);
+										grad.addColorStop(bRatio, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.09)`);
+										grad.addColorStop(Math.min(bRatio + (1 - bRatio) * 0.5, 0.95), `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.04)`);
+										grad.addColorStop(1, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0)`);
 									} else if (flickBrightPx > 0) {
-										grad.addColorStop(0, 'rgba(255, 255, 136, 0.18)');
-										grad.addColorStop(0.7, 'rgba(255, 255, 136, 0.10)');
-										grad.addColorStop(1, 'rgba(255, 255, 136, 0)');
+										grad.addColorStop(0, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0.18)`);
+										grad.addColorStop(0.7, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0.10)`);
+										grad.addColorStop(1, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0)`);
 									} else {
-										grad.addColorStop(0, 'rgba(170, 170, 68, 0.10)');
-										grad.addColorStop(0.6, 'rgba(170, 170, 68, 0.05)');
-										grad.addColorStop(1, 'rgba(170, 170, 68, 0)');
+										grad.addColorStop(0, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.10)`);
+										grad.addColorStop(0.6, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.05)`);
+										grad.addColorStop(1, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0)`);
 									}
 									ctx.fillStyle = grad;
 									ctx.beginPath();
@@ -9387,6 +9550,34 @@ export default class DndCampaignHubPlugin extends Plugin {
 						}
 						
 // Draw dashed selection rectangle to show clickable area
+							if (light.type === 'walllight' && light.start && light.end) {
+								// Wall light: draw selection indicator along the line
+								ctx.globalAlpha = la(0.5);
+								ctx.strokeStyle = isDragging ? '#00ff00' : '#888888';
+								ctx.lineWidth = 1;
+								ctx.setLineDash([4, 4]);
+								ctx.beginPath();
+								ctx.moveTo(light.start.x, light.start.y);
+								ctx.lineTo(light.end.x, light.end.y);
+								ctx.stroke();
+								ctx.setLineDash([]);
+								// Draw endpoint circles
+								ctx.fillStyle = isDragging ? '#00ff00' : '#ffdd44';
+								ctx.globalAlpha = la(isActive ? 0.8 : 0.4);
+								ctx.beginPath();
+								ctx.arc(light.start.x, light.start.y, 5, 0, Math.PI * 2);
+								ctx.fill();
+								ctx.beginPath();
+								ctx.arc(light.end.x, light.end.y, 5, 0, Math.PI * 2);
+								ctx.fill();
+								// Draw center icon (📏)
+								ctx.font = '14px serif';
+								ctx.textAlign = 'center';
+								ctx.textBaseline = 'middle';
+								ctx.globalAlpha = la(isActive ? 0.9 : 0.5);
+								ctx.fillText('📏', light.x, light.y);
+								ctx.globalAlpha = la(1.0);
+							} else {
 							const selectionPadding = 15; // Same as lightClickRadius
 							ctx.globalAlpha = la(0.5);
 							ctx.strokeStyle = isDragging ? '#00ff00' : '#888888';
@@ -9477,6 +9668,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						}
 						
 						ctx.globalAlpha = la(1.0);
+						} // end else (non-walllight icon)
 					});
 				}
 
@@ -10898,12 +11090,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 					fogCtx.fillStyle = '#ffffff';
 					
 					config.lightSources.forEach((light: any, fogLightIdx: number) => {
-						// Apply flicker for flame-based lights in GM fog view
+						// Apply flicker/buzz for lights in GM fog view
 						const fogFlickerKey = `fog_${fogLightIdx}`;
+						const fogIsBuzz = BUZZ_LIGHT_TYPES.has(light.type);
 						const fogShouldFlicker = FLICKER_LIGHT_TYPES.has(light.type);
 						const fogFlickerTime = performance.now() / 1000;
 						const fogFlicker = fogShouldFlicker
-							? computeFlicker(getFlickerSeed(fogFlickerKey), fogFlickerTime, 'high')
+							? (fogIsBuzz
+								? computeBuzz(getFlickerSeed(fogFlickerKey), fogFlickerTime)
+								: computeFlicker(getFlickerSeed(fogFlickerKey), fogFlickerTime, 'high'))
 							: { radius: 1, alpha: 1 };
 						
 						// Convert feet to pixels with flicker modulation
@@ -10913,6 +11108,42 @@ export default class DndCampaignHubPlugin extends Plugin {
 						
 						// Reveal area with smooth gradient (bright + dim light)
 						if (totalRadiusPx > 0) {
+							// ── Wall Light: sample along line ──
+							if (light.start && light.end && light.type === 'walllight') {
+								const dx = light.end.x - light.start.x;
+								const dy = light.end.y - light.start.y;
+								const length = Math.sqrt(dx * dx + dy * dy);
+								const stepSize = Math.min(totalRadiusPx * 0.4, 20);
+								const steps = Math.max(2, Math.ceil(length / stepSize));
+								for (let s = 0; s <= steps; s++) {
+									const t = s / steps;
+									const px = light.start.x + dx * t;
+									const py = light.start.y + dy * t;
+									const featherRadius = totalRadiusPx * 1.08;
+									const gradient = fogCtx.createRadialGradient(px, py, 0, px, py, featherRadius);
+									gradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+									if (brightRadiusPx > 0 && dimRadiusPx > 0) {
+										const bRatio = brightRadiusPx / featherRadius;
+										gradient.addColorStop(bRatio * 0.85, 'rgba(255, 255, 255, 1.0)');
+										gradient.addColorStop(bRatio, 'rgba(255, 255, 255, 0.82)');
+										gradient.addColorStop(bRatio + (1 - bRatio) * 0.5, 'rgba(255, 255, 255, 0.4)');
+										gradient.addColorStop(totalRadiusPx / featherRadius, 'rgba(255, 255, 255, 0.15)');
+									} else if (brightRadiusPx > 0) {
+										gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.85)');
+										gradient.addColorStop(totalRadiusPx / featherRadius, 'rgba(255, 255, 255, 0.2)');
+									} else {
+										gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.5)');
+										gradient.addColorStop(totalRadiusPx / featherRadius, 'rgba(255, 255, 255, 0.15)');
+									}
+									gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+									fogCtx.fillStyle = gradient;
+									fogCtx.beginPath();
+									fogCtx.arc(px, py, featherRadius, 0, Math.PI * 2);
+									fogCtx.fill();
+								}
+							}
+							// ── Point Light: single gradient ──
+							else {
 							// Use slightly oversized radius for soft outer edge
 							const featherRadius = totalRadiusPx * 1.08;
 							const gradient = fogCtx.createRadialGradient(
@@ -10939,6 +11170,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 							fogCtx.beginPath();
 							fogCtx.arc(light.x, light.y, featherRadius, 0, Math.PI * 2);
 							fogCtx.fill();
+							}
 						}
 					});
 				}
@@ -11020,7 +11252,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				// Auto-switch background edit view when picking a background tool
 				const bgToolViewMap: Record<string, BackgroundEditView> = {
 					'walls': 'walls', 'magic-wand': 'walls',
-					'lights': 'lights', 'fog': 'fog',
+					'lights': 'lights', 'walllight-draw': 'lights', 'fog': 'fog',
 					'elevation-paint': 'elevation',
 					'difficult-terrain': 'difficult-terrain',
 					'env-asset': 'env-assets',
@@ -11074,6 +11306,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 					wallPreviewPos = null;
 				}
 
+				// Cancel wall light drawing when switching away
+				if (tool !== 'walllight-draw') {
+					wallLightPoints = [];
+					wallLightPreviewPos = null;
+				}
+
 				// Clear magic wand overlay when switching away
 				if (tool !== 'magic-wand') {
 					mwMask = null;
@@ -11094,7 +11332,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				// Show/hide Magic Wand settings inside walls picker
 				mwSettingsDiv.toggleClass('hidden', tool !== 'magic-wand');
 				// Show/hide Lights picker
-				togglePicker(lightsPicker, tool === 'lights');
+				togglePicker(lightsPicker, tool === 'lights' || tool === 'walllight-draw');
 				// Show/hide Elevation Paint picker
 				togglePicker(elevationPicker, tool === 'elevation-paint');
 				// Show/hide Difficult Terrain picker
@@ -11162,6 +11400,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 					viewport.style.cursor = 'crosshair';
 					viewport.focus();
 					new Notice('Lights Mode: Click to place light source, use picker to select type', 4000);
+				} else if (tool === 'walllight-draw') {
+					lightsBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+					viewport.focus();
+					new Notice('Wall Light: Click start point, then click end point to place light strip', 4000);
 				} else if (tool === 'elevation-paint') {
 					elevationPaintBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
@@ -12105,10 +12348,31 @@ export default class DndCampaignHubPlugin extends Plugin {
 						fogDragStart = { x: mapPos.x, y: mapPos.y };
 						fogDragEnd = { x: mapPos.x, y: mapPos.y };
 					}
-				} else if (activeTool === 'walls') {
-					// Add point to wall chain
-					wallPoints.push({ x: mapPos.x, y: mapPos.y });
-					wallPreviewPos = { x: mapPos.x, y: mapPos.y };
+	            } else if (activeTool === 'walls') {
+					// Add point to wall chain — snap to existing wall endpoints within 8px
+					let snapX = mapPos.x;
+					let snapY = mapPos.y;
+					const wallSnapThreshold = 8;
+					let bestSnapDist = wallSnapThreshold;
+					if (config.walls && config.walls.length > 0) {
+						for (const w of config.walls) {
+							if (w.start) {
+								const d = Math.sqrt((w.start.x - mapPos.x) ** 2 + (w.start.y - mapPos.y) ** 2);
+								if (d < bestSnapDist) { bestSnapDist = d; snapX = w.start.x; snapY = w.start.y; }
+							}
+							if (w.end) {
+								const d = Math.sqrt((w.end.x - mapPos.x) ** 2 + (w.end.y - mapPos.y) ** 2);
+								if (d < bestSnapDist) { bestSnapDist = d; snapX = w.end.x; snapY = w.end.y; }
+							}
+						}
+					}
+					// Also snap to existing points in the current chain
+					for (const wp of wallPoints) {
+						const d = Math.sqrt((wp.x - mapPos.x) ** 2 + (wp.y - mapPos.y) ** 2);
+						if (d < bestSnapDist) { bestSnapDist = d; snapX = wp.x; snapY = wp.y; }
+					}
+					wallPoints.push({ x: snapX, y: snapY });
+					wallPreviewPos = { x: snapX, y: snapY };
 					redrawAnnotations();
 				} else if (activeTool === 'magic-wand') {
 					// Magic Wand: flood-fill from click, trace boundary, generate walls
@@ -12173,6 +12437,38 @@ export default class DndCampaignHubPlugin extends Plugin {
 						new Notice(`${light.name} placed`);
 					} else {
 						new Notice('Please select a light source type first');
+					}
+				} else if (activeTool === 'walllight-draw') {
+					// Wall light: two-click line drawing
+					wallLightPoints.push({ x: mapPos.x, y: mapPos.y });
+					if (wallLightPoints.length >= 2) {
+						// Create wall light from two points
+						const wlStart = wallLightPoints[0]!;
+						const wlEnd = wallLightPoints[1]!;
+						const wallLight: any = {
+							id: `walllight_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+							type: 'walllight' as LightSourceType,
+							name: 'Wall Light',
+							x: (wlStart.x + wlEnd.x) / 2,
+							y: (wlStart.y + wlEnd.y) / 2,
+							start: { x: wlStart.x, y: wlStart.y },
+							end: { x: wlEnd.x, y: wlEnd.y },
+							bright: LIGHT_SOURCES.walllight.bright,
+							dim: LIGHT_SOURCES.walllight.dim,
+							icon: '📏',
+							active: true
+						};
+						saveToHistory();
+						config.lightSources.push(wallLight);
+						wallLightPoints = [];
+						wallLightPreviewPos = null;
+						redrawAnnotations();
+						this.saveMapAnnotations(config, el);
+						if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+						new Notice('Wall light placed');
+					} else {
+						wallLightPreviewPos = { x: mapPos.x, y: mapPos.y };
+						redrawAnnotations();
 					}
 				} else if (activeTool === 'terrain-paint') {
 					// Paint terrain type onto clicked hex
@@ -12858,8 +13154,33 @@ export default class DndCampaignHubPlugin extends Plugin {
 						}
 					}
 				} else if (activeTool === 'walls' && wallPoints.length > 0) {
-					// Update wall preview position
-					wallPreviewPos = { x: mapPos.x, y: mapPos.y };
+					// Update wall preview position — snap to existing wall endpoints
+					let wpSnapX = mapPos.x;
+					let wpSnapY = mapPos.y;
+					const wpSnapThreshold = 8;
+					let wpBestDist = wpSnapThreshold;
+					if (config.walls && config.walls.length > 0) {
+						for (const w of config.walls) {
+							if (w.start) {
+								const d = Math.sqrt((w.start.x - mapPos.x) ** 2 + (w.start.y - mapPos.y) ** 2);
+								if (d < wpBestDist) { wpBestDist = d; wpSnapX = w.start.x; wpSnapY = w.start.y; }
+							}
+							if (w.end) {
+								const d = Math.sqrt((w.end.x - mapPos.x) ** 2 + (w.end.y - mapPos.y) ** 2);
+								if (d < wpBestDist) { wpBestDist = d; wpSnapX = w.end.x; wpSnapY = w.end.y; }
+							}
+						}
+					}
+					for (const wp of wallPoints) {
+						const d = Math.sqrt((wp.x - mapPos.x) ** 2 + (wp.y - mapPos.y) ** 2);
+						if (d < wpBestDist) { wpBestDist = d; wpSnapX = wp.x; wpSnapY = wp.y; }
+					}
+					wallPreviewPos = { x: wpSnapX, y: wpSnapY };
+					(wallPreviewPos as any)._snapped = (wpBestDist < wpSnapThreshold);
+					redrawAnnotations();
+				} else if (activeTool === 'walllight-draw' && wallLightPoints.length > 0) {
+					// Update wall light preview position
+					wallLightPreviewPos = { x: mapPos.x, y: mapPos.y };
 					redrawAnnotations();
         } else if (activeTool === 'hexcrawl-move') {
 					// Track hovered hex for travel range overlay
@@ -13787,6 +14108,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								{ type: 'lantern', icon: '🏮', label: 'Lantern (30ft)' },
 								{ type: 'light', icon: '✨', label: 'Light Spell (20ft)' },
 								{ type: 'daylight', icon: '☀️', label: 'Daylight (60ft)' },
+								{ type: 'fluorescent', icon: '💡', label: 'Fluorescent (30ft)' },
 							];
 							
 							// Add "Off" button
@@ -13832,6 +14154,42 @@ export default class DndCampaignHubPlugin extends Plugin {
 									new Notice(`${lightDef.name} attached to token`);
 								});
 							});
+							
+							// Light colour picker for marker-attached lights
+							if (m.light) {
+								const markerLightDefault = m.light.type === 'fluorescent' ? '#00ffff' : '#ffff88';
+								const mlColorRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+								mlColorRow.createEl('span', { cls: 'dnd-map-context-aoe-label', text: 'Light Colour:' });
+								const mlColorPicker = mlColorRow.createEl('input', {
+									attr: { type: 'color', value: m.light.customColor || markerLightDefault }
+								});
+								mlColorPicker.style.width = '60px';
+								mlColorPicker.style.height = '30px';
+								mlColorPicker.addEventListener('input', (e) => {
+									e.stopPropagation();
+									m.light.customColor = (e.target as HTMLInputElement).value;
+									redrawAnnotations();
+								});
+								mlColorPicker.addEventListener('change', () => {
+									this.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									new Notice('Light colour updated');
+								});
+								mlColorPicker.addEventListener('click', (e) => e.stopPropagation());
+								const mlResetBtn = mlColorRow.createEl('button', { text: 'Reset' });
+								mlResetBtn.style.padding = '4px 8px';
+								mlResetBtn.style.fontSize = '11px';
+								mlResetBtn.style.cursor = 'pointer';
+								mlResetBtn.addEventListener('click', (e) => {
+									e.stopPropagation();
+									delete m.light.customColor;
+									mlColorPicker.value = markerLightDefault;
+									redrawAnnotations();
+									this.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									new Notice('Light colour reset to default');
+								});
+							}
 							
 							// Darkvision input
 							const darkRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
@@ -14465,8 +14823,23 @@ export default class DndCampaignHubPlugin extends Plugin {
 					const lightClickRadius = 15;
 					for (let i = config.lightSources.length - 1; i >= 0; i--) {
 						const light = config.lightSources[i];
-						const dist = Math.sqrt(Math.pow(light.x - mapPos.x, 2) + Math.pow(light.y - mapPos.y, 2));
-						if (dist <= lightClickRadius) {
+						let hitLight = false;
+						if (light.start && light.end && light.type === 'walllight') {
+							// Wall light: check distance to line segment
+							const lx = light.end.x - light.start.x;
+							const ly = light.end.y - light.start.y;
+							const lenSq = lx * lx + ly * ly;
+							let t = lenSq === 0 ? 0 : ((mapPos.x - light.start.x) * lx + (mapPos.y - light.start.y) * ly) / lenSq;
+							t = Math.max(0, Math.min(1, t));
+							const px = light.start.x + t * lx;
+							const py = light.start.y + t * ly;
+							const lineDist = Math.sqrt(Math.pow(px - mapPos.x, 2) + Math.pow(py - mapPos.y, 2));
+							hitLight = lineDist <= lightClickRadius;
+						} else {
+							const dist = Math.sqrt(Math.pow(light.x - mapPos.x, 2) + Math.pow(light.y - mapPos.y, 2));
+							hitLight = dist <= lightClickRadius;
+						}
+						if (hitLight) {
 							e.preventDefault();
 							
 							// Create light context menu
@@ -14501,6 +14874,51 @@ export default class DndCampaignHubPlugin extends Plugin {
 							// Separator
 							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
 							
+							if (light.type === 'walllight') {
+								// Wall light: show bright/dim radius editors
+								const radiusHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+								radiusHeader.textContent = 'Light Radius (ft):';
+								
+								// Bright radius
+								const brightRow = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+								brightRow.style.display = 'flex';
+								brightRow.style.alignItems = 'center';
+								brightRow.style.gap = '8px';
+								brightRow.style.padding = '8px';
+								brightRow.createEl('span', { text: 'Bright:' }).style.fontSize = '12px';
+								const brightInput = brightRow.createEl('input', {
+									attr: { type: 'number', min: '0', max: '120', step: '5', value: String(light.bright || 15) }
+								});
+								brightInput.style.width = '60px';
+								brightInput.style.textAlign = 'center';
+								brightInput.addEventListener('click', (e) => e.stopPropagation());
+								brightInput.addEventListener('change', () => {
+									light.bright = Math.max(0, parseInt(brightInput.value) || 0);
+									redrawAnnotations();
+									this.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								});
+								
+								// Dim radius
+								const dimRow = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+								dimRow.style.display = 'flex';
+								dimRow.style.alignItems = 'center';
+								dimRow.style.gap = '8px';
+								dimRow.style.padding = '8px';
+								dimRow.createEl('span', { text: 'Dim:' }).style.fontSize = '12px';
+								const dimInput = dimRow.createEl('input', {
+									attr: { type: 'number', min: '0', max: '120', step: '5', value: String(light.dim || 15) }
+								});
+								dimInput.style.width = '60px';
+								dimInput.style.textAlign = 'center';
+								dimInput.addEventListener('click', (e) => e.stopPropagation());
+								dimInput.addEventListener('change', () => {
+									light.dim = Math.max(0, parseInt(dimInput.value) || 0);
+									redrawAnnotations();
+									this.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								});
+							} else {
 							// Change light type header
 							const typeHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
 							typeHeader.textContent = 'Change Type:';
@@ -14514,6 +14932,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 								{ type: 'light', icon: '✨', name: 'Light Spell (20ft)' },
 								{ type: 'dancing', icon: '💫', name: 'Dancing Lights (10ft dim)' },
 								{ type: 'daylight', icon: '☀️', name: 'Daylight (60ft)' },
+								{ type: 'fluorescent', icon: '💡', name: 'Fluorescent (30ft)' },
 							];
 							
 							lightTypes.forEach(({ type, icon, name }) => {
@@ -14614,6 +15033,51 @@ export default class DndCampaignHubPlugin extends Plugin {
 								slider.addEventListener('change', () => {
 									this.saveMapAnnotations(config, el);
 									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								});
+							}
+							} // end else (non-walllight type picker)
+							
+// Custom colour picker for all light sources
+										{
+											const lightDefaultColor = light.type === 'fluorescent' ? '#00ffff' : '#ffff88';
+											contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+											const colorHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+											colorHeader.textContent = 'Light Colour:';
+											const colorRow = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+											colorRow.style.display = 'flex';
+											colorRow.style.alignItems = 'center';
+											colorRow.style.gap = '8px';
+											colorRow.style.padding = '8px';
+											const colorPicker = colorRow.createEl('input', {
+												attr: { type: 'color', value: light.customColor || lightDefaultColor }
+											});
+											colorPicker.style.width = '60px';
+											colorPicker.style.height = '30px';
+											colorPicker.style.border = 'none';
+											colorPicker.style.cursor = 'pointer';
+											colorPicker.addEventListener('input', (e) => {
+												e.stopPropagation();
+												light.customColor = (e.target as HTMLInputElement).value;
+												redrawAnnotations();
+											});
+											colorPicker.addEventListener('change', () => {
+												this.saveMapAnnotations(config, el);
+												if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+												new Notice(`Light colour set to ${light.customColor}`);
+											});
+											colorPicker.addEventListener('click', (e) => e.stopPropagation());
+											const resetBtn = colorRow.createEl('button', { text: 'Reset' });
+											resetBtn.style.padding = '4px 8px';
+											resetBtn.style.fontSize = '11px';
+											resetBtn.style.cursor = 'pointer';
+											resetBtn.addEventListener('click', (e) => {
+												e.stopPropagation();
+												delete light.customColor;
+												colorPicker.value = lightDefaultColor;
+												redrawAnnotations();
+												this.saveMapAnnotations(config, el);
+												if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+												new Notice('Light colour reset to default');
 								});
 							}
 							
@@ -37123,6 +37587,7 @@ class PlayerMapView extends ItemView {
             bright: marker.light.bright,
             dim: marker.light.dim,
             type: marker.light.type || '',
+            customColor: marker.light.customColor || undefined,
             name: marker.light.name || 'Token Light',
             attachedToMarker: marker.id,
             elevation: (marker.elevation?.height || 0) - (marker.elevation?.depth || 0)
@@ -37310,12 +37775,15 @@ class PlayerMapView extends ItemView {
       console.log('[PV] Drawing lights intersected with player vision:',{ lights: allLights.length, playerTokens: playerTokens.length });
       
       allLights.forEach((light: any, i: number) => {
-        // Apply flicker modulation for flame-based lights
+        // Apply flicker/buzz modulation for lights
         const pvFlickerKey = `pv_light_${light.attachedToMarker || i}`;
+        const pvIsBuzz = BUZZ_LIGHT_TYPES_SET.has(light.type);
         const pvShouldFlicker = FLICKER_LIGHT_TYPES_SET.has(light.type);
         const pvFlickerTime = performance.now() / 1000;
         const pvFlicker = pvShouldFlicker
-          ? computeLightFlicker(getFlickerSeedForKey(pvFlickerKey), pvFlickerTime, 'high')
+          ? (pvIsBuzz
+            ? computeNeonBuzz(getFlickerSeedForKey(pvFlickerKey), pvFlickerTime)
+            : computeLightFlicker(getFlickerSeedForKey(pvFlickerKey), pvFlickerTime, 'high'))
           : { radius: 1, alpha: 1 };
         
         const brightRadiusPx = light.bright * pixelsPerFoot * pvFlicker.radius;
@@ -37336,6 +37804,57 @@ class PlayerMapView extends ItemView {
         const lightCtx = lightCanvas.getContext('2d');
         
         if (lightCtx) {
+          if (light.start && light.end && light.type === 'walllight') {
+            // --- Wall light: sample points along line ---
+            const wlDx = light.end.x - light.start.x;
+            const wlDy = light.end.y - light.start.y;
+            const wlLen = Math.sqrt(wlDx * wlDx + wlDy * wlDy);
+            const wlStep = Math.min(totalRadiusPx * 0.4, 20);
+            const wlSamples = Math.max(Math.ceil(wlLen / wlStep), 2);
+
+            for (let si = 0; si < wlSamples; si++) {
+              const t = wlSamples <= 1 ? 0.5 : si / (wlSamples - 1);
+              const sx = light.start.x + wlDx * t;
+              const sy = light.start.y + wlDy * t;
+
+              const vis = this.computeVisibilityPolygon(sx, sy, totalRadiusPx, walls, light.elevation || 0);
+              if (vis.length < 3) continue;
+
+              lightCtx.save();
+              lightCtx.beginPath();
+              lightCtx.moveTo(vis[0]!.x, vis[0]!.y);
+              for (let vi = 1; vi < vis.length; vi++) lightCtx.lineTo(vis[vi]!.x, vis[vi]!.y);
+              lightCtx.closePath();
+              lightCtx.clip();
+
+              const featherR = totalRadiusPx * 1.06;
+              const g = lightCtx.createRadialGradient(sx, sy, 0, sx, sy, featherR);
+              if (brightRadiusPx > 0 && dimRadiusPx > 0) {
+                const bR = brightRadiusPx / featherR;
+                g.addColorStop(0, 'rgba(255,255,255,1)');
+                g.addColorStop(bR * 0.8, 'rgba(255,255,255,1)');
+                g.addColorStop(bR, 'rgba(255,255,255,0.78)');
+                g.addColorStop(bR + (1 - bR) * 0.45, 'rgba(255,255,255,0.45)');
+                g.addColorStop(totalRadiusPx / featherR, 'rgba(255,255,255,0.18)');
+                g.addColorStop(1, 'rgba(255,255,255,0)');
+              } else if (brightRadiusPx > 0) {
+                g.addColorStop(0, 'rgba(255,255,255,1)');
+                g.addColorStop(0.65, 'rgba(255,255,255,0.85)');
+                g.addColorStop(totalRadiusPx / featherR, 'rgba(255,255,255,0.2)');
+                g.addColorStop(1, 'rgba(255,255,255,0)');
+              } else {
+                g.addColorStop(0, 'rgba(255,255,255,0.7)');
+                g.addColorStop(0.5, 'rgba(255,255,255,0.45)');
+                g.addColorStop(totalRadiusPx / featherR, 'rgba(255,255,255,0.1)');
+                g.addColorStop(1, 'rgba(255,255,255,0)');
+              }
+              lightCtx.fillStyle = g;
+              lightCtx.beginPath();
+              lightCtx.arc(sx, sy, featherR, 0, Math.PI * 2);
+              lightCtx.fill();
+              lightCtx.restore();
+            }
+          } else {
           // Draw the light on transparent canvas (makes white areas)
           lightCtx.save();
           
@@ -37388,6 +37907,7 @@ class PlayerMapView extends ItemView {
           }
           
           lightCtx.restore();
+          } // end else (point light fog-punch)
           
           // Now intersect with player vision - only show where light rays AND player vision overlap
           lightCtx.globalCompositeOperation = 'destination-in';
@@ -37484,12 +38004,15 @@ class PlayerMapView extends ItemView {
       grayCtx.globalCompositeOperation = 'destination-out';
       if (allLights.length > 0 && playerVisionCtx) {
         allLights.forEach((light: any, li: number) => {
-          // Apply flicker modulation for flame-based lights (grayscale cutout)
+          // Apply flicker/buzz modulation for lights (grayscale cutout)
           const gsFlickerKey = `pv_light_${light.attachedToMarker || li}`;
+          const gsIsBuzz = BUZZ_LIGHT_TYPES_SET.has(light.type);
           const gsShouldFlicker = FLICKER_LIGHT_TYPES_SET.has(light.type);
           const gsFlickerTime = performance.now() / 1000;
           const gsFlicker = gsShouldFlicker
-            ? computeLightFlicker(getFlickerSeedForKey(gsFlickerKey), gsFlickerTime, 'high')
+            ? (gsIsBuzz
+              ? computeNeonBuzz(getFlickerSeedForKey(gsFlickerKey), gsFlickerTime)
+              : computeLightFlicker(getFlickerSeedForKey(gsFlickerKey), gsFlickerTime, 'high'))
             : { radius: 1, alpha: 1 };
           
           const brightRadiusPx = light.bright * pixelsPerFoot * gsFlicker.radius;
@@ -37505,6 +38028,64 @@ class PlayerMapView extends ItemView {
           const lightCtx = lightCanvas.getContext('2d');
           
           if (lightCtx) {
+            if (light.start && light.end && light.type === 'walllight') {
+              // --- Wall light grayscale cutout: sample along line ---
+              const wlDx = light.end.x - light.start.x;
+              const wlDy = light.end.y - light.start.y;
+              const wlLen = Math.sqrt(wlDx * wlDx + wlDy * wlDy);
+              const wlStep = Math.min(totalRadiusPx * 0.4, 20);
+              const wlSamples = Math.max(Math.ceil(wlLen / wlStep), 2);
+
+              for (let si = 0; si < wlSamples; si++) {
+                const t = wlSamples <= 1 ? 0.5 : si / (wlSamples - 1);
+                const sx = light.start.x + wlDx * t;
+                const sy = light.start.y + wlDy * t;
+
+                const vis = this.computeVisibilityPolygon(sx, sy, totalRadiusPx, walls, light.elevation || 0);
+                if (vis.length < 3) continue;
+
+                lightCtx.save();
+                lightCtx.beginPath();
+                lightCtx.moveTo(vis[0]!.x, vis[0]!.y);
+                for (let vi = 1; vi < vis.length; vi++) lightCtx.lineTo(vis[vi]!.x, vis[vi]!.y);
+                lightCtx.closePath();
+                lightCtx.clip();
+
+                const gFeatherR = totalRadiusPx * 1.06;
+                const gGrad = lightCtx.createRadialGradient(sx, sy, 0, sx, sy, gFeatherR);
+                if (brightRadiusPx > 0 && dimRadiusPx > 0) {
+                  const gBR = brightRadiusPx / gFeatherR;
+                  gGrad.addColorStop(0, 'rgba(255,255,255,1)');
+                  gGrad.addColorStop(gBR * 0.8, 'rgba(255,255,255,1)');
+                  gGrad.addColorStop(gBR, 'rgba(255,255,255,0.78)');
+                  gGrad.addColorStop(gBR + (1 - gBR) * 0.45, 'rgba(255,255,255,0.45)');
+                  gGrad.addColorStop(totalRadiusPx / gFeatherR, 'rgba(255,255,255,0.18)');
+                  gGrad.addColorStop(1, 'rgba(255,255,255,0)');
+                } else if (brightRadiusPx > 0) {
+                  gGrad.addColorStop(0, 'rgba(255,255,255,1)');
+                  gGrad.addColorStop(0.65, 'rgba(255,255,255,0.85)');
+                  gGrad.addColorStop(totalRadiusPx / gFeatherR, 'rgba(255,255,255,0.2)');
+                  gGrad.addColorStop(1, 'rgba(255,255,255,0)');
+                } else {
+                  gGrad.addColorStop(0, 'rgba(255,255,255,0.7)');
+                  gGrad.addColorStop(0.5, 'rgba(255,255,255,0.45)');
+                  gGrad.addColorStop(totalRadiusPx / gFeatherR, 'rgba(255,255,255,0.1)');
+                  gGrad.addColorStop(1, 'rgba(255,255,255,0)');
+                }
+                lightCtx.fillStyle = gGrad;
+                lightCtx.beginPath();
+                lightCtx.arc(sx, sy, gFeatherR, 0, Math.PI * 2);
+                lightCtx.fill();
+                lightCtx.restore();
+              }
+
+              // Clip to player vision
+              lightCtx.globalCompositeOperation = 'destination-in';
+              lightCtx.drawImage(playerVisionCanvas, 0, 0);
+
+              // Remove from grayscale
+              grayCtx.drawImage(lightCanvas, 0, 0);
+            } else {
             // Compute light visibility with wall occlusion
             const lightVisPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadiusPx, walls, light.elevation || 0);
             
@@ -37563,6 +38144,7 @@ class PlayerMapView extends ItemView {
               // Remove from grayscale (make these lit areas full color)
               grayCtx.drawImage(lightCanvas, 0, 0);
             }
+            } // end else (point light grayscale cutout)
           }
         });
       }
@@ -37573,6 +38155,151 @@ class PlayerMapView extends ItemView {
     ctx.globalAlpha = 1.0;
     ctx.drawImage(fogCanvas, 0, 0);
     ctx.restore();
+    
+    // Draw coloured light glow overlay (visible through revealed fog areas)
+    if (allLights.length > 0 && playerVisionCtx) {
+      const lightColorCanvas = document.createElement('canvas');
+      lightColorCanvas.width = w;
+      lightColorCanvas.height = h;
+      const lcCtx = lightColorCanvas.getContext('2d');
+      if (lcCtx) {
+        allLights.forEach((light: any, li: number) => {
+          // Resolve colour – default warm yellow for normal lights, cyan for fluorescent
+          const defaultHex = light.type === 'fluorescent' ? '#00ffff' : '#ffff88';
+          const colHex = light.customColor || defaultHex;
+          const col = hexToRgb(colHex);
+          const colDim = { r: Math.floor(col.r * 0.67), g: Math.floor(col.g * 0.67), b: Math.floor(col.b * 0.48) };
+
+          // Flicker / buzz
+          const lcFlickerKey = `pv_light_${light.attachedToMarker || li}`;
+          const lcIsBuzz = BUZZ_LIGHT_TYPES_SET.has(light.type);
+          const lcShouldFlicker = FLICKER_LIGHT_TYPES_SET.has(light.type);
+          const lcTime = performance.now() / 1000;
+          const lcFlicker = lcShouldFlicker
+            ? (lcIsBuzz
+              ? computeNeonBuzz(getFlickerSeedForKey(lcFlickerKey), lcTime)
+              : computeLightFlicker(getFlickerSeedForKey(lcFlickerKey), lcTime, 'high'))
+            : { radius: 1, alpha: 1 };
+
+          const brightPx = light.bright * pixelsPerFoot * lcFlicker.radius;
+          const dimPx = light.dim * pixelsPerFoot * lcFlicker.radius;
+          const totalPx = brightPx + dimPx;
+          if (totalPx <= 0) return;
+
+          // Temp canvas for this single light glow
+          const singleCanvas = document.createElement('canvas');
+          singleCanvas.width = w;
+          singleCanvas.height = h;
+          const sCtx = singleCanvas.getContext('2d');
+          if (!sCtx) return;
+
+          if (light.start && light.end && light.type === 'walllight') {
+            // --- Wall light colour overlay: sample along line ---
+            const wlDx = light.end.x - light.start.x;
+            const wlDy = light.end.y - light.start.y;
+            const wlLen = Math.sqrt(wlDx * wlDx + wlDy * wlDy);
+            const wlStep = Math.min(totalPx * 0.4, 20);
+            const wlSamples = Math.max(Math.ceil(wlLen / wlStep), 2);
+
+            for (let si = 0; si < wlSamples; si++) {
+              const t = wlSamples <= 1 ? 0.5 : si / (wlSamples - 1);
+              const sx = light.start.x + wlDx * t;
+              const sy = light.start.y + wlDy * t;
+
+              const vis = this.computeVisibilityPolygon(sx, sy, totalPx, walls, light.elevation || 0);
+              if (vis.length < 3) continue;
+
+              sCtx.save();
+              sCtx.beginPath();
+              sCtx.moveTo(vis[0]!.x, vis[0]!.y);
+              for (let vi = 1; vi < vis.length; vi++) sCtx.lineTo(vis[vi]!.x, vis[vi]!.y);
+              sCtx.closePath();
+              sCtx.clip();
+
+              const grad = sCtx.createRadialGradient(sx, sy, 0, sx, sy, totalPx);
+              if (brightPx > 0 && dimPx > 0) {
+                const bR = brightPx / totalPx;
+                grad.addColorStop(0, `rgba(${col.r},${col.g},${col.b},0.18)`);
+                grad.addColorStop(bR * 0.75, `rgba(${col.r},${col.g},${col.b},0.14)`);
+                grad.addColorStop(bR, `rgba(${colDim.r},${colDim.g},${colDim.b},0.09)`);
+                grad.addColorStop(Math.min(bR + (1 - bR) * 0.5, 0.95), `rgba(${colDim.r},${colDim.g},${colDim.b},0.04)`);
+                grad.addColorStop(1, `rgba(${colDim.r},${colDim.g},${colDim.b},0)`);
+              } else if (brightPx > 0) {
+                grad.addColorStop(0, `rgba(${col.r},${col.g},${col.b},0.18)`);
+                grad.addColorStop(0.7, `rgba(${col.r},${col.g},${col.b},0.10)`);
+                grad.addColorStop(1, `rgba(${col.r},${col.g},${col.b},0)`);
+              } else {
+                grad.addColorStop(0, `rgba(${colDim.r},${colDim.g},${colDim.b},0.10)`);
+                grad.addColorStop(0.6, `rgba(${colDim.r},${colDim.g},${colDim.b},0.05)`);
+                grad.addColorStop(1, `rgba(${colDim.r},${colDim.g},${colDim.b},0)`);
+              }
+              sCtx.globalAlpha = lcFlicker.alpha;
+              sCtx.fillStyle = grad;
+              sCtx.beginPath();
+              sCtx.arc(sx, sy, totalPx, 0, Math.PI * 2);
+              sCtx.fill();
+              sCtx.restore();
+            }
+          } else {
+          // Compute wall-occluded visibility
+          const visPoly = this.computeVisibilityPolygon(light.x, light.y, totalPx, walls, light.elevation || 0);
+          if (visPoly.length < 3) return;
+
+          sCtx.save();
+          // Clip to visibility polygon
+          sCtx.beginPath();
+          const fp = visPoly[0];
+          if (fp) {
+            sCtx.moveTo(fp.x, fp.y);
+            for (let j = 1; j < visPoly.length; j++) {
+              const vp = visPoly[j];
+              if (vp) sCtx.lineTo(vp.x, vp.y);
+            }
+            sCtx.closePath();
+            sCtx.clip();
+          }
+
+          // Draw coloured radial gradient
+          const grad = sCtx.createRadialGradient(light.x, light.y, 0, light.x, light.y, totalPx);
+          if (brightPx > 0 && dimPx > 0) {
+            const bR = brightPx / totalPx;
+            grad.addColorStop(0, `rgba(${col.r}, ${col.g}, ${col.b}, 0.18)`);
+            grad.addColorStop(bR * 0.75, `rgba(${col.r}, ${col.g}, ${col.b}, 0.14)`);
+            grad.addColorStop(bR, `rgba(${colDim.r}, ${colDim.g}, ${colDim.b}, 0.09)`);
+            grad.addColorStop(Math.min(bR + (1 - bR) * 0.5, 0.95), `rgba(${colDim.r}, ${colDim.g}, ${colDim.b}, 0.04)`);
+            grad.addColorStop(1, `rgba(${colDim.r}, ${colDim.g}, ${colDim.b}, 0)`);
+          } else if (brightPx > 0) {
+            grad.addColorStop(0, `rgba(${col.r}, ${col.g}, ${col.b}, 0.18)`);
+            grad.addColorStop(0.7, `rgba(${col.r}, ${col.g}, ${col.b}, 0.10)`);
+            grad.addColorStop(1, `rgba(${col.r}, ${col.g}, ${col.b}, 0)`);
+          } else {
+            grad.addColorStop(0, `rgba(${colDim.r}, ${colDim.g}, ${colDim.b}, 0.10)`);
+            grad.addColorStop(0.6, `rgba(${colDim.r}, ${colDim.g}, ${colDim.b}, 0.05)`);
+            grad.addColorStop(1, `rgba(${colDim.r}, ${colDim.g}, ${colDim.b}, 0)`);
+          }
+          sCtx.globalAlpha = lcFlicker.alpha;
+          sCtx.fillStyle = grad;
+          sCtx.beginPath();
+          sCtx.arc(light.x, light.y, totalPx, 0, Math.PI * 2);
+          sCtx.fill();
+          sCtx.restore();
+          } // end else (point light colour overlay)
+
+          // Clip to player vision
+          sCtx.globalCompositeOperation = 'destination-in';
+          sCtx.drawImage(playerVisionCanvas, 0, 0);
+
+          // Accumulate onto shared light-color canvas
+          lcCtx.drawImage(singleCanvas, 0, 0);
+        });
+
+        // Composite colour overlay onto the main canvas (over fog)
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.drawImage(lightColorCanvas, 0, 0);
+        ctx.restore();
+      }
+    }
     
     // Apply grayscale overlay on top (darkvision tint)
     if (darkvisionMarkers.length > 0 && grayCtx) {
@@ -37873,6 +38600,48 @@ class PlayerMapView extends ItemView {
         p2: { x: wall.end.x, y: wall.end.y }
       });
     });
+    
+    // --- Wall gap prevention: snap nearby endpoints + extend segments ---
+    // This fixes light leaking through tiny gaps where walls don't perfectly meet.
+    const wallSegStart = circleSegments; // first N segments are bounding circle
+    
+    // 1) Snap nearby wall endpoints together (< 4px apart) to close micro-gaps
+    const snapDistSq = 4 * 4; // 4 pixels, squared for fast comparison
+    const wepRefs: { x: number; y: number }[] = [];
+    for (let wi = wallSegStart; wi < segments.length; wi++) {
+      const s = segments[wi]!;
+      wepRefs.push(s.p1, s.p2);
+    }
+    for (let wi = 0; wi < wepRefs.length; wi++) {
+      for (let wj = wi + 1; wj < wepRefs.length; wj++) {
+        const sdx = wepRefs[wi]!.x - wepRefs[wj]!.x;
+        const sdy = wepRefs[wi]!.y - wepRefs[wj]!.y;
+        const sd2 = sdx * sdx + sdy * sdy;
+        if (sd2 > 0 && sd2 < snapDistSq) {
+          const mx = (wepRefs[wi]!.x + wepRefs[wj]!.x) * 0.5;
+          const my = (wepRefs[wi]!.y + wepRefs[wj]!.y) * 0.5;
+          wepRefs[wi]!.x = mx; wepRefs[wi]!.y = my;
+          wepRefs[wj]!.x = mx; wepRefs[wj]!.y = my;
+        }
+      }
+    }
+    
+    // 2) Extend each wall segment 2px past its endpoints to seal junction gaps
+    const extPx = 2;
+    for (let wi = wallSegStart; wi < segments.length; wi++) {
+      const seg = segments[wi]!;
+      const edx = seg.p2.x - seg.p1.x;
+      const edy = seg.p2.y - seg.p1.y;
+      const eLen = Math.sqrt(edx * edx + edy * edy);
+      if (eLen > 0) {
+        const ux = edx / eLen;
+        const uy = edy / eLen;
+        seg.p1.x -= ux * extPx;
+        seg.p1.y -= uy * extPx;
+        seg.p2.x += ux * extPx;
+        seg.p2.y += uy * extPx;
+      }
+    }
     
     // Collect all unique angles to wall endpoints
     const angles: number[] = [];
