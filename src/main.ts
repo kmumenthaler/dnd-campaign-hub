@@ -115,11 +115,11 @@ class CanvasPool {
     if (!c) {
       c = document.createElement('canvas');
     }
-    if (c.width !== w) c.width = w;
-    if (c.height !== h) c.height = h;
-    // clearRect is needed because resizing only clears when dimensions change
-    const ctx = c.getContext('2d');
-    if (ctx) ctx.clearRect(0, 0, w, h);
+    // Always assign dimensions — this resets the entire canvas context state
+    // (globalCompositeOperation, clips, transforms, globalAlpha, etc.)
+    // just doing clearRect would leave stale composite ops from prior users.
+    c.width = w;
+    c.height = h;
     return c;
   }
 
