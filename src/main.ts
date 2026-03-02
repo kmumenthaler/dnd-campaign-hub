@@ -1,4 +1,4 @@
-﻿import { App, Editor, ItemView, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TextComponent, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
+import { App, Editor, ItemView, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TextComponent, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
 import {
   WORLD_TEMPLATE,
   SESSION_GM_TEMPLATE,
@@ -312,7 +312,7 @@ export default class DndCampaignHubPlugin extends Plugin {
     // Check for version updates
     await this.checkForUpdates();
 
-    // Focus recovery command â€” workaround for Obsidian/Electron focus bug
+    // Focus recovery command — workaround for Obsidian/Electron focus bug
     this.addCommand({
       id: "reset-focus",
       name: "Reset Focus (fix stuck input fields)",
@@ -458,7 +458,7 @@ export default class DndCampaignHubPlugin extends Plugin {
               // Delete from vault
               await this.app.vault.delete(file);
               
-              new Notice(`âœ“ NPC "${npcName}" deleted`);
+              new Notice(`✔ NPC "${npcName}" deleted`);
             }
           } else {
             new Notice("This is not an NPC note");
@@ -519,7 +519,7 @@ export default class DndCampaignHubPlugin extends Plugin {
               // Delete from vault
               await this.app.vault.delete(file);
               
-              new Notice(`âœ“ PC "${pcName}" deleted`);
+              new Notice(`✔ PC "${pcName}" deleted`);
             }
           } else {
             new Notice("This is not a PC note");
@@ -575,7 +575,7 @@ export default class DndCampaignHubPlugin extends Plugin {
               // Delete from vault
               await this.app.vault.delete(file);
               
-              new Notice(`âœ“ Point of Interest "${poiName}" deleted`);
+              new Notice(`✔ Point of Interest "${poiName}" deleted`);
             }
           } else {
             new Notice("This is not a PoI note");
@@ -588,7 +588,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "insert-poi-codeblock",
-      name: "ðŸ“ Insert PoI Code Block",
+      name: "📍 Insert PoI Code Block",
       editorCallback: (editor, view) => {
         // Detect campaign from current file path
         let campaignName = "";
@@ -610,7 +610,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "update-poi-icons",
-      name: "ðŸ”„ Update PoI Icons",
+      name: "🔄 Update PoI Icons",
       callback: async () => {
         await this.updatePoiIcons();
       },
@@ -661,19 +661,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "create-map",
-      name: "ðŸ—ºï¸ Create Battle Map (from template)",
+      name: "🗺️ Create Battle Map (from template)",
       callback: () => this.createMap(),
     });
 
     this.addCommand({
       id: "create-battlemap-template",
-      name: "ðŸ—ï¸ Create Battlemap Template",
+      name: "🏗️ Create Battlemap Template",
       callback: () => this.createBattlemapTemplate(),
     });
 
     this.addCommand({
       id: "manage-maps",
-      name: "ðŸ—ºï¸ Map Manager",
+      name: "🗺️ Map Manager",
       callback: () => new MapManagerModal(this.app, this, this.mapManager).open(),
     });
 
@@ -722,18 +722,18 @@ export default class DndCampaignHubPlugin extends Plugin {
                     
                     if (initiativeTracker.saveSettings) {
                       await initiativeTracker.saveSettings();
-                      new Notice(`âœ“ Scene "${sceneName}" and its encounter deleted`);
+                      new Notice(`✔ Scene "${sceneName}" and its encounter deleted`);
                     } else {
-                      new Notice(`âš ï¸ Scene deleted but could not persist encounter deletion`);
+                      new Notice(`⚠️ Scene deleted but could not persist encounter deletion`);
                     }
                   } else {
-                    new Notice(`âœ“ Scene "${sceneName}" deleted from vault`);
+                    new Notice(`✔ Scene "${sceneName}" deleted from vault`);
                   }
                 } else {
-                  new Notice(`âœ“ Scene "${sceneName}" deleted from vault`);
+                  new Notice(`✔ Scene "${sceneName}" deleted from vault`);
                 }
               } else {
-                new Notice(`âœ“ Scene "${sceneName}" deleted from vault`);
+                new Notice(`✔ Scene "${sceneName}" deleted from vault`);
               }
             }
           } else {
@@ -781,7 +781,7 @@ export default class DndCampaignHubPlugin extends Plugin {
               // Delete from vault
               await this.app.vault.delete(file);
               
-              new Notice(`âœ“ Trap "${trapName}" deleted`);
+              new Notice(`✔ Trap "${trapName}" deleted`);
             }
           } else {
             new Notice("This is not a trap note");
@@ -794,7 +794,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "create-item",
-      name: "âš”ï¸ Create New Item",
+      name: "⚔️ Create New Item",
       callback: () => this.createItem(),
     });
 
@@ -825,7 +825,7 @@ export default class DndCampaignHubPlugin extends Plugin {
               // Delete from vault
               await this.app.vault.delete(file);
               
-              new Notice(`âœ“ Item "${itemName}" deleted`);
+              new Notice(`✔ Item "${itemName}" deleted`);
             }
           } else {
             new Notice("This is not an item note");
@@ -838,7 +838,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "create-creature",
-      name: "ðŸ‰ Create New Creature",
+      name: "🐉 Create New Creature",
       callback: () => this.createCreature(),
     });
 
@@ -872,7 +872,7 @@ export default class DndCampaignHubPlugin extends Plugin {
               // Delete from Fantasy Statblocks plugin
               await this.deleteCreatureStatblock(creatureName);
               
-              new Notice(`âœ“ Creature "${creatureName}" deleted`);
+              new Notice(`✔ Creature "${creatureName}" deleted`);
             }
           } else {
             new Notice("This is not a creature note");
@@ -891,7 +891,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "insert-encounter-widget",
-      name: "âš”ï¸ Insert Encounter Widget",
+      name: "⚔️ Insert Encounter Widget",
       editorCallback: (editor) => {
         import('./encounter/InsertEncounterWidgetModal').then(({ InsertEncounterWidgetModal }) => {
           new InsertEncounterWidgetModal(this.app, this, (codeblock) => {
@@ -926,7 +926,7 @@ export default class DndCampaignHubPlugin extends Plugin {
       })
     );
 
-    // â”€â”€ Token auto-sync: keep marker library in sync when notes are edited â”€â”€
+    // ── Token auto-sync: keep marker library in sync when notes are edited ──
 
     // Sync token name/size when PC, NPC or Creature frontmatter is modified
     this.registerEvent(
@@ -1059,15 +1059,15 @@ export default class DndCampaignHubPlugin extends Plugin {
                   
                   if (initiativeTracker.saveSettings) {
                     await initiativeTracker.saveSettings();
-                    new Notice(`âœ“ Encounter "${encounterName}" deleted from vault and Initiative Tracker`);
+                    new Notice(`✔ Encounter "${encounterName}" deleted from vault and Initiative Tracker`);
                   } else {
-                    new Notice(`âš ï¸ Encounter deleted from vault but could not persist deletion to Initiative Tracker`);
+                    new Notice(`⚠️ Encounter deleted from vault but could not persist deletion to Initiative Tracker`);
                   }
                 } else {
-                  new Notice(`âš ï¸ Encounter deleted from vault but not found in Initiative Tracker`);
+                  new Notice(`⚠️ Encounter deleted from vault but not found in Initiative Tracker`);
                 }
               } else {
-                new Notice(`âš ï¸ Encounter deleted from vault but Initiative Tracker data not accessible`);
+                new Notice(`⚠️ Encounter deleted from vault but Initiative Tracker data not accessible`);
               }
             }
           } else {
@@ -1079,11 +1079,11 @@ export default class DndCampaignHubPlugin extends Plugin {
       },
     });
 
-    // â”€â”€â”€ Music Player Commands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─── Music Player Commands ──────────────────────────────
 
     this.addCommand({
       id: "open-music-player",
-      name: "ðŸŽµ Open Music Player",
+      name: "🎵 Open Music Player",
       callback: () => {
         this.ensureMusicPlayerOpen();
       },
@@ -1123,7 +1123,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "insert-scene-music",
-      name: "ðŸŽµ Insert Scene Music Block",
+      name: "🎵 Insert Scene Music Block",
       editorCallback: (editor: Editor) => {
         new SceneMusicModal(
           this.app,
@@ -1140,7 +1140,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "insert-sound-effect",
-      name: "ðŸ”Š Insert Sound Effect Block",
+      name: "🔊 Insert Sound Effect Block",
       editorCallback: (editor: Editor) => {
         new SoundEffectModal(
           this.app,
@@ -1157,32 +1157,32 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "music-volume-up",
-      name: "ðŸ”Š Volume Up (+10)",
+      name: "🔊 Volume Up (+10)",
       callback: () => {
         const vol = Math.min(100, this.musicPlayer.primary.state.volume + 10);
         this.musicPlayer.primary.setVolume(vol);
-        new Notice(`ðŸ”Š Volume: ${vol}%`);
+        new Notice(`🔊 Volume: ${vol}%`);
       },
     });
 
     this.addCommand({
       id: "music-volume-down",
-      name: "ðŸ”‰ Volume Down (-10)",
+      name: "🔉 Volume Down (-10)",
       callback: () => {
         const vol = Math.max(0, this.musicPlayer.primary.state.volume - 10);
         this.musicPlayer.primary.setVolume(vol);
-        new Notice(`ðŸ”‰ Volume: ${vol}%`);
+        new Notice(`🔉 Volume: ${vol}%`);
       },
     });
 
     this.addCommand({
       id: "toggle-music-mute",
-      name: "ðŸ”‡ Toggle Mute",
+      name: "🔇 Toggle Mute",
       callback: () => {
         this.musicPlayer.primary.toggleMute();
         this.musicPlayer.ambient.toggleMute();
         const muted = this.musicPlayer.primary.state.isMuted;
-        new Notice(muted ? 'ðŸ”‡ Muted' : 'ðŸ”Š Unmuted');
+        new Notice(muted ? '🔇 Muted' : '🔊 Unmuted');
       },
     });
 
@@ -1201,18 +1201,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "search-freesound",
-      name: "ðŸ” Search Freesound",
+      name: "🔍 Search Freesound",
       callback: () => {
         const key = this.settings.musicSettings.freesoundApiKey;
         if (!key) {
-          new Notice("Set a Freesound API Key in Music Settings â†’ General first");
+          new Notice("Set a Freesound API Key in Music Settings → General first");
           return;
         }
         new FreesoundSearchModal(
           this.app,
           key,
           this.settings.musicSettings.audioFolderPath,
-          (_paths) => { /* standalone mode â€“ no auto-import */ },
+          (_paths) => { /* standalone mode — no auto-import */ },
         ).open();
       },
     });
@@ -1225,7 +1225,7 @@ export default class DndCampaignHubPlugin extends Plugin {
       },
     });
 
-    // â”€â”€ Random Encounter Table commands â”€â”€
+    // ── Random Encounter Table commands ──
     this.addCommand({
       id: "create-random-encounter-table",
       name: "Create Random Encounter Table",
@@ -1244,7 +1244,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "insert-encounter-table-codeblock",
-      name: "ðŸŽ² Insert Encounter Table Code Block",
+      name: "🎲 Insert Encounter Table Code Block",
       editorCallback: (editor) => {
         import('./encounter/InsertEncounterTableModal').then(({ InsertEncounterTableModal }) => {
           new InsertEncounterTableModal(this.app, this, (codeblock) => {
@@ -1256,7 +1256,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "reroll-encounter-table-entry",
-      name: "ðŸ”„ Reroll Encounter Table Entry",
+      name: "🔄 Reroll Encounter Table Entry",
       callback: () => {
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile) {
@@ -1265,7 +1265,7 @@ export default class DndCampaignHubPlugin extends Plugin {
         }
         const cache = this.app.metadataCache.getFileCache(activeFile);
         if (cache?.frontmatter?.type !== "encounter-table") {
-          new Notice("âš ï¸ This is not an encounter table note.");
+          new Notice("⚠️ This is not an encounter table note.");
           return;
         }
         import('./encounter/RerollEncounterModal').then(({ RerollEncounterModal }) => {
@@ -1276,7 +1276,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "edit-encounter-table",
-      name: "âœï¸ Edit Encounter Table",
+      name: "✏️ Edit Encounter Table",
       callback: () => {
         const file = this.app.workspace.getActiveFile();
         if (!file) {
@@ -1296,7 +1296,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "delete-encounter-table",
-      name: "ðŸ—‘ï¸ Delete Encounter Table",
+      name: "🗑️ Delete Encounter Table",
       callback: async () => {
         const file = this.app.workspace.getActiveFile();
         if (!file) {
@@ -1312,7 +1312,7 @@ export default class DndCampaignHubPlugin extends Plugin {
         const confirmed = await this.confirmDelete(file.name);
         if (confirmed) {
           await this.app.vault.delete(file);
-          new Notice(`âœ“ Encounter table "${tableName}" deleted`);
+          new Notice(`✔ Encounter table "${tableName}" deleted`);
         }
       },
     });
@@ -1427,7 +1427,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 				
 				const correctIcon = typeDefinition.icon;
-				const currentIcon = fm.icon || 'ðŸ“';
+				const currentIcon = fm.icon || '📍';
 				
 				// Skip if already correct
 				if (currentIcon === correctIcon) {
@@ -1455,11 +1455,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 				updated++;
 			}
 			
-			new Notice(`âœ… Updated ${updated} PoI icons (${skipped} already correct)`);
+			new Notice(`✅ Updated ${updated} PoI icons (${skipped} already correct)`);
 			
 		} catch (error) {
 			console.error('Error updating PoI icons:', error);
-			new Notice('âŒ Failed to update PoI icons');
+			new Notice('❌ Failed to update PoI icons');
 		}
 	}
 
@@ -1908,9 +1908,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 				await this.app.vault.delete(file);
 			}
-			new Notice(`âœ… Adventure "${adventureName}" deleted!`);
+			new Notice(`✅ Adventure "${adventureName}" deleted!`);
 		} catch (error) {
-			new Notice(`âŒ Error deleting adventure: ${error instanceof Error ? error.message : String(error)}`);
+			new Notice(`❌ Error deleting adventure: ${error instanceof Error ? error.message : String(error)}`);
 			console.error("Adventure deletion error:", error);
 		}
 	}
@@ -2185,11 +2185,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 			await this.updateInitiativeTrackerEncounter(encounterName, encounterCreatures, selectedPartyId, useColorNames);
 
 			if (scenesLinking.length > 0) {
-				new Notice(`âœ… Encounter "${encounterName}" synced to ${scenesLinking.length} scene(s)`);
+				new Notice(`✅ Encounter "${encounterName}" synced to ${scenesLinking.length} scene(s)`);
 			}
 		} catch (error) {
 			console.error('[SyncEncounter] Error:', error);
-			new Notice('âš ï¸ Error syncing encounter to scenes');
+			new Notice('⚠️ Error syncing encounter to scenes');
 		}
 	}
 
@@ -2330,7 +2330,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Save settings
 			if (initiativePlugin.saveSettings) {
 				await initiativePlugin.saveSettings();
-				new Notice(`âœ… Initiative Tracker updated with latest encounter data`);
+				new Notice(`✅ Initiative Tracker updated with latest encounter data`);
 			}
 		} catch (error) {
 			console.error('[UpdateTracker] Error updating Initiative Tracker:', error);
@@ -2450,7 +2450,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		}
 	}
 
-	// â”€â”€â”€ Music: Status Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+	// ─── Music: Status Bar ────────────────────────────────────
 
 	/**
 	 * Create a status bar item that shows the currently playing track.
@@ -2464,7 +2464,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		this._musicStatusBarEl.addEventListener('click', () => {
 			const existing = this.app.workspace.getLeavesOfType(MUSIC_PLAYER_VIEW_TYPE);
 			if (existing.length > 0 && existing[0]) {
-				// Already open â†’ close it
+				// Already open → close it
 				existing[0].detach();
 			} else {
 				this.ensureMusicPlayerOpen();
@@ -2480,9 +2480,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const track = this.musicPlayer.primary.getCurrentTrack();
 			const playing = this.musicPlayer.primary.state.isPlaying;
 			if (playing && track) {
-				this._musicStatusBarEl.setText(`ðŸŽµ ${track.title}`);
+				this._musicStatusBarEl.setText(`🎵 ${track.title}`);
 			} else if (track && !playing) {
-				this._musicStatusBarEl.setText(`â¸ ${track.title}`);
+				this._musicStatusBarEl.setText(`⏸ ${track.title}`);
 			} else {
 				this._musicStatusBarEl.setText('');
 			}
@@ -2513,11 +2513,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 		};
 	}
 
-	// â”€â”€â”€ Music: Playback Persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+	// ─── Music: Playback Persistence ──────────────────────────
 
 	private _saveMusicStateTimer: ReturnType<typeof setTimeout> | null = null;
 
-	/** Debounce state saves â€“ don't write data.json on every 500ms progress tick */
+	/** Debounce state saves — don't write data.json on every 500ms progress tick */
 	private debouncedSaveMusicState() {
 		if (this._saveMusicStateTimer) clearTimeout(this._saveMusicStateTimer);
 		this._saveMusicStateTimer = setTimeout(() => {
@@ -2595,7 +2595,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			return;
 		}
 
-		// Open in the right sidebar â€” use createLeafInParent to split bottom
+		// Open in the right sidebar — use createLeafInParent to split bottom
 		const rightLeaf = this.app.workspace.getRightLeaf(false);
 		if (rightLeaf) {
 			await rightLeaf.setViewState({
@@ -2641,7 +2641,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	async createMap() {
-		// Open Template Picker â€“ battlemaps are always created from templates
+		// Open Template Picker — battlemaps are always created from templates
 		new TemplatePickerModal(this.app, this, this.mapManager).open();
 	}
 
@@ -2763,7 +2763,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 		const cache = this.app.metadataCache.getFileCache(activeFile);
 		if (cache?.frontmatter?.type !== "encounter-table") {
-			new Notice("âš ï¸ This is not an encounter table note.");
+			new Notice("⚠️ This is not an encounter table note.");
 			return;
 		}
 
@@ -2778,9 +2778,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 		if (match) {
 			const encounter = match[1]?.trim() ?? "Unknown";
 			const difficulty = match[2]?.trim() ?? "";
-			new Notice(`ðŸŽ² Rolled ${roll} on d${entries}:\n${encounter}\nDifficulty: ${difficulty}`, 8000);
+			new Notice(`🎲 Rolled ${roll} on d${entries}:\n${encounter}\nDifficulty: ${difficulty}`, 8000);
 		} else {
-			new Notice(`ðŸŽ² Rolled ${roll} on d${entries}!`, 5000);
+			new Notice(`🎲 Rolled ${roll} on d${entries}!`, 5000);
 		}
 	}
 
