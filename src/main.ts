@@ -34304,7 +34304,10 @@ class PlayerMapView extends ItemView {
   }
 
   /**
-   * Called by the GM view to push real-time updates
+   * Called by the GM view to push real-time updates.
+   * Only redraws annotations — the expensive layout sync (canvas sizing,
+   * CSS style writes, getBoundingClientRect) is handled independently by
+   * ResizeObserver, image onload, and tabletop-mode change handlers.
    */
   updateMapData(config: any) {
     // Extract travel animation data before storing config
@@ -34313,13 +34316,10 @@ class PlayerMapView extends ItemView {
       delete config.hexcrawlTravel; // Don't persist animation trigger
     }
     this.mapConfig = config;
-    // Use syncCanvasToImage when available — it ensures the canvas is properly
-    // sized before drawing (important for video where media may still be loading).
-    if (this.syncCanvasToImage) {
-      this.syncCanvasToImage();
-    } else {
-      this.redrawAnnotations();
-    }
+    // Redraw annotations only — skip the full syncCanvasToImage() which
+    // recalculates CSS layout every call.  Layout is kept in sync by
+    // ResizeObserver, image/video onload, and tabletop mode toggles.
+    this.redrawAnnotations();
     // Trigger hexcrawl travel animation if present
     if (hexcrawlTravel) {
       this.animateHexcrawlTravel(hexcrawlTravel.fromCol, hexcrawlTravel.fromRow, hexcrawlTravel.toCol, hexcrawlTravel.toRow);
