@@ -774,20 +774,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		// === COMMON TOOLS (2-column grid, always visible) ===
 		const commonToolGroup = toolbarContent.createDiv({ cls: 'dnd-map-tool-group' });
 		
-		// Helper: position a fixed-position picker flyout relative to its parent button
-		const positionPicker = (picker: HTMLElement) => {
-			const btn = picker.parentElement;
-			if (!btn) return;
-			const rect = btn.getBoundingClientRect();
-			picker.style.left = `${rect.right + 8}px`;
-			picker.style.top = `${rect.top + rect.height / 2}px`;
-			picker.style.transform = 'translateY(-50%)';
-		};
-
-		// Wrapper to toggle a picker and reposition it when showing
+		// Wrapper to toggle a picker's visibility.
+		// Positioning is handled purely via CSS (position:absolute on .dnd-map-aoe-picker).
 		const togglePicker = (picker: HTMLElement, show: boolean) => {
 			picker.toggleClass('hidden', !show);
-			if (show) positionPicker(picker);
 		};
 
 		// Helper to create icon-only buttons with hover labels
@@ -796,14 +786,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				cls: 'dnd-map-tool-btn' + (isActive ? ' active' : '') + (fullWidth ? ' full-width' : '')
 			});
 			btn.createEl('span', { text: icon, cls: 'dnd-map-tool-btn-icon' });
-			const labelSpan = btn.createEl('span', { text: label, cls: 'dnd-map-tool-btn-label' });
-			// Position tooltip (fixed) on mouseenter relative to button
-			btn.addEventListener('mouseenter', () => {
-				const rect = btn.getBoundingClientRect();
-				labelSpan.style.left = `${rect.right + 12}px`;
-				labelSpan.style.top = `${rect.top + rect.height / 2}px`;
-				labelSpan.style.transform = 'translateY(-50%)';
-			});
+			btn.createEl('span', { text: label, cls: 'dnd-map-tool-btn-label' });
+			// Tooltip positioning is handled via CSS (position:absolute on .dnd-map-tool-btn-label)
 			return btn;
 		};
 		

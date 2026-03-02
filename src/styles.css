@@ -3658,7 +3658,7 @@
   border-radius: 10px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   overflow: visible;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
   width: 140px;
@@ -3759,7 +3759,9 @@
   cursor: pointer;
   font-size: 16px;
   color: rgba(255, 255, 255, 0.9);
-  transition: all 0.2s ease;
+  /* Exclude transform from transition so :active never creates a temporary
+     containing block that would misposition position:fixed children. */
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3788,13 +3790,19 @@
 }
 
 .dnd-map-tool-btn:active {
-  transform: scale(0.98);
+  /* Avoid transform here — it creates a containing block that breaks
+     position:fixed on picker flyouts and tooltip labels. */
+  background: rgba(255, 255, 255, 0.05);
 }
 
-/* Tooltip-style label that appears to the right */
-/* Tooltip labels: use position:fixed so they escape scrollable overflow */
+/* Tooltip-style label that appears to the right of its parent button.
+   Uses position:absolute (not fixed) because Obsidian ancestor transforms
+   break fixed positioning. Parent .dnd-map-tool-btn has position:relative. */
 .dnd-map-tool-btn-label {
-  position: fixed;
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%);
   padding: 6px 10px;
   background: rgba(0, 0, 0, 0.9);
   border-radius: 6px;
@@ -4254,9 +4262,14 @@
 }
 
 /* AoE Shape Picker */
-/* Pickers: use position:fixed so they escape scrollable overflow */
+/* Pickers: position:absolute relative to parent button (position:relative).
+   position:fixed cannot be used inside Obsidian because ancestor transforms
+   create containing blocks that break viewport-relative positioning. */
 .dnd-map-aoe-picker {
-  position: fixed;
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   flex-direction: row;
   gap: 4px;
@@ -4267,7 +4280,6 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   white-space: nowrap;
   z-index: 9999;
-  transition: opacity 0.2s ease;
 }
 
 .dnd-map-aoe-picker.hidden {
