@@ -36014,21 +36014,22 @@ class PlayerMapView extends ItemView {
       const normalizedOffsetX = ((offsetX % sizeW) + sizeW) % sizeW;
       const normalizedOffsetY = ((offsetY % sizeH) + sizeH) % sizeH;
 
+      // Batch all square grid lines into a single path
+      ctx.beginPath();
       for (let x = normalizedOffsetX; x <= w; x += sizeW) {
-        ctx.beginPath();
         ctx.moveTo(x, 0);
         ctx.lineTo(x, h);
-        ctx.stroke();
       }
       for (let y = normalizedOffsetY; y <= h; y += sizeH) {
-        ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(w, y);
-        ctx.stroke();
       }
+      ctx.stroke();
     } else if (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') {
       const geo = this.getPlayerHexGeometry(config);
       
+      // Batch all hexagons into a single path — one stroke() call
+      ctx.beginPath();
       if (config.gridType === 'hex-horizontal') {
         const startCol = Math.floor(-offsetX / geo.horiz) - 2;
         const endCol = Math.ceil((w - offsetX) / geo.horiz) + 2;
@@ -36040,7 +36041,7 @@ class PlayerMapView extends ItemView {
             const colOffsetY = (col & 1) ? geo.vert / 2 : 0;
             const centerX = col * geo.horiz + offsetX;
             const centerY = row * geo.vert + colOffsetY + offsetY;
-            this.drawHexFlatOutlineStretched(ctx, centerX, centerY, geo.sizeX, geo.sizeY);
+            this._addHexFlatPath(ctx, centerX, centerY, geo.sizeX, geo.sizeY);
           }
         }
       } else if (config.gridType === 'hex-vertical') {
@@ -36054,13 +36055,36 @@ class PlayerMapView extends ItemView {
             const rowOffsetX = (row & 1) ? geo.horiz / 2 : 0;
             const centerX = col * geo.horiz + rowOffsetX + offsetX;
             const centerY = row * geo.vert + offsetY;
-            this.drawHexPointyOutlineStretched(ctx, centerX, centerY, geo.sizeX, geo.sizeY);
+            this._addHexPointyPath(ctx, centerX, centerY, geo.sizeX, geo.sizeY);
           }
         }
       }
+      ctx.stroke();
     }
 
     ctx.restore();
+  }
+
+  /** Add flat-top hex outline to current path (no stroke). */
+  private _addHexFlatPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number) {
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i;
+      const x = cx + rx * Math.cos(a);
+      const y = cy + ry * Math.sin(a);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
+  /** Add pointy-top hex outline to current path (no stroke). */
+  private _addHexPointyPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number) {
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 6) + (Math.PI / 3) * i;
+      const x = cx + rx * Math.cos(a);
+      const y = cy + ry * Math.sin(a);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
   }
 
   private drawHexFlatOutline(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number) {
