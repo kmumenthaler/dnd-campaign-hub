@@ -8398,6 +8398,23 @@ export default class DndCampaignHubPlugin extends Plugin {
 				
 				ctx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
 
+				// ── Viewport culling: compute visible rect in canvas coords ──
+				// Elements entirely outside this rect are skipped to avoid
+				// wasted canvas draw calls when the user is zoomed in.
+				const _cullPad = 120; // px padding to avoid edge-pop artifacts
+				const _srX = img.naturalWidth / (img.width || 1);
+				const _srY = img.naturalHeight / (img.height || 1);
+				const _viewL = (-translateX / scale) * _srX - _cullPad;
+				const _viewT = (-translateY / scale) * _srY - _cullPad;
+				const _viewR = _viewL + (viewport.clientWidth / scale) * _srX + _cullPad * 2;
+				const _viewB = _viewT + (viewport.clientHeight / scale) * _srY + _cullPad * 2;
+				// Fast AABB test: is rectangle (x,y,w,h) inside the view?
+				const _inViewRect = (x: number, y: number, w: number, h: number) =>
+					x + w > _viewL && x < _viewR && y + h > _viewT && y < _viewB;
+				// Fast circle-vs-AABB test
+				const _inViewCircle = (cx: number, cy: number, r: number) =>
+					cx + r > _viewL && cx - r < _viewR && cy + r > _viewT && cy - r < _viewB;
+
 				// Helper: determine opacity for a background element group based on active edit view
 				const isOnBgLayer = config.activeLayer === 'Background';
 				const bgViewDimAlpha = 0.12;
@@ -8502,6 +8519,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const row = parseInt(parts[1] ?? '0');
 						const cellX = col * gs + ox;
 						const cellY = row * gs + oy;
+						if (!_inViewRect(cellX, cellY, gs, gs)) continue;
 						const elev = elevation as number;
 						
 						// Fill tile with elevation color
@@ -8547,6 +8565,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const row = parseInt(parts[1] ?? '0');
 						const cellX = col * gs + ox;
 						const cellY = row * gs + oy;
+						if (!_inViewRect(cellX, cellY, gs, gs)) continue;
 						
 						// Fill tile with semi-transparent brown/tan hatching pattern
 						ctx.fillStyle = 'rgba(139, 90, 43, 0.25)';
@@ -8609,6 +8628,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 						if (marker.light && marker.light.bright !== undefined) {
 							const baseBrightPx = marker.light.bright * pixelsPerFoot;
 							const baseDimPx = marker.light.dim * pixelsPerFoot;
+							// Viewport cull: skip light glow entirely outside view
+							const _maxLightR = (baseBrightPx + baseDimPx) * 1.15; // flicker margin
+							if (!_inViewCircle(marker.position.x, marker.position.y, _maxLightR)) return;
 							
 							// Compute flicker/buzz for marker lights
 							const flickerKey = `marker_${marker.id || mIdx}`;
@@ -8674,8 +8696,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
 						const radius = (squares * config.gridSize) / 2.5;
 						
-						// Draw entrance
+						// Viewport cull: skip tunnel if both entrance & exit are off-screen
 						const entrance = tunnel.entrancePosition;
+						const _tunExit = tunnel.path && tunnel.path.length > 1 ? tunnel.path[tunnel.path.length - 1] : entrance;
+						if (!_inViewCircle(entrance.x, entrance.y, radius) && !_inViewCircle(_tunExit.x, _tunExit.y, radius)) return;
+
+						// Draw entrance
 						ctx.save();
 						ctx.globalAlpha = 0.7;
 						
@@ -8757,6 +8783,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 					// Sort by zIndex ascending (lower = drawn first = further back)
 					const sorted = [...config.envAssets].sort((a: EnvAssetInstance, b: EnvAssetInstance) => (a.zIndex || 0) - (b.zIndex || 0));
 					sorted.forEach((inst: EnvAssetInstance) => {
+						// Viewport cull: use half-diagonal as conservative radius for rotated assets
+						const _envR = (inst.width + inst.height) / 2;
+						if (!_inViewCircle(inst.position.x, inst.position.y, _envR)) return;
 						const def = this.envAssetLibrary.getAsset(inst.assetId);
 						if (!def) return;
 						const img = getEnvAssetImage(def.imageFile);
@@ -8944,7 +8973,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 						if (marker.auras && marker.auras.length > 0) {
 							marker.auras.forEach((aura: any) => {
 								const radiusPx = (aura.radius || 0) * pixelsPerFoot;
-								if (radiusPx > 0) {
+								if (radiusPx > 0 && _inViewCircle(marker.position.x, marker.position.y, radiusPx)) {
 									ctx.globalAlpha = aura.opacity || 0.25;
 									ctx.fillStyle = aura.color || '#ffcc00';
 									ctx.beginPath();
@@ -8964,7 +8993,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 				
 				// Draw markers
 				if (config.markers) {
+					const _CULL_SIZE_SQ: Record<string, number> = { 'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4 };
 					config.markers.forEach((marker: any) => {
+						// Viewport cull: skip markers entirely outside the view
+						const _mDef = marker.markerId ? this.markerLibrary.getMarker(marker.markerId) : null;
+						const _mR = _mDef && _mDef.creatureSize ? ((_CULL_SIZE_SQ[_mDef.creatureSize] || 1) * (config.gridSize || 70)) / 2 : 30;
+						if (!_inViewCircle(marker.position.x, marker.position.y, _mR)) return;
 						drawMarker(ctx, marker);
 					});
 				}
@@ -9060,6 +9094,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 					ctx.save();
 					ctx.globalAlpha = wallAlpha;
 					config.walls.forEach((wall: any) => {
+						// Viewport cull: skip walls whose bounding box is entirely off-screen
+						const _wMinX = Math.min(wall.start.x, wall.end.x);
+						const _wMinY = Math.min(wall.start.y, wall.end.y);
+						const _wW = Math.abs(wall.end.x - wall.start.x);
+						const _wH = Math.abs(wall.end.y - wall.start.y);
+						if (!_inViewRect(_wMinX, _wMinY, _wW, _wH)) return;
+
 						const wallType = wall.type || 'wall';
 						const wallDef = WALL_TYPES[wallType as WallType] || WALL_TYPES.wall;
 						const isOpen = wall.open === true;
@@ -9435,6 +9476,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 						// Convert feet to pixels
 						const brightRadiusPx = light.bright * pixelsPerFoot;
 						const dimRadiusPx = light.dim * pixelsPerFoot;
+						// Viewport cull: skip lights entirely outside the view
+						const _lR = (brightRadiusPx + dimRadiusPx) * 1.15;
+						if (light.start && light.end) {
+							// Wall light: use bounding box of the line + radius
+							const _wlMinX = Math.min(light.start.x, light.end.x) - _lR;
+							const _wlMinY = Math.min(light.start.y, light.end.y) - _lR;
+							const _wlW = Math.abs(light.end.x - light.start.x) + _lR * 2;
+							const _wlH = Math.abs(light.end.y - light.start.y) + _lR * 2;
+							if (!_inViewRect(_wlMinX, _wlMinY, _wlW, _wlH)) return;
+						} else {
+							if (!_inViewCircle(light.x, light.y, _lR)) return;
+						}
 						
 						// Only draw light radii if the light is active
 						if (isActive) {
