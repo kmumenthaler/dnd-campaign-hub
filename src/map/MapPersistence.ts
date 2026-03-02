@@ -1,0 +1,376 @@
+﻿import { Notice, TFile, TFolder } from "obsidian";
+import type DndCampaignHubPlugin from "../main";
+import { BATTLEMAP_TEMPLATE_FOLDER } from "./MapCreationModal";
+
+const SAVE_DEBOUNCE_MS = 1000;
+
+/**
+ * Map annotation persistence: save, load, query, and migration.
+ * Extracted from DndCampaignHubPlugin.
+ */
+
+export function saveMapAnnotations(plugin: DndCampaignHubPlugin, config: any, el: HTMLElement) {
+	// Sync to player view immediately (cheap, no I/O)
+	const viewport = el.querySelector('.dnd-map-viewport') as any;
+	if (viewport && viewport._syncPlayerView) {
+		viewport._syncPlayerView();
+	}
+
+	if (!config.mapId) {
+		console.error('Cannot save annotations: mapId missing');
+		return;
+	}
+
+	const mapId = config.mapId as string;
+	const existing = plugin._pendingSaves.get(mapId);
+	if (existing) clearTimeout(existing.timer);
+
+	const timer = setTimeout(() => {
+		_flushMapSave(plugin, mapId);
+	}, SAVE_DEBOUNCE_MS);
+
+	plugin._pendingSaves.set(mapId, { config, el, timer });
+}
+
+/** Immediately write a pending save for `mapId` to disk. */
+export async function _flushMapSave(plugin: DndCampaignHubPlugin, mapId: string) {
+	const entry = plugin._pendingSaves.get(mapId);
+	if (!entry) return;
+	plugin._pendingSaves.delete(mapId);
+	clearTimeout(entry.timer);
+
+	const config = entry.config;
+	try {
+		// Prepare annotation data (includes full config + annotations)
+		const mapData = {
+			// Map settings
+			mapId: config.mapId,
+			name: config.name || '',
+			imageFile: config.imageFile,
+			isVideo: config.isVideo || false,
+			type: config.type || 'battlemap',
+			dimensions: config.dimensions || {},
+			gridType: config.gridType || 'none',
+			gridSize: config.gridSize || 70,
+			gridOffsetX: config.gridOffsetX || 0,
+			gridOffsetY: config.gridOffsetY || 0,
+			gridSizeW: config.gridSizeW || undefined,
+			gridSizeH: config.gridSizeH || undefined,
+			gridVisible: config.gridVisible !== undefined ? config.gridVisible : true,
+			scale: config.scale || { value: 5, unit: 'feet' },
+			// Layer settings
+			activeLayer: config.activeLayer || 'Player',
+			// Annotations
+			highlights: config.highlights || [],
+			markers: config.markers || [],
+			drawings: config.drawings || [],
+			// aoeEffects intentionally omitted — session-only, not persisted
+			tunnels: config.tunnels || [],
+			poiReferences: config.poiReferences || [],
+			hexTerrains: config.hexTerrains || [],
+			hexClimates: config.hexClimates || [],
+			customTerrainDescriptions: config.customTerrainDescriptions || {},
+			hexcrawlState: config.hexcrawlState || null,
+			fogOfWar: config.fogOfWar || { enabled: false, regions: [] },
+			walls: config.walls || [],
+			lightSources: config.lightSources || [],
+			tileElevations: config.tileElevations || {},
+			difficultTerrain: config.difficultTerrain || {},
+			envAssets: config.envAssets || [],
+			// Template system
+			isTemplate: config.isTemplate || false,
+			templateTags: config.templateTags || undefined,
+			lastModified: new Date().toISOString()
+		};
+
+		// Ensure annotation directory exists
+		const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
+		const dirExists = await plugin.app.vault.adapter.exists(annotationDir);
+		if (!dirExists) {
+			await plugin.app.vault.adapter.mkdir(annotationDir);
+		}
+
+		// Save to dedicated file using adapter for config directory files
+		const annotationPath = getMapAnnotationPath(plugin, config.mapId);
+		const annotationJson = JSON.stringify(mapData, null, 2);
+
+		await plugin.app.vault.adapter.write(annotationPath, annotationJson);
+	} catch (error) {
+		console.error('Error saving map annotations:', error);
+	}
+}
+
+/** Flush all pending debounced saves immediately (called on unload). */
+export async function _flushAllPendingSaves(plugin: DndCampaignHubPlugin) {
+	const ids = [...plugin._pendingSaves.keys()];
+	for (const id of ids) {
+		await _flushMapSave(plugin, id);
+	}
+}
+
+/**
+ * Get the file path for map annotations
+ */
+export function getMapAnnotationPath(plugin: DndCampaignHubPlugin, mapId: string): string {
+	return `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations/${mapId}.json`;
+}
+
+/**
+ * Load map annotations from dedicated file
+ */
+export async function loadMapAnnotations(plugin: DndCampaignHubPlugin, mapId: string): Promise<any> {
+	try {
+		const annotationPath = getMapAnnotationPath(plugin, mapId);
+
+		// Check if annotation file exists
+		if (await plugin.app.vault.adapter.exists(annotationPath)) {
+			const data = await plugin.app.vault.adapter.read(annotationPath);
+			const parsedData = JSON.parse(data);
+			return parsedData;
+		} else {
+			return {};
+		}
+	} catch (error) {
+		console.error('Error loading map annotations:', error);
+		return {};
+	}
+}
+
+/**
+ * Query map templates matching the given criteria.
+ * Returns templates sorted by match score (best matches first).
+ */
+export async function queryMapTemplates(plugin: DndCampaignHubPlugin, criteria: { terrain?: string; climate?: string; location?: string; timeOfDay?: string; size?: string }): Promise<Array<{
+	mapId: string;
+	name: string;
+	imageFile: string;
+	tags: any;
+	matchScore: number;
+}>> {
+	const results: Array<{
+		mapId: string;
+		name: string;
+		imageFile: string;
+		tags: any;
+		matchScore: number;
+	}> = [];
+
+	try {
+		const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
+		if (!(await plugin.app.vault.adapter.exists(annotationDir))) return results;
+
+		const listing = await plugin.app.vault.adapter.list(annotationDir);
+
+		for (const filePath of listing.files) {
+			if (!filePath.endsWith('.json')) continue;
+
+			try {
+				const raw = await plugin.app.vault.adapter.read(filePath);
+				const data = JSON.parse(raw);
+
+				// Skip non-templates
+				if (!data.isTemplate || !data.templateTags) continue;
+
+				const tags = data.templateTags;
+				let score = 0;
+
+				// Terrain match (highest priority)
+				if (criteria.terrain && tags.terrain && tags.terrain.includes(criteria.terrain)) {
+					score += 3;
+				}
+
+				// Climate match
+				if (criteria.climate && tags.climate && tags.climate.includes(criteria.climate)) {
+					score += 2;
+				}
+
+				// Location match
+				if (criteria.location && tags.location && tags.location.includes(criteria.location)) {
+					score += 2;
+				}
+
+				// Time of day match
+				if (criteria.timeOfDay && tags.timeOfDay && tags.timeOfDay.includes(criteria.timeOfDay)) {
+					score += 1;
+				}
+
+				// Size match
+				if (criteria.size && tags.size && tags.size.includes(criteria.size)) {
+					score += 1;
+				}
+
+				// Include if any criteria matched, or if no criteria provided
+				const hasCriteria = criteria.terrain || criteria.climate || criteria.location;
+				if (score > 0 || !hasCriteria) {
+					results.push({
+						mapId: data.mapId,
+						name: data.name || 'Unnamed Template',
+						imageFile: data.imageFile,
+						tags,
+						matchScore: score,
+					});
+				}
+			} catch {
+				// Skip corrupt files
+			}
+		}
+
+		// Sort by score descending
+		results.sort((a, b) => b.matchScore - a.matchScore);
+
+		return results;
+	} catch (err) {
+		console.error('[Plugin] Error querying templates:', err);
+		return results;
+	}
+}
+
+/**
+ * One-time migration: find existing annotation JSONs with isTemplate === true
+ * that don't yet have a corresponding note in z_BattlemapTemplates/,
+ * and create one so the GM can open and configure them.
+ */
+export async function migrateExistingTemplatesToNotes(plugin: DndCampaignHubPlugin): Promise<void> {
+	try {
+		const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
+		if (!(await plugin.app.vault.adapter.exists(annotationDir))) return;
+
+		const listing = await plugin.app.vault.adapter.list(annotationDir);
+		const templateMaps: Array<{ mapId: string; name: string }> = [];
+
+		for (const filePath of listing.files) {
+			if (!filePath.endsWith('.json')) continue;
+			try {
+				const raw = await plugin.app.vault.adapter.read(filePath);
+				const data = JSON.parse(raw);
+				if (data.isTemplate && data.mapId) {
+					templateMaps.push({ mapId: data.mapId, name: data.name || 'Template' });
+				}
+			} catch { /* skip */ }
+		}
+
+		if (templateMaps.length === 0) return;
+
+		const folder = BATTLEMAP_TEMPLATE_FOLDER;
+		if (!(await plugin.app.vault.adapter.exists(folder))) {
+			await plugin.app.vault.createFolder(folder);
+		}
+
+		// Collect existing template notes' mapIds
+		const existingMapIds = new Set<string>();
+		const mdFiles = plugin.app.vault.getMarkdownFiles().filter(f =>
+			f.path.startsWith(folder + '/')
+		);
+		for (const file of mdFiles) {
+			try {
+				const content = await plugin.app.vault.read(file);
+				const match = content.match(/"mapId"\s*:\s*"([^"]+)"/);
+				if (match && match[1]) existingMapIds.add(match[1]);
+			} catch { /* skip */ }
+		}
+
+		let migrated = 0;
+		for (const tpl of templateMaps) {
+			if (existingMapIds.has(tpl.mapId)) continue;
+
+			const safeName = tpl.name.replace(/[\\/:*?"<>|]/g, '_').trim() || 'Template';
+			let notePath = `${folder}/${safeName}.md`;
+			let counter = 1;
+			while (await plugin.app.vault.adapter.exists(notePath)) {
+				notePath = `${folder}/${safeName} (${counter}).md`;
+				counter++;
+			}
+
+			const codeBlock = `\`\`\`dnd-map\n${JSON.stringify({ mapId: tpl.mapId }, null, 2)}\n\`\`\``;
+			const content = `---\ntags:\n  - battlemap-template\ntemplate_name: "${tpl.name}"\n---\n# ${tpl.name}\n\n${codeBlock}\n`;
+			await plugin.app.vault.create(notePath, content);
+			migrated++;
+		}
+
+		if (migrated > 0) {
+			new Notice(`🗺️ Migrated ${migrated} battlemap template${migrated > 1 ? 's' : ''} to ${folder}/`);
+		}
+	} catch (err) {
+	}
+}
+
+/**
+ * Enrich existing marker/token definitions with campaign metadata.
+ * Scans all PC and NPC vault notes for token_id + campaign fields,
+ * then updates the corresponding MarkerDefinition if its campaign is missing.
+ * Also backfills token_id into notes that have a matching token by name but no token_id.
+ * Runs on every plugin load; skips markers that already have a campaign set.
+ */
+export async function enrichTokenCampaigns(plugin: DndCampaignHubPlugin): Promise<void> {
+	try {
+		// Wait for metadata cache to be ready
+		await new Promise<void>((resolve) => {
+			if (plugin.app.metadataCache.resolvedLinks) {
+				resolve();
+			} else {
+				const ref = plugin.app.metadataCache.on('resolved', () => {
+					plugin.app.metadataCache.offref(ref);
+					resolve();
+				});
+			}
+		});
+
+		const allFiles = plugin.app.vault.getMarkdownFiles();
+		let enriched = 0;
+		let backfilled = 0;
+
+		for (const file of allFiles) {
+			const cache = plugin.app.metadataCache.getFileCache(file);
+			if (!cache?.frontmatter) continue;
+
+			const fm = cache.frontmatter;
+			const fmType = fm.type;
+			if (fmType !== 'player' && fmType !== 'npc') continue;
+
+			const campaign = fm.campaign;
+			if (!campaign) continue;
+
+			let tokenId = fm.token_id;
+
+			// If note has no token_id, try to find a matching token by name
+			if (!tokenId) {
+				const name = fm.name || file.basename;
+				const markerType = fmType === 'player' ? 'player' : 'npc';
+				const allMarkers = plugin.markerLibrary.getAllMarkers();
+				const match = allMarkers.find(
+					(m) => m.name === name && m.type === markerType && !m.campaign
+				);
+				if (match) {
+					tokenId = match.id;
+					// Backfill token_id into the note's frontmatter
+					try {
+						await plugin.app.fileManager.processFrontMatter(file, (frontmatter) => {
+							frontmatter.token_id = tokenId;
+						});
+						backfilled++;
+					} catch (e) {
+					}
+				}
+			}
+
+			if (!tokenId) continue;
+
+			const marker = plugin.markerLibrary.getMarker(tokenId);
+			if (!marker) continue;
+
+			// Skip if campaign is already set
+			if (marker.campaign) continue;
+
+			// Enrich the marker with the campaign from the note
+			marker.campaign = campaign;
+			marker.updatedAt = Date.now();
+			await plugin.markerLibrary.setMarker(marker);
+			enriched++;
+		}
+
+		if (enriched > 0 || backfilled > 0) {
+		}
+	} catch (err) {
+	}
+}
+
