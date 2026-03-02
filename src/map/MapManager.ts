@@ -88,9 +88,10 @@ export class MapManager {
   private loadImage(blob: Blob): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
       const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      img.src = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+      img.src = url;
     });
   }
 
@@ -101,9 +102,10 @@ export class MapManager {
     return new Promise((resolve, reject) => {
       const video = document.createElement('video');
       video.preload = 'metadata';
-      video.onloadedmetadata = () => resolve(video);
-      video.onerror = reject;
-      video.src = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
+      video.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(video); };
+      video.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+      video.src = url;
     });
   }
 
