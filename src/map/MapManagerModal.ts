@@ -76,7 +76,7 @@ export class MapManagerModal extends Modal {
     tabBar.style.display = 'flex';
     tabBar.style.gap = '4px';
 
-    const tabs: Array<{ id: 'all' | 'templates' | 'active'; label: string; icon: string }> = [
+    const tabs: Array<{ id: 'templates' | 'active'; label: string; icon: string }> = [
       { id: 'templates', label: 'Templates', icon: '🏗️' },
       { id: 'active',    label: 'Active',    icon: '⚔️' },
     ];

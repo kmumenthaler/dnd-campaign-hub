@@ -201,7 +201,7 @@ export class MarkerPickerModal extends Modal {
 					if (!markersByType[marker.type]) {
 						markersByType[marker.type] = [];
 					}
-					markersByType[marker.type].push(marker);
+					markersByType[marker.type]!.push(marker);
 				}
 
 				// Render each type category
