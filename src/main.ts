@@ -8238,15 +8238,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 			};
 
 			// Function to redraw grid overlays (single fixed grid)
+			// Reuses the existing canvas element to avoid DOM churn.
 			const redrawGridOverlays = () => {
-				// Remove all existing grid overlays
-				const existingOverlays = mapWrapper.querySelectorAll('.dnd-map-grid-overlay');
-				existingOverlays.forEach(overlay => overlay.remove());
-				gridCanvas = null;
-				
-				// Draw single grid overlay
 				if (config.gridType && config.gridType !== 'none' && config.gridSize) {
-					gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0);
+					gridCanvas = this.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0, gridCanvas);
+				} else if (gridCanvas) {
+					gridCanvas.remove();
+					gridCanvas = null;
 				}
 			};
 
@@ -12755,7 +12753,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					config.gridOffsetY = (config.gridOffsetY || 0) + dy;
 					startX = e.clientX;
 					startY = e.clientY;
-					// Redraw grid with new offset
+					// Lightweight: reuse canvas, just clear + redraw lines
 					redrawGridOverlays();
 					redrawAnnotations();
 				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
@@ -13508,7 +13506,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 				} else if (activeTool === 'move-grid' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'move';
-					// Save offset
+					// Final authoritative redraw + save
+					redrawGridOverlays();
 					this.saveMapAnnotations(config, el);
         } else if (activeTool === 'player-view' && isDraggingGmRect) {
           // Finish GM rect drag
@@ -16533,27 +16532,41 @@ if (wikiMatch && wikiMatch[1]) {
 	 * 
 	 * gridSize represents the spacing between hex centers (horizontal for flat-top, vertical for pointy-top)
 	 */
-	drawGridOverlay(container: HTMLElement, img: MapMediaElement, config: any, offsetX: number = 0, offsetY: number = 0): HTMLCanvasElement {
-		// Remove existing canvas if any
-		const existingCanvas = container.querySelector('.dnd-map-grid-overlay');
-		if (existingCanvas) {
-			existingCanvas.remove();
+	drawGridOverlay(container: HTMLElement, img: MapMediaElement, config: any, offsetX: number = 0, offsetY: number = 0, reuseCanvas?: HTMLCanvasElement | null): HTMLCanvasElement {
+		let canvas: HTMLCanvasElement;
+		if (reuseCanvas) {
+			// Reuse existing canvas — skip DOM create/remove/append
+			canvas = reuseCanvas;
+			// Ensure dimensions still match (image may have been resized)
+			if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
+				canvas.width = img.naturalWidth;
+				canvas.height = img.naturalHeight;
+			}
+			canvas.style.width = `${img.width}px`;
+			canvas.style.height = `${img.height}px`;
+		} else {
+			// Remove existing canvas if any
+			const existingCanvas = container.querySelector('.dnd-map-grid-overlay');
+			if (existingCanvas) {
+				existingCanvas.remove();
+			}
+			canvas = document.createElement('canvas');
+			canvas.classList.add('dnd-map-grid-overlay');
+			canvas.width = img.naturalWidth;
+			canvas.height = img.naturalHeight;
+			canvas.style.position = 'absolute';
+			canvas.style.top = '0';
+			canvas.style.left = '0';
+			canvas.style.width = `${img.width}px`;
+			canvas.style.height = `${img.height}px`;
+			canvas.style.pointerEvents = 'none';
 		}
-
-		// Create canvas for grid - same size as the image
-		const canvas = document.createElement('canvas');
-		canvas.classList.add('dnd-map-grid-overlay');
-		canvas.width = img.naturalWidth;
-		canvas.height = img.naturalHeight;
-		canvas.style.position = 'absolute';
-		canvas.style.top = '0';
-		canvas.style.left = '0';
-		canvas.style.width = `${img.width}px`;
-		canvas.style.height = `${img.height}px`;
-		canvas.style.pointerEvents = 'none';
 
 		const ctx = canvas.getContext('2d');
 		if (!ctx) return canvas;
+
+		// Clear previous content
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
 
 		// Style for grid lines
 		ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
@@ -16566,78 +16579,96 @@ if (wikiMatch && wikiMatch[1]) {
 			const normalizedOffsetX = ((offsetX % sizeW) + sizeW) % sizeW;
 			const normalizedOffsetY = ((offsetY % sizeH) + sizeH) % sizeH;
 			
-			// Draw vertical lines
+			// Batch all lines into a single path for one stroke call
+			ctx.beginPath();
 			for (let x = normalizedOffsetX; x <= canvas.width; x += sizeW) {
-				ctx.beginPath();
 				ctx.moveTo(x, 0);
 				ctx.lineTo(x, canvas.height);
-				ctx.stroke();
 			}
-
-			// Draw horizontal lines
 			for (let y = normalizedOffsetY; y <= canvas.height; y += sizeH) {
-				ctx.beginPath();
 				ctx.moveTo(0, y);
 				ctx.lineTo(canvas.width, y);
-				ctx.stroke();
 			}
+			ctx.stroke();
 		} else if (config.gridType === 'hex-horizontal') {
 			// Flat-top hex grid (horizontal orientation)
-			// gridSizeW controls horizontal spacing, gridSizeH controls vertical spacing
-			const horiz = config.gridSizeW || config.gridSize; // center-to-center X spacing
+			const horiz = config.gridSizeW || config.gridSize;
 			const defaultSize = (2/3) * horiz;
 			const defaultVert = Math.sqrt(3) * defaultSize;
-			const vert = config.gridSizeH || defaultVert; // center-to-center Y spacing (overridable)
-			const sizeX = horiz * (2/3); // horizontal radius
-			const sizeY = vert / Math.sqrt(3); // vertical radius (allows stretching)
+			const vert = config.gridSizeH || defaultVert;
+			const sizeX = horiz * (2/3);
+			const sizeY = vert / Math.sqrt(3);
 			
-			// Calculate range accounting for offset - need to cover entire canvas
 			const startCol = Math.floor(-offsetX / horiz) - 2;
 			const endCol = Math.ceil((canvas.width - offsetX) / horiz) + 2;
 			const startRow = Math.floor(-offsetY / vert) - 2;
 			const endRow = Math.ceil((canvas.height - offsetY) / vert) + 2;
 			
+			// Batch all hexagons into a single path
+			ctx.beginPath();
 			for (let row = startRow; row < endRow; row++) {
 				for (let col = startCol; col < endCol; col++) {
-					// ✅ flat-top uses odd-q: offset odd columns in Y by half vertical spacing
 					const colOffsetY = (col & 1) ? vert / 2 : 0;
 					const centerX = col * horiz + offsetX;
 					const centerY = row * vert + colOffsetY + offsetY;
-					
-					this.drawHexFlatStretched(ctx, centerX, centerY, sizeX, sizeY);
+					this._addHexFlatStretchedPath(ctx, centerX, centerY, sizeX, sizeY);
 				}
 			}
+			ctx.stroke();
 		} else if (config.gridType === 'hex-vertical') {
 			// Pointy-top hex grid (vertical orientation)
-			// gridSizeH controls vertical spacing, gridSizeW controls horizontal spacing
-			const vert = config.gridSizeH || config.gridSize; // center-to-center Y spacing
+			const vert = config.gridSizeH || config.gridSize;
 			const defaultSize = (2/3) * vert;
 			const defaultHoriz = Math.sqrt(3) * defaultSize;
-			const horiz = config.gridSizeW || defaultHoriz; // center-to-center X spacing (overridable)
-			const sizeY = vert * (2/3); // vertical radius
-			const sizeX = horiz / Math.sqrt(3); // horizontal radius (allows stretching)
+			const horiz = config.gridSizeW || defaultHoriz;
+			const sizeY = vert * (2/3);
+			const sizeX = horiz / Math.sqrt(3);
 			
-			// Calculate range accounting for offset - need to cover entire canvas
 			const startCol = Math.floor(-offsetX / horiz) - 2;
 			const endCol = Math.ceil((canvas.width - offsetX) / horiz) + 2;
 			const startRow = Math.floor(-offsetY / vert) - 2;
 			const endRow = Math.ceil((canvas.height - offsetY) / vert) + 2;
 			
+			// Batch all hexagons into a single path
+			ctx.beginPath();
 			for (let row = startRow; row < endRow; row++) {
 				for (let col = startCol; col < endCol; col++) {
-					// ✅ pointy-top uses odd-r: offset odd rows in X by half horizontal spacing
 					const rowOffsetX = (row & 1) ? horiz / 2 : 0;
 					const centerX = col * horiz + rowOffsetX + offsetX;
 					const centerY = row * vert + offsetY;
-					
-					this.drawHexPointyStretched(ctx, centerX, centerY, sizeX, sizeY);
+					this._addHexPointyStretchedPath(ctx, centerX, centerY, sizeX, sizeY);
 				}
 			}
+			ctx.stroke();
 		}
 
-		// Append canvas to container
-		container.appendChild(canvas);
+		// Append canvas to container (only for newly created canvases)
+		if (!reuseCanvas) {
+			container.appendChild(canvas);
+		}
 		return canvas;
+	}
+
+	/** Add a flat-top stretched hex outline to the current path (no stroke). */
+	private _addHexFlatStretchedPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, sizeX: number, sizeY: number) {
+		for (let i = 0; i < 6; i++) {
+			const angle = (Math.PI / 3) * i;
+			const x = cx + sizeX * Math.cos(angle);
+			const y = cy + sizeY * Math.sin(angle);
+			if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+		}
+		ctx.closePath();
+	}
+
+	/** Add a pointy-top stretched hex outline to the current path (no stroke). */
+	private _addHexPointyStretchedPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, sizeX: number, sizeY: number) {
+		for (let i = 0; i < 6; i++) {
+			const angle = (Math.PI / 6) + (Math.PI / 3) * i;
+			const x = cx + sizeX * Math.cos(angle);
+			const y = cy + sizeY * Math.sin(angle);
+			if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+		}
+		ctx.closePath();
 	}
 
 	/**
