@@ -34195,6 +34195,7 @@ class GmMapView extends ItemView {
   private notePath: string = '';
   private sourceConfig: string = '';
   private mapContainer: HTMLElement | null = null;
+  private _gmRendered: boolean = false; // Guard against double renderMap (setState + onOpen race)
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -34222,7 +34223,8 @@ class GmMapView extends ItemView {
     if (state.notePath) this.notePath = state.notePath;
     if (state.sourceConfig) this.sourceConfig = state.sourceConfig;
     await super.setState(state, result);
-    if (this.mapId && this.sourceConfig) {
+    if (this.mapId && this.sourceConfig && !this._gmRendered && this.mapContainer) {
+      this._gmRendered = true;
       await this.renderMap();
     }
   }
@@ -34241,7 +34243,8 @@ class GmMapView extends ItemView {
     container.addClass('dnd-gm-map-container');
     this.mapContainer = container;
 
-    if (this.mapId && this.sourceConfig) {
+    if (this.mapId && this.sourceConfig && !this._gmRendered) {
+      this._gmRendered = true;
       await this.renderMap();
     }
   }
@@ -34313,6 +34316,7 @@ class PlayerMapView extends ItemView {
   private isFullscreen: boolean = false; // Track fullscreen state
   private _pvFlickerFrameId: number | null = null; // Flicker animation loop for player view
   private _pvFlickerWin: Window | null = null; // Window context for flicker animation (popout-safe)
+  private _pvRendered: boolean = false; // Guard against double renderPlayerView (setState + onOpen race)
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -34343,7 +34347,11 @@ class PlayerMapView extends ItemView {
     } else {
     }
     await super.setState(state, result);
-    if (this.mapConfig) {
+    // Render only if onOpen has already fired (container exists) and we
+    // haven't rendered yet.  If onOpen hasn't run, it will trigger the
+    // render itself, avoiding a double image load.
+    if (this.mapConfig && !this._pvRendered && this.containerEl.children[1]) {
+      this._pvRendered = true;
       this.renderPlayerView();
     }
   }
@@ -34621,7 +34629,8 @@ class PlayerMapView extends ItemView {
 
     // Don't hide chrome by default - let fullscreen toggle handle it
 
-    if (this.mapConfig) {
+    if (this.mapConfig && !this._pvRendered) {
+      this._pvRendered = true;
       this.renderPlayerView();
     }
   }
