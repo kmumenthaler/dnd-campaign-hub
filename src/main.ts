@@ -6198,30 +6198,45 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const undoStack: HistoryState[] = [];
 			const redoStack: HistoryState[] = [];
 			const MAX_HISTORY = 50;
-			
+
 			// Placeholder for button visibility function (assigned after buttons are created)
 			let updateUndoRedoButtons: () => void = () => {};
-			
+
+			/** Snapshot current annotation arrays using structuredClone (no JSON round-trip). */
+			const _snapshotState = (): HistoryState => ({
+				markers: structuredClone(config.markers || []),
+				walls: structuredClone(config.walls || []),
+				lightSources: structuredClone(config.lightSources || []),
+				drawings: structuredClone(config.drawings || []),
+				fogOfWar: structuredClone(config.fogOfWar || { enabled: true, regions: [] }),
+				highlights: structuredClone(config.highlights || []),
+				aoeEffects: structuredClone(config.aoeEffects || []),
+				tunnels: structuredClone(config.tunnels || []),
+				envAssets: structuredClone(config.envAssets || [])
+			});
+
+			/** Restore a snapshot onto the live config. */
+			const _restoreState = (s: HistoryState) => {
+				config.markers = s.markers;
+				config.walls = s.walls;
+				config.lightSources = s.lightSources;
+				config.drawings = s.drawings;
+				config.fogOfWar = s.fogOfWar;
+				config.highlights = s.highlights;
+				config.aoeEffects = s.aoeEffects;
+				config.tunnels = s.tunnels;
+				config.envAssets = s.envAssets || [];
+			};
+
 			// Save current state to undo stack
 			const saveToHistory = () => {
-				const state: HistoryState = {
-					markers: JSON.parse(JSON.stringify(config.markers || [])),
-					walls: JSON.parse(JSON.stringify(config.walls || [])),
-					lightSources: JSON.parse(JSON.stringify(config.lightSources || [])),
-					drawings: JSON.parse(JSON.stringify(config.drawings || [])),
-					fogOfWar: JSON.parse(JSON.stringify(config.fogOfWar || { enabled: true, regions: [] })),
-					highlights: JSON.parse(JSON.stringify(config.highlights || [])),
-					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || [])),
-					tunnels: JSON.parse(JSON.stringify(config.tunnels || [])),
-					envAssets: JSON.parse(JSON.stringify(config.envAssets || []))
-				};
-				undoStack.push(state);
+				undoStack.push(_snapshotState());
 				if (undoStack.length > MAX_HISTORY) undoStack.shift();
 				// Clear redo stack when new action is taken
 				redoStack.length = 0;
 				updateUndoRedoButtons();
 			};
-			
+
 			// Undo function
 			const undo = () => {
 				if (undoStack.length === 0) {
@@ -6229,38 +6244,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 					return;
 				}
 				// Save current state to redo before restoring
-				const currentState: HistoryState = {
-					markers: JSON.parse(JSON.stringify(config.markers || [])),
-					walls: JSON.parse(JSON.stringify(config.walls || [])),
-					lightSources: JSON.parse(JSON.stringify(config.lightSources || [])),
-					drawings: JSON.parse(JSON.stringify(config.drawings || [])),
-					fogOfWar: JSON.parse(JSON.stringify(config.fogOfWar || { enabled: true, regions: [] })),
-					highlights: JSON.parse(JSON.stringify(config.highlights || [])),
-					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || [])),
-					tunnels: JSON.parse(JSON.stringify(config.tunnels || [])),
-					envAssets: JSON.parse(JSON.stringify(config.envAssets || []))
-				};
-				redoStack.push(currentState);
-				
+				redoStack.push(_snapshotState());
+
 				// Restore previous state
-				const prevState = undoStack.pop()!;
-				config.markers = prevState.markers;
-				config.walls = prevState.walls;
-				config.lightSources = prevState.lightSources;
-				config.drawings = prevState.drawings;
-				config.fogOfWar = prevState.fogOfWar;
-				config.highlights = prevState.highlights;
-				config.aoeEffects = prevState.aoeEffects;
-				config.tunnels = prevState.tunnels;
-				config.envAssets = prevState.envAssets || [];
-				
+				_restoreState(undoStack.pop()!);
+
 				redrawAnnotations();
 				this.saveMapAnnotations(config, el);
 				if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 				updateUndoRedoButtons();
 				new Notice('Undo');
 			};
-			
+
 			// Redo function
 			const redo = () => {
 				if (redoStack.length === 0) {
@@ -6268,31 +6263,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 					return;
 				}
 				// Save current state to undo before restoring
-				const currentState: HistoryState = {
-					markers: JSON.parse(JSON.stringify(config.markers || [])),
-					walls: JSON.parse(JSON.stringify(config.walls || [])),
-					lightSources: JSON.parse(JSON.stringify(config.lightSources || [])),
-					drawings: JSON.parse(JSON.stringify(config.drawings || [])),
-					fogOfWar: JSON.parse(JSON.stringify(config.fogOfWar || { enabled: true, regions: [] })),
-					highlights: JSON.parse(JSON.stringify(config.highlights || [])),
-					aoeEffects: JSON.parse(JSON.stringify(config.aoeEffects || [])),
-					tunnels: JSON.parse(JSON.stringify(config.tunnels || [])),
-					envAssets: JSON.parse(JSON.stringify(config.envAssets || []))
-				};
-				undoStack.push(currentState);
-				
+				undoStack.push(_snapshotState());
+
 				// Restore redo state
-				const nextState = redoStack.pop()!;
-				config.markers = nextState.markers;
-				config.walls = nextState.walls;
-				config.lightSources = nextState.lightSources;
-				config.drawings = nextState.drawings;
-				config.fogOfWar = nextState.fogOfWar;
-				config.highlights = nextState.highlights;
-				config.aoeEffects = nextState.aoeEffects;
-				config.tunnels = nextState.tunnels;
-				config.envAssets = nextState.envAssets || [];
-				
+				_restoreState(redoStack.pop()!);
+
 				redrawAnnotations();
 				this.saveMapAnnotations(config, el);
 				if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
