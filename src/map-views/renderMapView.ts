@@ -3073,7 +3073,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				// Draw tunnel entrances and exits (below markers so tokens aren't covered)
 				if (config.tunnels && config.tunnels.length > 0) {
 					const CREATURE_SIZE_SQUARES: Record<string, number> = {
-						'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+						'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
 					};
 					
 					config.tunnels.forEach((tunnel: any) => {
@@ -3379,7 +3379,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				
 				// Draw markers
 				if (config.markers) {
-					const _CULL_SIZE_SQ: Record<string, number> = { 'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4 };
+					const _CULL_SIZE_SQ: Record<string, number> = { 'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4 };
 					config.markers.forEach((marker: any) => {
 						// Viewport cull: skip markers entirely outside the view
 						const _mDef = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
@@ -3393,7 +3393,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				// Only visible on Subterranean layer to avoid visual clutter
 				if (config.tunnels && config.tunnels.length > 0 && config.activeLayer === 'Subterranean') {
 					const CREATURE_SIZE_SQUARES: Record<string, number> = {
-						'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+						'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
 					};
 					
 					config.tunnels.forEach((tunnel: any) => {
@@ -4284,7 +4284,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						);
 						if (activeTunnel && activeTunnel.path.length > 0) {
 							const CREATURE_SIZE_SQUARES: Record<string, number> = {
-								'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+								'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
 							};
 							const mDef = draggedMarker.markerId ? plugin.markerLibrary.getMarker(draggedMarker.markerId) : null;
 							const squares = mDef?.creatureSize ? CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1 : 1;
@@ -4616,6 +4616,23 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				return (markerDef.pixelSize || 30) / 2;
 			};
 
+			/**
+			 * Snap a position to the correct grid cell center for a given creature size.
+			 * Tiny tokens (squares=0.5) snap to half-cell quadrants so 4 fit per tile.
+			 * All other sizes snap to full-cell boundaries.
+			 */
+			const snapTokenToGrid = (posX: number, posY: number, sizeSquares: number): { x: number; y: number } => {
+				const gs = config.gridSize || 70;
+				const ox = config.gridOffsetX || 0;
+				const oy = config.gridOffsetY || 0;
+				// For tiny tokens the snap step is half a cell; for everything else it's full cell widths
+				const step = sizeSquares < 1 ? gs * sizeSquares : gs;
+				const halfToken = (sizeSquares * gs) / 2;
+				const col = Math.round((posX - ox - halfToken) / step);
+				const row = Math.round((posY - oy - halfToken) / step);
+				return { x: ox + col * step + halfToken, y: oy + row * step + halfToken };
+			};
+
 			// Image cache for marker token images
 			const markerImageCache: Map<string, HTMLImageElement> = new Map();
 			const loadMarkerImage = (path: string): HTMLImageElement | null => {
@@ -4855,7 +4872,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						ctx.globalAlpha = 0.8;
 						
 						const CREATURE_SIZE_SQUARES: Record<string, number> = {
-							'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+							'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
 						};
 						const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
 						const tunnelWidth = (squares * config.gridSize) / 2;
@@ -6558,16 +6575,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					let placeY = mapPos.y;
 					const mDef = plugin.markerLibrary.getMarker(selectedMarkerId);
 					if (mDef && ['player', 'npc', 'creature'].includes(mDef.type) && config.gridSize) {
-						const ox = config.gridOffsetX || 0;
-						const oy = config.gridOffsetY || 0;
-						const gs = config.gridSize;
 						const squares = CREATURE_SIZE_SQUARES[mDef.creatureSize || 'medium'] || 1;
-						// Round to nearest grid cell so the token snaps where it has most coverage
-						const halfToken = (squares * gs) / 2;
-						const col = Math.round((mapPos.x - ox - halfToken) / gs);
-						const row = Math.round((mapPos.y - oy - halfToken) / gs);
-						placeX = ox + col * gs + halfToken;
-						placeY = oy + row * gs + halfToken;
+						const snapped = snapTokenToGrid(mapPos.x, mapPos.y, squares);
+						placeX = snapped.x;
+						placeY = snapped.y;
 					}
 					
 					// Create a marker reference
@@ -7265,23 +7276,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						);
 						if (activeTunnel && activeTunnel.path.length > 0) {
 							// Snap path points to grid tile centers (every tile the token walks on)
-							const gridSize = config.gridSize || 70;
-							const ox = config.gridOffsetX || 0;
-							const oy = config.gridOffsetY || 0;
-							
-							// Get creature size for proper grid snapping
 							const markerDef = draggedMarker.markerId ? plugin.markerLibrary.getMarker(draggedMarker.markerId) : null;
-							const CREATURE_SIZE_SQUARES: Record<string, number> = {
-								'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-							};
-							const sizeInSquares = markerDef?.creatureSize ? CREATURE_SIZE_SQUARES[markerDef.creatureSize] || 1 : 1;
-							
-							// Snap to grid tile center (every tile the token walks on)
-							const halfToken = (sizeInSquares * gridSize) / 2;
-							const col = Math.round((draggedMarker.position.x - ox - halfToken) / gridSize);
-							const row = Math.round((draggedMarker.position.y - oy - halfToken) / gridSize);
-							const snappedX = ox + col * gridSize + halfToken;
-							const snappedY = oy + row * gridSize + halfToken;
+							const sizeInSquares = markerDef?.creatureSize ? (CREATURE_SIZE_SQUARES[markerDef.creatureSize] || 1) : 1;
+							const snapped = snapTokenToGrid(draggedMarker.position.x, draggedMarker.position.y, sizeInSquares);
+							const snappedX = snapped.x;
+							const snappedY = snapped.y;
 							
 							const lastPoint = activeTunnel.path[activeTunnel.path.length - 1];
 							
@@ -7774,17 +7773,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					
 					// First snap the token to grid (if applicable)
 					if (mDef && ['player', 'npc', 'creature'].includes(mDef.type) && config.gridSize) {
-						const ox = config.gridOffsetX || 0;
-						const oy = config.gridOffsetY || 0;
-						const gs = config.gridSize;
 						const squares = CREATURE_SIZE_SQUARES[mDef.creatureSize || 'medium'] || 1;
-						const halfToken = (squares * gs) / 2;
-						const col = Math.round((m.position.x - ox - halfToken) / gs);
-						const row = Math.round((m.position.y - oy - halfToken) / gs);
-						const snapDx = (ox + col * gs + halfToken) - m.position.x;
-						const snapDy = (oy + row * gs + halfToken) - m.position.y;
-						m.position.x = ox + col * gs + halfToken;
-						m.position.y = oy + row * gs + halfToken;
+						const snapped = snapTokenToGrid(m.position.x, m.position.y, squares);
+						const snapDx = snapped.x - m.position.x;
+						const snapDy = snapped.y - m.position.y;
+						m.position.x = snapped.x;
+						m.position.y = snapped.y;
 						
 						// Update anchored AoE effects with snap delta
 						if (snapDx !== 0 || snapDy !== 0) {
@@ -7809,18 +7803,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						);
 						if (activeTunnel && activeTunnel.path.length > 0) {
 							// Snap final position to grid tile center (same logic as during movement)
-							const gridSize = config.gridSize || 70;
-							const ox = config.gridOffsetX || 0;
-							const oy = config.gridOffsetY || 0;
-							const CREATURE_SIZE_SQUARES: Record<string, number> = {
-								'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-							};
-							const sizeInSquares = mDef?.creatureSize ? CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1 : 1;
-							const halfToken = (sizeInSquares * gridSize) / 2;
-							const col = Math.round((m.position.x - ox - halfToken) / gridSize);
-							const row = Math.round((m.position.y - oy - halfToken) / gridSize);
-							const snappedX = ox + col * gridSize + halfToken;
-							const snappedY = oy + row * gridSize + halfToken;
+							const sizeInSquares = mDef?.creatureSize ? (CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1) : 1;
+							const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
+							const snappedX = snapped.x;
+							const snappedY = snapped.y;
 							
 							const lastPoint = activeTunnel.path[activeTunnel.path.length - 1];
 							
@@ -8772,24 +8758,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									let tunnel = config.tunnels.find((t: any) => t.creatorMarkerId === m.id && t.active);
 									if (!tunnel) {
 										const gridSize = config.gridSize || 70;
-										const ox = config.gridOffsetX || 0;
-										const oy = config.gridOffsetY || 0;
-										const CREATURE_SIZE_SQUARES: Record<string, number> = {
-											'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-										};
 										const creatureSize = mDef.creatureSize || 'medium';
 										const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
 										const tunnelWidth = (sizeInSquares + 0.5) * gridSize;
-										const halfToken = (sizeInSquares * gridSize) / 2;
-										const col = Math.round((m.position.x - ox - halfToken) / gridSize);
-										const row = Math.round((m.position.y - oy - halfToken) / gridSize);
-										const snappedX = ox + col * gridSize + halfToken;
-										const snappedY = oy + row * gridSize + halfToken;
+										const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
 										tunnel = {
 											id: `tunnel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
 											creatorMarkerId: m.id,
-											entrancePosition: { x: snappedX, y: snappedY },
-											path: [{ x: snappedX, y: snappedY, elevation: value }],
+											entrancePosition: { x: snapped.x, y: snapped.y },
+											path: [{ x: snapped.x, y: snapped.y, elevation: value }],
 											creatureSize: creatureSize,
 											depth: value,
 											createdAt: Date.now(),
@@ -8811,25 +8788,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								// Mark exit position and deactivate tunnel
 								if (config.tunnels) {
 									// Snap exit to grid tile center
-									const gridSize = config.gridSize || 70;
-									const ox = config.gridOffsetX || 0;
-									const oy = config.gridOffsetY || 0;
-									const CREATURE_SIZE_SQUARES: Record<string, number> = {
-										'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-									};
-									const sizeInSquares = mDef?.creatureSize ? CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1 : 1;
-									const halfToken = (sizeInSquares * gridSize) / 2;
-									const col = Math.round((m.position.x - ox - halfToken) / gridSize);
-									const row = Math.round((m.position.y - oy - halfToken) / gridSize);
-									const snappedX = ox + col * gridSize + halfToken;
-									const snappedY = oy + row * gridSize + halfToken;
+									const sizeInSquares = mDef?.creatureSize ? (CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1) : 1;
+									const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
 									
 									config.tunnels.forEach((t: any) => {
 										if (t.creatorMarkerId === m.id && t.active) {
 											// Add current position as exit if not already in path
 											const lastPos = t.path[t.path.length - 1];
-											if (!lastPos || lastPos.x !== snappedX || lastPos.y !== snappedY) {
-												t.path.push({ x: snappedX, y: snappedY, elevation: 0 }); // Exit is at surface
+											if (!lastPos || lastPos.x !== snapped.x || lastPos.y !== snapped.y) {
+												t.path.push({ x: snapped.x, y: snapped.y, elevation: 0 }); // Exit is at surface
 											}
 											t.active = false;
 										}
@@ -8882,24 +8849,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									let tunnel = config.tunnels.find((t: any) => t.creatorMarkerId === m.id && t.active);
 									if (!tunnel) {
 										const gridSize = config.gridSize || 70;
-										const ox = config.gridOffsetX || 0;
-										const oy = config.gridOffsetY || 0;
-										const CREATURE_SIZE_SQUARES: Record<string, number> = {
-											'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-										};
 										const creatureSize = mDef.creatureSize || 'medium';
 										const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
 										const tunnelWidth = (sizeInSquares + 0.5) * gridSize;
-										const halfToken = (sizeInSquares * gridSize) / 2;
-										const col = Math.round((m.position.x - ox - halfToken) / gridSize);
-										const row = Math.round((m.position.y - oy - halfToken) / gridSize);
-										const snappedX = ox + col * gridSize + halfToken;
-										const snappedY = oy + row * gridSize + halfToken;
+										const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
 										tunnel = {
 											id: `tunnel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
 											creatorMarkerId: m.id,
-											entrancePosition: { x: snappedX, y: snappedY },
-											path: [{ x: snappedX, y: snappedY, elevation: depthValue }],
+											entrancePosition: { x: snapped.x, y: snapped.y },
+											path: [{ x: snapped.x, y: snapped.y, elevation: depthValue }],
 											creatureSize: creatureSize,
 											depth: depthValue,
 											createdAt: Date.now(),
@@ -8927,24 +8885,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									
 									// Deactivate active tunnel for this marker
 									if (config.tunnels) {
-										const gridSize = config.gridSize || 70;
-										const ox = config.gridOffsetX || 0;
-										const oy = config.gridOffsetY || 0;
-										const CREATURE_SIZE_SQUARES: Record<string, number> = {
-											'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-										};
-										const sizeInSquares = mDef?.creatureSize ? CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1 : 1;
-										const halfToken = (sizeInSquares * gridSize) / 2;
-										const col = Math.round((m.position.x - ox - halfToken) / gridSize);
-										const row = Math.round((m.position.y - oy - halfToken) / gridSize);
-										const snappedX = ox + col * gridSize + halfToken;
-										const snappedY = oy + row * gridSize + halfToken;
+										const sizeInSquares = mDef?.creatureSize ? (CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1) : 1;
+										const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
 										
 										config.tunnels.forEach((t: any) => {
 											if (t.creatorMarkerId === m.id && t.active) {
 												const lastPos = t.path[t.path.length - 1];
-												if (!lastPos || lastPos.x !== snappedX || lastPos.y !== snappedY) {
-													t.path.push({ x: snappedX, y: snappedY, elevation: 0 });
+												if (!lastPos || lastPos.x !== snapped.x || lastPos.y !== snapped.y) {
+													t.path.push({ x: snapped.x, y: snapped.y, elevation: 0 });
 												}
 												t.active = false;
 											}
@@ -8987,7 +8935,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 										if (nearestTunnel) {
 											// Check if token is small enough to enter tunnel
 											const CREATURE_SIZE_SQUARES: Record<string, number> = {
-												'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
+												'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
 											};
 											const tokenSize = CREATURE_SIZE_SQUARES[mDef.creatureSize || 'medium'] || 1;
 											const tunnelCreatureSize = nearestTunnel.tunnel.creatureSize || 'medium';

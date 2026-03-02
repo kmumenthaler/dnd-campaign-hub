@@ -20,10 +20,11 @@ export type Layer = 'Player' | 'DM' | 'Background' | 'Elevated' | 'Subterranean'
 export type CreatureSize = 'tiny' | 'small' | 'medium' | 'large' | 'huge' | 'gargantuan';
 
 /**
- * Grid squares covered per creature size
+ * Grid squares covered per creature size.
+ * Tiny = 0.5 (half a cell width → quarter cell area, 4 per square per RAW).
  */
 export const CREATURE_SIZE_SQUARES: Record<CreatureSize, number> = {
-	'tiny': 1,
+	'tiny': 0.5,
 	'small': 1,
 	'medium': 1,
 	'large': 2,
