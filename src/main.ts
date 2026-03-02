@@ -3261,6 +3261,9 @@ export default class DndCampaignHubPlugin extends Plugin {
   _playerMapViews: Set<PlayerMapView> = new Set();
   _gmMapViews: Set<GmMapView> = new Set();
   _hexcrawlBridge: HexcrawlBridge | null = null;
+  /** Debounced save state: per-mapId pending config + timer */
+  private _pendingSaves = new Map<string, { config: any; el: HTMLElement; timer: ReturnType<typeof setTimeout> }>();
+  private static readonly SAVE_DEBOUNCE_MS = 1000;
 
   async onload() {
     await this.loadSettings();
@@ -4429,6 +4432,8 @@ export default class DndCampaignHubPlugin extends Plugin {
   }
 
   onunload() {
+    // Flush any debounced map saves before shutdown
+    this._flushAllPendingSaves();
     // Persist playback state before shutdown
     this.saveMusicPlaybackState();
     if (this._musicStatusBarCleanup) this._musicStatusBarCleanup();
@@ -16409,22 +16414,47 @@ if (wikiMatch && wikiMatch[1]) {
 /**
  * Save map annotations to dedicated file
  */
-async saveMapAnnotations(config: any, el: HTMLElement) {
+/**
+	 * Schedule a debounced save for the given map.  Multiple calls within
+	 * SAVE_DEBOUNCE_MS collapse into a single disk write, eliminating
+	 * redundant I/O when the user performs rapid successive actions (e.g.
+	 * placing several markers, toggling multiple highlights).
+	 *
+	 * The PV sync still fires immediately so the player view stays
+	 * visually up-to-date.
+	 */
+	saveMapAnnotations(config: any, el: HTMLElement) {
+		// Sync to player view immediately (cheap, no I/O)
+		const viewport = el.querySelector('.dnd-map-viewport') as any;
+		if (viewport && viewport._syncPlayerView) {
+			viewport._syncPlayerView();
+		}
+
+		if (!config.mapId) {
+			console.error('Cannot save annotations: mapId missing');
+			return;
+		}
+
+		const mapId = config.mapId as string;
+		const existing = this._pendingSaves.get(mapId);
+		if (existing) clearTimeout(existing.timer);
+
+		const timer = setTimeout(() => {
+			this._flushMapSave(mapId);
+		}, DndCampaignHubPlugin.SAVE_DEBOUNCE_MS);
+
+		this._pendingSaves.set(mapId, { config, el, timer });
+	}
+
+	/** Immediately write a pending save for `mapId` to disk. */
+	private async _flushMapSave(mapId: string) {
+		const entry = this._pendingSaves.get(mapId);
+		if (!entry) return;
+		this._pendingSaves.delete(mapId);
+		clearTimeout(entry.timer);
+
+		const config = entry.config;
 		try {
-			console.warn('=== saveMapAnnotations CALLED ===', {
-				mapId: config.mapId,
-				hasHighlights: (config.highlights || []).length,
-				hasMarkers: (config.markers || []).length,
-				hasDrawings: (config.drawings || []).length,
-				configDir: this.app.vault.configDir,
-				manifestId: this.manifest.id
-			});
-			
-			if (!config.mapId) {
-				console.error('Cannot save annotations: mapId missing');
-				return;
-			}
-			
 			// Prepare annotation data (includes full config + annotations)
 			const mapData = {
 				// Map settings
@@ -16474,29 +16504,21 @@ async saveMapAnnotations(config: any, el: HTMLElement) {
 				await this.app.vault.adapter.mkdir(annotationDir);
 			}
 			
-			console.log('Saving map data to:', annotationDir);
-			console.log('MapId:', config.mapId);
-			console.log('Highlights count:', mapData.highlights.length);
-			console.log('Markers count:', mapData.markers.length);
-			console.log('Drawings count:', mapData.drawings.length);
-			console.log('Walls count:', mapData.walls.length);
-			console.log('Light sources count:', mapData.lightSources.length);
-			
 			// Save to dedicated file using adapter for config directory files
 			const annotationPath = this.getMapAnnotationPath(config.mapId);
 			const annotationJson = JSON.stringify(mapData, null, 2);
 			
 			await this.app.vault.adapter.write(annotationPath, annotationJson);
-			
-			console.log('Map data saved to:', annotationPath);
-			
-			// Sync to player view if open
-			const viewport = el.querySelector('.dnd-map-viewport') as any;
-			if (viewport && viewport._syncPlayerView) {
-				viewport._syncPlayerView();
-			}
 		} catch (error) {
 			console.error('Error saving map annotations:', error);
+		}
+	}
+
+	/** Flush all pending debounced saves immediately (called on unload). */
+	private async _flushAllPendingSaves() {
+		const ids = [...this._pendingSaves.keys()];
+		for (const id of ids) {
+			await this._flushMapSave(id);
 		}
 	}
 
