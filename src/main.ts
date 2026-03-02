@@ -7869,7 +7869,10 @@ export default class DndCampaignHubPlugin extends Plugin {
       }
 			
       // Store sync function that pushes updates to all open player views
-      (viewport as any)._syncPlayerView = () => {
+      // (rAF-coalesced: many calls per frame → one actual sync at next paint)
+      let _pvSyncScheduled = false;
+      const _syncPlayerViewImmediate = () => {
+        _pvSyncScheduled = false;
         if (this._playerMapViews && this._playerMapViews.size > 0) {
           // Build drag ruler data if a marker is being dragged
           let dragRuler: { origin: { x: number; y: number }; current: { x: number; y: number }; pathCells?: { col: number; row: number; dist: number }[]; totalDist?: number; climbDist?: number } | null = null;
@@ -7973,6 +7976,14 @@ export default class DndCampaignHubPlugin extends Plugin {
             }
           });
         }
+      };
+      // rAF-coalesced wrapper: no matter how many times _syncPlayerView is
+      // called within one frame (e.g. mousemove → redraw + sync), the actual
+      // payload build + PV redraw only happens once at the next paint.
+      (viewport as any)._syncPlayerView = () => {
+        if (_pvSyncScheduled) return;
+        _pvSyncScheduled = true;
+        requestAnimationFrame(() => _syncPlayerViewImmediate());
       };
 			
 			// Initial sync after a short delay to ensure player view is ready
