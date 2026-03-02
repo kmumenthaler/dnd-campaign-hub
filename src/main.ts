@@ -891,7 +891,6 @@ class EncounterBuilderModal extends Modal {
             isFriendly: c.is_friendly === true || c.is_friendly === "true",
             isHidden: c.is_hidden === true || c.is_hidden === "true"
           }));
-          console.log("[EncounterBuilder] Loaded creatures:", this.creatures);
         }
       }
 
@@ -1126,7 +1125,6 @@ class EncounterBuilderModal extends Modal {
     this.syncEncounterBuilder();
     const vaultCreatures = await this.encounterBuilder.loadAllCreatures();
     
-    console.log("Loaded creatures:", vaultCreatures.length, vaultCreatures.slice(0, 3).map(c => c.name));
     
     if (vaultCreatures.length > 0) {
       const vaultCreatureSetting = new Setting(vaultCreatureSection)
@@ -1663,7 +1661,6 @@ class EncounterBuilderModal extends Modal {
             }
           }
         } catch (e) {
-          console.warn("[Rename] Failed to save to Fantasy Statblocks bestiary:", e);
         }
 
         // --- Update the encounter creature entry ---
@@ -1998,26 +1995,21 @@ class EncounterBuilderModal extends Modal {
    */
   async parseStatblockStats(filePath: string): Promise<{ hp: number; ac: number; dpr: number; attackBonus: number } | null> {
     try {
-      console.log(`[Parser] Reading file: ${filePath}`);
       const file = this.app.vault.getAbstractFileByPath(filePath);
       if (!(file instanceof TFile)) {
-        console.log(`[Parser] File not found or not a TFile`);
         return null;
       }
 
       const cache = this.app.metadataCache.getFileCache(file);
       if (!cache?.frontmatter) {
-        console.log(`[Parser] No frontmatter found`);
         return null;
       }
 
       const fm = cache.frontmatter;
-      console.log(`[Parser] Frontmatter keys:`, Object.keys(fm));
       
       // Extract basic stats
       const hp = this.parseHP(fm.hp);
       const ac = this.parseAC(fm.ac);
-      console.log(`[Parser] Parsed HP: ${hp}, AC: ${ac}`);
       
       // Calculate DPR and attack bonus from actions
       let totalDPR = 0;
@@ -2026,11 +2018,9 @@ class EncounterBuilderModal extends Modal {
       
       // Check for actions array (where attacks are defined)
       if (fm.actions && Array.isArray(fm.actions)) {
-        console.log(`[Parser] Found ${fm.actions.length} actions`);
         
         for (const action of fm.actions) {
           if (!action.name) continue;
-          console.log(`[Parser] Action: "${action.name}"`);
           
           // === CHECK STRUCTURED FIELDS FIRST ===
           // Many statblocks (especially from Fantasy Statblocks plugin) have structured data
@@ -2044,13 +2034,11 @@ class EncounterBuilderModal extends Modal {
             if (actionAttackBonus > highestAttackBonus) {
               highestAttackBonus = actionAttackBonus;
             }
-            console.log(`[Parser] Found structured attack_bonus: ${actionAttackBonus}`);
             usedStructuredData = true;
           }
           
           // Check for damage_dice and damage_bonus fields
           if (action.damage_dice || action.damage_bonus) {
-            console.log(`[Parser] Found structured damage fields: dice="${action.damage_dice}", bonus="${action.damage_bonus}"`);
             
             // Parse damage_dice (e.g., "1d6" or "2d8")
             let diceDamage = 0;
@@ -2060,7 +2048,6 @@ class EncounterBuilderModal extends Modal {
                 const numDice = parseInt(diceMatch[1]);
                 const dieSize = parseInt(diceMatch[2]);
                 diceDamage = numDice * ((dieSize + 1) / 2); // Average of dice
-                console.log(`[Parser] Calculated dice damage: ${numDice}d${dieSize} = ${diceDamage}`);
               }
             }
             
@@ -2073,7 +2060,6 @@ class EncounterBuilderModal extends Modal {
             }
             
             actionDPR = diceDamage + damageBonus;
-            console.log(`[Parser] Calculated structured damage: ${diceDamage} + ${damageBonus} = ${actionDPR}`);
             
             if (actionDPR > 0) {
               totalDPR += actionDPR;
@@ -2084,7 +2070,6 @@ class EncounterBuilderModal extends Modal {
           
           // If we successfully used structured data, skip text parsing for this action
           if (usedStructuredData) {
-            console.log(`[Parser] Used structured data for ${action.name}, DPR=${actionDPR}, Attack=${actionAttackBonus}`);
             continue;
           }
           
@@ -2092,7 +2077,6 @@ class EncounterBuilderModal extends Modal {
           // Parse attack actions from description text
           if (action.desc && typeof action.desc === 'string') {
             const desc = action.desc;
-            console.log(`[Parser] Description: ${desc.substring(0, 100)}...`);
             
             // Look for attack bonus: "+5 to hit" or "attack: +5"
             const attackMatch = desc.match(/[+\-]\d+\s+to\s+hit/i);
@@ -2101,7 +2085,6 @@ class EncounterBuilderModal extends Modal {
               if (bonusMatch) {
                 attackCount++; // Increment attack count
                 const bonus = parseInt(bonusMatch[0]);
-                console.log(`[Parser] Found attack bonus: ${bonus}`);
                 if (bonus > highestAttackBonus) highestAttackBonus = bonus;
               }
             }
@@ -2122,7 +2105,6 @@ class EncounterBuilderModal extends Modal {
             const avgDamageMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/i);
             if (avgDamageMatch) {
               const avgDamage = parseInt(avgDamageMatch[1]);
-              console.log(`[Parser] Found pre-calculated damage: ${avgDamage}`);
               totalDPR += avgDamage;
               damageFound = true;
               if (!attackMatch) attackCount++; // Count this as an attack if we haven't already
@@ -2135,22 +2117,18 @@ class EncounterBuilderModal extends Modal {
                 const dieSize = parseInt(diceMatch[2]);
                 const modifier = diceMatch[3] ? parseInt(diceMatch[3].replace(/\s/g, '')) : 0;
                 const avgDamage = Math.floor(numDice * (dieSize + 1) / 2) + modifier;
-                console.log(`[Parser] Calculated damage from ${diceMatch[0]}: ${avgDamage}`);
                 totalDPR += avgDamage;
                 damageFound = true;
               }
             }
             
             if (!damageFound) {
-              console.log(`[Parser] No damage found in action`);
             }
           }
         }
       } else {
-        console.log(`[Parser] No actions array found`);
       }
       
-      console.log(`[Parser] Total DPR before multiattack: ${totalDPR}`);
       
       // Check for multiattack
       let multiattackMultiplier = 1;
@@ -2160,14 +2138,12 @@ class EncounterBuilderModal extends Modal {
         );
         
         if (multiattack?.desc) {
-          console.log(`[Parser] Multiattack found: ${multiattack.desc}`);
           // Look for "makes two attacks" or "makes three weapon attacks"
           const countMatch = multiattack.desc.match(/makes?\s+(two|three|four|five|\d+)\s+.*?attack/i);
           if (countMatch) {
             const countStr = countMatch[1].toLowerCase();
             const countMap: Record<string, number> = { 'two': 2, 'three': 3, 'four': 4, 'five': 5 };
             multiattackMultiplier = countMap[countStr] || parseInt(countStr) || 1;
-            console.log(`[Parser] Multiattack multiplier: ${multiattackMultiplier}`);
           }
         }
       }
@@ -2176,15 +2152,12 @@ class EncounterBuilderModal extends Modal {
       // Note: We don't strictly require attackCount > 0 because some statblocks 
       // might have damage without explicit "to hit" text
       if (totalDPR > 0 && multiattackMultiplier > 1) {
-        console.log(`[Parser] Applying multiattack multiplier ${multiattackMultiplier} to DPR ${totalDPR}`);
         totalDPR *= multiattackMultiplier;
-        console.log(`[Parser] Final DPR after multiattack: ${totalDPR}`);
       }
       
       // If we couldn't parse DPR, return null to fall back to CR estimates
       // We allow attack bonus to be 0 as it's less critical than DPR
       if (totalDPR === 0) {
-        console.log(`[Parser] No DPR found, returning null to use CR estimates`);
         return null;
       }
       
@@ -2192,7 +2165,6 @@ class EncounterBuilderModal extends Modal {
       if (highestAttackBonus === 0) {
         // Estimate based on DPR (higher DPR usually means higher attack bonus)
         highestAttackBonus = Math.max(2, Math.floor(totalDPR / 5));
-        console.log(`[Parser] No attack bonus found, estimating ${highestAttackBonus} based on DPR`);
       }
       
       const result = {
@@ -2201,7 +2173,6 @@ class EncounterBuilderModal extends Modal {
         dpr: totalDPR,
         attackBonus: highestAttackBonus
       };
-      console.log(`[Parser] SUCCESS: Returning`, result);
       return result;
     } catch (error) {
       console.error("[Parser] Error parsing statblock:", filePath, error);
@@ -2262,7 +2233,6 @@ class EncounterBuilderModal extends Modal {
     // Find and load trap files for each trap group
     const consolidatedTraps: any[] = [];
     for (const [trapName, elements] of trapGroups.entries()) {
-      console.log(`🪤 Consolidating trap: ${trapName} (${elements.length} elements)`);
       
       // Search for the trap file
       let trapFile: TFile | null = null;
@@ -2296,7 +2266,6 @@ class EncounterBuilderModal extends Modal {
               path: trapFile.path
             };
             consolidatedTraps.push(consolidatedTrap);
-            console.log(`✅ Consolidated ${trapName} from ${elements.length} elements`);
           }
         } catch (error) {
           console.error(`Error loading trap file for ${trapName}:`, error);
@@ -2304,14 +2273,12 @@ class EncounterBuilderModal extends Modal {
           nonTraps.push(...elements);
         }
       } else {
-        console.warn(`⚠️ No trap file found for ${trapName}, keeping as separate creatures`);
         nonTraps.push(...elements);
       }
     }
     
     // Replace creatures array with consolidated version
     this.creatures = [...nonTraps, ...consolidatedTraps];
-    console.log(`📊 Consolidated ${trapGroups.size} traps, ${nonTraps.length} other creatures`);
   }
 
   async calculateEncounterDifficulty(): Promise<any> {
@@ -2332,27 +2299,18 @@ class EncounterBuilderModal extends Modal {
     let friendlyTotalAttackBonus = 0;
     let friendlyCount = 0;
     
-    console.log("=== ENCOUNTER DIFFICULTY CALCULATION ===");
     
     for (const creature of this.creatures) {
       const count = creature.count || 1;
       
-      console.log(`\n--- Creature: ${creature.name} (x${count}) ---`);
-      console.log(`Path: ${creature.path || 'none'}`);
-      console.log(`CR: ${creature.cr || 'unknown'}`);
-      console.log(`Is Trap: ${creature.isTrap || false}`);
-      console.log(`Is Friendly: ${creature.isFriendly || false}`);
       
       // Handle friendly creatures - add them to the party side
       if (creature.isFriendly) {
-        console.log(`🤝 FRIENDLY CREATURE - Adding to party stats`);
         
         // Get stats for friendly creature (same logic as enemies)
         let realStats = null;
         if (creature.path && typeof creature.path === 'string') {
-          console.log(`Attempting to parse statblock: ${creature.path}`);
           realStats = await this.parseStatblockStats(creature.path);
-          console.log(`Parsed stats:`, realStats);
         }
         
         const crStats = this.getCRStats(creature.cr);
@@ -2361,8 +2319,6 @@ class EncounterBuilderModal extends Modal {
         const dpr = realStats?.dpr || crStats.dpr;
         const attackBonus = realStats?.attackBonus || crStats.attackBonus;
         
-        console.log(`Friendly stats: HP=${hp}, AC=${ac}, DPR=${dpr}, Attack=${attackBonus}`);
-        console.log(`Total contribution (x${count}): HP=${hp * count}, DPR=${dpr * count}`);
         
         friendlyTotalHP += hp * count;
         friendlyTotalAC += ac * count;
@@ -2374,17 +2330,13 @@ class EncounterBuilderModal extends Modal {
       
       // Handle traps differently from creatures
       if (creature.isTrap && creature.trapData) {
-        console.log(`🪤 TRAP DETECTED - Using trap-specific calculation`);
         const trapStats = await this.plugin.encounterBuilder.calculateTrapStats(creature.trapData);
-        console.log(`Trap stats:`, trapStats);
         
         const hp = trapStats.hp;
         const ac = trapStats.ac;
         const dpr = trapStats.dpr;
         const attackBonus = trapStats.attackBonus;
         
-        console.log(`Final trap stats: HP=${hp}, AC=${ac}, DPR=${dpr}, Attack=${attackBonus}, Effective CR=${trapStats.cr}`);
-        console.log(`Total contribution (x${count}): HP=0 (traps don't contribute to HP pool), DPR=${dpr * count}`);
         
         // Traps don't add to HP pool (they're hazards, not damage sponges)
         // But they DO contribute DPR, AC (for difficulty calculation), and count as threats
@@ -2398,16 +2350,12 @@ class EncounterBuilderModal extends Modal {
       // Try to get real stats from statblock if available
       let realStats = null;
       if (creature.path && typeof creature.path === 'string') {
-        console.log(`Attempting to parse statblock: ${creature.path}`);
         realStats = await this.parseStatblockStats(creature.path);
-        console.log(`Parsed stats:`, realStats);
       } else {
-        console.log(`No valid path, using CR estimates`);
       }
       
       // Fall back to CR-based estimates if no statblock or parsing failed
       const crStats = this.getCRStats(creature.cr);
-      console.log(`CR-based fallback stats:`, crStats);
       
       const hp = creature.hp || realStats?.hp || crStats.hp;
       const ac = creature.ac || realStats?.ac || crStats.ac;
@@ -2418,8 +2366,6 @@ class EncounterBuilderModal extends Modal {
       const hpSource = realStats?.hp ? '📊 STATBLOCK' : creature.hp ? '✏️ MANUAL' : '📖 CR_TABLE';
       const acSource = realStats?.ac ? '📊 STATBLOCK' : creature.ac ? '✏️ MANUAL' : '📖 CR_TABLE';
       
-      console.log(`Final stats used: HP=${hp} (${hpSource}), AC=${ac} (${acSource}), DPR=${dpr} (${dprSource}), Attack=${attackBonus}`);
-      console.log(`Total contribution (x${count}): HP=${hp * count}, DPR=${dpr * count}`);
       
       enemyTotalHP += hp * count;
       enemyTotalAC += ac * count;
@@ -2428,12 +2374,6 @@ class EncounterBuilderModal extends Modal {
       enemyCount += count;
     }
     
-    console.log(`\n=== TOTALS ===`);
-    console.log(`Total Enemies: ${enemyCount}`);
-    console.log(`Total Enemy HP: ${enemyTotalHP}`);
-    console.log(`Total Enemy DPR: ${enemyTotalDPR}`);
-    console.log(`Average Enemy AC: ${enemyCount > 0 ? (enemyTotalAC / enemyCount).toFixed(1) : 0}`);
-    console.log(`Average Enemy Attack Bonus: ${enemyCount > 0 ? (enemyTotalAttackBonus / enemyCount).toFixed(1) : 0}`);
     
     const avgEnemyAC = enemyCount > 0 ? enemyTotalAC / enemyCount : 13;
     const avgEnemyAttackBonus = enemyCount > 0 ? enemyTotalAttackBonus / enemyCount : 3;
@@ -2461,10 +2401,6 @@ class EncounterBuilderModal extends Modal {
     }
     
     // Add friendly creatures to party totals
-    console.log(`\n=== ADDING FRIENDLY CREATURES TO PARTY ===`);
-    console.log(`Friendly creatures: ${friendlyCount}`);
-    console.log(`Friendly HP contribution: ${friendlyTotalHP}`);
-    console.log(`Friendly DPR contribution: ${friendlyTotalDPR}`);
     
     partyTotalHP += friendlyTotalHP;
     partyTotalAC += friendlyTotalAC;
@@ -2978,7 +2914,6 @@ _Add notes about tactics, environment, or special conditions here._
     try {
       const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
       if (!initiativeTracker) {
-        console.log("Initiative Tracker plugin not found - skipping encounter save to tracker");
         new Notice("⚠️ Initiative Tracker not found. Encounter saved to vault only.");
         return;
       }
@@ -2991,8 +2926,6 @@ _Add notes about tactics, environment, or special conditions here._
         try {
           this.syncEncounterBuilder();
           const selectedPlayers = await this.encounterBuilder.getSelectedPartyPlayers();
-          console.log("Adding party members to encounter:", selectedPlayers.length);
-          console.log("⚠️ Note: Party member stats are loaded from Initiative Tracker. If stats seem outdated, refresh Initiative Tracker from the Character Notes plugin.");
           for (const player of selectedPlayers) {
             const hp = player.hp || player.currentMaxHP || 20;
             const ac = player.ac || player.currentAC || 14;
@@ -3043,7 +2976,6 @@ _Add notes about tactics, environment, or special conditions here._
 
       // Build creature data in Initiative Tracker format using flatMap
       const enemyCreatures = this.creatures.flatMap(c => {
-        console.log(`Building creature: ${c.name}, HP: ${c.hp}, AC: ${c.ac}`);
         const instances = [];
         for (let i = 0; i < c.count; i++) {
           const hp = c.hp || 1;
@@ -3084,7 +3016,6 @@ _Add notes about tactics, environment, or special conditions here._
             friendly: c.isFriendly || false,  // Friendly to players
             rollHP: false  // Whether to roll HP when adding to tracker
           };
-          console.log(`Created creature instance:`, creature);
           instances.push(creature);
         }
         return instances;
@@ -3093,19 +3024,14 @@ _Add notes about tactics, environment, or special conditions here._
       // Add enemy creatures to the main creatures array
       creatures.push(...enemyCreatures);
 
-      console.log(`Saving encounter "${this.encounterName}" with ${creatures.length} creatures to Initiative Tracker`);
-      console.log("Initiative Tracker data structure available:", !!initiativeTracker.data);
-      console.log("Initiative Tracker saveSettings available:", !!initiativeTracker.saveSettings);
 
       // Save encounter to Initiative Tracker's data structure
       if (initiativeTracker.data) {
         // Initialize encounters object if it doesn't exist
         if (!initiativeTracker.data.encounters) {
-          console.log("Initializing encounters object in Initiative Tracker data");
           initiativeTracker.data.encounters = {};
         }
 
-        console.log("Current encounters in Initiative Tracker:", Object.keys(initiativeTracker.data.encounters));
 
         // Save encounter in Initiative Tracker format
         initiativeTracker.data.encounters[this.encounterName] = {
@@ -3117,19 +3043,15 @@ _Add notes about tactics, environment, or special conditions here._
           rollHP: false
         };
 
-        console.log(`Encounter "${this.encounterName}" added to data.encounters`);
 
         // Persist the data
         if (initiativeTracker.saveSettings) {
           await initiativeTracker.saveSettings();
-          console.log(`✓ Successfully saved encounter "${this.encounterName}" to Initiative Tracker`);
           new Notice(`✓ Encounter saved to Initiative Tracker with ${creatures.length} creatures`);
         } else {
-          console.warn("Initiative Tracker doesn't have saveSettings method");
           new Notice("⚠️ Could not persist encounter to Initiative Tracker");
         }
       } else {
-        console.warn("Initiative Tracker data not accessible");
         new Notice("⚠️ Initiative Tracker data not accessible - encounter saved to vault only");
       }
     } catch (error) {
@@ -3179,36 +3101,26 @@ _Add notes about tactics, environment, or special conditions here._
       const file = this.app.vault.getAbstractFileByPath(this.originalEncounterPath);
       if (file instanceof TFile) {
         await this.app.vault.delete(file);
-        console.log(`Deleted encounter file: ${this.originalEncounterPath}`);
       }
 
       // Remove from Initiative Tracker
       const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-      console.log("Initiative Tracker plugin found:", !!initiativeTracker);
       
       if (initiativeTracker?.data?.encounters) {
-        console.log("Current encounters in Initiative Tracker:", Object.keys(initiativeTracker.data.encounters));
-        console.log(`Attempting to delete encounter: "${this.encounterName}"`);
-        console.log("Encounter exists in data:", !!initiativeTracker.data.encounters[this.encounterName]);
         
         if (initiativeTracker.data.encounters[this.encounterName]) {
           delete initiativeTracker.data.encounters[this.encounterName];
-          console.log(`✓ Deleted encounter "${this.encounterName}" from data.encounters`);
           
           if (initiativeTracker.saveSettings) {
             await initiativeTracker.saveSettings();
-            console.log("✓ Initiative Tracker settings saved after deletion");
             new Notice(`✓ Encounter deleted from Initiative Tracker`);
           } else {
-            console.warn("Initiative Tracker saveSettings not available");
             new Notice("⚠️ Could not persist deletion to Initiative Tracker");
           }
         } else {
-          console.warn(`Encounter "${this.encounterName}" not found in Initiative Tracker`);
           new Notice("⚠️ Encounter not found in Initiative Tracker");
         }
       } else {
-        console.warn("Initiative Tracker data.encounters not accessible");
         new Notice("⚠️ Initiative Tracker data not accessible");
       }
 
@@ -3390,7 +3302,6 @@ export default class DndCampaignHubPlugin extends Plugin {
     // Register /dnd slash-command snippets for quick scene authoring
     this.registerEditorSuggest(new SceneSnippetSuggest(this.app, this));
 
-    console.log("D&D Campaign Hub: Plugin loaded");
 
     // Check for version updates
     await this.checkForUpdates();
@@ -3540,7 +3451,6 @@ export default class DndCampaignHubPlugin extends Plugin {
               
               // Delete from vault
               await this.app.vault.delete(file);
-              console.log(`Deleted NPC file: ${file.path}`);
               
               new Notice(`✓ NPC "${npcName}" deleted`);
             }
@@ -3602,7 +3512,6 @@ export default class DndCampaignHubPlugin extends Plugin {
               
               // Delete from vault
               await this.app.vault.delete(file);
-              console.log(`Deleted PC file: ${file.path}`);
               
               new Notice(`✓ PC "${pcName}" deleted`);
             }
@@ -3659,7 +3568,6 @@ export default class DndCampaignHubPlugin extends Plugin {
               
               // Delete from vault
               await this.app.vault.delete(file);
-              console.log(`Deleted PoI file: ${file.path}`);
               
               new Notice(`✓ Point of Interest "${poiName}" deleted`);
             }
@@ -3796,34 +3704,26 @@ export default class DndCampaignHubPlugin extends Plugin {
             if (confirmed) {
               // Delete from vault
               await this.app.vault.delete(file);
-              console.log(`Deleted scene file: ${file.path}`);
               
               // Remove encounter from Initiative Tracker if it exists
               if (encounterName) {
                 const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-                console.log("Initiative Tracker plugin found:", !!initiativeTracker);
                 
                 if (initiativeTracker?.data?.encounters) {
-                  console.log(`Attempting to delete encounter: "${encounterName}"`);
                   
                   if (initiativeTracker.data.encounters[encounterName]) {
                     delete initiativeTracker.data.encounters[encounterName];
-                    console.log(`✓ Deleted encounter "${encounterName}" from data.encounters`);
                     
                     if (initiativeTracker.saveSettings) {
                       await initiativeTracker.saveSettings();
-                      console.log("✓ Initiative Tracker settings saved after deletion");
                       new Notice(`✓ Scene "${sceneName}" and its encounter deleted`);
                     } else {
-                      console.warn("Initiative Tracker saveSettings not available");
                       new Notice(`⚠️ Scene deleted but could not persist encounter deletion`);
                     }
                   } else {
-                    console.warn(`Encounter "${encounterName}" not found in Initiative Tracker`);
                     new Notice(`✓ Scene "${sceneName}" deleted from vault`);
                   }
                 } else {
-                  console.warn("Initiative Tracker data.encounters not accessible");
                   new Notice(`✓ Scene "${sceneName}" deleted from vault`);
                 }
               } else {
@@ -3874,7 +3774,6 @@ export default class DndCampaignHubPlugin extends Plugin {
               
               // Delete from vault
               await this.app.vault.delete(file);
-              console.log(`Deleted trap file: ${file.path}`);
               
               new Notice(`✓ Trap "${trapName}" deleted`);
             }
@@ -3919,7 +3818,6 @@ export default class DndCampaignHubPlugin extends Plugin {
             if (confirmed) {
               // Delete from vault
               await this.app.vault.delete(file);
-              console.log(`Deleted item file: ${file.path}`);
               
               new Notice(`✓ Item "${itemName}" deleted`);
             }
@@ -3964,7 +3862,6 @@ export default class DndCampaignHubPlugin extends Plugin {
             if (confirmed) {
               // Delete from vault
               await this.app.vault.delete(file);
-              console.log(`Deleted creature file: ${file.path}`);
               
               // Delete from Fantasy Statblocks plugin
               await this.deleteCreatureStatblock(creatureName);
@@ -4015,7 +3912,6 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on('modify', async (file) => {
         if (file instanceof TFile && file.path.startsWith('z_Encounters/')) {
-          console.log(`[File Watcher] Encounter modified: ${file.path}`);
           // Wait for metadata cache to update
           setTimeout(async () => {
             await this.syncEncounterToScenes(file);
@@ -4061,7 +3957,6 @@ export default class DndCampaignHubPlugin extends Plugin {
         // Only update if something actually changed
         if (existing.name === newName && existing.creatureSize === newSize) return;
 
-        console.log(`[Token Sync] Updating token "${existing.name}" → "${newName}" for ${file.path}`);
         const updated: MarkerDefinition = {
           ...existing,
           name: newName,
@@ -4099,7 +3994,6 @@ export default class DndCampaignHubPlugin extends Plugin {
           }
 
           if (!stillReferenced) {
-            console.log(`[Token Sync] Deleting orphan token "${marker.name}" (${marker.id})`);
             await this.markerLibrary.deleteMarker(marker.id);
           }
         }
@@ -4125,7 +4019,6 @@ export default class DndCampaignHubPlugin extends Plugin {
           const newName = fm.name || file.basename;
           if (existing.name === newName) return;
 
-          console.log(`[Token Sync] File renamed ${oldPath} → ${file.path}, updating token "${existing.name}" → "${newName}"`);
           const updated: MarkerDefinition = {
             ...existing,
             name: newName,
@@ -4149,35 +4042,25 @@ export default class DndCampaignHubPlugin extends Plugin {
             if (confirmed) {
               // Delete from vault
               await this.app.vault.delete(file);
-              console.log(`Deleted encounter file: ${file.path}`);
               
               // Remove from Initiative Tracker
               const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-              console.log("Initiative Tracker plugin found:", !!initiativeTracker);
               
               if (initiativeTracker?.data?.encounters) {
-                console.log("Current encounters in Initiative Tracker:", Object.keys(initiativeTracker.data.encounters));
-                console.log(`Attempting to delete encounter: "${encounterName}"`);
-                console.log("Encounter exists in data:", !!initiativeTracker.data.encounters[encounterName]);
                 
                 if (initiativeTracker.data.encounters[encounterName]) {
                   delete initiativeTracker.data.encounters[encounterName];
-                  console.log(`✓ Deleted encounter "${encounterName}" from data.encounters`);
                   
                   if (initiativeTracker.saveSettings) {
                     await initiativeTracker.saveSettings();
-                    console.log("✓ Initiative Tracker settings saved after deletion");
                     new Notice(`✓ Encounter "${encounterName}" deleted from vault and Initiative Tracker`);
                   } else {
-                    console.warn("Initiative Tracker saveSettings not available");
                     new Notice(`⚠️ Encounter deleted from vault but could not persist deletion to Initiative Tracker`);
                   }
                 } else {
-                  console.warn(`Encounter "${encounterName}" not found in Initiative Tracker`);
                   new Notice(`⚠️ Encounter deleted from vault but not found in Initiative Tracker`);
                 }
               } else {
-                console.warn("Initiative Tracker data.encounters not accessible");
                 new Notice(`⚠️ Encounter deleted from vault but Initiative Tracker data not accessible`);
               }
             }
@@ -4533,7 +4416,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				const typeDefinition = POI_TYPES.find(t => t.value === poiType);
 				
 				if (!typeDefinition) {
-					console.warn(`Unknown PoI type: ${poiType} for ${file.path}`);
 					skipped++;
 					continue;
 				}
@@ -4565,7 +4447,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				
 				await this.app.vault.modify(file, content);
 				updated++;
-				console.log(`Updated PoI icon: ${file.basename} -> ${correctIcon}`);
 			}
 			
 			new Notice(`✅ Updated ${updated} PoI icons (${skipped} already correct)`);
@@ -4717,7 +4598,6 @@ export default class DndCampaignHubPlugin extends Plugin {
     // Check if plugin already exists
     const exists = await adapter.exists(pluginPath);
     if (exists) {
-      console.log(`Plugin ${plugin.name} already installed`);
       return;
     }
 
@@ -4748,7 +4628,6 @@ export default class DndCampaignHubPlugin extends Plugin {
       // styles.css is optional
     }
 
-    console.log(`Installed plugin: ${plugin.name}`);
   }
 
   /**
@@ -4919,7 +4798,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 			};
 			
 			// Note: We can't directly modify other plugin settings, but we can provide guidance
-			console.log("D&D Campaign Hub: Suggested Templater settings:", templaterSettings);
 		} catch (error) {
 			console.error("Failed to configure Templater:", error);
 		}
@@ -4930,7 +4808,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				attachmentFolderNames: ["startsWith::z_"],
 				matchCaseInsensitive: true
 			};
-			console.log("D&D Campaign Hub: Suggested Hide Folders settings:", hideFoldersSettings);
 		} catch (error) {
 			console.error("Failed to configure Hide Folders:", error);
 		}
@@ -5071,7 +4948,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 		try {
 			const statblocksPlugin = (this.app as any).plugins.getPlugin("obsidian-5e-statblocks");
 			if (!statblocksPlugin) {
-				console.warn("Fantasy Statblocks plugin not found.");
 				return;
 			}
 
@@ -5082,7 +4958,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 			if (index !== -1) {
 				bestiary.splice(index, 1);
 				await statblocksPlugin.saveSettings();
-				console.log(`Deleted creature "${creatureName}" from Fantasy Statblocks`);
 			}
 		} catch (error) {
 			console.error("Error deleting creature statblock:", error);
@@ -5093,7 +4968,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 		try {
 			const statblocksPlugin = (this.app as any).plugins.getPlugin("obsidian-5e-statblocks");
 			if (!statblocksPlugin) {
-				console.warn("Fantasy Statblocks plugin not found.");
 				return;
 			}
 
@@ -5114,7 +4988,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (deletedCount > 0) {
 					// Save plugin data
 					await statblocksPlugin.saveData(statblocksPlugin.data);
-					console.log(`Deleted ${deletedCount} trap statblock(s) from Fantasy Statblocks`);
 				}
 			}
 		} catch (error) {
@@ -5177,7 +5050,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 	 */
 	async syncEncounterToScenes(encounterFile: TFile) {
 		try {
-			console.log(`[SyncEncounter] Starting sync for: ${encounterFile.path}`);
 
 			// Wait a moment for metadata cache to update, then read file directly
 			await new Promise(resolve => setTimeout(resolve, 100));
@@ -5187,7 +5059,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
 			
 			if (!frontmatterMatch || !frontmatterMatch[1]) {
-				console.log(`[SyncEncounter] No frontmatter found in encounter`);
 				return;
 			}
 
@@ -5275,14 +5146,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				encounterCreatures.push(currentCreature);
 			}
 
-			console.log(`[SyncEncounter] Parsed encounter data:`, {
-				name: encounterName,
-				creatures: encounterCreatures.length,
-				creaturesDetails: encounterCreatures,
-				difficulty: encounterDifficulty,
-				partyId: selectedPartyId,
-				useColorNames
-			});
 
 			// Find all scenes that link to this encounter
 			const encounterWikiLink = `[[${encounterFile.path}]]`;
@@ -5302,7 +5165,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			}
 
-			console.log(`[SyncEncounter] Found ${scenesLinking.length} scenes linking to this encounter`);
 
 			// Update each scene's frontmatter
 			for (const sceneFile of scenesLinking) {
@@ -5311,7 +5173,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 					encounter_difficulty: encounterDifficulty,
 					selected_party_id: selectedPartyId
 				});
-				console.log(`[SyncEncounter] Updated scene: ${sceneFile.path}`);
 			}
 
 			// Update Initiative Tracker encounter
@@ -5368,19 +5229,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 	 */
 	async updateInitiativeTrackerEncounter(encounterName: string, creatures: any[], selectedPartyId: string | null, useColorNames: boolean = false) {
 		try {
-			console.log(`[UpdateTracker] Starting update for encounter: ${encounterName}`);
-			console.log(`[UpdateTracker] Creatures:`, creatures);
-			console.log(`[UpdateTracker] Party ID: ${selectedPartyId}, Use color names: ${useColorNames}`);
 
 			const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
 			if (!initiativePlugin?.data?.encounters) {
-				console.log('[UpdateTracker] Initiative Tracker not available');
 				return;
 			}
 
 			// Check if encounter exists in Initiative Tracker
 			if (!initiativePlugin.data.encounters[encounterName]) {
-				console.log(`[UpdateTracker] Encounter "${encounterName}" not found in tracker`);
 				return;
 			}
 
@@ -5406,7 +5262,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 						friendly: false,  // Party members should NOT be marked as friendly
 						player: true  // Ensure player flag is set
 					}));
-					console.log(`[UpdateTracker] Loaded ${partyMembers.length} party members from party: ${(party as any).name}`);
 				}
 			}
 
@@ -5417,7 +5272,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				const instances: any[] = [];
 				const count = c.count || 1;
 				
-				console.log(`[UpdateTracker] Processing creature: ${c.name}, count: ${count}, HP: ${c.hp}, AC: ${c.ac}`);
 				
 				for (let i = 0; i < count; i++) {
 					let creatureName = c.name;
@@ -5460,7 +5314,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const flatCreatures = trackerCreatures.flat();
 			const allCombatants = [...partyMembers, ...flatCreatures];
 
-			console.log(`[UpdateTracker] Total combatants: ${allCombatants.length} (${partyMembers.length} party + ${flatCreatures.length} creatures)`);
 
 			// Update the encounter in Initiative Tracker
 			initiativePlugin.data.encounters[encounterName] = {
@@ -5471,7 +5324,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Save settings
 			if (initiativePlugin.saveSettings) {
 				await initiativePlugin.saveSettings();
-				console.log(`[UpdateTracker] ✅ Successfully updated encounter "${encounterName}" in Initiative Tracker`);
 				new Notice(`✅ Initiative Tracker updated with latest encounter data`);
 			}
 		} catch (error) {
@@ -5858,11 +5710,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			
 			// Load dynamic lighting walls (Background layer only)
 			config.walls = savedData.walls || [];
-			console.log('Loaded walls from savedData:', config.walls.length, 'walls');
 			
 			// Load light sources (Background layer only)
 			config.lightSources = savedData.lightSources || [];
-			console.log('Loaded light sources from savedData:', config.lightSources.length, 'lights');
 			
 			// Load tile elevations (Background layer only)
 			config.tileElevations = savedData.tileElevations || {};
@@ -7857,7 +7707,6 @@ export default class DndCampaignHubPlugin extends Plugin {
                 if (wrap && bounds.w > 0 && bounds.h > 0) {
                   const r = wrap.getBoundingClientRect();
                   const desiredScale = Math.max(0.001, Math.min(100, Math.min(r.width / bounds.w, r.height / bounds.h)));
-                  try { console.log('[GM] setPVScale', { site: 'open-player-view', scale: desiredScale }); } catch (e) {}
                   if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(desiredScale as number);
                   else (pv as any).tabletopScale = desiredScale;
                 }
@@ -7866,7 +7715,6 @@ export default class DndCampaignHubPlugin extends Plugin {
               // Send rectangle center to player view (center-based approach)
               const centerX = rect.x + rect.w / 2;
               const centerY = rect.y + rect.h / 2;
-              try { console.log('[GM] sending pan', { centerX, centerY, source: 'GM', rect, zoom: config.scale }); } catch (e) {}
               pv.setTabletopPanFromImageCoords(centerX, centerY);
             } catch (e) { }
           }
@@ -7965,16 +7813,11 @@ export default class DndCampaignHubPlugin extends Plugin {
             (viewport as any)._pendingHexcrawlTravel = null;
           }
           const mapId = config.mapId || resourcePath;
-          console.log('[GM] Syncing player views for mapId:', mapId);
-          console.log('[GM] Payload:', payload);
           this._playerMapViews.forEach(view => {
             const viewMapId = (view as any).mapId;
-            console.log('[Player View] has mapId:', viewMapId, 'comparing with:', mapId, 'match:', viewMapId === mapId);
             if (viewMapId === mapId) {
-              console.log('[GM] Calling updateMapData on player view');
               try { 
                 view.updateMapData(payload); 
-                console.log('[GM] updateMapData completed successfully');
               } catch (e) { 
                 console.error('Failed to update player view', e); 
               }
@@ -7994,7 +7837,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Initial sync after a short delay to ensure player view is ready
 			setTimeout(() => {
 				if ((viewport as any)._syncPlayerView) {
-					console.log('[GM] Initial sync to player view');
 					(viewport as any)._syncPlayerView();
 				}
 			}, 200);
@@ -8574,10 +8416,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Function to redraw annotations
 			const redrawAnnotations = () => {
-				console.log('redrawAnnotations called, annotationCanvas exists:', !!annotationCanvas);
 				if (!annotationCanvas) return;
 				const ctx = annotationCanvas.getContext('2d');
-				console.log('Got canvas context:', !!ctx);
 				if (!ctx) return;
 				
 				// Ensure flicker animation runs when needed
@@ -8850,14 +8690,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 				
 				// Draw tunnel entrances and exits (below markers so tokens aren't covered)
-				console.log('[Tunnel Debug GM Render] config.tunnels:', config.tunnels ? config.tunnels.length : 'undefined');
 				if (config.tunnels && config.tunnels.length > 0) {
 					const CREATURE_SIZE_SQUARES: Record<string, number> = {
 						'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
 					};
 					
 					config.tunnels.forEach((tunnel: any) => {
-						console.log('[Tunnel Debug GM Render] Rendering tunnel:', tunnel.id, 'visible:', tunnel.visible, 'active:', tunnel.active, 'entrance:', tunnel.entrancePosition);
 						if (!tunnel.visible) return;
 						
 						const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
@@ -8930,7 +8768,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 								ctx.textBaseline = 'middle';
 								ctx.fillText('🕳️', exit.x, exit.y);
 								
-								console.log('[Tunnel Debug GM Render] Drew exit at:', exit);
 								ctx.restore();
 							}
 						}
@@ -10409,7 +10246,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (marker.markerId) {
 					markerDef = this.markerLibrary.getMarker(marker.markerId);
 					if (!markerDef) {
-						console.warn('Marker definition not found:', marker.markerId);
 						return;
 					}
 				} else {
@@ -11438,9 +11274,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Tool switching function
 			const setActiveTool = (tool: typeof activeTool) => {
-				console.log('setActiveTool called with:', tool);
 				activeTool = tool;
-				console.log('activeTool is now:', activeTool);
 
 				// Auto-switch background edit view when picking a background tool
 				const bgToolViewMap: Record<string, BackgroundEditView> = {
@@ -11675,23 +11509,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			// Wire up tool button handlers
 			panBtn.addEventListener('click', () => {
-				console.log('Pan button clicked');
 				setActiveTool('pan');
 			});
 			selectBtn.addEventListener('click', () => {
-				console.log('Select button clicked');
 				setActiveTool('select');
 			});
 			highlightBtn.addEventListener('click', () => {
-				console.log('Highlight button clicked');
 				setActiveTool('highlight');
 			});
 			poiBtn.addEventListener('click', () => {
-				console.log('PoI button clicked');
 				setActiveTool('poi');
 			});
 			markerBtn.addEventListener('click', async () => {
-				console.log('Marker button clicked');
 				// Show marker picker to select or create marker
 				const { MarkerPickerModal } = await import('./marker/MarkerPickerModal');
 				new MarkerPickerModal(this.app, this.markerLibrary, (markerId: string) => {
@@ -11700,19 +11529,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}).open();
 			});
 			drawBtn.addEventListener('click', () => {
-				console.log('Draw button clicked');
 				setActiveTool('draw');
 			});
 			rulerBtn.addEventListener('click', () => {
-				console.log('Ruler button clicked');
 				setActiveTool('ruler');
 			});
 			targetDistBtn.addEventListener('click', () => {
-				console.log('Target Distance button clicked');
 				setActiveTool('target-distance');
 			});
 			aoeBtn.addEventListener('click', () => {
-				console.log('AoE button clicked');
 				if (activeTool === 'aoe') {
 					togglePicker(aoePicker, aoePicker.hasClass('hidden'));
 				} else {
@@ -11720,11 +11545,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 			eraserBtn.addEventListener('click', () => {
-				console.log('Eraser button clicked');
 				setActiveTool('eraser');
 			});
 			fogBtn.addEventListener('click', () => {
-				console.log('Fog button clicked');
 				if (activeTool === 'fog') {
 					togglePicker(fogPicker, fogPicker.hasClass('hidden'));
 				} else {
@@ -11732,7 +11555,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 			wallsBtn.addEventListener('click', () => {
-				console.log('Walls button clicked');
 				if (activeTool === 'walls') {
 					// Toggle picker visibility if walls tool is already active
 					togglePicker(wallsPicker, wallsPicker.hasClass('hidden'));
@@ -11741,7 +11563,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 			lightsBtn.addEventListener('click', () => {
-				console.log('Lights button clicked');
 				if (activeTool === 'lights') {
 					togglePicker(lightsPicker, lightsPicker.hasClass('hidden'));
 				} else {
@@ -11749,11 +11570,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 			moveGridBtn.addEventListener('click', () => {
-				console.log('Move Grid button clicked');
 				setActiveTool('move-grid');
 			});
 			terrainPaintBtn.addEventListener('click', () => {
-				console.log('Terrain Paint button clicked');
 				if (activeTool === 'terrain-paint') {
 					togglePicker(terrainPicker, terrainPicker.hasClass('hidden'));
 				} else {
@@ -11761,7 +11580,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 			climatePaintBtn.addEventListener('click', () => {
-				console.log('Climate Paint button clicked');
 				if (activeTool === 'climate-paint') {
 					togglePicker(climatePicker, climatePicker.hasClass('hidden'));
 				} else {
@@ -11769,7 +11587,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 			elevationPaintBtn.addEventListener('click', () => {
-				console.log('Elevation Paint button clicked');
 				if (activeTool === 'elevation-paint') {
 					togglePicker(elevationPicker, elevationPicker.hasClass('hidden'));
 				} else {
@@ -11777,7 +11594,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 			difficultTerrainBtn.addEventListener('click', () => {
-				console.log('Difficult Terrain button clicked');
 				if (activeTool === 'difficult-terrain') {
 					togglePicker(difficultTerrainPicker, difficultTerrainPicker.hasClass('hidden'));
 				} else {
@@ -11785,7 +11601,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 			});
 			envAssetBtn.addEventListener('click', async () => {
-				console.log('Env Asset button clicked');
 				// Show env asset picker to select or create asset, then enter placement mode
 				const { EnvAssetPickerModal } = await import('./envasset/EnvAssetPickerModal');
 				new EnvAssetPickerModal(this.app, this.envAssetLibrary, (assetId: string) => {
@@ -11794,16 +11609,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}).open();
 			});
 			setStartHexBtn.addEventListener('click', () => {
-				console.log('Set Starting Hex button clicked');
 				setActiveTool('set-start-hex');
 			});
 			hexDescBtn.addEventListener('click', () => {
-				console.log('Hex Description button clicked');
 				setActiveTool('hex-desc');
 			});
 
 		viewBtn.addEventListener('click', () => {
-			console.log('Player View button clicked');
 			if (activeTool === 'player-view') {
 				togglePicker(pvPicker, pvPicker.hasClass('hidden'));
 			} else {
@@ -11931,11 +11743,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 					return;
 				}
 				
-				console.log('Mousedown event fired, activeTool:', activeTool);
 				if (e.button !== 0) return; // Only left mouse button
 				
 				const mapPos = screenToMap(e.clientX, e.clientY);
-				console.log('Map position:', mapPos);
 				
 				// Handle calibration mode (two-point measurement via Measure button)
 				if (isCalibrating) {
@@ -12246,20 +12056,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 					});
 					
 				} else if (activeTool === 'draw') {
-					console.log('Draw tool: starting path');
 					isDrawing = true;
 					currentPath = [{ x: mapPos.x, y: mapPos.y }];
-					console.log('isDrawing set to:', isDrawing, 'currentPath:', currentPath);
 				} else if (activeTool === 'ruler') {
-					console.log('Ruler tool: rulerStart is', rulerStart);
 					if (!rulerStart) {
 						rulerStart = { x: mapPos.x, y: mapPos.y };
 						rulerComplete = false;
-						console.log('Set rulerStart to:', rulerStart);
 					} else if (!rulerComplete) {
 						rulerEnd = { x: mapPos.x, y: mapPos.y };
 						rulerComplete = true;
-						console.log('Set rulerEnd to:', rulerEnd);
 						redrawAnnotations();
             // Sync ruler to player view
             if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();					
@@ -12331,7 +12136,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 						if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 					}
         } else if (activeTool === 'marker') {
-					console.log('Marker tool: placing marker');
 					if (!selectedMarkerId) {
 						new Notice('Please select a marker first');
 						return;
@@ -12375,7 +12179,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 					
 					saveToHistory();
 					config.markers.push(markerRef);
-					console.log('Placed marker:', markerRef);
 					redrawAnnotations();
 					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 					this.saveMapAnnotations(config, el);
@@ -12665,9 +12468,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					}
 				} else if (activeTool === 'terrain-paint') {
 					// Paint terrain type onto clicked hex
-					console.log('[Terrain Paint] Click detected, selectedTerrainType:', selectedTerrainType);
 					const hex = pixelToHex(mapPos.x, mapPos.y);
-					console.log('[Terrain Paint] Hex coords:', hex.col, hex.row);
 					if (!config.hexTerrains) config.hexTerrains = [];
 					const idx = config.hexTerrains.findIndex((ht: HexTerrain) => ht.col === hex.col && ht.row === hex.row);
 					saveToHistory();
@@ -12866,7 +12667,6 @@ export default class DndCampaignHubPlugin extends Plugin {
               const centerX = existingRect.x + existingRect.w / 2;
               const centerY = existingRect.y + existingRect.h / 2;
               (this as any)._gmRectDragOffsetWorld = { x: mapPos.x - centerX, y: mapPos.y - centerY };
-              try { console.log('[GM] Drag offset calculated', { mousePos: mapPos, rectCenter: { x: centerX, y: centerY }, offset: (this as any)._gmRectDragOffsetWorld, rotation: existingRect.rotation }); } catch (e) { }
             }
           }
 
@@ -12901,9 +12701,7 @@ export default class DndCampaignHubPlugin extends Plugin {
                     // Calculate scale that makes grid match calibrated miniature size
                     const miniBaseMm = cal.miniBaseMm || 25;
                     targetScale = (cal.pixelsPerMm * miniBaseMm) / config.gridSize;
-                    console.log('[GM] Using calibrated scale for rectangle', { targetScale, pixelsPerMm: cal.pixelsPerMm, miniBaseMm, gridSize: config.gridSize });
                   } else {
-                    console.log('[GM] No calibration, using default scale 1.0');
                   }
                   
                   // Rectangle dimensions: viewport size divided by target scale
@@ -12912,7 +12710,6 @@ export default class DndCampaignHubPlugin extends Plugin {
                   rectH = Math.max(100, Math.round(viewRect.height / targetScale));
                   currentRotation = 0; // Always start at 0°, GM can rotate with Q/E keys
                   
-                  console.log('[GM] Created rectangle', { rectW, rectH, viewportW: viewRect.width, viewportH: viewRect.height, targetScale });
                 }
               }
             } catch (e) { console.error('[GM] rect size calculation error', e); }
@@ -12939,12 +12736,6 @@ export default class DndCampaignHubPlugin extends Plugin {
                     // Use stored targetScale from rectangle (calibrated scale that should remain constant)
                     try {
                       const desiredScale = (rect as any).targetScale || 1.0;
-                      try { console.log('[GM] setPVScale DEBUG', { 
-                        site: 'initial-sync', 
-                        scale: desiredScale,
-                        rectDims: { w: rect.w, h: rect.h, rot: rect.rotation },
-                        usingStoredScale: true
-                      }); } catch (e) {}
                       if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(desiredScale as number);
                       else (pv as any).tabletopScale = desiredScale;
                     } catch (e) { console.error('[GM] scale set error', e); }
@@ -12952,7 +12743,6 @@ export default class DndCampaignHubPlugin extends Plugin {
                     // Send rectangle center to player view (center-based approach)
                     const centerX = rect.x + rect.w / 2;
                     const centerY = rect.y + rect.h / 2;
-                    try { console.log('[GM] broadcastPan', { centerX, centerY, site: 'initial-sync' }); } catch (e) { }
                     if (typeof pv.setTabletopRotation === 'function') pv.setTabletopRotation(rect.rotation);
                     if (typeof pv.setTabletopPanFromImageCoords === 'function') pv.setTabletopPanFromImageCoords(centerX, centerY);
                   } catch (e) { }
@@ -13124,7 +12914,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 							if (activeTunnel.path.length >= 2) {
 								const tunnelWidth = activeTunnel.tunnelWidth || (sizeInSquares + 0.5) * gridSize;
 								activeTunnel.walls = generateTunnelWalls(activeTunnel.path, tunnelWidth);
-								console.log('[Tunnel Debug] Regenerated tunnel walls, count:', activeTunnel.walls.length);
 							}
 						}
 					}
@@ -13396,7 +13185,6 @@ export default class DndCampaignHubPlugin extends Plugin {
             // Rect center follows mouse minus stored world offset
             const centerX = mapPos.x - off.x;
             const centerY = mapPos.y - off.y;
-            try { console.log('[GM] rect drag', { mousePos: mapPos, offset: off, newCenter: { x: centerX, y: centerY }, existingRect: { x: existingRect.x, y: existingRect.y, w: existingRect.w, h: existingRect.h } }); } catch (e) { }
             rect = {
               x: centerX - existingRect.w / 2,
               y: centerY - existingRect.h / 2,
@@ -13405,7 +13193,6 @@ export default class DndCampaignHubPlugin extends Plugin {
               rotation: existingRect.rotation || 0,
               targetScale: existingRect.targetScale // Preserve calibrated scale during drag
             };
-            try { console.log('[GM] new rect created', { rect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h }, calculatedCenter: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 } }); } catch (e) { }
           } else {
             // Creating new rect by dragging corners
             const x1 = Math.min(gmDragStart.x, gmDragCurrent.x);
@@ -13434,7 +13221,6 @@ export default class DndCampaignHubPlugin extends Plugin {
                   // Use stored targetScale from rectangle (remains constant during drag)
                   try {
                     const desiredScale = (rect as any).targetScale || 1.0;
-                    try { console.log('[GM] setPVScale', { site: 'gm-rect-mousemove', scale: desiredScale, usingStoredScale: true }); } catch (e) {}
                     if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(desiredScale as number);
                     else (pv as any).tabletopScale = desiredScale;
                   } catch (e) { }
@@ -13442,7 +13228,6 @@ export default class DndCampaignHubPlugin extends Plugin {
                   // Send rectangle center to player view
                   const centerX = rect.x + rect.w / 2;
                   const centerY = rect.y + rect.h / 2;
-                  try { console.log('[GM] broadcastPan', { centerX, centerY, site: 'gm-rect-mousemove' }); } catch (e) { }
                   try { if (typeof pv.setTabletopPanFromImageCoords === 'function') pv.setTabletopPanFromImageCoords(centerX, centerY); } catch (e) { }
                 } catch (e) { }
               });
@@ -13770,7 +13555,6 @@ export default class DndCampaignHubPlugin extends Plugin {
                     // Send rectangle center to player view (center-based approach)
                     const centerX = rect.x + rect.w / 2;
                     const centerY = rect.y + rect.h / 2;
-                    try { console.log('[GM] broadcastPan', { centerX, centerY, site: 'open-player-view' }); } catch (e) { }
                     if (typeof pv.setTabletopRotation === 'function') pv.setTabletopRotation(rect.rotation);
                     if (typeof pv.setTabletopPanFromImageCoords === 'function') pv.setTabletopPanFromImageCoords(centerX, centerY);
                   } catch (e) { }
@@ -13972,7 +13756,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 						
 						// Clear drag offset so it gets recalculated on next click
 						(this as any)._gmRectDragOffsetWorld = null;
-						try { console.log('[GM] Rotation CCW, offset cleared', { rotation: gmRect.rotation }); } catch (e) { }
 						
 						redrawAnnotations();
 						
@@ -13992,13 +13775,11 @@ export default class DndCampaignHubPlugin extends Plugin {
                       if (wrap && bounds.w > 0 && bounds.h > 0) {
                         const r = wrap.getBoundingClientRect();
                         const desiredScale = Math.max(0.001, Math.min(100, Math.min(r.width / bounds.w, r.height / bounds.h)));
-                        try { console.log('[GM] setPVScale DEBUG', { site: 'rotate-ccw', scale: desiredScale, rectDims: { w: gmRect.w, h: gmRect.h, rot: gmRect.rotation }, bounds, viewportDims: { w: r.width, h: r.height } }); } catch (e) {}
                         if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(desiredScale as number);
                         else (pv as any).tabletopScale = desiredScale;
                       }
                     } catch (e) { }
 
-                    try { console.log('[GM] broadcastPan', { centerX, centerY, site: 'rotate-ccw' }); } catch (e) { }
                     if (typeof pv.setTabletopRotation === 'function') {
                       pv.setTabletopRotation(gmRect.rotation);
                     }
@@ -14026,7 +13807,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 						
 						// Clear drag offset so it gets recalculated on next click
 						(this as any)._gmRectDragOffsetWorld = null;
-						try { console.log('[GM] Rotation CW, offset cleared', { rotation: gmRect.rotation }); } catch (e) { }
 						
 						redrawAnnotations();
 						
@@ -14043,12 +13823,10 @@ export default class DndCampaignHubPlugin extends Plugin {
                     // The scale represents image-pixels-per-screen-pixel and should remain constant across rotations
                     try {
                       const desiredScale = (gmRect as any).targetScale || 1.0;
-                      try { console.log('[GM] setPVScale DEBUG', { site: 'rotate-cw', scale: desiredScale, rectDims: { w: gmRect.w, h: gmRect.h, rot: gmRect.rotation }, usingStoredScale: true }); } catch (e) {}
                       if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(desiredScale as number);
                       else (pv as any).tabletopScale = desiredScale;
                     } catch (e) { }
 
-                    try { console.log('[GM] broadcastPan', { centerX, centerY, site: 'rotate-cw' }); } catch (e) { }
                     if (typeof pv.setTabletopRotation === 'function') {
                       pv.setTabletopRotation(gmRect.rotation);
                     }
@@ -14475,7 +14253,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 							const elevationHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
 							elevationHeader.innerHTML = '↕️ Elevation';
 							
-							console.log('[Elevation Debug] Context menu opened. Marker:', m.id, 'Elevation:', JSON.stringify(m.elevation, null, 2), 'mDef:', mDef?.name);
 							
 							// Helper function to update token layer based on elevation
 							// Only overrides elevation-driven layers; preserves manually-assigned layers (DM, Background)
@@ -14609,7 +14386,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 											walls: []
 										};
 										config.tunnels.push(tunnel);
-										console.log('[Tunnel Debug] Created NEW tunnel with entrance at', tunnel.entrancePosition, 'width:', tunnelWidth);
 									}
 								}
 							} else {
@@ -14643,7 +14419,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 												t.path.push({ x: snappedX, y: snappedY, elevation: 0 }); // Exit is at surface
 											}
 											t.active = false;
-											console.log('[Tunnel Debug] Tunnel exit marked at', { x: snappedX, y: snappedY }, 'Path length:', t.path.length);
 										}
 									});
 								}
@@ -14721,7 +14496,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 											walls: []
 										};
 										config.tunnels.push(tunnel);
-										console.log('[Tunnel Debug] Burrowing enabled — tunnel created at', tunnel.entrancePosition);
 									}
 									
 									updateTokenLayer(m);
@@ -15598,9 +15372,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 				}
 
 				const creatures: any[] = itState.creatures;
-				console.log('[IT-Import] Encounter creatures:', creatures.length, creatures.map((c: any) => ({
-					name: c.name, display: c.display, player: c.player, friendly: c.friendly
-				})));
 
 				// Get existing markers on the map to check for duplicates
 				const existingMarkers = config.markers || [];
@@ -15662,7 +15433,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 						// Check for duplicate: same base name + same border color already on map
 						const dupeKey = `${baseName.toLowerCase()}|${(borderColor || '').toLowerCase()}`;
 						if (existingMarkerNames.has(dupeKey)) {
-							console.log(`[IT-Import] Skipping duplicate: ${displayName}`);
 							skippedCount++;
 							continue;
 						}
@@ -15682,7 +15452,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 								if (noteTokenId) {
 									markerDef = this.markerLibrary.getMarker(noteTokenId);
 									if (markerDef) {
-										console.log(`[IT-Import] Resolved ${baseName} via token_id: ${noteTokenId}`);
 									}
 								}
 							}
@@ -15719,7 +15488,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 								updatedAt: now,
 							} as MarkerDefinition;
 							await this.markerLibrary.setMarker(markerDef);
-							console.log(`[IT-Import] Created marker definition: ${baseName} (${markerType})`);
 						}
 
 						// Calculate grid-snapped position
@@ -15774,7 +15542,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 					? `✅ Added ${addedCount} token${addedCount > 1 ? 's' : ''} from encounter` + (skippedCount > 0 ? ` (${skippedCount} skipped)` : '')
 					: `ℹ️ All encounter tokens already on the map (${skippedCount} skipped)`;
 				new Notice(msg);
-				console.log(`[IT-Import] Done: ${addedCount} added, ${skippedCount} skipped`);
 			});
 
 			// Clear drawings button
@@ -16284,7 +16051,6 @@ if (wikiMatch && wikiMatch[1]) {
 				const ttrpgsIndex = pathParts.indexOf('ttrpgs');
 				if (ttrpgsIndex >= 0 && ttrpgsIndex < pathParts.length - 1) {
 					campaignName = pathParts[ttrpgsIndex + 1];
-					console.log(`[Party View] Detected campaign from path: "${campaignName}"`);
 				}
 			}
 
@@ -16294,9 +16060,7 @@ if (wikiMatch && wikiMatch[1]) {
 				party = allParties.find((p: any) => p.name === partyName);
 				
 				if (!party) {
-					console.log(`[Party View] Expected party "${partyName}" not found. Available:`, allParties.map((p: any) => p.name));
 				} else {
-					console.log(`[Party View] Found party: "${party.name}"`);
 				}
 			}
 
@@ -16535,22 +16299,13 @@ if (wikiMatch && wikiMatch[1]) {
 	async loadMapAnnotations(mapId: string): Promise<any> {
 		try {
 			const annotationPath = this.getMapAnnotationPath(mapId);
-			console.log('Loading annotations from:', annotationPath);
 			
 			// Check if annotation file exists
 			if (await this.app.vault.adapter.exists(annotationPath)) {
 				const data = await this.app.vault.adapter.read(annotationPath);
 				const parsedData = JSON.parse(data);
-				console.log('Loaded map data:', {
-					mapId: parsedData.mapId,
-					name: parsedData.name,
-					highlightsCount: (parsedData.highlights || []).length,
-					markersCount: (parsedData.markers || []).length,
-					drawingsCount: (parsedData.drawings || []).length
-				});
 				return parsedData;
 			} else {
-				console.log('No saved annotations found for mapId:', mapId);
 				return {};
 			}
 		} catch (error) {
@@ -16714,7 +16469,6 @@ if (wikiMatch && wikiMatch[1]) {
 				new Notice(`🏗️ Migrated ${migrated} battlemap template${migrated > 1 ? 's' : ''} to ${folder}/`);
 			}
 		} catch (err) {
-			console.warn('[Plugin] Template migration error:', err);
 		}
 	}
 
@@ -16773,7 +16527,6 @@ if (wikiMatch && wikiMatch[1]) {
 							});
 							backfilled++;
 						} catch (e) {
-							console.warn(`[Plugin] Failed to backfill token_id for ${file.path}:`, e);
 						}
 					}
 				}
@@ -16794,10 +16547,8 @@ if (wikiMatch && wikiMatch[1]) {
 			}
 
 			if (enriched > 0 || backfilled > 0) {
-				console.log(`[Plugin] Token enrichment: ${enriched} campaign(s) set, ${backfilled} token_id(s) backfilled`);
 			}
 		} catch (err) {
-			console.warn('[Plugin] Token campaign enrichment error:', err);
 		}
 	}
 
@@ -17157,7 +16908,6 @@ if (wikiMatch && wikiMatch[1]) {
 										await this.app.vault.createBinary(imagePath, imgRes.arrayBuffer);
 									}
 								} catch (imgErr) {
-									console.warn(`[SRD Import] Image download failed for ${m.name}:`, imgErr);
 									imagePath = undefined;
 								}
 							}
@@ -17448,7 +17198,6 @@ deleteBtn.addEventListener("click", () => {
 					// Check if file already exists
 					const exists = await this.app.vault.adapter.exists(filePath);
 					if (exists) {
-						console.log(`Skipping ${item.name} - already exists`);
 						successCount++;
 						continue;
 					}
@@ -17469,7 +17218,6 @@ deleteBtn.addEventListener("click", () => {
 
 					// Show progress every 20 items for bulk imports
 					if (isBulkImport && i % 20 === 0 && i > 0) {
-						console.log(`${categoryName}: ${i}/${items.length}`);
 					}
 				} catch (error) {
 					errorCount++;
@@ -18669,7 +18417,6 @@ class DndHubModal extends Modal {
 
     // Check if vault is initialized
     if (!this.plugin.isVaultInitialized()) {
-      console.log("DND Hub: Vault not initialized, showing init UI");
       this.showInitializationUI(contentEl);
       return;
     }
@@ -18677,14 +18424,12 @@ class DndHubModal extends Modal {
     // Check if any campaigns exist
     const campaigns = this.plugin.getAllCampaigns();
     const hasCampaigns = campaigns.length > 0;
-    console.log("DND Hub: Found", campaigns.length, "campaigns. hasCampaigns:", hasCampaigns);
 
     // Quick Actions Section
     contentEl.createEl("h2", { text: "Quick Actions" });
 
     const quickActionsContainer = contentEl.createDiv({ cls: "dnd-hub-quick-actions" });
 
-    console.log("DND Hub: Creating 'New Campaign' button");
     this.createActionButton(quickActionsContainer, "🎲 New Campaign", () => {
       this.close();
       this.plugin.createCampaign();
@@ -19445,7 +19190,6 @@ class PCCreationModal extends Modal {
         this.characterSheetPdf = fm.characterSheetPdf || "";
       }
 
-      console.log(`[PC Edit] Loaded PC data: ${this.pcName}`);
     } catch (error) {
       console.error("Error loading PC data:", error);
       new Notice("Error loading PC data. Check console for details.");
@@ -19701,7 +19445,6 @@ date: ${currentDate}
       
       if (existingPlayer) {
         new Notice(`⚠️ ${this.pcName} already registered in Initiative Tracker. Skipping duplicate registration.`);
-        console.log("Player already exists:", existingPlayer);
         return;
       }
 
@@ -19709,9 +19452,7 @@ date: ${currentDate}
       const playerId = this.generatePlayerId();
       
       // Parse initiative modifier - handle both "+2" and "2" formats
-      console.log("Raw initBonus value:", this.initBonus);
       const initMod = parseInt(this.initBonus.replace(/[^-\d]/g, '')) || 0;
-      console.log("Parsed initiative modifier:", initMod);
       
       // Parse HP values
       const currentHP = parseInt(this.hpCurrent) || parseInt(this.hpMax) || 1;
@@ -19750,7 +19491,6 @@ date: ${currentDate}
         rollHP: false
       };
       
-      console.log("Player data to save:", JSON.stringify(playerData, null, 2));
 
       // Initialize players array if it doesn't exist
       if (!initiativePlugin.data.players) {
@@ -20609,7 +20349,6 @@ class NPCCreationModal extends Modal {
         this.activeProblem = fm.active_problem || "";
       }
 
-      console.log(`[NPC Edit] Loaded NPC data: ${this.npcName}`);
     } catch (error) {
       console.error("Error loading NPC data:", error);
       new Notice("Error loading NPC data. Check console for details.");
@@ -21992,7 +21731,6 @@ class SessionRunDashboardView extends ItemView {
     });
     setupBtn.style.width = "100%";
     setupBtn.addEventListener("click", () => {
-      console.log("🔘 Setup Session Layout button clicked");
       this.setupSessionLayout();
     });
 
@@ -22012,7 +21750,6 @@ class SessionRunDashboardView extends ItemView {
   }
 
   async setupSessionLayout() {
-    console.log("🎯 setupSessionLayout called");
     
     // Get or create main workspace leaf
     let mainLeaf = this.app.workspace.getLeaf(false);
@@ -22023,22 +21760,17 @@ class SessionRunDashboardView extends ItemView {
       return;
     }
 
-    console.log("✅ Got main leaf");
 
     // Get active adventure and scene
     const adventures = await this.getActiveAdventures();
-    console.log(`📚 Found ${adventures.length} adventures`);
     const adventure = adventures.length > 0 ? adventures[0] : null;
     
     if (adventure) {
-      console.log(`📖 Adventure found: ${adventure.name}`);
       const scenes = await this.getScenesForAdventure(adventure.path);
-      console.log(`🎬 Found ${scenes.length} scenes`);
       const currentScene = scenes.find(s => s.status === "in-progress") || 
                           scenes.find(s => s.status === "not-started");
       
       if (currentScene) {
-        console.log(`🎬 Opening scene: ${currentScene.name}`);
         // Open scene in main pane (largest view)
         const sceneFile = this.app.vault.getAbstractFileByPath(currentScene.path);
         if (sceneFile instanceof TFile) {
@@ -22184,13 +21916,11 @@ class SessionRunDashboardView extends ItemView {
     });
     addTimerBtn.addEventListener("click", (e) => {
       e.preventDefault();
-      console.log("Add timer button clicked");
       
       // Use modal instead of prompt (prompt() not supported in Electron)
       new Promise<string | null>((resolve) => {
         new TimerNameModal(this.app, "Session Timer", resolve).open();
       }).then((name) => {
-        console.log("Timer name entered:", name);
         if (name) {
           this.addTimer(name);
         }
@@ -23411,7 +23141,6 @@ class SessionCreationModal extends Modal {
 
       await this.app.vault.modify(advFile, content);
     } catch (e) {
-      console.warn("SessionCreationModal: Could not link session to adventure:", e);
     }
   }
 
@@ -23493,7 +23222,6 @@ class SessionCreationModal extends Modal {
 
       await this.app.vault.modify(sceneFile, content);
     } catch (e) {
-      console.warn("SessionCreationModal: Could not add session backlink to scene:", e);
     }
   }
 
@@ -24900,19 +24628,15 @@ class EncounterBuilder {
     try {
       const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
       if (!initiativePlugin) {
-        console.warn("[RefreshPartyData] Initiative Tracker plugin not found");
         return false;
       }
 
       // Check if the plugin has a loadSettings method (standard Obsidian plugin pattern)
       if (typeof initiativePlugin.loadSettings === 'function') {
-        console.log("[RefreshPartyData] Calling Initiative Tracker's loadSettings()...");
         await initiativePlugin.loadSettings();
-        console.log("[RefreshPartyData] ✅ Successfully reloaded Initiative Tracker data");
         new Notice("✅ Party stats refreshed from Initiative Tracker");
         return true;
       } else {
-        console.warn("[RefreshPartyData] Initiative Tracker doesn't expose loadSettings() method");
         new Notice("⚠️ Cannot refresh party stats - Initiative Tracker doesn't support refresh API");
         return false;
       }
@@ -25050,7 +24774,6 @@ class EncounterBuilder {
     if (!campaignName && this.campaignPath) {
       const pathParts = this.campaignPath.split('/');
       campaignName = pathParts[pathParts.length - 1] || "";
-      console.log(`[EncounterBuilder] Using campaignPath to resolve party: "${campaignName}"`);
     }
     
     if (!campaignName) {
@@ -25059,32 +24782,26 @@ class EncounterBuilder {
         const campaignFolder = this.findCampaignFolder(activeFile.path);
         if (campaignFolder) {
           campaignName = campaignFolder.split('/').pop() || "";
-          console.log(`[EncounterBuilder] Resolved campaign from active file: "${campaignName}"`);
         }
       }
     }
 
     if (campaignName) {
       const partyName = `${campaignName} Party`;
-      console.log(`[EncounterBuilder] Looking for party: "${partyName}"`);
       const namedParty = parties.find((p: any) => p.name === partyName);
       if (namedParty) {
-        console.log(`[EncounterBuilder] Found party: "${namedParty.name}" with ${namedParty.players?.length || 0} players`);
         return namedParty;
       } else {
-        console.log(`[EncounterBuilder] Party "${partyName}" not found. Available parties:`, parties.map(p => p.name));
       }
     }
 
     if (initiativePlugin?.data?.defaultParty) {
       const defaultParty = parties.find((p: any) => p.id === initiativePlugin.data.defaultParty);
       if (defaultParty) {
-        console.log(`[EncounterBuilder] Using default party: "${defaultParty.name}"`);
         return defaultParty;
       }
     }
 
-    console.log(`[EncounterBuilder] No matching party found, using first available party`);
     return parties[0] || null;
   }
 
@@ -25206,7 +24923,6 @@ class EncounterBuilder {
     
     for (const indicator of strongAoE) {
       if (text.includes(indicator)) {
-        console.log(`[AoE Detection] Strong AoE indicator found: "${indicator}" - assuming 4 targets`);
         return 4; // Average party size
       }
     }
@@ -25227,7 +24943,6 @@ class EncounterBuilder {
         if (size >= 30) targets = 4; // Large area
         else if (size >= 20) targets = 3; // Medium area
         else if (size >= 10) targets = 2; // Small area
-        console.log(`[AoE Detection] ${size}-foot area detected - assuming ${targets} targets`);
         return targets;
       }
     }
@@ -25243,7 +24958,6 @@ class EncounterBuilder {
     
     for (const indicator of moderateAoE) {
       if (text.includes(indicator)) {
-        console.log(`[AoE Detection] Moderate AoE indicator found: "${indicator}" - assuming 2 targets`);
         return 2;
       }
     }
@@ -25259,18 +24973,15 @@ class EncounterBuilder {
     
     for (const indicator of singleTarget) {
       if (text.includes(indicator)) {
-        console.log(`[AoE Detection] Single target indicator found: "${indicator}"`);
         return 1;
       }
     }
     
     // No clear indicators - check if it mentions targeting at all
     if (text.includes('target') || text.includes('creature')) {
-      console.log(`[AoE Detection] Generic targeting text - assuming 2 targets (conservative)`);
       return 2; // Conservative estimate for unclear traps
     }
     
-    console.log(`[AoE Detection] No targeting indicators - assuming 1 target`);
     return 1;
   }
 
@@ -25284,8 +24995,6 @@ class EncounterBuilder {
     trapType: 'simple' | 'complex';
   }): { hp: number; ac: number; dpr: number; attackBonus: number; cr: string } {
     
-    console.log(`[Trap Stats] Starting calculation for ${trapData.trapType} trap, threat: ${trapData.threatLevel}`);
-    console.log(`[Trap Stats] Elements count: ${trapData.elements?.length || 0}`);
     
     let totalDamage = 0;
     let maxDC = 0;
@@ -25295,40 +25004,33 @@ class EncounterBuilder {
 
     // Parse damage from each element and detect AoE
     for (const element of trapData.elements) {
-      console.log(`[Trap Stats] Processing element: ${element.name}`);
       
       if (element.damage) {
         const avgDamage = this.parseTrapDamage(element.damage);
-        console.log(`[Trap Stats] - Damage: ${element.damage} → ${avgDamage} avg`);
         totalDamage += avgDamage;
         elementCount++;
       }
 
       if (element.additional_damage) {
         const additionalDmg = this.parseTrapDamage(element.additional_damage);
-        console.log(`[Trap Stats] - Additional damage: ${element.additional_damage} → ${additionalDmg} avg`);
         totalDamage += additionalDmg;
       }
 
       if (element.save_dc && element.save_dc > maxDC) {
         maxDC = element.save_dc;
-        console.log(`[Trap Stats] - Save DC: ${element.save_dc}`);
       }
 
       if (element.attack_bonus && element.attack_bonus > maxAttackBonus) {
         maxAttackBonus = element.attack_bonus;
-        console.log(`[Trap Stats] - Attack bonus: ${element.attack_bonus}`);
       }
       
       // Check for AoE indicators in effect text
       if (element.effect) {
-        console.log(`[Trap Stats] - Effect text: ${element.effect.substring(0, Math.min(100, element.effect.length))}...`);
         const targets = this.detectAoETargets(element.effect);
         if (targets > maxAoETargets) {
           maxAoETargets = targets;
         }
       } else {
-        console.log(`[Trap Stats] - No effect text found`);
       }
     }
 
@@ -25339,7 +25041,6 @@ class EncounterBuilder {
 
     // Multiply DPR by number of targets for AoE traps
     if (maxAoETargets > 1) {
-      console.log(`[Trap Stats] AoE trap detected - multiplying DPR by ${maxAoETargets} targets`);
       dpr *= maxAoETargets;
     }
 
@@ -25386,7 +25087,6 @@ class EncounterBuilder {
 
     const crString = this.formatCR(estimatedCR);
 
-    console.log(`[Trap Stats] Base Damage: ${totalDamage}, AoE Targets: ${maxAoETargets}, DPR: ${dpr.toFixed(1)}, AC: ${ac}, HP: ${hp}, Attack: ${attackBonus}, CR: ${crString}`);
 
     return {
       hp,
@@ -25404,14 +25104,12 @@ class EncounterBuilder {
   parseTrapDamage(damageStr: string | undefined): number {
     if (!damageStr) return 0;
     
-    console.log(`[Damage Parser] Input: "${damageStr}"`);
     
     let cleanDamage = damageStr.trim().toLowerCase();
     
     // Remove damage type (e.g., "4d10 fire" -> "4d10")
     const parts = cleanDamage.split(' ');
     cleanDamage = parts[0] || cleanDamage;
-    console.log(`[Damage Parser] After cleanup: "${cleanDamage}"`);
 
     // Parse dice notation FIRST: XdY+Z or XdY-Z or XdY
     const diceMatch = cleanDamage.match(/(\d+)d(\d+)([+-]\d+)?/);
@@ -25423,18 +25121,15 @@ class EncounterBuilder {
       // Average of XdY is X * (Y+1)/2
       const avgRoll = numDice * (dieSize + 1) / 2;
       const total = Math.floor(avgRoll + modifier);
-      console.log(`[Damage Parser] Dice: ${numDice}d${dieSize}${modifier >= 0 ? '+' : ''}${modifier || ''} = ${avgRoll} + ${modifier} = ${total}`);
       return total;
     }
 
     // Check if it's just a number (static damage)
     const staticDamage = parseInt(cleanDamage);
     if (!isNaN(staticDamage)) {
-      console.log(`[Damage Parser] Parsed as static damage: ${staticDamage}`);
       return staticDamage;
     }
 
-    console.log(`[Damage Parser] No match, returning 0`);
     return 0;
   }
 
@@ -25535,26 +25230,21 @@ class EncounterBuilder {
    */
   async parseStatblockStats(filePath: string): Promise<{ hp: number; ac: number; dpr: number; attackBonus: number } | null> {
     try {
-      console.log(`[Parser] Reading file: ${filePath}`);
       const file = this.app.vault.getAbstractFileByPath(filePath);
       if (!(file instanceof TFile)) {
-        console.log(`[Parser] File not found or not a TFile`);
         return null;
       }
 
       const cache = this.app.metadataCache.getFileCache(file);
       if (!cache?.frontmatter) {
-        console.log(`[Parser] No frontmatter found`);
         return null;
       }
 
       const fm = cache.frontmatter;
-      console.log(`[Parser] Frontmatter keys:`, Object.keys(fm));
       
       // Extract basic stats
       const hp = this.parseHP(fm.hp);
       const ac = this.parseAC(fm.ac);
-      console.log(`[Parser] Parsed HP: ${hp}, AC: ${ac}`);
       
       // Calculate DPR and attack bonus from actions
       let totalDPR = 0;
@@ -25563,11 +25253,9 @@ class EncounterBuilder {
       
       // Check for actions array (where attacks are defined)
       if (fm.actions && Array.isArray(fm.actions)) {
-        console.log(`[Parser] Found ${fm.actions.length} actions`);
         
         for (const action of fm.actions) {
           if (!action.name) continue;
-          console.log(`[Parser] Action: "${action.name}"`);
           
           // === CHECK STRUCTURED FIELDS FIRST ===
           let actionDPR = 0;
@@ -25580,13 +25268,11 @@ class EncounterBuilder {
             if (actionAttackBonus > highestAttackBonus) {
               highestAttackBonus = actionAttackBonus;
             }
-            console.log(`[Parser] Found structured attack_bonus: ${actionAttackBonus}`);
             usedStructuredData = true;
           }
           
           // Check for damage_dice and damage_bonus fields
           if (action.damage_dice || action.damage_bonus) {
-            console.log(`[Parser] Found structured damage fields: dice="${action.damage_dice}", bonus="${action.damage_bonus}"`);
             
             // Parse damage_dice (e.g., "1d6" or "2d8")
             let diceDamage = 0;
@@ -25596,7 +25282,6 @@ class EncounterBuilder {
                 const numDice = parseInt(diceMatch[1]);
                 const dieSize = parseInt(diceMatch[2]);
                 diceDamage = numDice * ((dieSize + 1) / 2); // Average of dice
-                console.log(`[Parser] Calculated dice damage: ${numDice}d${dieSize} = ${diceDamage}`);
               }
             }
             
@@ -25609,7 +25294,6 @@ class EncounterBuilder {
             }
             
             actionDPR = diceDamage + damageBonus;
-            console.log(`[Parser] Calculated structured damage: ${diceDamage} + ${damageBonus} = ${actionDPR}`);
             
             if (actionDPR > 0) {
               totalDPR += actionDPR;
@@ -25620,14 +25304,12 @@ class EncounterBuilder {
           
           // If we successfully used structured data, skip text parsing for this action
           if (usedStructuredData) {
-            console.log(`[Parser] Used structured data for ${action.name}, DPR=${actionDPR}, Attack=${actionAttackBonus}`);
             continue;
           }
           
           // === FALLBACK TO TEXT PARSING ===
           if (action.desc && typeof action.desc === 'string') {
             const desc = action.desc;
-            console.log(`[Parser] Description: ${desc.substring(0, 100)}...`);
             
             // Look for attack bonus
             const attackMatch = desc.match(/[+\-]\d+\s+to\s+hit/i);
@@ -25636,7 +25318,6 @@ class EncounterBuilder {
               if (bonusMatch) {
                 attackCount++;
                 const bonus = parseInt(bonusMatch[0]);
-                console.log(`[Parser] Found attack bonus: ${bonus}`);
                 if (bonus > highestAttackBonus) highestAttackBonus = bonus;
               }
             }
@@ -25646,7 +25327,6 @@ class EncounterBuilder {
             const avgDamageMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/i);
             if (avgDamageMatch) {
               const avgDamage = parseInt(avgDamageMatch[1]);
-              console.log(`[Parser] Found pre-calculated damage: ${avgDamage}`);
               totalDPR += avgDamage;
               damageFound = true;
               if (!attackMatch) attackCount++;
@@ -25658,22 +25338,18 @@ class EncounterBuilder {
                 const dieSize = parseInt(diceMatch[2]);
                 const modifier = diceMatch[3] ? parseInt(diceMatch[3].replace(/\s/g, '')) : 0;
                 const avgDamage = Math.floor(numDice * (dieSize + 1) / 2) + modifier;
-                console.log(`[Parser] Calculated damage from ${diceMatch[0]}: ${avgDamage}`);
                 totalDPR += avgDamage;
                 damageFound = true;
               }
             }
             
             if (!damageFound) {
-              console.log(`[Parser] No damage found in action`);
             }
           }
         }
       } else {
-        console.log(`[Parser] No actions array found`);
       }
       
-      console.log(`[Parser] Total DPR before multiattack: ${totalDPR}`);
       
       // Check for multiattack
       let multiattackMultiplier = 1;
@@ -25683,34 +25359,28 @@ class EncounterBuilder {
         );
         
         if (multiattack?.desc) {
-          console.log(`[Parser] Multiattack found: ${multiattack.desc}`);
           const countMatch = multiattack.desc.match(/makes?\s+(two|three|four|five|\d+)\s+.*?attack/i);
           if (countMatch) {
             const countStr = countMatch[1].toLowerCase();
             const countMap: Record<string, number> = { 'two': 2, 'three': 3, 'four': 4, 'five': 5 };
             multiattackMultiplier = countMap[countStr] || parseInt(countStr) || 1;
-            console.log(`[Parser] Multiattack multiplier: ${multiattackMultiplier}`);
           }
         }
       }
       
       // Apply multiattack multiplier
       if (totalDPR > 0 && multiattackMultiplier > 1) {
-        console.log(`[Parser] Applying multiattack multiplier ${multiattackMultiplier} to DPR ${totalDPR}`);
         totalDPR *= multiattackMultiplier;
-        console.log(`[Parser] Final DPR after multiattack: ${totalDPR}`);
       }
       
       // If we couldn't parse DPR, return null to fall back to CR estimates
       if (totalDPR === 0) {
-        console.log(`[Parser] No DPR found, returning null to use CR estimates`);
         return null;
       }
       
       // Use a reasonable default attack bonus if we couldn't parse it
       if (highestAttackBonus === 0) {
         highestAttackBonus = Math.max(2, Math.floor(totalDPR / 5));
-        console.log(`[Parser] No attack bonus found, estimating ${highestAttackBonus} based on DPR`);
       }
       
       const result = {
@@ -25719,7 +25389,6 @@ class EncounterBuilder {
         dpr: totalDPR,
         attackBonus: highestAttackBonus
       };
-      console.log(`[Parser] SUCCESS: Returning`, result);
       return result;
     } catch (error) {
       console.error("[Parser] Error parsing statblock:", filePath, error);
@@ -25778,7 +25447,6 @@ class EncounterBuilder {
     // Find and load trap files for each trap group
     const consolidatedTraps: any[] = [];
     for (const [trapName, elements] of trapGroups.entries()) {
-      console.log(`🪤 Consolidating trap: ${trapName} (${elements.length} elements)`);
       
       // Search for the trap file
       let trapFile: TFile | null = null;
@@ -25812,7 +25480,6 @@ class EncounterBuilder {
               path: trapFile.path
             };
             consolidatedTraps.push(consolidatedTrap);
-            console.log(`✅ Consolidated ${trapName} from ${elements.length} elements`);
           }
         } catch (error) {
           console.error(`Error loading trap file for ${trapName}:`, error);
@@ -25820,14 +25487,12 @@ class EncounterBuilder {
           nonTraps.push(...elements);
         }
       } else {
-        console.warn(`⚠️ No trap file found for ${trapName}, keeping as separate creatures`);
         nonTraps.push(...elements);
       }
     }
     
     // Replace creatures array with consolidated version
     this.creatures = [...nonTraps, ...consolidatedTraps];
-    console.log(`📊 Consolidated ${trapGroups.size} traps, ${nonTraps.length} other creatures`);
   }
 
   async calculateEncounterDifficulty(): Promise<any> {
@@ -25848,27 +25513,18 @@ class EncounterBuilder {
     let friendlyTotalAttackBonus = 0;
     let friendlyCount = 0;
     
-    console.log("=== ENCOUNTER DIFFICULTY CALCULATION (EncounterBuilder) ===");
     
     for (const creature of this.creatures) {
       const count = creature.count || 1;
       
-      console.log(`\n--- Creature: ${creature.name} (x${count}) ---`);
-      console.log(`Path: ${creature.path || 'none'}`);
-      console.log(`CR: ${creature.cr || 'unknown'}`);
-      console.log(`Is Trap: ${creature.isTrap || false}`);
-      console.log(`Is Friendly: ${creature.isFriendly || false}`);
       
       // Handle friendly creatures - add them to the party side
       if (creature.isFriendly) {
-        console.log(`🤝 FRIENDLY CREATURE - Adding to party stats`);
         
         // Get stats for friendly creature (same logic as enemies)
         let realStats = null;
         if (creature.path && typeof creature.path === 'string') {
-          console.log(`Attempting to parse statblock: ${creature.path}`);
           realStats = await this.parseStatblockStats(creature.path);
-          console.log(`Parsed stats:`, realStats);
         }
         
         const crStats = this.getCRStats(creature.cr);
@@ -25877,8 +25533,6 @@ class EncounterBuilder {
         const dpr = realStats?.dpr || crStats.dpr;
         const attackBonus = realStats?.attackBonus || crStats.attackBonus;
         
-        console.log(`Friendly stats: HP=${hp}, AC=${ac}, DPR=${dpr}, Attack=${attackBonus}`);
-        console.log(`Total contribution (x${count}): HP=${hp * count}, DPR=${dpr * count}`);
         
         friendlyTotalHP += hp * count;
         friendlyTotalAC += ac * count;
@@ -25890,17 +25544,13 @@ class EncounterBuilder {
       
       // Handle traps differently from creatures
       if (creature.isTrap && creature.trapData) {
-        console.log(`🪤 TRAP DETECTED - Using trap-specific calculation`);
         const trapStats = await this.calculateTrapStats(creature.trapData);
-        console.log(`Trap stats:`, trapStats);
         
         const hp = trapStats.hp;
         const ac = trapStats.ac;
         const dpr = trapStats.dpr;
         const attackBonus = trapStats.attackBonus;
         
-        console.log(`Final trap stats: HP=${hp}, AC=${ac}, DPR=${dpr}, Attack=${attackBonus}, Effective CR=${trapStats.cr}`);
-        console.log(`Total contribution (x${count}): HP=0 (traps don't contribute to HP pool), DPR=${dpr * count}`);
         
         // Traps don't add to HP pool (they're hazards, not damage sponges)
         // But they DO contribute DPR, AC (for difficulty calculation), and count as threats
@@ -25914,16 +25564,12 @@ class EncounterBuilder {
       // Try to get real stats from statblock if available
       let realStats = null;
       if (creature.path && typeof creature.path === 'string') {
-        console.log(`Attempting to parse statblock: ${creature.path}`);
         realStats = await this.parseStatblockStats(creature.path);
-        console.log(`Parsed stats:`, realStats);
       } else {
-        console.log(`No valid path, using CR estimates`);
       }
       
       // Fall back to CR-based estimates if no statblock or parsing failed
       const crStats = this.getCRStats(creature.cr);
-      console.log(`CR-based fallback stats:`, crStats);
       
       const hp = creature.hp || realStats?.hp || crStats.hp;
       const ac = creature.ac || realStats?.ac || crStats.ac;
@@ -25934,8 +25580,6 @@ class EncounterBuilder {
       const hpSource = realStats?.hp ? '📊 STATBLOCK' : creature.hp ? '✏️ MANUAL' : '📖 CR_TABLE';
       const acSource = realStats?.ac ? '📊 STATBLOCK' : creature.ac ? '✏️ MANUAL' : '📖 CR_TABLE';
       
-      console.log(`Final stats used: HP=${hp} (${hpSource}), AC=${ac} (${acSource}), DPR=${dpr} (${dprSource}), Attack=${attackBonus}`);
-      console.log(`Total contribution (x${count}): HP=${hp * count}, DPR=${dpr * count}`);
 
       enemyTotalHP += hp * count;
       enemyTotalAC += ac * count;
@@ -25944,12 +25588,6 @@ class EncounterBuilder {
       enemyCount += count;
     }
     
-    console.log(`\n=== TOTALS ===`);
-    console.log(`Total Enemies: ${enemyCount}`);
-    console.log(`Total Enemy HP: ${enemyTotalHP}`);
-    console.log(`Total Enemy DPR: ${enemyTotalDPR}`);
-    console.log(`Average Enemy AC: ${enemyCount > 0 ? (enemyTotalAC / enemyCount).toFixed(1) : 0}`);
-    console.log(`Average Enemy Attack Bonus: ${enemyCount > 0 ? (enemyTotalAttackBonus / enemyCount).toFixed(1) : 0}`)
 
     const avgEnemyAC = enemyCount > 0 ? enemyTotalAC / enemyCount : 13;
     const avgEnemyAttackBonus = enemyCount > 0 ? enemyTotalAttackBonus / enemyCount : 3;
@@ -25977,10 +25615,6 @@ class EncounterBuilder {
     }
     
     // Add friendly creatures to party totals
-    console.log(`\n=== ADDING FRIENDLY CREATURES TO PARTY ===`);
-    console.log(`Friendly creatures: ${friendlyCount}`);
-    console.log(`Friendly HP contribution: ${friendlyTotalHP}`);
-    console.log(`Friendly DPR contribution: ${friendlyTotalDPR}`);
     
     partyTotalHP += friendlyTotalHP;
     partyTotalAC += friendlyTotalAC;
@@ -26187,7 +25821,6 @@ class EncounterBuilder {
     try {
       const statblocksPlugin = (this.app as any).plugins?.plugins?.["obsidian-5e-statblocks"];
       if (!statblocksPlugin) {
-        console.log("5e Statblocks plugin not found");
         return creatures;
       }
 
@@ -26210,11 +25843,9 @@ class EncounterBuilder {
       }
 
       if (bestiaryCreatures.length === 0) {
-        console.log("No creatures found via Statblocks API or data.monsters");
         return creatures;
       }
 
-      console.log(`Loading ${bestiaryCreatures.length} creatures from 5e Statblocks plugin`);
 
       for (const monster of bestiaryCreatures) {
         if (!monster || typeof monster !== "object") continue;
@@ -26228,9 +25859,7 @@ class EncounterBuilder {
         });
       }
 
-      console.log(`Loaded ${creatures.length} creatures from 5e Statblocks plugin`);
       if (creatures.length > 0) {
-        console.log("First 5 creatures:", creatures.slice(0, 5).map(c => c.name));
       }
     } catch (error) {
       console.error("Error accessing 5e Statblocks plugin creatures:", error);
@@ -26246,15 +25875,11 @@ class EncounterBuilder {
       const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
       if (!initiativePlugin) {
         new Notice("⚠️ Initiative Tracker plugin not found. Encounter data saved to scene frontmatter only.");
-        console.log("Initiative Tracker plugin not found");
         return;
       }
 
-      console.log("Initiative Tracker plugin found:", initiativePlugin);
-      console.log("Available properties:", Object.keys(initiativePlugin));
 
       // Debug: Log creature data before building encounter
-      console.log("Creatures to add:", this.creatures);
 
       // Helper function to generate unique IDs like Initiative Tracker does
       const generateId = () => {
@@ -26282,7 +25907,6 @@ class EncounterBuilder {
 
       // Build creature data in Initiative Tracker format
       const creatures = this.creatures.flatMap(c => {
-        console.log(`Building creature: ${c.name}, HP: ${c.hp}, AC: ${c.ac}`);
         const instances = [];
         for (let i = 0; i < c.count; i++) {
           const hp = c.hp || 1;
@@ -26327,7 +25951,6 @@ class EncounterBuilder {
             note: c.path || "",  // Path to statblock file for Fantasy Statblock plugin
             path: c.path || ""   // Also store path field for compatibility
           };
-          console.log(`Created creature instance:`, creature);
           instances.push(creature);
         }
         return instances;
@@ -26335,7 +25958,6 @@ class EncounterBuilder {
 
       // Save encounter to Initiative Tracker's data.encounters for later loading
       if (initiativePlugin.data && typeof initiativePlugin.data.encounters === 'object') {
-        console.log("Saving encounter to Initiative Tracker data...");
 
         // Combine party members and creatures
         const allCombatants = [...partyMembers, ...creatures];
@@ -26353,11 +25975,9 @@ class EncounterBuilder {
         // Save settings to persist the encounter
         if (initiativePlugin.saveSettings) {
           await initiativePlugin.saveSettings();
-          console.log(`Encounter "${this.encounterName}" saved to Initiative Tracker`);
           new Notice(`✅ Encounter "${this.encounterName}" saved! Use "Load Encounter" in Initiative Tracker to start combat.`);
         }
       } else {
-        console.log("Could not access Initiative Tracker data structure");
         new Notice(`⚠️ Encounter data saved to scene frontmatter only. Load manually in Initiative Tracker.`);
       }
 
@@ -26384,7 +26004,6 @@ class EncounterBuilder {
       const party = this.resolveParty(initiativePlugin, campaignName);
 
       if (!party || !party.players || party.players.length === 0) {
-        console.log(`No party found for campaign "${campaignName}"`);
         return [];
       }
 
@@ -26400,7 +26019,6 @@ class EncounterBuilder {
         });
       }
 
-      console.log(`Found ${partyMembers.length} party members for "${campaignName}"`);
       return partyMembers;
     } catch (error) {
       console.error("Error fetching party members:", error);
@@ -26569,7 +26187,6 @@ class SceneCreationModal extends Modal {
           this.selectedPartyMembers = [...frontmatter.selected_party_members];
         }
         
-        console.log(`[Scene Edit] Loaded party selection: id=${this.selectedPartyId}, members=${this.selectedPartyMembers.length}`);
       }
 
       // Extract adventure path from scene path
@@ -26604,7 +26221,6 @@ class SceneCreationModal extends Modal {
               const campaignMatch = adventureContent.match(/^campaign:\s*([^\r\n]+)$/m);
               const campaignName = (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
               this.campaignPath = `ttrpgs/${campaignName}`;
-              console.log(`[Scene Edit] Loaded campaignPath: ${this.campaignPath}`);
             } catch (err) {
               console.error("Error loading campaign from adventure:", err);
             }
@@ -27219,7 +26835,6 @@ date: ${currentDate}
 
       // Skip if source and destination are the same (shouldn't happen, but safety check)
       if (oldFile.path === newPath) {
-        console.warn(`Skipping rename: ${oldFile.path} already has correct name`);
         continue;
       }
 
@@ -27245,7 +26860,6 @@ date: ${currentDate}
         // Delete old file only after successful creation
         await this.app.vault.delete(oldFile);
         
-        console.log(`Renumbered: ${oldFile.path} → ${newPath}`);
       } catch (error) {
         console.error(`Error renumbering scene ${oldFile.path}:`, error);
         new Notice(`⚠️ Could not renumber ${oldFilename}`);
@@ -27433,7 +27047,6 @@ date: ${currentDate}
     this.syncEncounterBuilder();
     const vaultCreatures = await this.encounterBuilder.loadAllCreatures();
     
-    console.log("Loaded creatures:", vaultCreatures.length, vaultCreatures.slice(0, 3).map(c => c.name));
     
     if (vaultCreatures.length > 0) {
       const vaultCreatureSetting = new Setting(vaultCreatureSection)
@@ -27455,9 +27068,7 @@ date: ${currentDate}
       
       // Filter and display results
       const showSearchResults = (query: string) => {
-        console.log("showSearchResults called with query:", query, "Total creatures:", vaultCreatures.length);
         if (!searchResults) {
-          console.log("No searchResults element!");
           return;
         }
         
@@ -27467,20 +27078,15 @@ date: ${currentDate}
         }
         
         const queryLower = query.toLowerCase().trim();
-        console.log("Searching for:", queryLower);
-        console.log("Sample creature names:", vaultCreatures.slice(0, 5).map(c => ({name: c.name, lower: c.name.toLowerCase()})));
         
         const filtered = vaultCreatures.filter(c => {
           const matches = c.name.toLowerCase().includes(queryLower);
           if (queryLower.length <= 3 && matches) {
-            console.log("Match found:", c.name, "matches query:", queryLower);
           }
           return matches;
         }).slice(0, 10); // Limit to 10 results
         
-        console.log("Filtered results:", filtered.length, "matches");
         if (filtered.length > 0) {
-          console.log("First 3 matches:", filtered.slice(0, 3).map(c => c.name));
         }
         
         searchResults.empty();
@@ -27510,7 +27116,6 @@ date: ${currentDate}
           resultEl.addEventListener("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
-            console.log("Creature clicked:", creature.name);
             selectedCreature = creature;
             searchInput.value = creature.name;
             if (searchResults) {
@@ -27525,7 +27130,6 @@ date: ${currentDate}
       // Search input events
       searchInput.addEventListener("input", (e) => {
         const target = e.target as HTMLInputElement;
-        console.log("Input event:", target.value);
         showSearchResults(target.value);
       });
       
@@ -28637,7 +28241,6 @@ date: ${currentDate}
    */
   async saveEncounterFile() {
     if (!this.encounterName || this.creatures.length === 0) {
-      console.log("[SceneCreation - saveEncounterFile] Skipping - no encounter name or creatures");
       return null;
     }
 
@@ -28651,14 +28254,10 @@ date: ${currentDate}
       // Use vault's root z_Encounters folder (same as EncounterBuilderModal)
       const encounterFolder = "z_Encounters";
       
-      console.log("[SceneCreation - saveEncounterFile] Saving encounter:", this.encounterName);
-      console.log("[SceneCreation - saveEncounterFile] Campaign:", this.campaignPath);
-      console.log("[SceneCreation - saveEncounterFile] Folder:", encounterFolder);
       
       // Create folder if it doesn't exist
       const folderExists = this.app.vault.getAbstractFileByPath(encounterFolder);
       if (!folderExists) {
-        console.log("[SceneCreation - saveEncounterFile] Creating folder...");
         await this.app.vault.createFolder(encounterFolder);
       }
 
@@ -28671,18 +28270,14 @@ date: ${currentDate}
       const fileName = `${this.encounterName}.md`;
       const encounterPath = `${encounterFolder}/${fileName}`;
       
-      console.log("[SceneCreation - saveEncounterFile] File path:", encounterPath);
 
       const existingFile = this.app.vault.getAbstractFileByPath(encounterPath);
       if (existingFile instanceof TFile) {
-        console.log("[SceneCreation - saveEncounterFile] Updating existing file");
         await this.app.vault.modify(existingFile, encounterContent);
       } else {
-        console.log("[SceneCreation - saveEncounterFile] Creating new file");
         await this.app.vault.create(encounterPath, encounterContent);
       }
 
-      console.log(`[SceneCreation - saveEncounterFile] ✅ Success! Path: ${encounterPath}`);
       new Notice(`✅ Encounter "${this.encounterName}" saved to z_Encounters`);
       
       return encounterPath;
@@ -29562,7 +29157,6 @@ class TrapCreationModal extends Modal {
         }));
       }
 
-      console.log(`[Trap Edit] Loaded trap data: ${this.trapName}, ${this.elements.length} elements`);
     } catch (error) {
       console.error("Error loading trap data:", error);
       new Notice("Error loading trap data. Check console for details.");
@@ -29639,7 +29233,6 @@ class TrapCreationModal extends Modal {
           const removedElements = this.originalElements.filter(e => !currentElementNames.has(e.name));
           
           if (removedElements.length > 0) {
-            console.log(`[Trap Edit] Removed ${removedElements.length} elements, will delete their statblocks`);
             // Note: We already deleted all statblocks above, so this is just logging
           }
         }
@@ -29945,7 +29538,6 @@ if (countermeasures.length === 0) {
     try {
       const statblocksPlugin = (this.app as any).plugins.getPlugin("obsidian-5e-statblocks");
       if (!statblocksPlugin) {
-        console.warn("Fantasy Statblocks plugin not found. Statblocks will not be saved to bestiary.");
         return;
       }
 
@@ -29964,17 +29556,14 @@ if (countermeasures.length === 0) {
 
       // Save to Fantasy Statblocks bestiary
       if (homebrewCreatures.length > 0) {
-        console.log("Attempting to save trap statblocks:", homebrewCreatures);
         
         // Try multiple methods to save the monsters
         if (statblocksPlugin.saveMonsters) {
           // Method 1: Direct saveMonsters API
           await statblocksPlugin.saveMonsters(homebrewCreatures);
-          console.log(`Saved ${homebrewCreatures.length} trap statblock(s) via saveMonsters`);
         } else if (statblocksPlugin.api?.saveMonsters) {
           // Method 2: API object saveMonsters
           await statblocksPlugin.api.saveMonsters(homebrewCreatures);
-          console.log(`Saved ${homebrewCreatures.length} trap statblock(s) via api.saveMonsters`);
         } else if (statblocksPlugin.data?.monsters) {
           // Method 3: Direct data manipulation
           if (!Array.isArray(statblocksPlugin.data.monsters)) {
@@ -29991,21 +29580,15 @@ if (countermeasures.length === 0) {
             if (existingIndex >= 0) {
               // Replace existing creature
               statblocksPlugin.data.monsters[existingIndex] = creature;
-              console.log(`Updated existing trap statblock: ${creature.name}`);
             } else {
               // Add new creature
               statblocksPlugin.data.monsters.push(creature);
-              console.log(`Added new trap statblock: ${creature.name}`);
             }
           }
           
           // Save plugin data
           await statblocksPlugin.saveData(statblocksPlugin.data);
-          console.log(`Saved ${homebrewCreatures.length} trap statblock(s) via data.monsters`);
         } else {
-          console.warn("No valid method found to save monsters to Fantasy Statblocks plugin");
-          console.warn("Available plugin methods:", Object.keys(statblocksPlugin));
-          console.warn("Available plugin.api methods:", statblocksPlugin.api ? Object.keys(statblocksPlugin.api) : "No API");
         }
       }
     } catch (error) {
@@ -30119,14 +29702,9 @@ if (countermeasures.length === 0) {
       }
     }
 
-    console.log(`[createComplexStatblocks] Processing ${this.elements.length} elements`);
-    console.log(`[createComplexStatblocks] Initiative groups: ${byInitiative.size}`);
-    console.log(`[createComplexStatblocks] Constant elements: ${constantElements.length}`);
-    console.log(`[createComplexStatblocks] Dynamic elements: ${dynamicElements.length}`);
 
     // Create statblock for each initiative group
     for (const [initiative, elements] of byInitiative.entries()) {
-      console.log(`[createComplexStatblocks] Creating statblock for initiative ${initiative} with ${elements.length} elements`);
       
       const actions: any[] = elements.map(element => {
         let desc = "";
@@ -30207,10 +29785,8 @@ if (countermeasures.length === 0) {
         layout: "Basic 5e Layout"
       });
       
-      console.log(`[createComplexStatblocks] Added statblock: ${this.trapName} (Initiative ${initiative})`);
     }
 
-    console.log(`[createComplexStatblocks] Total statblocks created: ${statblocks.length}`);
     
     // Create constant effects statblock if any
     if (constantElements.length > 0) {
@@ -31145,7 +30721,6 @@ class ItemCreationModal extends Modal {
         }
       }
 
-      console.log(`[Item Edit] Loaded item data: ${this.itemName}`);
     } catch (error) {
       console.error("Error loading item data:", error);
       new Notice("Error loading item data. Check console for details.");
@@ -31846,7 +31421,6 @@ class CreatureCreationModal extends Modal {
       this.parseLegacyStatblock(text, lines);
     }
 
-    console.log("Parsed creature:", this.creatureName, is2024 ? "(2024 format)" : "(legacy format)");
   }
 
   /**
@@ -32262,7 +31836,6 @@ class CreatureCreationModal extends Modal {
         this.description = descMatch[1].trim();
       }
 
-      console.log(`[Creature Edit] Loaded creature data: ${this.creatureName}`);
     } catch (error) {
       console.error("Error loading creature data:", error);
       new Notice("Error loading creature data. Check console for details.");
@@ -32586,7 +32159,6 @@ deleteBtn.addEventListener("click", () => {
     try {
       const statblocksPlugin = (this.app as any).plugins.getPlugin("obsidian-5e-statblocks");
       if (!statblocksPlugin) {
-        console.warn("Fantasy Statblocks plugin not found.");
         return;
       }
 
@@ -32672,7 +32244,6 @@ deleteBtn.addEventListener("click", () => {
       }
 
       await statblocksPlugin.saveSettings();
-      console.log(`Saved creature "${this.creatureName}" to Fantasy Statblocks`);
     } catch (error) {
       console.error("Error saving to Fantasy Statblocks:", error);
     }
@@ -33048,11 +32619,9 @@ class SpellImportModal extends Modal {
       const maxAgeMs = this.CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
       
       if (ageMs > maxAgeMs) {
-        console.log(`Spell cache expired (${Math.floor(ageMs / (24 * 60 * 60 * 1000))} days old)`);
         return null;
       }
 
-      console.log(`Loaded ${cache.count} spells from cache (${Math.floor(ageMs / (60 * 60 * 1000))} hours old)`);
       return cache.spells || [];
     } catch (error) {
       console.error("Failed to load spell cache:", error);
@@ -33071,7 +32640,6 @@ class SpellImportModal extends Modal {
 
       const cacheContent = JSON.stringify(cache);
       await this.app.vault.adapter.write(this.CACHE_PATH, cacheContent);
-      console.log(`Saved ${spells.length} spells to cache`);
     } catch (error) {
       console.error("Failed to save spell cache:", error);
     }
@@ -33359,7 +32927,6 @@ class SpellImportModal extends Modal {
           // Check if file already exists
           const exists = await this.app.vault.adapter.exists(filePath);
           if (exists) {
-            console.log(`Skipping ${spell.name} - already exists`);
             successCount++;
             continue;
           }
@@ -34714,9 +34281,7 @@ class PlayerMapView extends ItemView {
     }
     if (state.mapId) {
       this.mapId = state.mapId;
-      console.log('[Player View] setState - mapId set to:', this.mapId);
     } else {
-      console.log('[Player View] setState - no mapId in state, current mapId:', this.mapId);
     }
     await super.setState(state, result);
     if (this.mapConfig) {
@@ -34736,7 +34301,6 @@ class PlayerMapView extends ItemView {
    * Called by the GM view to push real-time updates
    */
   updateMapData(config: any) {
-    console.log('[PV] updateMapData called with config:', config);
     // Extract travel animation data before storing config
     const hexcrawlTravel = config.hexcrawlTravel;
     if (hexcrawlTravel) {
@@ -34746,18 +34310,14 @@ class PlayerMapView extends ItemView {
     // Use syncCanvasToImage when available — it ensures the canvas is properly
     // sized before drawing (important for video where media may still be loading).
     if (this.syncCanvasToImage) {
-      console.log('[PV] mapConfig updated, calling syncCanvasToImage');
       this.syncCanvasToImage();
     } else {
-      console.log('[PV] mapConfig updated, calling redrawAnnotations (no sync fn yet)');
       this.redrawAnnotations();
     }
     // Trigger hexcrawl travel animation if present
     if (hexcrawlTravel) {
-      console.log('[PV] Triggering hexcrawl travel animation:', hexcrawlTravel);
       this.animateHexcrawlTravel(hexcrawlTravel.fromCol, hexcrawlTravel.fromRow, hexcrawlTravel.toCol, hexcrawlTravel.toRow);
     }
-    console.log('[PV] update completed');
   }
 
   /**
@@ -34773,7 +34333,6 @@ class PlayerMapView extends ItemView {
    * @param centerY - Image Y coordinate to center on
    */
   setTabletopPanFromImageCoords(centerX: number, centerY: number) {
-    try { console.debug('[PV] setTabletopPanFromImageCoords (center-based)', { centerX, centerY, scale: this.tabletopScale, rot: this.tabletopRotation }); } catch (e) {}
     
     // Store the desired center point
     this.tabletopTargetX = centerX;
@@ -34801,7 +34360,6 @@ class PlayerMapView extends ItemView {
    */
   setTabletopScale(scale: number) {
     this.tabletopScale = scale || 1;
-    try { console.debug('[PV] setTabletopScale', { scale: this.tabletopScale }); } catch (e) {}
     this.applyTabletopTransform();
   }
 
@@ -34830,7 +34388,6 @@ class PlayerMapView extends ItemView {
         this.isFullscreen = true;
         this.hideObsidianChrome();
         doc.documentElement.requestFullscreen().catch((e: any) => {
-          console.warn('Fullscreen request failed', e);
         });
       } else {
         // Exit fullscreen
@@ -34838,7 +34395,6 @@ class PlayerMapView extends ItemView {
         this.showObsidianChrome();
         if (doc.fullscreenElement) {
           doc.exitFullscreen().catch((e: any) => {
-            console.warn('Exit fullscreen failed', e);
           });
         }
       }
@@ -34875,7 +34431,6 @@ class PlayerMapView extends ItemView {
       this.tabletopPanX = vcx - s * (c * cx - sn * cy);
       this.tabletopPanY = vcy - s * (sn * cx + c * cy);
 
-      try { console.debug('[PV] applyTabletopTransform (center-based)', { centerX: cx, centerY: cy, viewportCenter: [vcx, vcy], panX: this.tabletopPanX, panY: this.tabletopPanY, scale: s, rot: deg }); } catch (e) {}
     }
 
     // Clamp based on rotated bbox in SCREEN space
@@ -34887,7 +34442,6 @@ class PlayerMapView extends ItemView {
 
     // Apply scale in the transform along with rotation and translation
     sled.style.transform = `translate(${this.tabletopPanX}px, ${this.tabletopPanY}px) rotate(${deg}deg) scale(${s})`;
-    try { console.debug('[PV] sled transform applied', { transform: sled.style.transform, panX: this.tabletopPanX, panY: this.tabletopPanY, rot: deg, scale: s }); } catch (e) {}
   }
 
   private clampTabletopPan() {
@@ -34922,7 +34476,6 @@ class PlayerMapView extends ItemView {
     const vh = r.height;
 
     // Debug: log computed bbox and viewport sizes to diagnose width clipping
-    console.debug('[PV] clampTabletopPan bbox', { minX0, maxX0, minY0, maxY0, vw, vh, panBefore: this.tabletopPanX });
 
     // Compute the strict pan ranges that would keep the rotated bbox
     // fully covering the viewport. For large rotated bboxes this enforces
@@ -34950,7 +34503,6 @@ class PlayerMapView extends ItemView {
       // Allow free vertical panning as well.
     }
 
-    console.debug('[PV] clampTabletopPan result', { panMinX, panMaxX, panMinY, panMaxY, panAfterX: this.tabletopPanX, panAfterY: this.tabletopPanY });
   }
 
   /**
@@ -35527,24 +35079,13 @@ class PlayerMapView extends ItemView {
   }
 
   private redrawAnnotations() {
-    console.log('[PV] redrawAnnotations - canvas:', !!this.canvas, 'mapConfig:', !!this.mapConfig);
     if (!this.canvas || !this.mapConfig) return;
     const ctx = this.canvas.getContext('2d');
     if (!ctx) {
-      console.log('[PV] redrawAnnotations - no context!');
       return;
     }
 
     const config = this.mapConfig;
-    console.log('[PV] redrawAnnotations - config:', {
-      gridType: config.gridType,
-      gridSize: config.gridSize,
-      markersCount: config.markers?.length || 0,
-      drawingsCount: config.drawings?.length || 0,
-      highlightsCount: config.highlights?.length || 0,
-      fogEnabled: config.fogOfWar?.enabled,
-      lightSourcesCount: config.lightSources?.length || 0
-    });
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     // Draw grid overlay if active and visible
@@ -35566,30 +35107,16 @@ class PlayerMapView extends ItemView {
       const markerDef = m.markerId ? this.plugin.markerLibrary.getMarker(m.markerId) : null;
       
       // Debug: log each marker being filtered
-      console.log('[Layer Filter Debug]', {
-        id: m.id,
-        markerId: m.markerId,
-        markerDefName: markerDef?.name,
-        markerDefType: markerDef?.type,
-        layer: markerLayer,
-        hasElevation: !!m.elevation,
-        isBurrowing: m.elevation?.isBurrowing,
-        hasTunnelState: !!m.tunnelState,
-        tunnelId: m.tunnelState?.tunnelId
-      });
       
       // Always show player-type tokens (or tokens marked visible to players), even if on DM layer (for tunneling)
       if (markerDef && (markerDef.type === 'player' || m.visibleToPlayers)) {
-        console.log('[Layer Filter] Including player/visible token:', m.id);
         return true; // Always show player tokens and tokens visible to players
       }
       // Also show burrowing tokens (they may be visible to players in tunnels)
       if (m.elevation?.isBurrowing) {
-        console.log('[Layer Filter] Including burrowing token:', m.id);
         return true;
       }
       const included = visibleLayers.includes(markerLayer);
-      console.log('[Layer Filter]', included ? 'Including' : 'EXCLUDING', 'marker:', m.id, 'layer:', markerLayer);
       return included;
     });
     const playerDrawings = (config.drawings || []).filter((d: any) => visibleLayers.includes(d.layer || 'Player'));
@@ -35656,47 +35183,17 @@ class PlayerMapView extends ItemView {
       }
     });
     
-    console.log('[Marker Separation Debug] Separated markers:', {
-      totalPlayerMarkers: playerMarkers.length,
-      playerTokensCount: playerTokens.length,
-      otherMarkersCount: otherMarkers.length,
-      allPlayerMarkers: playerMarkers.map((m: any) => {
-        const markerDef = m.markerId ? this.plugin.markerLibrary.getMarker(m.markerId) : null;
-        return {
-          id: m.id,
-          markerId: m.markerId,
-          markerDefType: markerDef?.type,
-          markerDefName: markerDef?.name,
-          hasBurrowing: !!m.elevation?.isBurrowing,
-          hasTunnelState: !!m.tunnelState
-        };
-      }),
-      playerTokens: playerTokens.map((m: any) => ({
-        id: m.id,
-        markerId: m.markerId,
-        hasBurrowing: !!m.elevation?.isBurrowing,
-        hasTunnelState: !!m.tunnelState
-      })),
-      otherMarkers: otherMarkers.map((m: any) => ({
-        id: m.id,
-        markerId: m.markerId,
-        hasBurrowing: !!m.elevation?.isBurrowing,
-        hasTunnelState: !!m.tunnelState
-      }))
-    });
 
     // Track players who are in tunnels - used for drawing tunnel above fog
     const tunnelPlayersInMarkers = playerTokens.filter((m: any) => m.tunnelState);
 
     // Draw tunnel entrances and exits (always visible on surface - these are physical holes)
-    console.log('[Tunnel Debug Player Render] config.tunnels:', config.tunnels ? config.tunnels.length : 'undefined');
     if (config.tunnels && config.tunnels.length > 0) {
       const CREATURE_SIZE_SQUARES: Record<string, number> = {
         'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
       };
       
       config.tunnels.forEach((tunnel: any) => {
-        console.log('[Tunnel Debug Player Render] Rendering tunnel:', tunnel.id, 'visible:', tunnel.visible, 'active:', tunnel.active, 'entrance:', tunnel.entrancePosition);
         if (!tunnel.visible) return;
         
         const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
@@ -35769,7 +35266,6 @@ class PlayerMapView extends ItemView {
             ctx.textBaseline = 'middle';
             ctx.fillText('🕳️', exit.x, exit.y);
             
-            console.log('[Tunnel Debug Player Render] Drew exit at:', exit);
             ctx.restore();
           }
         }
@@ -35797,29 +35293,11 @@ class PlayerMapView extends ItemView {
 
     // Draw non-player markers (these will be obscured by fog)
     // Filter out burrowed tokens unless they're marked as visible to players OR visible to a player in the same tunnel
-    console.log('[Other Markers Debug] Processing otherMarkers:', {
-      count: otherMarkers.length,
-      markers: otherMarkers.map((m: any) => ({
-        id: m.id,
-        hasBurrowing: !!m.elevation?.isBurrowing,
-        visibleToPlayers: m.visibleToPlayers,
-        hasTunnelState: !!m.tunnelState,
-        tunnelId: m.tunnelState?.tunnelId
-      }))
-    });
     
     otherMarkers.forEach((m: any) => {
       // Check if burrowed token OR token in tunnel should be visible
       // Tokens can be in tunnels either by burrowing (isBurrowing=true) or by entering (tunnelState set)
       if ((m.elevation?.isBurrowing || m.tunnelState) && !m.visibleToPlayers) {
-        console.log('[Burrowed Token Visibility] Checking token:', {
-          id: m.id,
-          isBurrowing: !!m.elevation?.isBurrowing,
-          hasTunnelState: !!m.tunnelState,
-          tunnelId: m.tunnelState?.tunnelId,
-          pathIndex: m.tunnelState?.pathIndex,
-          position: m.position
-        });
         
         // Check if any player token that is underground (in tunnel or burrowing) can see this burrowed token
         let visibleToPlayerInTunnel = false;
@@ -35848,15 +35326,6 @@ class PlayerMapView extends ItemView {
           }
           
           const visionRangePx = visionRange * pixelsPerFootForVision;
-          console.log('[Vision Range Calc]:', {
-            markerId: marker.id,
-            darkvision: marker.darkvision,
-            lightBright,
-            lightDim,
-            visionRangeFeet: visionRange,
-            visionRangePx: visionRangePx.toFixed(2),
-            pixelsPerFootForVision
-          });
           
           return visionRangePx;
         };
@@ -35864,7 +35333,6 @@ class PlayerMapView extends ItemView {
         // If a specific vision token is selected and it's NOT in a tunnel,
         // underground tokens are NEVER visible (surface can't see underground)
         if (config.selectedVisionTokenId && !selectedVisionIsInTunnel) {
-          console.log('[Burrowed Token Visibility] Selected vision token is on surface — underground tokens invisible');
           m._visibleToTunnelPlayer = false;
           return;
         }
@@ -35874,22 +35342,14 @@ class PlayerMapView extends ItemView {
           if (m.tunnelState && config.tunnels) {
             const tunnel = config.tunnels.find((t: any) => t.id === m.tunnelState.tunnelId);
             
-            console.log('[Burrowed Token Visibility] Token in explicit tunnel:', !!tunnel, 'Vision-relevant tokens:', visionRelevantTokens.length);
             
             if (tunnel && tunnel.path) {
             // Check each vision-relevant player token in the same tunnel
             for (const playerMarker of visionRelevantTokens) {
-              console.log('[Burrowed Token Visibility] Checking player:', {
-                playerId: playerMarker.id,
-                playerTunnelId: playerMarker.tunnelState?.tunnelId,
-                playerPathIdx: playerMarker.tunnelState?.pathIndex,
-                sameTunnel: playerMarker.tunnelState?.tunnelId === m.tunnelState.tunnelId
-              });
               
               if (playerMarker.tunnelState?.tunnelId === m.tunnelState.tunnelId) {
                 // Both tokens are in the same tunnel - use raycasting with tunnel walls
                 const visionRangePx = getVisionRange(playerMarker);
-                console.log('[Burrowed Token Visibility] Player vision range:', visionRangePx);
                 
                 if (visionRangePx > 0) {
                   // Calculate 3D distance (accounting for elevation/depth differences)
@@ -35924,21 +35384,9 @@ class PlayerMapView extends ItemView {
                       );
                     }
                     
-                    console.log('[Burrowed Token Visibility] Raycasting check:', {
-                      directDistance: directDistance.toFixed(2),
-                      visionRange: visionRangePx.toFixed(2),
-                      hasWalls: tunnel.walls && tunnel.walls.length > 0,
-                      totalWallCount: tunnel.walls?.length || 0,
-                      sideWallCount: tunnel.walls && tunnel.walls.length > 2 ? tunnel.walls.length - 2 : tunnel.walls?.length || 0,
-                      wallsBlockSight: isBlocked,
-                      visible: !isBlocked,
-                      playerPos: { x: playerMarker.position.x, y: playerMarker.position.y },
-                      tokenPos: { x: m.position.x, y: m.position.y }
-                    });
                     
                     if (!isBlocked) {
                       visibleToPlayerInTunnel = true;
-                      console.log('[Burrowed Token Visibility] TOKEN VISIBLE (same tunnel, raycasting line of sight)!');
                       break;
                     }
                   }
@@ -35951,18 +35399,11 @@ class PlayerMapView extends ItemView {
           // Case 2: Burrowed token is NOT in an explicit tunnel - check tunnel path-based visibility
           // If a player is in a tunnel, check path distance along that tunnel to the burrowing token
           if (!visibleToPlayerInTunnel && !m.tunnelState) {
-            console.log('[Burrowed Token Visibility] Token NOT in explicit tunnel - checking tunnel path-based visibility');
             
             for (const playerMarker of visionRelevantTokens) {
               // Check if player is in a tunnel
               const playerTunnelId = playerMarker.tunnelState?.tunnelId;
               
-              console.log('[Burrowed Token Visibility] Checking player (tunnel-based):', {
-                playerId: playerMarker.id,
-                playerTunnelId,
-                playerPathIdx: playerMarker.tunnelState?.pathIndex,
-                playerBurrowing: playerMarker.elevation?.isBurrowing
-              });
               
               if (playerTunnelId && config.tunnels) {
                 // Player is in a tunnel - find the tunnel and check path distance
@@ -35979,10 +35420,6 @@ class PlayerMapView extends ItemView {
                     const directDy = m.position.y - playerMarker.position.y;
                     const directDistance = Math.sqrt(directDx * directDx + directDy * directDy);
                     
-                    console.log('[Burrowed Token Visibility] Direct distance (for reference only):', {
-                      directDistance: directDistance.toFixed(2),
-                      visionRange: visionRangePx.toFixed(2)
-                    });
                     
                     // NOTE: We do NOT use direct distance to determine visibility in tunnels
                     // because there may be corners between the player and the burrowed token.
@@ -36014,13 +35451,6 @@ class PlayerMapView extends ItemView {
                       return closestPathIdx;
                     })();
                     
-                    console.log('[Burrowed Token Visibility] Burrowing token path position:', {
-                      isAtDigHead,
-                      distToEnd: distToEnd.toFixed(2),
-                      burrowingPathIdx,
-                      playerPathIdx,
-                      tunnelLength: tunnel.path.length
-                    });
                     
                     // Check path distance between player and burrower with corner detection
                     // This works for both cases: player ahead of or behind the burrowing token
@@ -36046,7 +35476,6 @@ class PlayerMapView extends ItemView {
                             const angle = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
                             if (angle > Math.PI / 4) { // 45° threshold
                               cornerBlocked = true;
-                              console.log('[Burrowed Token Visibility] Corner blocked at index:', i, 'angle:', (angle * 180 / Math.PI).toFixed(1) + '°');
                               break;
                             }
                           }
@@ -36057,19 +35486,11 @@ class PlayerMapView extends ItemView {
                       }
                     }
                     
-                    console.log('[Burrowed Token Visibility] Path distance check:', {
-                      pathDistance: pathDistance.toFixed(2),
-                      visionRange: visionRangePx.toFixed(2),
-                      cornerBlocked,
-                      directDistance: directDistance.toFixed(2),
-                      visible: !cornerBlocked && directDistance <= visionRangePx
-                    });
                     
                     // If no corner blocks vision, use DIRECT distance for visibility
                     // (path distance is only used for corner detection, not range)
                     if (!cornerBlocked && directDistance <= visionRangePx) {
                       visibleToPlayerInTunnel = true;
-                      console.log('[Burrowed Token Visibility] TOKEN VISIBLE (direct line of sight, no corner)!');
                       break;
                     }
                   }
@@ -36091,15 +35512,9 @@ class PlayerMapView extends ItemView {
                   
                   const distance = Math.sqrt(horizontalDistSq + verticalPx * verticalPx);
                   
-                  console.log('[Burrowed Token Visibility] Position-based 3D distance check:', {
-                    distance: distance.toFixed(2),
-                    visionRange: visionRangePx.toFixed(2),
-                    visible: distance <= visionRangePx
-                  });
                   
                   if (distance <= visionRangePx) {
                     visibleToPlayerInTunnel = true;
-                    console.log('[Burrowed Token Visibility] TOKEN VISIBLE (position-based)!');
                     break;
                   }
                 }
@@ -36108,11 +35523,6 @@ class PlayerMapView extends ItemView {
           }
         }
         
-        console.log('[Burrowed Token Visibility] Final decision:', {
-          tokenId: m.id,
-          visibleToPlayerInTunnel,
-          willRender: visibleToPlayerInTunnel
-        });
         
         // Update visibility flag for burrowed tokens - MUST set to false if not visible
         m._visibleToTunnelPlayer = visibleToPlayerInTunnel;
@@ -36123,7 +35533,6 @@ class PlayerMapView extends ItemView {
       // Underground vision cannot see surface tokens — earth blocks all vision.
       // When viewing through a tunnel token, ALL non-underground markers are invisible.
       if (config.selectedVisionTokenId && selectedVisionIsInTunnel) {
-        console.log('[Underground Vision] Surface marker hidden from tunnel viewer:', m.id);
         return;
       }
 
@@ -36173,11 +35582,6 @@ class PlayerMapView extends ItemView {
         }
         
         if (!visibleToAnyPlayer) {
-          console.log('[3D Vision] Token hidden due to elevation - 3D distance exceeds vision range:', {
-            tokenId: m.id,
-            tokenElevation: tokenElev,
-            position: m.position
-          });
           return; // Skip rendering this token
         }
       }
@@ -36282,7 +35686,6 @@ class PlayerMapView extends ItemView {
             }
           }
           if (!canBeSeenByAnyPlayer) {
-            console.log('[Wall Occlusion] Token hidden behind wall in daylight:', m.id);
             return; // Wall blocks line of sight from every player token
           }
         }
@@ -36298,16 +35701,13 @@ class PlayerMapView extends ItemView {
 
     // Draw Fog of War (Player view: fully opaque black with light source revelation)
     // Fog must be enabled for darkness to appear - lights reveal areas within the fog
-    console.log('[PV] Fog draw check:', { fogOfWar: !!config.fogOfWar, enabled: config.fogOfWar?.enabled, lightSources: config.lightSources?.length || 0 });
     const hasFogGlobal = config.fogOfWar && config.fogOfWar.enabled;
     if (hasFogGlobal) {
-      console.log('[PV] Drawing fog of war with lights');
       this.drawFogOfWar(ctx, this.canvas!.width, this.canvas!.height, config);
     } else if (((config.walls && config.walls.length > 0) || (config.envAssets && config.envAssets.some((a: any) => (a.doorConfig && (!a.doorConfig.isOpen || a.doorConfig.behaviour !== 'sliding')) || (a.scatterConfig && a.scatterConfig.blocksVision)))) && visionRelevantTokens.length > 0) {
       // No fog of war, but walls exist — draw wall-occlusion overlay.
       // In daylight, players can see infinitely far EXCEPT through walls.
       // Areas behind walls are darkened so the DM's hidden content stays hidden.
-      console.log('[PV] Drawing wall-occlusion overlay (no fog, walls present)');
       this.drawWallOcclusion(ctx, this.canvas!.width, this.canvas!.height, config, visionRelevantTokens);
     }
 
@@ -36479,7 +35879,6 @@ class PlayerMapView extends ItemView {
         if (config.selectedVisionTokenId && selectedVisionToken) {
           // Must be in the same tunnel
           if (m.tunnelState?.tunnelId !== selectedVisionToken.tunnelState?.tunnelId) {
-            console.log('[Tunnel Player Visibility] Different tunnel — not visible:', m.id);
             return;
           }
 
@@ -36503,7 +35902,6 @@ class PlayerMapView extends ItemView {
           const visionRangePx = visionRange * pixelsPerFootForVision;
 
           if (visionRangePx <= 0) {
-            console.log('[Tunnel Player Visibility] No vision range — not visible:', m.id);
             return; // No darkvision or light = can't see anything
           }
 
@@ -36517,8 +35915,6 @@ class PlayerMapView extends ItemView {
           const distance = Math.sqrt(horizontalDistSq + verticalPx * verticalPx);
 
           if (distance > visionRangePx) {
-            console.log('[Tunnel Player Visibility] Out of range — not visible:', m.id, 
-              'dist:', distance.toFixed(1), 'range:', visionRangePx.toFixed(1));
             return;
           }
 
@@ -36533,13 +35929,10 @@ class PlayerMapView extends ItemView {
               sideWalls
             );
             if (!canSee) {
-              console.log('[Tunnel Player Visibility] Blocked by tunnel wall — not visible:', m.id);
               return;
             }
           }
 
-          console.log('[Tunnel Player Visibility] VISIBLE:', m.id,
-            'dist:', distance.toFixed(1), 'range:', visionRangePx.toFixed(1));
         }
 
         ctx.save();
@@ -38096,8 +37489,6 @@ class PlayerMapView extends ItemView {
     ctx.drawImage(fogCanvas, 0, 0);
     _canvasPool.release(fogCanvas);
 
-    console.log('[PV] Wall-occlusion overlay drawn - walls:', allWalls.length,
-      'visionTokens:', visionTokens.length);
   }
 
   private drawFogOfWar(ctx: CanvasRenderingContext2D, w: number, h: number, config: any) {
@@ -38132,7 +37523,6 @@ class PlayerMapView extends ItemView {
         if (marker.light && marker.light.bright !== undefined) {
           // Skip lights from tokens in tunnels
           if (marker.tunnelState) {
-            console.log('[PV Fog] Skipping light from tunnel token:', marker.id);
             return;
           }
           allLights.push({
@@ -38161,7 +37551,6 @@ class PlayerMapView extends ItemView {
         
         // Skip tokens in tunnels (underground)
         if (marker.tunnelState) {
-          console.log('[PV Fog] Skipping tunnel token from fog calculation:', marker.id);
           return;
         }
         
@@ -38190,15 +37579,6 @@ class PlayerMapView extends ItemView {
     }
     
     const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
-    console.log('[PV] Vision calculation params:', { 
-      gridSize: config.gridSize, 
-      scale: config.scale?.value, 
-      pixelsPerFoot,
-      playerTokens: playerTokens.length,
-      allLights: allLights.length,
-      playerTokenDetails: playerTokens.map(pt => ({ x: pt.x.toFixed(1), y: pt.y.toFixed(1), darkvision: pt.darkvision })),
-      lightDetails: allLights.map(l => ({ x: l.x.toFixed(1), y: l.y.toFixed(1), bright: l.bright, dim: l.dim, attached: l.attachedToMarker }))
-    });
     // Filter walls to only include those that block sight
     // Open doors/windows allow light through, windows/terrain always allow light
     const walls = (config.walls || []).filter((wall: any) => {
@@ -38322,7 +37702,6 @@ class PlayerMapView extends ItemView {
     
     // Draw lights - intersect each light with player vision cones
     if (allLights.length > 0 && playerVisionCtx) {
-      console.log('[PV] Drawing lights intersected with player vision:',{ lights: allLights.length, playerTokens: playerTokens.length });
       
       allLights.forEach((light: any, i: number) => {
         // Apply flicker/buzz modulation for lights
@@ -38341,11 +37720,9 @@ class PlayerMapView extends ItemView {
         const totalRadiusPx = brightRadiusPx + dimRadiusPx;
         
         if (totalRadiusPx <= 0) {
-          console.log(`[PV] Light ${i}: SKIPPING (no radius) - bright=${light.bright}, dim=${light.dim}`);
           return;
         }
         
-        console.log(`[PV] Light ${i} at (${light.x.toFixed(1)}, ${light.y.toFixed(1)}): bright=${light.bright}ft (${brightRadiusPx.toFixed(1)}px), dim=${light.dim}ft (${dimRadiusPx.toFixed(1)}px) - DRAWING WITH PLAYER VISION CLIP`);
         
         // Create temp canvas for this light
         const lightCanvas = _canvasPool.acquire(w, h);
@@ -38466,7 +37843,6 @@ class PlayerMapView extends ItemView {
           fogCtx.drawImage(lightCanvas, 0, 0);
           fogCtx.globalCompositeOperation = 'source-over';
           
-          console.log(`[PV] Light ${i}: Applied to fog (intersection of light rays + player vision)`);
           _canvasPool.release(lightCanvas);
         }
       });
@@ -38483,7 +37859,6 @@ class PlayerMapView extends ItemView {
         
         // Skip tokens in tunnels - they don't reveal surface fog
         if (marker.tunnelState) {
-          console.log('[PV] Skipping tunnel token from darkvision fog reveal:', { id: marker.id, tunnelId: marker.tunnelState.tunnelId });
           return;
         }
         
@@ -38501,7 +37876,6 @@ class PlayerMapView extends ItemView {
         }
         
         if (includeToken) {
-          console.log('[PV] Adding darkvision marker:', { id: marker.id, x: marker.position.x.toFixed(1), y: marker.position.y.toFixed(1), range: marker.darkvision, type: markerDef.type });
           darkvisionMarkers.push({
             x: marker.position.x,
             y: marker.position.y,
@@ -38512,25 +37886,17 @@ class PlayerMapView extends ItemView {
       });
     }
     
-    console.log('[PV] Fog reveal summary:', {
-      playerTokens: playerTokens.length,
-      lightsTotal: allLights.length,
-      darkvisionMarkers: darkvisionMarkers.length,
-      message: darkvisionMarkers.length === 0 && allLights.length === 0 ? 'NO FOG WILL BE REVEALED (no lights or darkvision)' : 'Fog will be revealed'
-    });
     
     // Create grayscale overlay canvas (for darkvision-only areas)
     const grayscaleCanvas = _canvasPool.acquire(w, h);
     const grayCtx = grayscaleCanvas.getContext('2d');
     
     if (darkvisionMarkers.length > 0 && grayCtx) {
-      console.log('[PV] Drawing darkvision fog reveal:', { count: darkvisionMarkers.length, markers: darkvisionMarkers.map(dv => ({ x: dv.x.toFixed(1), y: dv.y.toFixed(1), range: dv.range })) });
       
       // First, draw darkvision to reveal fog (cuts holes in fog canvas)
       darkvisionMarkers.forEach((dv: any, i: number) => {
         const radiusPx = dv.range * pixelsPerFoot;
         if (radiusPx > 0) {
-          console.log(`[PV] Darkvision ${i}: Revealing ${dv.range}ft (${radiusPx.toFixed(1)}px) radius at (${dv.x.toFixed(1)}, ${dv.y.toFixed(1)}) elevation=${dv.elevation || 0}`);
           // Darkvision reveals fog with wall occlusion (pass elevation so elevated tokens see over low walls)
           this.drawLightWithShadows(fogCtx, dv.x, dv.y, radiusPx, 0, walls, dv.elevation || 0);
         }
@@ -38848,14 +38214,12 @@ class PlayerMapView extends ItemView {
     
     // Apply grayscale overlay on top (darkvision tint)
     if (darkvisionMarkers.length > 0 && grayCtx) {
-      console.log('[PV] Applying grayscale overlay for darkvision areas');
       ctx.save();
       ctx.globalAlpha = 1.0;
       ctx.globalCompositeOperation = 'source-over';
       ctx.drawImage(grayscaleCanvas, 0, 0);
       ctx.restore();
     } else {
-      console.log('[PV] Not applying grayscale overlay:', { darkvisionMarkers: darkvisionMarkers.length, hasGrayCtx: !!grayCtx });
     }
     _canvasPool.releaseAll(playerVisionCanvas, playerDarkvisionCanvas, grayscaleCanvas);
   }
