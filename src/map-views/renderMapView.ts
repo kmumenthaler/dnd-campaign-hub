@@ -13,7 +13,7 @@ import { MarkerReference, MarkerDefinition, MarkerType, CREATURE_SIZE_SQUARES, C
 import { MarkerPickerModal } from "../marker/MarkerPickerModal";
 import { GridCalibrationModal } from "../utils/GridCalibrationModal";
 import { CreatureSelectorModal, MultiCreatureSelectorModal, RenameCreatureModal } from "../utils/CreatureModals";
-import { ClearDrawingsConfirmModal } from "../utils/ConfirmModal";
+import { ClearDrawingsConfirmModal, ClearTokensConfirmModal } from "../utils/ConfirmModal";
 import { DeleteMapConfirmModal } from "../map-views/DeleteMapConfirmModal";
 import { TabletopCalibrationModal } from "../map-views/TabletopCalibrationModal";
 import { canvasPool as _canvasPool } from "../utils/CanvasPool";
@@ -9756,23 +9756,35 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					creaturesByName.get(baseName)!.push(c);
 				}
 
-				// Calculate grid placement starting position
+				// Calculate grid placement — uses a compact layout that stays within map bounds
 				const gridPx = config.gridSize || 70;
 				const ox = config.gridOffsetX || 0;
 				const oy = config.gridOffsetY || 0;
-				// Start placing from center-right area of the visible map
-				let placementCol = Math.max(1, Math.floor(((config.dimensions?.width || 1000) / gridPx) * 0.5));
-				let placementRow = Math.max(1, Math.floor(((config.dimensions?.height || 800) / gridPx) * 0.3));
-				const maxCol = Math.floor(((config.dimensions?.width || 1000) / gridPx)) - 2;
+				const mapW = config.dimensions?.width || 1000;
+				const mapH = config.dimensions?.height || 800;
+				const totalCols = Math.floor(mapW / gridPx);
+				const totalRows = Math.floor(mapH / gridPx);
+				// Start from row 1, column 1 (leaving a 1-cell margin)
+				let placementCol = 1;
+				let placementRow = 1;
+				const maxCol = Math.max(2, totalCols - 1);
+				const maxRow = Math.max(2, totalRows - 1);
 
 				let addedCount = 0;
 				let skippedCount = 0;
+				let errorCount = 0;
 				saveToHistory();
+
+				console.log(`[DnD-Map] Import Encounter Tokens: ${creatures.length} creatures in IT state, map=${mapW}x${mapH}, grid=${gridPx}px (${totalCols}x${totalRows} cells)`);
+				for (const [name, insts] of creaturesByName) {
+					console.log(`[DnD-Map]   Group "${name}": ${insts.length} instance(s)`);
+				}
 
 				for (const [baseName, instances] of creaturesByName) {
 					const isMultiple = instances.length > 1;
 
 					for (let i = 0; i < instances.length; i++) {
+					  try {
 						const creature = instances[i];
 						const displayName = creature.display || creature.name || 'Unknown';
 						const isPlayer = creature.player === true;
@@ -9794,6 +9806,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						// Check for duplicate: same base name + same border color already on map
 						const dupeKey = `${baseName.toLowerCase()}|${(borderColor || '').toLowerCase()}`;
 						if (existingMarkerNames.has(dupeKey)) {
+							console.log(`[DnD-Map]   SKIP duplicate "${displayName}" (key=${dupeKey})`);
 							skippedCount++;
 							continue;
 						}
@@ -9803,17 +9816,17 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						const markerType: MarkerType = isPlayer ? 'player' : (isFriendly ? 'npc' : 'creature');
 						let markerDef: MarkerDefinition | undefined;
 
-						// Try token_id lookup first (precise — handles same-name PCs across campaigns)
+						// Try to resolve creature vault path from IT state data
 						const creaturePath = creature.path || creature.note;
+						let resolvedNoteFile: TFile | null = null;
 						if (creaturePath && typeof creaturePath === 'string') {
 							const noteFile = plugin.app.vault.getAbstractFileByPath(creaturePath);
 							if (noteFile instanceof TFile) {
+								resolvedNoteFile = noteFile;
 								const noteCache = plugin.app.metadataCache.getFileCache(noteFile);
 								const noteTokenId = noteCache?.frontmatter?.token_id;
 								if (noteTokenId) {
 									markerDef = plugin.markerLibrary.getMarker(noteTokenId);
-									if (markerDef) {
-									}
 								}
 							}
 						}
@@ -9832,7 +9845,27 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							);
 						}
 						if (!markerDef) {
-							// Create a new marker definition
+							// Create a new marker definition — resolve creature size from vault note or IT data
+							let creatureSize: CreatureSize = 'medium';
+							// Try reading size from the creature's vault note frontmatter
+							if (resolvedNoteFile) {
+								const noteCache = plugin.app.metadataCache.getFileCache(resolvedNoteFile);
+								const fmSize = noteCache?.frontmatter?.size;
+								if (fmSize && typeof fmSize === 'string') {
+									const normalised = fmSize.toLowerCase().trim();
+									if (normalised in CREATURE_SIZE_SQUARES) {
+										creatureSize = normalised as CreatureSize;
+									}
+								}
+							}
+							// Also check IT creature data (some IT versions expose size)
+							if (creatureSize === 'medium' && creature.size && typeof creature.size === 'string') {
+								const normalised = creature.size.toLowerCase().trim();
+								if (normalised in CREATURE_SIZE_SQUARES) {
+									creatureSize = normalised as CreatureSize;
+								}
+							}
+
 							const icon = isPlayer ? '🛡️' : (isFriendly ? '🧑' : '👹');
 							const bgColor = isPlayer ? '#2563eb' : (isFriendly ? '#16a34a' : '#dc2626');
 							const id = plugin.markerLibrary.generateId();
@@ -9844,16 +9877,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								icon,
 								backgroundColor: bgColor,
 								borderColor: '#ffffff',
-								creatureSize: 'medium' as CreatureSize,
+								creatureSize,
 								createdAt: now,
 								updatedAt: now,
 							} as MarkerDefinition;
 							await plugin.markerLibrary.setMarker(markerDef);
+							console.log(`[DnD-Map]   Created new marker def "${baseName}" (size=${creatureSize})`);
 						}
 
 						// Calculate grid-snapped position
 						const sizeSquares = CREATURE_SIZE_SQUARES[markerDef.creatureSize || 'medium'] || 1;
 						const halfToken = (sizeSquares * gridPx) / 2;
+						// Use integer column steps (ceil to 1) to keep placement grid-aligned
+						const colAdvance = Math.max(1, Math.ceil(sizeSquares)) + 1;
 						const posX = ox + placementCol * gridPx + halfToken;
 						const posY = oy + placementRow * gridPx + halfToken;
 
@@ -9881,13 +9917,23 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						config.markers.push(markerRef);
 						existingMarkerNames.add(dupeKey); // Prevent duplicates within this batch
 						addedCount++;
+						console.log(`[DnD-Map]   ADD "${displayName}" → layer=${tokenLayer}, size=${markerDef.creatureSize}, pos=(${posX.toFixed(0)},${posY.toFixed(0)})`);
 
-						// Advance grid placement position
-						placementCol += sizeSquares + 1;
-						if (placementCol + sizeSquares > maxCol) {
-							placementCol = Math.max(1, Math.floor(((config.dimensions?.width || 1000) / gridPx) * 0.5));
-							placementRow += sizeSquares + 1;
+						// Advance grid placement position (integer steps to stay grid-aligned)
+						const rowSize = Math.max(1, Math.ceil(sizeSquares));
+						placementCol += colAdvance;
+						if (placementCol + rowSize > maxCol) {
+							placementCol = 1;
+							placementRow += rowSize + 1;
+							// If we've run out of vertical space, wrap back to top
+							if (placementRow + rowSize > maxRow) {
+								placementRow = 1;
+							}
 						}
+					  } catch (creatureError) {
+						console.error(`[DnD-Map]   ERROR importing "${baseName}" instance ${i}:`, creatureError);
+						errorCount++;
+					  }
 					}
 				}
 
@@ -9899,10 +9945,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					refreshVisionSelector();
 				}
 
+				const parts: string[] = [];
+				if (addedCount > 0) parts.push(`✅ Added ${addedCount} token${addedCount > 1 ? 's' : ''} from encounter`);
+				if (skippedCount > 0) parts.push(`${skippedCount} skipped`);
+				if (errorCount > 0) parts.push(`${errorCount} failed`);
 				const msg = addedCount > 0
-					? `✅ Added ${addedCount} token${addedCount > 1 ? 's' : ''} from encounter` + (skippedCount > 0 ? ` (${skippedCount} skipped)` : '')
-					: `ℹ️ All encounter tokens already on the map (${skippedCount} skipped)`;
+					? parts[0]! + (parts.length > 1 ? ` (${parts.slice(1).join(', ')})` : '')
+					: `ℹ️ All encounter tokens already on the map` + (parts.length > 0 ? ` (${parts.join(', ')})` : '');
 				new Notice(msg);
+				console.log(`[DnD-Map] Import complete: added=${addedCount}, skipped=${skippedCount}, errors=${errorCount}`);
 			});
 
 			// Clear drawings button
@@ -9917,6 +9968,29 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					plugin.saveMapAnnotations(config, el);
 					updateGridToolsVisibility();
 					new Notice('Drawings cleared');
+				}).open();
+			});
+
+			// Clear all tokens button
+			const clearTokensBtn = controls.createEl('button', {
+				text: '🗑️ Clear Tokens',
+				cls: 'dnd-map-toggle-btn'
+			});
+			clearTokensBtn.addEventListener('click', () => {
+				const tokenCount = (config.markers || []).length;
+				if (tokenCount === 0) {
+					new Notice('No tokens on the map');
+					return;
+				}
+				new ClearTokensConfirmModal(plugin.app, () => {
+					saveToHistory();
+					config.markers = [];
+					redrawAnnotations();
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					plugin.saveMapAnnotations(config, el);
+					updateGridToolsVisibility();
+					refreshVisionSelector();
+					new Notice(`${tokenCount} token${tokenCount > 1 ? 's' : ''} cleared`);
 				}).open();
 			});
 

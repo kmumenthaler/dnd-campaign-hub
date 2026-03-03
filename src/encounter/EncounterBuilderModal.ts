@@ -2275,7 +2275,7 @@ _Add notes about tactics, environment, or special conditions here._
           // For single creatures or multiple without colors, display is just the creature name
           // Initiative Tracker will add numbers automatically for duplicates
 
-          const creature = {
+          const creature: any = {
             name: c.name,  // Base creature name for bestiary lookup
             display: displayName,  // Display name (always has a value now)
             initiative: 0,
@@ -2296,6 +2296,10 @@ _Add notes about tactics, environment, or special conditions here._
             friendly: c.isFriendly || false,  // Friendly to players
             rollHP: false  // Whether to roll HP when adding to tracker
           };
+          // Include vault path so the map token import can resolve the creature's note
+          if (c.path && c.path !== '[SRD]') {
+            creature.note = c.path;
+          }
           instances.push(creature);
         }
         return instances;

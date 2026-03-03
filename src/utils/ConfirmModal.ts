@@ -94,6 +94,49 @@ export class NamePromptModal extends Modal {
 /**
  * Confirmation modal for clearing all drawings from a map.
  */
+export class ClearTokensConfirmModal extends Modal {
+  private onConfirm: () => void;
+
+  constructor(app: App, onConfirm: () => void) {
+    super(app);
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "Clear All Tokens?" });
+
+    contentEl.createEl("p", {
+      text: "This will remove all tokens (players, creatures, NPCs) from the map. Drawings and other annotations will not be affected."
+    });
+
+    const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
+
+    const cancelButton = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelButton.addEventListener("click", () => {
+      this.close();
+    });
+
+    const confirmButton = buttonContainer.createEl("button", {
+      text: "Clear All Tokens",
+      cls: "mod-warning"
+    });
+    confirmButton.addEventListener("click", () => {
+      this.onConfirm();
+      this.close();
+    });
+
+    confirmButton.focus();
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
 export class ClearDrawingsConfirmModal extends Modal {
   private onConfirm: () => void;
 
