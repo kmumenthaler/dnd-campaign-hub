@@ -1051,11 +1051,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		const refreshVisionSelector = () => {
 			visionMenu.empty();
 
-			// Collect tokens
+			// Collect tokens — only player tokens and tokens marked as "Show to Players"
 			const visionTokens = (config.markers || []).filter((m: any) => {
 				const markerDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
 				if (!markerDef) return false;
-				return ['player', 'npc', 'creature'].includes(markerDef.type);
+				return markerDef.type === 'player' || m.visibleToPlayers;
 			});
 
 			// Count name occurrences to detect duplicates
@@ -1119,7 +1119,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		// === INITIATIVE TRACKER INTEGRATION ===
 		// Sync vision token selection with Initiative Tracker's active combatant.
 		// When the GM advances turns in Initiative Tracker, automatically toggle
-		// the vision to the active player/friendly creature's token on the battlemap.
+		// the vision to the matching token if it's a player or has "Show to Players".
+		// When the active creature has no eligible vision token, fall back to "All Players".
 		
 		// Use registerEvent for proper Obsidian lifecycle management.
 		// The event listener lives as long as the plugin, but we guard with el.isConnected
@@ -1135,53 +1136,60 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const activeCreature = state.creatures.find((c: any) => c.active);
 				if (!activeCreature) return;
 				
-				// Only auto-toggle for player or friendly creatures — skip enemies
-				if (!activeCreature.player && !activeCreature.friendly) return;
-				
-				// Collect vision-eligible tokens from the battlemap (player, npc, creature types)
+				// Collect vision-eligible tokens (player tokens + "Show to Players" tokens)
 				const visionTokens = (config.markers || []).filter((m: any) => {
 					const markerDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
 					if (!markerDef) return false;
-					return ['player', 'npc', 'creature'].includes(markerDef.type);
+					return markerDef.type === 'player' || m.visibleToPlayers;
 				});
 				
-				// Match the IT creature to a battlemap marker
-				// First try precise token_id match via creature's vault note path
+				// Only attempt token matching for player or friendly creatures.
+				// Enemy creatures will never match and vision falls to "All Players".
 				let matchedMarker: any = null;
-				const creaturePath = activeCreature.path || activeCreature.note;
-				if (creaturePath && typeof creaturePath === 'string') {
-					const noteFile = plugin.app.vault.getAbstractFileByPath(creaturePath);
-					if (noteFile instanceof TFile) {
-						const noteCache = plugin.app.metadataCache.getFileCache(noteFile);
-						const noteTokenId = noteCache?.frontmatter?.token_id;
-						if (noteTokenId) {
-							matchedMarker = visionTokens.find((m: any) => m.markerId === noteTokenId);
+				if (activeCreature.player || activeCreature.friendly) {
+					// First try precise token_id match via creature's vault note path
+					const creaturePath = activeCreature.path || activeCreature.note;
+					if (creaturePath && typeof creaturePath === 'string') {
+						const noteFile = plugin.app.vault.getAbstractFileByPath(creaturePath);
+						if (noteFile instanceof TFile) {
+							const noteCache = plugin.app.metadataCache.getFileCache(noteFile);
+							const noteTokenId = noteCache?.frontmatter?.token_id;
+							if (noteTokenId) {
+								matchedMarker = visionTokens.find((m: any) => m.markerId === noteTokenId);
+							}
 						}
 					}
-				}
 
-				// Fallback: name-based matching
-				//   1. Exact match with IT creature's display name
-				//   2. Exact match with IT creature's base name
-				//   3. Display name starts with marker name (handles "Zombie (Red)" matching "Zombie")
-				if (!matchedMarker) {
-					matchedMarker = visionTokens.find((m: any) => {
-						const markerDef = plugin.markerLibrary.getMarker(m.markerId);
-						if (!markerDef) return false;
-						const markerName = markerDef.name.toLowerCase();
-						const displayName = (activeCreature.display || '').toLowerCase();
-						const baseName = (activeCreature.name || '').toLowerCase();
-						return displayName === markerName || baseName === markerName || displayName.startsWith(markerName);
-					});
+					// Fallback: name-based matching
+					//   1. Exact match with IT creature's display name
+					//   2. Exact match with IT creature's base name
+					//   3. Display name starts with marker name (handles "Zombie (Red)" matching "Zombie")
+					if (!matchedMarker) {
+						matchedMarker = visionTokens.find((m: any) => {
+							const markerDef = plugin.markerLibrary.getMarker(m.markerId);
+							if (!markerDef) return false;
+							const markerName = markerDef.name.toLowerCase();
+							const displayName = (activeCreature.display || '').toLowerCase();
+							const baseName = (activeCreature.name || '').toLowerCase();
+							return displayName === markerName || baseName === markerName || displayName.startsWith(markerName);
+						});
+					}
 				}
 				
 				if (matchedMarker && selectedVisionTokenId !== matchedMarker.id) {
+					// Active creature matched a vision-eligible token → switch to it
 					selectedVisionTokenId = matchedMarker.id;
 					refreshVisionSelector();
 					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 					const markerDef = plugin.markerLibrary.getMarker(matchedMarker.markerId);
 					const icon = markerDef?.type === 'player' ? '👤' : markerDef?.type === 'creature' ? '👹' : '🧑';
 					new Notice(`Vision synced: ${icon} ${markerDef?.name || matchedMarker.id}`);
+				} else if (!matchedMarker && selectedVisionTokenId !== null) {
+					// No eligible token matched (enemy creature, or no map token) → "All Players"
+					selectedVisionTokenId = null;
+					refreshVisionSelector();
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					new Notice('Vision synced: 👥 All Players');
 				}
 			})
 		);
