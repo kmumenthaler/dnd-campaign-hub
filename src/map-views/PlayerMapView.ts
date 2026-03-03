@@ -973,9 +973,6 @@ export class PlayerMapView extends ItemView {
 
     // Draw tunnel entrances and exits (always visible on surface - these are physical holes)
     if (config.tunnels && config.tunnels.length > 0) {
-      const CREATURE_SIZE_SQUARES: Record<string, number> = {
-        'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-      };
       
       config.tunnels.forEach((tunnel: any) => {
         if (!tunnel.visible) return;
@@ -1502,9 +1499,6 @@ export class PlayerMapView extends ItemView {
       ? tunnelPlayersInMarkers.filter((m: any) => m.id === config.selectedVisionTokenId)
       : tunnelPlayersInMarkers;
     if (config.tunnels && config.tunnels.length > 0 && tunnelPlayersForVision.length > 0) {
-      const CREATURE_SIZE_SQUARES: Record<string, number> = {
-        'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-      };
       const pixelsPerFootTunnel = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
       
       for (const tunnel of config.tunnels) {
@@ -2975,9 +2969,6 @@ export class PlayerMapView extends ItemView {
         ctx.save();
         ctx.globalAlpha = 0.25; // More transparent
         
-        const CREATURE_SIZE_SQUARES: Record<string, number> = {
-          'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-        };
         const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
         const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
         
@@ -3056,9 +3047,6 @@ export class PlayerMapView extends ItemView {
   private getMarkerRadius(markerDef: any): number {
     const config = this.mapConfig;
     if (['player', 'npc', 'creature'].includes(markerDef.type) && markerDef.creatureSize && config.gridSize) {
-      const CREATURE_SIZE_SQUARES: Record<string, number> = {
-        'tiny': 1, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-      };
       const squares = CREATURE_SIZE_SQUARES[markerDef.creatureSize] || 1;
       return (squares * config.gridSize) / 2;
     }
