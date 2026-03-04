@@ -3,7 +3,7 @@
   "name": "D&D Campaign Hub",
   "version": "0.2.0",
   "minAppVersion": "1.5.0",
-  "description": "A comprehensive plugin for managing D&D campaigns with session tracking, NPC management, calendar integration, and smart templates.",
+  "description": "Manage D&D and TTRPG campaigns with interactive battle maps, encounter building, hexcrawl travel, session dashboards, a DM screen, and an ambient music player.",
   "author": "Kevin Mumenthaler",
   "authorUrl": "https://github.com/kevinmumenthaler",
   "isDesktopOnly": false
