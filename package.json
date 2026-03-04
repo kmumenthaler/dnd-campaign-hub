@@ -6,13 +6,13 @@
   "type": "module",
   "license": "MIT",
   "author": "Kevin Mumenthaler",
-  "homepage": "https://github.com/kevinmumenthaler/dnd-campaign-hub#readme",
+  "homepage": "https://github.com/kmumenthaler/dnd-campaign-hub#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kevinmumenthaler/dnd-campaign-hub.git"
+    "url": "https://github.com/kmumenthaler/dnd-campaign-hub.git"
   },
   "bugs": {
-    "url": "https://github.com/kevinmumenthaler/dnd-campaign-hub/issues"
+    "url": "https://github.com/kmumenthaler/dnd-campaign-hub/issues"
   },
   "keywords": [
     "obsidian",

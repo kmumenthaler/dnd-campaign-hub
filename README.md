@@ -141,7 +141,7 @@ Import all D&D 5e SRD content from the dnd5eapi.co API:
 
 ### Manual installation
 
-1. Download the latest release from [GitHub Releases](https://github.com/kevinmumenthaler/dnd-campaign-hub/releases).
+1. Download the latest release from [GitHub Releases](https://github.com/kmumenthaler/dnd-campaign-hub/releases).
 2. Extract the files to your vault's `.obsidian/plugins/dnd-campaign-hub/` folder.
 3. Reload Obsidian.
 4. Enable the plugin in **Settings** → **Community plugins**.
@@ -318,8 +318,8 @@ Contributions are welcome.
 
 ## Support
 
-- [GitHub Issues](https://github.com/kevinmumenthaler/dnd-campaign-hub/issues)
-- [GitHub Discussions](https://github.com/kevinmumenthaler/dnd-campaign-hub/discussions)
+- [GitHub Issues](https://github.com/kmumenthaler/dnd-campaign-hub/issues)
+- [GitHub Discussions](https://github.com/kmumenthaler/dnd-campaign-hub/discussions)
 
 ## Credits
 
