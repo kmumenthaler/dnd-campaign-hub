@@ -32,6 +32,8 @@ export class PlayerMapView extends ItemView {
   private isFullscreen: boolean = false; // Track fullscreen state
   private _pvFlickerFrameId: number | null = null; // Flicker animation loop for player view
   private _pvFlickerWin: Window | null = null; // Window context for flicker animation (popout-safe)
+  private _pvLastFlickerRedraw: number = 0; // Timestamp of last flicker redraw
+  private _pvFlickerRetryTimer: ReturnType<typeof setTimeout> | null = null; // Self-healing retry timer
   private _pvRendered: boolean = false; // Guard against double renderPlayerView (setState + onOpen race)
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
@@ -97,6 +99,10 @@ export class PlayerMapView extends ItemView {
     // recalculates CSS layout every call.  Layout is kept in sync by
     // ResizeObserver, image/video onload, and tabletop mode toggles.
     this.redrawAnnotations();
+    // Ensure the flicker animation loop is alive (it may have died during
+    // a popout transition when the container was briefly disconnected, or
+    // because the window context changed).
+    this.ensureFlickerLoop();
     // Trigger hexcrawl travel animation if present
     if (hexcrawlTravel) {
       this.animateHexcrawlTravel(hexcrawlTravel.fromCol, hexcrawlTravel.fromRow, hexcrawlTravel.toCol, hexcrawlTravel.toRow);
@@ -349,6 +355,15 @@ export class PlayerMapView extends ItemView {
       this._pvRendered = true;
       this.renderPlayerView();
     }
+    // Always restart the flicker loop — handles re-docking scenarios where
+    // _pvRendered prevents renderPlayerView() from running again.
+    this.ensureFlickerLoop();
+  }
+
+  onResize() {
+    // Docking a popout leaf into the main window triggers a resize.
+    // Restart the flicker loop in case it died during the transition.
+    this.ensureFlickerLoop();
   }
 
   /**
@@ -804,46 +819,85 @@ export class PlayerMapView extends ItemView {
       requestAnimationFrame(syncCanvasToImage);
     }
     
-    // â”€â”€ Player-View Flicker Animation Loop â”€â”€
-    // Continuously redraws at ~14fps when flickering lights are present.
-    const PV_FLICKER_INTERVAL = 1000 / 14;
-    let pvLastFlickerRedraw = 0;
-    const pvHasFlickeringLights = (): boolean => {
-      const cfg = this.mapConfig;
-      if (!cfg) return false;
-      if (cfg.lightSources) {
-        for (const l of cfg.lightSources) {
-          if (l.active !== false && FLICKER_LIGHT_TYPES_SET.has(l.type)) return true;
-        }
+    // Start (or restart) the flicker animation loop for light animations
+    this.ensureFlickerLoop();
+  }
+
+  /**
+   * Check whether any flickering/buzzing light sources are present in the
+   * current map config (standalone lights or marker-attached lights).
+   */
+  private pvHasFlickeringLights(): boolean {
+    const cfg = this.mapConfig;
+    if (!cfg) return false;
+    if (cfg.lightSources) {
+      for (const l of cfg.lightSources) {
+        if (l.active !== false && FLICKER_LIGHT_TYPES_SET.has(l.type)) return true;
       }
-      if (cfg.markers) {
-        for (const m of cfg.markers as any[]) {
-          if (m.light && FLICKER_LIGHT_TYPES_SET.has(m.light.type)) return true;
-        }
+    }
+    if (cfg.markers) {
+      for (const m of cfg.markers as any[]) {
+        if (m.light && FLICKER_LIGHT_TYPES_SET.has(m.light.type)) return true;
       }
-      return false;
-    };
-    // Use the correct window context (popout windows have their own rAF)
-    const flickerWin: Window = (this.containerEl as any).win || window;
-    this._pvFlickerWin = flickerWin;
+    }
+    return false;
+  }
+
+  /**
+   * Ensure the flicker animation loop is running using the correct window
+   * context.  The loop can die when the player view is moved to a popout
+   * window (the container is briefly disconnected) or when the owning
+   * window changes.  Calling this method restarts it if necessary.
+   */
+  private ensureFlickerLoop() {
+    // Don't start the loop if the container isn't in the DOM yet
+    if (!this.containerEl.isConnected) return;
+
+    // Clear any pending retry timer — we're handling it now
+    if (this._pvFlickerRetryTimer) {
+      clearTimeout(this._pvFlickerRetryTimer);
+      this._pvFlickerRetryTimer = null;
+    }
+
+    // Resolve the current owning window (popout or main)
+    const win: Window = (this.containerEl as any).win || this.containerEl.ownerDocument?.defaultView || window;
+
+    // If the window context changed, cancel the old loop (it's on the wrong rAF)
+    if (this._pvFlickerWin !== win && this._pvFlickerFrameId !== null) {
+      (this._pvFlickerWin || window).cancelAnimationFrame(this._pvFlickerFrameId);
+      this._pvFlickerFrameId = null;
+    }
+    this._pvFlickerWin = win;
+
+    // Already running on the correct window — nothing to do
+    if (this._pvFlickerFrameId !== null) return;
+
+    const PV_FLICKER_INTERVAL = 1000 / 14; // ~14 fps
+
     const pvFlickerLoop = (timestamp: number) => {
+      // If the canvas was removed or the container detached, pause the loop.
+      // Schedule a self-healing retry so the loop restarts automatically
+      // when the container reconnects (e.g. leaf dock/move operation).
       if (!this.canvas || !this.containerEl.isConnected) {
         this._pvFlickerFrameId = null;
+        if (!this._pvFlickerRetryTimer) {
+          this._pvFlickerRetryTimer = setTimeout(() => {
+            this._pvFlickerRetryTimer = null;
+            this.ensureFlickerLoop();
+          }, 500);
+        }
         return;
       }
-      if (timestamp - pvLastFlickerRedraw >= PV_FLICKER_INTERVAL) {
-        pvLastFlickerRedraw = timestamp;
-        if (pvHasFlickeringLights()) {
+      if (timestamp - this._pvLastFlickerRedraw >= PV_FLICKER_INTERVAL) {
+        this._pvLastFlickerRedraw = timestamp;
+        if (this.pvHasFlickeringLights()) {
           this.redrawAnnotations();
         }
       }
-      this._pvFlickerFrameId = flickerWin.requestAnimationFrame(pvFlickerLoop);
+      this._pvFlickerFrameId = win.requestAnimationFrame(pvFlickerLoop);
     };
-    // Start the flicker loop
-    if (this._pvFlickerFrameId !== null) {
-      (this._pvFlickerWin || window).cancelAnimationFrame(this._pvFlickerFrameId);
-    }
-    this._pvFlickerFrameId = flickerWin.requestAnimationFrame(pvFlickerLoop);
+
+    this._pvFlickerFrameId = win.requestAnimationFrame(pvFlickerLoop);
   }
 
   private loadMarkerImage(path: string): HTMLImageElement | null {
@@ -3068,6 +3122,10 @@ export class PlayerMapView extends ItemView {
       (this._pvFlickerWin || window).cancelAnimationFrame(this._pvFlickerFrameId);
       this._pvFlickerFrameId = null;
       this._pvFlickerWin = null;
+    }
+    if (this._pvFlickerRetryTimer) {
+      clearTimeout(this._pvFlickerRetryTimer);
+      this._pvFlickerRetryTimer = null;
     }
     
     // Clean up the plugin reference to this view
