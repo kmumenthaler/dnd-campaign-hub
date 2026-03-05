@@ -3858,6 +3858,23 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					ctx.restore();
 				}
 
+				// ── Light Preview Overlay: show shadow-cast lighting when editing lights ──
+				// Drawn BEFORE light source icons so icons remain visible on top.
+				if (isOnBgLayer && backgroundEditView === 'lights' && annotationCanvas) {
+					try {
+						_visCacheMap.clear();
+						drawLightPreviewOverlay(ctx, annotationCanvas.width, annotationCanvas.height);
+					} catch (e) {
+						// Fallback: simple semi-transparent dark overlay
+						console.error('[DnD] Light preview overlay error:', e);
+						ctx.save();
+						ctx.globalAlpha = 0.7;
+						ctx.fillStyle = '#000000';
+						ctx.fillRect(0, 0, annotationCanvas.width, annotationCanvas.height);
+						ctx.restore();
+					}
+				}
+
 				// Draw Dynamic Lighting (only on Background layer)
 				if (config.activeLayer === 'Background' && config.lightSources && config.lightSources.length > 0) {
 					const lightAlpha = bgViewAlpha('lights');
@@ -5520,6 +5537,345 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 					ctx.closePath();
 				}
+			};
+
+			// ── Ray-segment intersection (used by light preview) ─────────
+			const raySegmentIntersection = (
+				rayX: number, rayY: number, rayDx: number, rayDy: number,
+				segX1: number, segY1: number, segX2: number, segY2: number
+			): number | null => {
+				const sdx = segX2 - segX1;
+				const sdy = segY2 - segY1;
+				const denom = rayDx * sdy - rayDy * sdx;
+				if (Math.abs(denom) < 1e-10) return null;
+				const t = ((segX1 - rayX) * sdy - (segY1 - rayY) * sdx) / denom;
+				const u = ((segX1 - rayX) * rayDy - (segY1 - rayY) * rayDx) / denom;
+				if (t > 0 && u >= 0 && u <= 1) return t;
+				return null;
+			};
+
+			// ── Compute visibility polygon (used by light preview) ───────
+			const computeVisibilityPolygon = (
+				originX: number, originY: number, maxRadius: number,
+				walls: { start: { x: number; y: number }; end: { x: number; y: number }; height?: number; open?: boolean }[],
+				viewerElevation: number = 0
+			): { x: number; y: number }[] => {
+				const _wHash = _getWallsHash(walls as any);
+				const _cKey = _visCacheKey(originX, originY, maxRadius, viewerElevation, _wHash);
+				const _cached = _visCacheMap.get(_cKey);
+				if (_cached) return _cached;
+
+				const segments: { p1: { x: number; y: number }; p2: { x: number; y: number } }[] = [];
+				const circleSegments = 64;
+				for (let i = 0; i < circleSegments; i++) {
+					const a1 = (i / circleSegments) * Math.PI * 2;
+					const a2 = ((i + 1) / circleSegments) * Math.PI * 2;
+					segments.push({
+						p1: { x: originX + Math.cos(a1) * maxRadius, y: originY + Math.sin(a1) * maxRadius },
+						p2: { x: originX + Math.cos(a2) * maxRadius, y: originY + Math.sin(a2) * maxRadius },
+					});
+				}
+				for (const wall of walls) {
+					if (!wall.start || !wall.end) continue;
+					if (wall.height !== undefined && wall.height !== null && viewerElevation > wall.height) continue;
+					const dx1 = wall.start.x - originX, dy1 = wall.start.y - originY;
+					const dx2 = wall.end.x - originX, dy2 = wall.end.y - originY;
+					if (Math.sqrt(dx1 * dx1 + dy1 * dy1) > maxRadius * 2 &&
+						Math.sqrt(dx2 * dx2 + dy2 * dy2) > maxRadius * 2) continue;
+					segments.push({ p1: { x: wall.start.x, y: wall.start.y }, p2: { x: wall.end.x, y: wall.end.y } });
+				}
+
+				// Snap nearby wall endpoints + extend to seal gaps
+				const wallSegStart = circleSegments;
+				const snapDistSq = 16; // 4px
+				const wepRefs: { x: number; y: number }[] = [];
+				for (let wi = wallSegStart; wi < segments.length; wi++) {
+					wepRefs.push(segments[wi]!.p1, segments[wi]!.p2);
+				}
+				for (let wi = 0; wi < wepRefs.length; wi++) {
+					for (let wj = wi + 1; wj < wepRefs.length; wj++) {
+						const sdx = wepRefs[wi]!.x - wepRefs[wj]!.x;
+						const sdy = wepRefs[wi]!.y - wepRefs[wj]!.y;
+						const sd2 = sdx * sdx + sdy * sdy;
+						if (sd2 > 0 && sd2 < snapDistSq) {
+							const mx = (wepRefs[wi]!.x + wepRefs[wj]!.x) * 0.5;
+							const my = (wepRefs[wi]!.y + wepRefs[wj]!.y) * 0.5;
+							wepRefs[wi]!.x = mx; wepRefs[wi]!.y = my;
+							wepRefs[wj]!.x = mx; wepRefs[wj]!.y = my;
+						}
+					}
+				}
+				const extPx = 2;
+				for (let wi = wallSegStart; wi < segments.length; wi++) {
+					const seg = segments[wi]!;
+					const edx = seg.p2.x - seg.p1.x, edy = seg.p2.y - seg.p1.y;
+					const eLen = Math.sqrt(edx * edx + edy * edy);
+					if (eLen > 0) {
+						const ux = edx / eLen, uy = edy / eLen;
+						seg.p1.x -= ux * extPx; seg.p1.y -= uy * extPx;
+						seg.p2.x += ux * extPx; seg.p2.y += uy * extPx;
+					}
+				}
+
+				// Collect angles + cast rays
+				const angles: number[] = [];
+				const eps = 0.00001;
+				for (const seg of segments) {
+					const a1 = Math.atan2(seg.p1.y - originY, seg.p1.x - originX);
+					const a2 = Math.atan2(seg.p2.y - originY, seg.p2.x - originX);
+					angles.push(a1 - eps, a1, a1 + eps, a2 - eps, a2, a2 + eps);
+				}
+				angles.sort((a, b) => a - b);
+
+				const points: { x: number; y: number; angle: number }[] = [];
+				for (const angle of angles) {
+					const dx = Math.cos(angle), dy = Math.sin(angle);
+					let closestT = maxRadius;
+					for (const seg of segments) {
+						const t = raySegmentIntersection(originX, originY, dx, dy, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
+						if (t !== null && t > 0 && t < closestT) closestT = t;
+					}
+					points.push({ x: originX + dx * closestT, y: originY + dy * closestT, angle });
+				}
+
+				const uniquePoints: { x: number; y: number }[] = [];
+				for (const pt of points) {
+					if (uniquePoints.length === 0) { uniquePoints.push({ x: pt.x, y: pt.y }); continue; }
+					const last = uniquePoints[uniquePoints.length - 1]!;
+					if (Math.sqrt((pt.x - last.x) ** 2 + (pt.y - last.y) ** 2) > 0.5) {
+						uniquePoints.push({ x: pt.x, y: pt.y });
+					}
+				}
+
+				if (_visCacheMap.size >= _VIS_CACHE_MAX) _visCacheMap.clear();
+				_visCacheMap.set(_cKey, uniquePoints);
+				return uniquePoints;
+			};
+
+			// ── Light Preview Overlay (GM-side player-like fog+light) ────
+			// Renders a simulation of what a player without darkvision would
+			// see: full darkness with shadow-cast light holes punched through.
+			const drawLightPreviewOverlay = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
+				// Collect active light sources (standalone + marker-attached)
+				const previewLights: any[] = [];
+				if (config.lightSources) {
+					for (const light of config.lightSources) {
+						if (light.active !== false) previewLights.push(light);
+					}
+				}
+				if (config.markers) {
+					for (const marker of config.markers as any[]) {
+						if (marker.light && marker.light.bright !== undefined && !marker.tunnelState) {
+							previewLights.push({
+								x: marker.position.x, y: marker.position.y,
+								bright: marker.light.bright, dim: marker.light.dim,
+								type: marker.light.type || '', customColor: marker.light.customColor,
+								name: marker.light.name || 'Token Light',
+								elevation: (marker.elevation?.height || 0) - (marker.elevation?.depth || 0),
+							});
+						}
+					}
+				}
+
+				// Filter walls: open doors/windows/terrain pass light, add env-asset door walls
+				const previewWalls = (config.walls || []).filter((wall: any) => {
+					const t = wall.type || 'wall';
+					if ((t === 'door' || t === 'secret') && wall.open) return false;
+					if (t === 'window' || t === 'terrain') return false;
+					return true;
+				});
+				// Inline env-asset door wall computation (same logic as computeDoorWallSegments)
+				if (config.envAssets && config.envAssets.length > 0) {
+					for (const inst of config.envAssets as EnvAssetInstance[]) {
+						const def = plugin.envAssetLibrary.getAsset(inst.assetId);
+						if (!def || def.category !== 'door') continue;
+						const dc = inst.doorConfig;
+						if (dc && dc.isOpen && dc.behaviour === 'sliding') continue;
+						const pad = 2;
+						const useWidth = inst.width >= inst.height;
+						const halfSpan = (useWidth ? inst.width : inst.height) / 2 - pad;
+						let p1x = useWidth ? -halfSpan : 0, p1y = useWidth ? 0 : -halfSpan;
+						let p2x = useWidth ?  halfSpan : 0, p2y = useWidth ? 0 :  halfSpan;
+						if (dc && dc.isOpen) {
+							if (dc.behaviour !== 'sliding' && dc.openAngle) {
+								const pivot = dc.customPivot || { x: 0, y: 0.5 };
+								const pvX = (pivot.x - 0.5) * inst.width;
+								const pvY = (pivot.y - 0.5) * inst.height;
+								const a = (dc.openAngle || 0) * Math.PI / 180;
+								const cosA = Math.cos(a), sinA = Math.sin(a);
+								let rx = p1x - pvX, ry = p1y - pvY;
+								p1x = pvX + rx * cosA - ry * sinA;
+								p1y = pvY + rx * sinA + ry * cosA;
+								rx = p2x - pvX; ry = p2y - pvY;
+								p2x = pvX + rx * cosA - ry * sinA;
+								p2y = pvY + rx * sinA + ry * cosA;
+							}
+							if (dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
+								const sp0 = dc.slidePath[0]!;
+								const sp1 = dc.slidePath[dc.slidePath.length - 1]!;
+								const t = dc.slidePosition;
+								p1x += (sp1.x - sp0.x) * t; p1y += (sp1.y - sp0.y) * t;
+								p2x += (sp1.x - sp0.x) * t; p2y += (sp1.y - sp0.y) * t;
+							}
+						}
+						const rad = (inst.rotation || 0) * Math.PI / 180;
+						const cosR = Math.cos(rad), sinR = Math.sin(rad);
+						previewWalls.push({
+							type: 'wall',
+							start: { x: inst.position.x + p1x * cosR - p1y * sinR, y: inst.position.y + p1x * sinR + p1y * cosR },
+							end:   { x: inst.position.x + p2x * cosR - p2y * sinR, y: inst.position.y + p2x * sinR + p2y * cosR },
+							open: false,
+						});
+					}
+				}
+
+				const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+
+				// --- Phase 1: Fog canvas (black with light holes) ---
+				const fogCanvas = _canvasPool.acquire(w, h);
+				const fogCtx = fogCanvas.getContext('2d');
+				if (!fogCtx) { _canvasPool.release(fogCanvas); return; }
+				fogCtx.fillStyle = '#000000';
+				fogCtx.fillRect(0, 0, w, h);
+
+				// --- Phase 2: Light colour overlay canvas ---
+				const colorCanvas = _canvasPool.acquire(w, h);
+				const colCtx = colorCanvas.getContext('2d');
+
+				const flickerTime = performance.now() / 1000;
+
+				try {
+				for (let li = 0; li < previewLights.length; li++) {
+					const light = previewLights[li]!;
+					const flickerKey = `preview_${li}`;
+					const isBuzz = BUZZ_LIGHT_TYPES.has(light.type);
+					const shouldFlicker = FLICKER_LIGHT_TYPES.has(light.type);
+					const flicker = shouldFlicker
+						? (isBuzz
+							? computeBuzz(getFlickerSeed(flickerKey), flickerTime)
+							: computeFlicker(getFlickerSeed(flickerKey), flickerTime, 'high'))
+						: { radius: 1, alpha: 1 };
+
+					const brightPx = light.bright * pixelsPerFoot * flicker.radius;
+					const dimPx = light.dim * pixelsPerFoot * flicker.radius;
+					const totalPx = brightPx + dimPx;
+					if (totalPx <= 0) continue;
+
+					const featherR = totalPx * 1.06;
+
+					// Resolve colour
+					const defaultHex = light.type === 'fluorescent' ? '#00ffff' : '#ffff88';
+					const colHex = light.customColor || defaultHex;
+					const col = hexToRgb(colHex);
+					const colDim = { r: Math.floor(col.r * 0.67), g: Math.floor(col.g * 0.67), b: Math.floor(col.b * 0.48) };
+
+					// Helper: draw one gradient hole at (cx,cy) clipped by vis polygon
+					const punchLight = (cx: number, cy: number) => {
+						const vis = computeVisibilityPolygon(cx, cy, totalPx, previewWalls, light.elevation || 0);
+						if (vis.length < 3) return;
+
+						// --- Punch fog ---
+						const lightCanvas = _canvasPool.acquire(w, h);
+						const lCtx = lightCanvas.getContext('2d');
+						if (!lCtx) { _canvasPool.release(lightCanvas); return; }
+
+						lCtx.save();
+						lCtx.beginPath();
+						lCtx.moveTo(vis[0]!.x, vis[0]!.y);
+						for (let vi = 1; vi < vis.length; vi++) lCtx.lineTo(vis[vi]!.x, vis[vi]!.y);
+						lCtx.closePath();
+						lCtx.clip();
+
+						const g = lCtx.createRadialGradient(cx, cy, 0, cx, cy, featherR);
+						if (brightPx > 0 && dimPx > 0) {
+							const bR = brightPx / featherR;
+							g.addColorStop(0, 'rgba(255,255,255,1)');
+							g.addColorStop(bR * 0.8, 'rgba(255,255,255,1)');
+							g.addColorStop(bR, 'rgba(255,255,255,0.78)');
+							g.addColorStop(bR + (1 - bR) * 0.45, 'rgba(255,255,255,0.45)');
+							g.addColorStop(totalPx / featherR, 'rgba(255,255,255,0.18)');
+							g.addColorStop(1, 'rgba(255,255,255,0)');
+						} else if (brightPx > 0) {
+							g.addColorStop(0, 'rgba(255,255,255,1)');
+							g.addColorStop(0.65, 'rgba(255,255,255,0.85)');
+							g.addColorStop(totalPx / featherR, 'rgba(255,255,255,0.2)');
+							g.addColorStop(1, 'rgba(255,255,255,0)');
+						} else {
+							g.addColorStop(0, 'rgba(255,255,255,0.7)');
+							g.addColorStop(0.5, 'rgba(255,255,255,0.45)');
+							g.addColorStop(totalPx / featherR, 'rgba(255,255,255,0.1)');
+							g.addColorStop(1, 'rgba(255,255,255,0)');
+						}
+						lCtx.fillStyle = g;
+						lCtx.beginPath();
+						lCtx.arc(cx, cy, featherR, 0, Math.PI * 2);
+						lCtx.fill();
+						lCtx.restore();
+
+						fogCtx.globalCompositeOperation = 'destination-out';
+						fogCtx.drawImage(lightCanvas, 0, 0);
+						fogCtx.globalCompositeOperation = 'source-over';
+						_canvasPool.release(lightCanvas);
+
+						// --- Colour overlay ---
+						if (colCtx) {
+							colCtx.save();
+							colCtx.beginPath();
+							colCtx.moveTo(vis[0]!.x, vis[0]!.y);
+							for (let vi = 1; vi < vis.length; vi++) colCtx.lineTo(vis[vi]!.x, vis[vi]!.y);
+							colCtx.closePath();
+							colCtx.clip();
+							colCtx.globalAlpha = flicker.alpha * 0.18;
+							const cg = colCtx.createRadialGradient(cx, cy, 0, cx, cy, featherR);
+							if (brightPx > 0 && dimPx > 0) {
+								const bR = brightPx / featherR;
+								cg.addColorStop(0, `rgba(${col.r},${col.g},${col.b},0.30)`);
+								cg.addColorStop(bR, `rgba(${col.r},${col.g},${col.b},0.18)`);
+								cg.addColorStop(1, `rgba(${colDim.r},${colDim.g},${colDim.b},0)`);
+							} else {
+								cg.addColorStop(0, `rgba(${col.r},${col.g},${col.b},0.20)`);
+								cg.addColorStop(1, `rgba(${colDim.r},${colDim.g},${colDim.b},0)`);
+							}
+							colCtx.fillStyle = cg;
+							colCtx.beginPath();
+							colCtx.arc(cx, cy, featherR, 0, Math.PI * 2);
+							colCtx.fill();
+							colCtx.restore();
+						}
+					};
+
+					// Wall lights: sample along line
+					if (light.start && light.end && light.type === 'walllight') {
+						const dx = light.end.x - light.start.x;
+						const dy = light.end.y - light.start.y;
+						const len = Math.sqrt(dx * dx + dy * dy);
+						const step = Math.min(totalPx * 0.4, 20);
+						const samples = Math.max(Math.ceil(len / step), 2);
+						for (let si = 0; si < samples; si++) {
+							const t = samples <= 1 ? 0.5 : si / (samples - 1);
+							punchLight(light.start.x + dx * t, light.start.y + dy * t);
+						}
+					} else {
+						punchLight(light.x, light.y);
+					}
+				}
+				} catch (e) { console.error('[DnD] Light preview punch error:', e); }
+
+				// Composite fog at semi-transparent alpha so GM can still see the map
+				ctx.save();
+				ctx.globalAlpha = 0.72;
+				ctx.drawImage(fogCanvas, 0, 0);
+				ctx.restore();
+				_canvasPool.release(fogCanvas);
+
+				// Composite colour overlay
+				if (colCtx) {
+					ctx.save();
+					ctx.globalAlpha = 0.65;
+					ctx.drawImage(colorCanvas, 0, 0);
+					ctx.restore();
+				}
+				_canvasPool.release(colorCanvas);
 			};
 
 			// Draw fog of war using an offscreen canvas
