@@ -291,6 +291,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				continual: { name: 'Continual Flame', bright: 20, dim: 20, icon: '🔥', flicker: true },
 				daylight: { name: 'Daylight Spell', bright: 60, dim: 60, icon: '☀️' },
 				fluorescent: { name: 'Fluorescent', bright: 30, dim: 10, icon: '💡', flicker: true },
+				bioluminescent: { name: 'Bioluminescent', bright: 0, dim: 10, icon: '🧪' },
 				walllight: { name: 'Wall Light', bright: 15, dim: 15, icon: '📏', isLine: true }
 			} as const;
 			type LightSourceType = keyof typeof LIGHT_SOURCES;
@@ -1413,7 +1414,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			{ type: 'dancing', source: LIGHT_SOURCES.dancing },
 			{ type: 'continual', source: LIGHT_SOURCES.continual },
 			{ type: 'daylight', source: LIGHT_SOURCES.daylight },
-			{ type: 'fluorescent', source: LIGHT_SOURCES.fluorescent }
+			{ type: 'fluorescent', source: LIGHT_SOURCES.fluorescent },
+			{ type: 'bioluminescent', source: LIGHT_SOURCES.bioluminescent }
 		];
 		const lightTypeButtons: Map<string, HTMLButtonElement> = new Map();
 		lightTypes.forEach(({ type, source }) => {
@@ -3045,8 +3047,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const totalRadiusPx = brightRadiusPx + dimRadiusPx;
 							
 							// Resolve light colour
-							const mlc = hexToRgb(marker.light.customColor || (marker.light.type === 'fluorescent' ? '#00ffff' : '#ffff88'));
-							const mlcDim = { r: Math.floor(mlc.r * 0.67), g: Math.floor(mlc.g * 0.67), b: Math.floor(mlc.b * 0.48) };
+							const mlc = hexToRgb(marker.light.customColor || (marker.light.type === 'fluorescent' ? '#00ffff' : marker.light.type === 'bioluminescent' ? '#00ff44' : '#ffff88'));
+							const mlcDim = { r: Math.floor(mlc.r * 0.7), g: Math.floor(mlc.g * 0.7), b: Math.floor(mlc.b * 0.7) };
 							
 							// Draw light glow behind marker with smooth gradient
 							if (totalRadiusPx > 0) {
@@ -3067,8 +3069,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									grad.addColorStop(0.7, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0.12)`);
 									grad.addColorStop(1, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0)`);
 								} else {
-									grad.addColorStop(0, `rgba(${mlcDim.r}, ${mlcDim.g}, ${mlcDim.b}, 0.12)`);
-									grad.addColorStop(0.6, `rgba(${mlcDim.r}, ${mlcDim.g}, ${mlcDim.b}, 0.05)`);
+									grad.addColorStop(0, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0.22)`);
+									grad.addColorStop(0.5, `rgba(${mlcDim.r}, ${mlcDim.g}, ${mlcDim.b}, 0.10)`);
 									grad.addColorStop(1, `rgba(${mlcDim.r}, ${mlcDim.g}, ${mlcDim.b}, 0)`);
 								}
 								ctx.fillStyle = grad;
@@ -3919,9 +3921,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								const flickBrightPx = brightRadiusPx * flicker.radius;
 								const flickDimPx = dimRadiusPx * flicker.radius;
 								const totalRadiusPx = flickBrightPx + flickDimPx;
-								// Resolve light colour (custom for fluorescent, warm yellow default)
-								const lc = hexToRgb(light.customColor || (light.type === 'fluorescent' ? '#00ffff' : '#ffff88'));
-								const lcDim = { r: Math.floor(lc.r * 0.67), g: Math.floor(lc.g * 0.67), b: Math.floor(lc.b * 0.48) };
+								// Resolve light colour (custom for fluorescent/bioluminescent, warm yellow default)
+								const lc = hexToRgb(light.customColor || (light.type === 'fluorescent' ? '#00ffff' : light.type === 'bioluminescent' ? '#00ff44' : '#ffff88'));
+								const lcDim = { r: Math.floor(lc.r * 0.7), g: Math.floor(lc.g * 0.7), b: Math.floor(lc.b * 0.7) };
 
 								// ── Wall Light (line source) ──
 								if (light.start && light.end && light.type === 'walllight') {
@@ -3949,8 +3951,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 											grad.addColorStop(0.7, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0.10)`);
 											grad.addColorStop(1, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0)`);
 										} else {
-											grad.addColorStop(0, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.10)`);
-											grad.addColorStop(0.6, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.05)`);
+											grad.addColorStop(0, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0.22)`);
+											grad.addColorStop(0.5, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.10)`);
 											grad.addColorStop(1, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0)`);
 										}
 										ctx.fillStyle = grad;
@@ -3991,8 +3993,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 										grad.addColorStop(0.7, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0.10)`);
 										grad.addColorStop(1, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0)`);
 									} else {
-										grad.addColorStop(0, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.10)`);
-										grad.addColorStop(0.6, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.05)`);
+										grad.addColorStop(0, `rgba(${lc.r}, ${lc.g}, ${lc.b}, 0.22)`);
+										grad.addColorStop(0.5, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0.10)`);
 										grad.addColorStop(1, `rgba(${lcDim.r}, ${lcDim.g}, ${lcDim.b}, 0)`);
 									}
 									ctx.fillStyle = grad;
@@ -5764,10 +5766,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					const featherR = totalPx * 1.06;
 
 					// Resolve colour
-					const defaultHex = light.type === 'fluorescent' ? '#00ffff' : '#ffff88';
+					const defaultHex = light.type === 'fluorescent' ? '#00ffff' : light.type === 'bioluminescent' ? '#00ff44' : '#ffff88';
 					const colHex = light.customColor || defaultHex;
 					const col = hexToRgb(colHex);
-					const colDim = { r: Math.floor(col.r * 0.67), g: Math.floor(col.g * 0.67), b: Math.floor(col.b * 0.48) };
+					const colDim = { r: Math.floor(col.r * 0.7), g: Math.floor(col.g * 0.7), b: Math.floor(col.b * 0.7) };
 
 					// Helper: draw one gradient hole at (cx,cy) clipped by vis polygon
 					const punchLight = (cx: number, cy: number) => {
@@ -5833,7 +5835,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								cg.addColorStop(bR, `rgba(${col.r},${col.g},${col.b},0.18)`);
 								cg.addColorStop(1, `rgba(${colDim.r},${colDim.g},${colDim.b},0)`);
 							} else {
-								cg.addColorStop(0, `rgba(${col.r},${col.g},${col.b},0.20)`);
+								cg.addColorStop(0, `rgba(${col.r},${col.g},${col.b},0.35)`);
+								cg.addColorStop(0.5, `rgba(${col.r},${col.g},${col.b},0.15)`);
 								cg.addColorStop(1, `rgba(${colDim.r},${colDim.g},${colDim.b},0)`);
 							}
 							colCtx.fillStyle = cg;
@@ -8962,7 +8965,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							
 							// Light colour picker for marker-attached lights
 							if (m.light) {
-								const markerLightDefault = m.light.type === 'fluorescent' ? '#00ffff' : '#ffff88';
+								const markerLightDefault = m.light.type === 'fluorescent' ? '#00ffff' : m.light.type === 'bioluminescent' ? '#00ff44' : '#ffff88';
 								const mlColorRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
 								mlColorRow.createEl('span', { cls: 'dnd-map-context-aoe-label', text: 'Light Colour:' });
 								const mlColorPicker = mlColorRow.createEl('input', {
@@ -9700,6 +9703,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								{ type: 'dancing', icon: '💫', name: 'Dancing Lights (10ft dim)' },
 								{ type: 'daylight', icon: '☀️', name: 'Daylight (60ft)' },
 								{ type: 'fluorescent', icon: '💡', name: 'Fluorescent (30ft)' },
+								{ type: 'bioluminescent', icon: '🧪', name: 'Bioluminescent (10ft dim)' },
 							];
 							
 							lightTypes.forEach(({ type, icon, name }) => {
@@ -9806,7 +9810,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							
 // Custom colour picker for all light sources
 										{
-											const lightDefaultColor = light.type === 'fluorescent' ? '#00ffff' : '#ffff88';
+											const lightDefaultColor = light.type === 'fluorescent' ? '#00ffff' : light.type === 'bioluminescent' ? '#00ff44' : '#ffff88';
 											contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
 											const colorHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
 											colorHeader.textContent = 'Light Colour:';

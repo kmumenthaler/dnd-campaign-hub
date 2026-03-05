@@ -4026,10 +4026,10 @@ export class PlayerMapView extends ItemView {
       if (lcCtx) {
         allLights.forEach((light: any, li: number) => {
           // Resolve colour â€“ default warm yellow for normal lights, cyan for fluorescent
-          const defaultHex = light.type === 'fluorescent' ? '#00ffff' : '#ffff88';
+          const defaultHex = light.type === 'fluorescent' ? '#00ffff' : light.type === 'bioluminescent' ? '#00ff44' : '#ffff88';
           const colHex = light.customColor || defaultHex;
           const col = hexToRgb(colHex);
-          const colDim = { r: Math.floor(col.r * 0.67), g: Math.floor(col.g * 0.67), b: Math.floor(col.b * 0.48) };
+          const colDim = { r: Math.floor(col.r * 0.7), g: Math.floor(col.g * 0.7), b: Math.floor(col.b * 0.7) };
 
           // Flicker / buzz
           const lcFlickerKey = `pv_light_${light.attachedToMarker || li}`;
@@ -4088,8 +4088,8 @@ export class PlayerMapView extends ItemView {
                 grad.addColorStop(0.7, `rgba(${col.r},${col.g},${col.b},0.10)`);
                 grad.addColorStop(1, `rgba(${col.r},${col.g},${col.b},0)`);
               } else {
-                grad.addColorStop(0, `rgba(${colDim.r},${colDim.g},${colDim.b},0.10)`);
-                grad.addColorStop(0.6, `rgba(${colDim.r},${colDim.g},${colDim.b},0.05)`);
+                grad.addColorStop(0, `rgba(${col.r},${col.g},${col.b},0.22)`);
+                grad.addColorStop(0.5, `rgba(${colDim.r},${colDim.g},${colDim.b},0.10)`);
                 grad.addColorStop(1, `rgba(${colDim.r},${colDim.g},${colDim.b},0)`);
               }
               sCtx.globalAlpha = lcFlicker.alpha;
@@ -4132,8 +4132,8 @@ export class PlayerMapView extends ItemView {
             grad.addColorStop(0.7, `rgba(${col.r}, ${col.g}, ${col.b}, 0.10)`);
             grad.addColorStop(1, `rgba(${col.r}, ${col.g}, ${col.b}, 0)`);
           } else {
-            grad.addColorStop(0, `rgba(${colDim.r}, ${colDim.g}, ${colDim.b}, 0.10)`);
-            grad.addColorStop(0.6, `rgba(${colDim.r}, ${colDim.g}, ${colDim.b}, 0.05)`);
+            grad.addColorStop(0, `rgba(${col.r}, ${col.g}, ${col.b}, 0.22)`);
+            grad.addColorStop(0.5, `rgba(${colDim.r}, ${colDim.g}, ${colDim.b}, 0.10)`);
             grad.addColorStop(1, `rgba(${colDim.r}, ${colDim.g}, ${colDim.b}, 0)`);
           }
           sCtx.globalAlpha = lcFlicker.alpha;
