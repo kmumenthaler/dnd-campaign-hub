@@ -986,6 +986,16 @@ export class CreatureCreationModal extends Modal {
       
       // Preserve existing marker fields (imageFile, darkvision, etc.) on edit
       const existingMarker = this.plugin.markerLibrary.getMarker(this.tokenId);
+
+      // Extract darkvision range from senses (e.g. "Darkvision 60 ft." → 60)
+      let parsedDarkvision = existingMarker?.darkvision || 0;
+      if (this.senses) {
+        const dvMatch = this.senses.match(/darkvision\s+(\d+)\s*ft/i);
+        if (dvMatch && dvMatch[1]) {
+          parsedDarkvision = parseInt(dvMatch[1]);
+        }
+      }
+
       const tokenDef: MarkerDefinition = {
         ...(existingMarker || {}),
         id: this.tokenId,
@@ -995,6 +1005,7 @@ export class CreatureCreationModal extends Modal {
         backgroundColor: existingMarker?.backgroundColor || '#8b0000',
         borderColor: existingMarker?.borderColor || '#ffffff',
         creatureSize: mappedSize,
+        darkvision: parsedDarkvision,
         createdAt: existingMarker?.createdAt || now,
         updatedAt: now
       };
