@@ -2097,16 +2097,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
         _pvSyncScheduled = false;
         if (plugin._playerMapViews && plugin._playerMapViews.size > 0) {
           // Build drag ruler data if a marker is being dragged
-          let dragRuler: { origin: { x: number; y: number }; current: { x: number; y: number }; pathCells?: { col: number; row: number; dist: number }[]; totalDist?: number; climbDist?: number } | null = null;
+          let dragRuler: { origin: { x: number; y: number }; current: { x: number; y: number }; pathCells?: { col: number; row: number; dist: number }[]; totalDist?: number; climbDist?: number; markerId?: string; visibleToPlayers?: boolean } | null = null;
           if (markerDragOrigin && draggingMarkerIndex >= 0 && config.markers[draggingMarkerIndex]) {
-            const currentPos = config.markers[draggingMarkerIndex].position;
+            const draggedMarker = config.markers[draggingMarkerIndex];
+            const currentPos = draggedMarker.position;
             const pathResult = computeGridMovePath(markerDragOrigin, currentPos);
             dragRuler = {
               origin: { x: markerDragOrigin.x, y: markerDragOrigin.y },
               current: { x: currentPos.x, y: currentPos.y },
               pathCells: pathResult.cells,
               totalDist: pathResult.totalDist,
-              climbDist: pathResult.climbDist
+              climbDist: pathResult.climbDist,
+              markerId: draggedMarker.markerId,
+              visibleToPlayers: !!draggedMarker.visibleToPlayers
             };
           }
           // Build measure ruler data if ruler is active
@@ -7315,7 +7318,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 										
 										// Regenerate tunnel walls after updating last point
 										if (activeTunnel.path.length >= 2) {
-										const tunnelWidth = activeTunnel.tunnelWidth || (sizeInSquares + 0.5) * gridSize;
+										const tunnelWidth = activeTunnel.tunnelWidth || (sizeInSquares + 0.5) * config.gridSize;
 										activeTunnel.walls = generateTunnelWalls(activeTunnel.path, tunnelWidth);
 									}
 								}
@@ -7331,7 +7334,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							
 							// Regenerate tunnel walls after path update
 							if (activeTunnel.path.length >= 2) {
-								const tunnelWidth = activeTunnel.tunnelWidth || (sizeInSquares + 0.5) * gridSize;
+								const tunnelWidth = activeTunnel.tunnelWidth || (sizeInSquares + 0.5) * config.gridSize;
 								activeTunnel.walls = generateTunnelWalls(activeTunnel.path, tunnelWidth);
 							}
 						}

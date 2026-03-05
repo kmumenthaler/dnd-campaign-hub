@@ -977,7 +977,7 @@ export class PlayerMapView extends ItemView {
       config.tunnels.forEach((tunnel: any) => {
         if (!tunnel.visible) return;
         
-        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
+        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize as CreatureSize] || 1;
         const radius = (squares * config.gridSize) / 2.5;
         
         // Draw entrance (always visible - it's a physical hole on the surface)
@@ -1476,8 +1476,17 @@ export class PlayerMapView extends ItemView {
     });
 
     // Draw drag ruler (distance indicator) if a marker is being moved
+    // In the Player View, only show the drag ruler for player tokens or
+    // tokens explicitly marked as "Show to Players".
     if (config.dragRuler) {
-      this.drawDragRuler(ctx, config);
+      const dragMarkerDef = config.dragRuler.markerId
+        ? this.plugin.markerLibrary.getMarker(config.dragRuler.markerId)
+        : null;
+      const isPlayerToken = dragMarkerDef && dragMarkerDef.type === 'player';
+      const isVisibleToPlayers = !!config.dragRuler.visibleToPlayers;
+      if (isPlayerToken || isVisibleToPlayers) {
+        this.drawDragRuler(ctx, config);
+      }
     }
 
     // Draw Fog of War (Player view: fully opaque black with light source revelation)
@@ -1512,7 +1521,7 @@ export class PlayerMapView extends ItemView {
         if (playersInThisTunnel.length === 0) continue;
         
         // Use stored tunnel width or calculate based on creature size
-        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
+        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize as CreatureSize] || 1;
         const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
         
         for (const playerMarker of playersInThisTunnel) {
@@ -2969,7 +2978,7 @@ export class PlayerMapView extends ItemView {
         ctx.save();
         ctx.globalAlpha = 0.25; // More transparent
         
-        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
+        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize as CreatureSize] || 1;
         const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
         
         // Draw path up to current position in subtle earth tone color
@@ -3047,7 +3056,7 @@ export class PlayerMapView extends ItemView {
   private getMarkerRadius(markerDef: any): number {
     const config = this.mapConfig;
     if (['player', 'npc', 'creature'].includes(markerDef.type) && markerDef.creatureSize && config.gridSize) {
-      const squares = CREATURE_SIZE_SQUARES[markerDef.creatureSize] || 1;
+      const squares = CREATURE_SIZE_SQUARES[markerDef.creatureSize as CreatureSize] || 1;
       return (squares * config.gridSize) / 2;
     }
     return (markerDef.pixelSize || 30) / 2;
