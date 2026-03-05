@@ -310,6 +310,13 @@ export class MusicPlayer {
         if (config.primaryVolume != null) {
           this.primary.setVolume(config.primaryVolume);
         }
+        // Apply per-scene repeat/shuffle if specified
+        if (config.primaryRepeatMode != null) {
+          this.primary.state.repeatMode = config.primaryRepeatMode;
+        }
+        if (config.primaryShuffle != null) {
+          this.primary.state.isShuffled = config.primaryShuffle;
+        }
         this.primary.loadPlaylist(pl);
         if (config.primaryTrackPath) {
           const idx = pl.trackPaths.indexOf(config.primaryTrackPath);
@@ -328,6 +335,13 @@ export class MusicPlayer {
         // Apply per-scene volume if specified, otherwise keep current layer volume
         if (config.ambientVolume != null) {
           this.ambient.setVolume(config.ambientVolume);
+        }
+        // Apply per-scene repeat/shuffle if specified
+        if (config.ambientRepeatMode != null) {
+          this.ambient.state.repeatMode = config.ambientRepeatMode;
+        }
+        if (config.ambientShuffle != null) {
+          this.ambient.state.isShuffled = config.ambientShuffle;
         }
         this.ambient.loadPlaylist(pl);
         if (config.ambientTrackPath) {

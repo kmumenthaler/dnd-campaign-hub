@@ -120,6 +120,14 @@ export interface SceneMusicConfig {
   primaryVolume?: number | null;
   /** Volume for the ambient layer 0-100 (null = use global default) */
   ambientVolume?: number | null;
+  /** Repeat mode for the primary layer (null = use player default) */
+  primaryRepeatMode?: RepeatMode | null;
+  /** Shuffle tracks in the primary layer (null = use player default) */
+  primaryShuffle?: boolean | null;
+  /** Repeat mode for the ambient layer (null = use player default) */
+  ambientRepeatMode?: RepeatMode | null;
+  /** Shuffle tracks in the ambient layer (null = use player default) */
+  ambientShuffle?: boolean | null;
   /** Whether to auto-play when the codeblock's play button is clicked */
   autoPlay: boolean;
 }

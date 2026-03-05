@@ -9,7 +9,7 @@
  */
 import { App, Modal, Setting, Notice, MarkdownPostProcessorContext, Editor, TFile, TFolder } from 'obsidian';
 import { MusicPlayer } from './MusicPlayer';
-import type { MusicSettings, Playlist, SceneMusicConfig } from './types';
+import type { MusicSettings, Playlist, SceneMusicConfig, RepeatMode } from './types';
 import { DEFAULT_SCENE_MUSIC_CONFIG } from './types';
 
 // ─────────────────────────────────────────────────────────────────
@@ -132,6 +132,61 @@ export class SceneMusicModal extends Modal {
           });
       }
     }
+
+    // ── Playback behaviour ─────────────────────────────────
+    contentEl.createEl('h4', { text: '🔁 Playback' });
+
+    const repeatLabels: { [K in RepeatMode]: string } = {
+      'playlist': '🔁 Repeat Playlist',
+      'track': '🔂 Repeat Track',
+      'none': '▶️ No Repeat',
+    };
+
+    // Primary repeat mode
+    new Setting(contentEl)
+      .setName('Primary Repeat')
+      .setDesc('How the primary playlist repeats')
+      .addDropdown(dd => {
+        dd.addOption('playlist', repeatLabels['playlist']);
+        dd.addOption('track', repeatLabels['track']);
+        dd.addOption('none', repeatLabels['none']);
+        dd.setValue(this.config.primaryRepeatMode ?? 'playlist');
+        dd.onChange(val => {
+          this.config.primaryRepeatMode = val as RepeatMode;
+        });
+      });
+
+    // Primary shuffle
+    new Setting(contentEl)
+      .setName('Primary Shuffle')
+      .setDesc('Shuffle the track order in the primary playlist')
+      .addToggle(t => {
+        t.setValue(this.config.primaryShuffle ?? false);
+        t.onChange(val => { this.config.primaryShuffle = val; });
+      });
+
+    // Ambient repeat mode
+    new Setting(contentEl)
+      .setName('Ambient Repeat')
+      .setDesc('How the ambient playlist repeats')
+      .addDropdown(dd => {
+        dd.addOption('playlist', repeatLabels['playlist']);
+        dd.addOption('track', repeatLabels['track']);
+        dd.addOption('none', repeatLabels['none']);
+        dd.setValue(this.config.ambientRepeatMode ?? 'playlist');
+        dd.onChange(val => {
+          this.config.ambientRepeatMode = val as RepeatMode;
+        });
+      });
+
+    // Ambient shuffle
+    new Setting(contentEl)
+      .setName('Ambient Shuffle')
+      .setDesc('Shuffle the track order in the ambient playlist')
+      .addToggle(t => {
+        t.setValue(this.config.ambientShuffle ?? false);
+        t.onChange(val => { this.config.ambientShuffle = val; });
+      });
 
     // ── Volume controls ───────────────────────────────────
     contentEl.createEl('h4', { text: '🔊 Volume' });
@@ -267,8 +322,14 @@ export function renderSceneMusicBlock(
       detail += ` → ${trackName}`;
     }
     primaryRow.createEl('span', { text: detail, cls: 'scene-music-value' });
-    if (config.primaryVolume != null) {
-      primaryRow.createEl('span', { text: `🔊 ${config.primaryVolume}%`, cls: 'scene-music-volume-badge' });
+    const primaryBadges: string[] = [];
+    if (config.primaryVolume != null) primaryBadges.push(`🔊 ${config.primaryVolume}%`);
+    if (config.primaryRepeatMode && config.primaryRepeatMode !== 'playlist') {
+      primaryBadges.push(config.primaryRepeatMode === 'track' ? '🔂 track' : '▶️ once');
+    }
+    if (config.primaryShuffle) primaryBadges.push('🔀');
+    if (primaryBadges.length > 0) {
+      primaryRow.createEl('span', { text: primaryBadges.join(' · '), cls: 'scene-music-volume-badge' });
     }
   } else {
     primaryRow.createEl('span', { text: 'None', cls: 'scene-music-value scene-music-none' });
@@ -286,8 +347,14 @@ export function renderSceneMusicBlock(
       detail += ` → ${trackName}`;
     }
     ambientRow.createEl('span', { text: detail, cls: 'scene-music-value' });
-    if (config.ambientVolume != null) {
-      ambientRow.createEl('span', { text: `🔊 ${config.ambientVolume}%`, cls: 'scene-music-volume-badge' });
+    const ambientBadges: string[] = [];
+    if (config.ambientVolume != null) ambientBadges.push(`🔊 ${config.ambientVolume}%`);
+    if (config.ambientRepeatMode && config.ambientRepeatMode !== 'playlist') {
+      ambientBadges.push(config.ambientRepeatMode === 'track' ? '🔂 track' : '▶️ once');
+    }
+    if (config.ambientShuffle) ambientBadges.push('🔀');
+    if (ambientBadges.length > 0) {
+      ambientRow.createEl('span', { text: ambientBadges.join(' · '), cls: 'scene-music-volume-badge' });
     }
   } else {
     ambientRow.createEl('span', { text: 'None', cls: 'scene-music-value scene-music-none' });
