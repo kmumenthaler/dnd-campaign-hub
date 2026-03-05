@@ -18,6 +18,10 @@ export class MusicSettingsModal extends Modal {
   private settings: MusicSettings;
   private onSave: (settings: MusicSettings) => void;
   private activeTab: 'playlists' | 'soundboard' | 'general' = 'playlists';
+  /** Tracks which playlist cards are expanded (by id). New playlists auto-expand. */
+  private expandedPlaylists: Set<string> = new Set();
+  /** Current filter text for the playlists tab */
+  private playlistFilter: string = '';
 
   constructor(app: App, settings: MusicSettings, onSave: (settings: MusicSettings) => void) {
     super(app);
@@ -92,12 +96,14 @@ export class MusicSettingsModal extends Modal {
 
     const addBtn = btnRow.createEl('button', { text: '+ New Playlist', cls: 'mod-cta music-add-btn' });
     addBtn.addEventListener('click', () => {
+      const newId = uid();
       this.settings.playlists.push({
-        id: uid(),
+        id: newId,
         name: 'New Playlist',
         mood: 'ambient',
         trackPaths: [],
       });
+      this.expandedPlaylists.add(newId);
       this.render();
     });
 
@@ -112,16 +118,118 @@ export class MusicSettingsModal extends Modal {
       return;
     }
 
-    for (const playlist of this.settings.playlists) {
-      this.renderPlaylistCard(container, playlist);
-    }
+    // ── Search / Filter bar ─────────────────────────────────
+    const filterRow = container.createEl('div', { cls: 'music-playlist-filter-row' });
+    const filterInput = filterRow.createEl('input', {
+      type: 'text',
+      cls: 'music-playlist-filter-input',
+      placeholder: '🔍 Filter playlists by name or mood…',
+    });
+    filterInput.value = this.playlistFilter;
+    filterInput.addEventListener('input', () => {
+      this.playlistFilter = filterInput.value;
+      renderFilteredList();
+    });
+
+    // Expand / Collapse all
+    const expandAllBtn = filterRow.createEl('button', {
+      text: '▼ All',
+      cls: 'music-playlist-expand-all-btn',
+      attr: { 'aria-label': 'Expand all playlists' },
+    });
+    expandAllBtn.addEventListener('click', () => {
+      for (const pl of this.settings.playlists) this.expandedPlaylists.add(pl.id);
+      renderFilteredList();
+    });
+    const collapseAllBtn = filterRow.createEl('button', {
+      text: '▲ All',
+      cls: 'music-playlist-expand-all-btn',
+      attr: { 'aria-label': 'Collapse all playlists' },
+    });
+    collapseAllBtn.addEventListener('click', () => {
+      this.expandedPlaylists.clear();
+      renderFilteredList();
+    });
+
+    const listContainer = container.createEl('div', { cls: 'music-playlist-list' });
+    const countLabel = container.createEl('div', { cls: 'music-playlist-count' });
+
+    const renderFilteredList = () => {
+      listContainer.empty();
+      const q = this.playlistFilter.toLowerCase().trim();
+      const filtered = q
+        ? this.settings.playlists.filter(p =>
+            p.name.toLowerCase().includes(q) || p.mood.toLowerCase().includes(q))
+        : this.settings.playlists;
+      countLabel.textContent = q
+        ? `Showing ${filtered.length} of ${this.settings.playlists.length} playlists`
+        : `${this.settings.playlists.length} playlist${this.settings.playlists.length !== 1 ? 's' : ''}`;
+      if (filtered.length === 0) {
+        listContainer.createEl('p', { text: 'No matching playlists.', cls: 'empty-message' });
+        return;
+      }
+      for (const playlist of filtered) {
+        this.renderPlaylistCard(listContainer, playlist);
+      }
+    };
+
+    renderFilteredList();
+    // Focus filter & restore cursor position
+    filterInput.focus();
+    filterInput.setSelectionRange(filterInput.value.length, filterInput.value.length);
   }
 
   private renderPlaylistCard(container: HTMLElement, playlist: Playlist) {
-    const card = container.createEl('div', { cls: 'music-playlist-card' });
+    const isExpanded = this.expandedPlaylists.has(playlist.id);
+    const card = container.createEl('div', { cls: `music-playlist-card ${isExpanded ? 'expanded' : 'collapsed'}` });
 
-    // Header row with name + mood + delete
-    const header = card.createEl('div', { cls: 'music-playlist-header' });
+    // ── Compact summary header (always visible) ─────────────
+    const summary = card.createEl('div', { cls: 'music-playlist-summary' });
+
+    const toggleIcon = summary.createEl('span', {
+      text: isExpanded ? '▼' : '▶',
+      cls: 'music-playlist-toggle-icon',
+    });
+    summary.createEl('span', { text: playlist.name, cls: 'music-playlist-summary-name' });
+    const moodBadge = summary.createEl('span', {
+      text: playlist.mood,
+      cls: 'music-playlist-mood-badge',
+    });
+    if (playlist.isBackgroundSound) {
+      summary.createEl('span', { text: '🔊', cls: 'music-playlist-ambient-badge', attr: { title: 'Ambient layer' } });
+    }
+    summary.createEl('span', {
+      text: `${playlist.trackPaths.length} track${playlist.trackPaths.length !== 1 ? 's' : ''}`,
+      cls: 'music-playlist-track-count',
+    });
+
+    summary.addEventListener('click', (e) => {
+      // Don't toggle if clicking the delete button
+      if ((e.target as HTMLElement).closest('.music-delete-btn')) return;
+      if (this.expandedPlaylists.has(playlist.id)) {
+        this.expandedPlaylists.delete(playlist.id);
+      } else {
+        this.expandedPlaylists.add(playlist.id);
+      }
+      this.render();
+    });
+
+    // Delete playlist button (on summary row)
+    const delBtn = summary.createEl('button', { text: '🗑️', cls: 'music-delete-btn', attr: { 'aria-label': 'Delete playlist' } });
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.settings.playlists = this.settings.playlists.filter(p => p.id !== playlist.id);
+      this.expandedPlaylists.delete(playlist.id);
+      this.render();
+    });
+
+    // ── Expanded body (details + tracks) ────────────────────
+    if (!isExpanded) return;
+
+    const body = card.createEl('div', { cls: 'music-playlist-card-body' });
+
+    // Header row with name input + mood selector
+    const header = body.createEl('div', { cls: 'music-playlist-header' });
 
     // Name input
     const nameInput = header.createEl('input', { type: 'text', cls: 'music-playlist-name-input' });
@@ -129,6 +237,8 @@ export class MusicSettingsModal extends Modal {
     nameInput.placeholder = 'Playlist name';
     nameInput.addEventListener('change', () => {
       playlist.name = nameInput.value.trim() || 'Untitled';
+      // Update summary
+      this.render();
     });
 
     // Mood tag
@@ -140,17 +250,11 @@ export class MusicSettingsModal extends Modal {
     }
     moodSelect.addEventListener('change', () => {
       playlist.mood = moodSelect.value;
-    });
-
-    // Delete playlist button
-    const delBtn = header.createEl('button', { text: '🗑️', cls: 'music-delete-btn', attr: { 'aria-label': 'Delete playlist' } });
-    delBtn.addEventListener('click', () => {
-      this.settings.playlists = this.settings.playlists.filter(p => p.id !== playlist.id);
       this.render();
     });
 
     // Background sound toggle
-    const bgRow = card.createEl('div', { cls: 'music-bg-toggle-row' });
+    const bgRow = body.createEl('div', { cls: 'music-bg-toggle-row' });
     const bgLabel = bgRow.createEl('label', { cls: 'music-bg-toggle-label' });
     const bgCheckbox = bgLabel.createEl('input', { type: 'checkbox' });
     bgCheckbox.checked = playlist.isBackgroundSound ?? false;
@@ -161,7 +265,7 @@ export class MusicSettingsModal extends Modal {
     });
 
     // Track list (with drag-and-drop reordering)
-    const trackList = card.createEl('div', { cls: 'music-track-list' });
+    const trackList = body.createEl('div', { cls: 'music-track-list' });
     if (playlist.trackPaths.length === 0) {
       trackList.createEl('p', { text: 'No tracks added yet.', cls: 'empty-message' });
     } else {
@@ -223,7 +327,7 @@ export class MusicSettingsModal extends Modal {
     }
 
     // Track action buttons row
-    const trackActions = card.createEl('div', { cls: 'music-track-actions' });
+    const trackActions = body.createEl('div', { cls: 'music-track-actions' });
 
     // Add tracks button (picks from vault audio files)
     const addTrackBtn = trackActions.createEl('button', { text: '+ Add Tracks', cls: 'music-add-track-btn' });

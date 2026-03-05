@@ -211,29 +211,94 @@ function renderLayerControls(
     volumeDisplay.textContent = `${vol}%`;
   });
 
-  // ── Playlist Selector ──────────────────────────────────
+  // ── Playlist Browser (grouped by mood) ─────────────────
   const availablePlaylists = isAmbient
     ? settings.playlists.filter(p => p.isBackgroundSound)
     : settings.playlists;
   if (availablePlaylists.length > 0) {
-    const playlistRow = layerSection.createEl('div', { cls: 'music-playlist-row' });
-    playlistRow.createEl('span', { text: 'Playlist:', cls: 'music-playlist-label' });
-    const playlistSelect = playlistRow.createEl('select', { cls: 'music-playlist-select' });
-    playlistSelect.createEl('option', { text: '— Select —', value: '' });
-    for (const pl of availablePlaylists) {
-      const opt = playlistSelect.createEl('option', { text: `${pl.name} (${pl.mood})`, value: pl.id });
-      if (pl.id === layer.state.currentPlaylistId) opt.selected = true;
-    }
-    playlistSelect.addEventListener('change', () => {
-      const id = playlistSelect.value;
-      if (id) {
-        const pl = settings.playlists.find(p => p.id === id);
-        if (pl) {
-          layer.loadPlaylist(pl);
-          layer.play();
-        }
-      }
+    const browserSection = layerSection.createEl('div', { cls: 'music-playlist-browser' });
+    const browserHeader = browserSection.createEl('div', { cls: 'music-playlist-browser-header' });
+    browserHeader.createEl('span', { text: '📋 Playlists', cls: 'music-playlist-browser-title' });
+
+    let browserVisible = false;
+    const browserToggle = browserHeader.createEl('button', { text: '▼', cls: 'music-playlist-browser-toggle' });
+    const browserBody = browserSection.createEl('div', { cls: 'music-playlist-browser-body' });
+    browserBody.style.display = 'none';
+
+    browserHeader.addEventListener('click', () => {
+      browserVisible = !browserVisible;
+      browserBody.style.display = browserVisible ? 'block' : 'none';
+      browserToggle.textContent = browserVisible ? '▲' : '▼';
+      if (browserVisible) renderBrowser();
     });
+
+    const renderBrowser = () => {
+      browserBody.empty();
+
+      // Search filter
+      const filterInput = browserBody.createEl('input', {
+        type: 'text',
+        cls: 'music-playlist-browser-filter',
+        placeholder: '🔍 Filter…',
+      });
+
+      const listEl = browserBody.createEl('div', { cls: 'music-playlist-browser-list' });
+
+      const buildList = (query: string) => {
+        listEl.empty();
+        const q = query.toLowerCase().trim();
+        const filtered = q
+          ? availablePlaylists.filter(p => p.name.toLowerCase().includes(q) || p.mood.toLowerCase().includes(q))
+          : availablePlaylists;
+
+        if (filtered.length === 0) {
+          listEl.createEl('div', { text: 'No matching playlists', cls: 'music-playlist-browser-empty' });
+          return;
+        }
+
+        // Group by mood
+        const groups = new Map<string, typeof filtered>();
+        for (const pl of filtered) {
+          const mood = pl.mood || 'other';
+          if (!groups.has(mood)) groups.set(mood, []);
+          groups.get(mood)!.push(pl);
+        }
+
+        const moodIcons: Record<string, string> = {
+          ambient: '🌙', combat: '⚔️', exploration: '🧭', mysterious: '🔮',
+          epic: '🏔️', tavern: '🍺', horror: '💀', calm: '☁️',
+          dramatic: '🎭', custom: '🎵', other: '🎶',
+        };
+
+        for (const [mood, playlists] of groups) {
+          const moodGroup = listEl.createEl('div', { cls: 'music-playlist-browser-group' });
+          moodGroup.createEl('div', {
+            text: `${moodIcons[mood] || '🎶'} ${mood.charAt(0).toUpperCase() + mood.slice(1)}`,
+            cls: 'music-playlist-browser-group-header',
+          });
+          for (const pl of playlists) {
+            const isActive = pl.id === layer.state.currentPlaylistId;
+            const row = moodGroup.createEl('div', {
+              cls: `music-playlist-browser-item ${isActive ? 'active' : ''}`,
+            });
+            row.createEl('span', { text: pl.name, cls: 'music-playlist-browser-item-name' });
+            row.createEl('span', {
+              text: `${pl.trackPaths.length} tracks`,
+              cls: 'music-playlist-browser-item-count',
+            });
+            row.addEventListener('click', () => {
+              layer.loadPlaylist(pl);
+              layer.play();
+              // Refresh the browser to show active state
+              buildList(filterInput.value);
+            });
+          }
+        }
+      };
+
+      filterInput.addEventListener('input', () => buildList(filterInput.value));
+      buildList('');
+    };
   }
 
   // ── Track List (collapsible) ────────────────────────────
