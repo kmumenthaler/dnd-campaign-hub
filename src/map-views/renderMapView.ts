@@ -1,4 +1,4 @@
-import { App, Notice, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
+import { App, Menu, Notice, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import type { MapMediaElement } from "../constants";
 import { PLAYER_MAP_VIEW_TYPE, GM_MAP_VIEW_TYPE } from "../constants";
@@ -8342,6 +8342,74 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							);
 						});
 						return; // Don't fall through to marker menu
+					}
+				}
+
+				// ── Door env-asset quick menu on ANY layer (open / close) ──
+				// When the GM is NOT on the Background layer, allow a mini
+				// right-click menu on door assets so they can toggle open/close
+				// without switching layers.
+				if (config.activeLayer !== 'Background') {
+					const hitDoorAsset = findEnvAssetAtPoint(mapPos.x, mapPos.y);
+					if (hitDoorAsset) {
+						const doorDef = plugin.envAssetLibrary.getAsset(hitDoorAsset.assetId);
+						if (doorDef && doorDef.category === 'door') {
+							e.preventDefault();
+							// Ensure doorConfig exists
+							if (!hitDoorAsset.doorConfig) {
+								hitDoorAsset.doorConfig = { ...(doorDef.doorConfig || { behaviour: 'pivot' }) };
+							}
+							const dc = hitDoorAsset.doorConfig;
+							// Migrate legacy behaviours
+							if (dc.behaviour === 'normal' || dc.behaviour === 'custom-pivot') {
+								if (dc.behaviour === 'normal' && !dc.customPivot) {
+									dc.customPivot = (dc as any).pivotEdge === 'right' ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 };
+								}
+								dc.behaviour = 'pivot';
+							}
+							if (dc.behaviour !== 'sliding' && !dc.customPivot) {
+								dc.customPivot = { x: 0, y: 0.5 };
+							}
+
+							const menu = new Menu();
+							const doorLabel = doorDef.name ?? 'Door';
+							menu.addItem(item => item.setTitle(`🚪 ${doorLabel}`).setDisabled(true));
+							menu.addSeparator();
+							menu.addItem(item => item
+								.setTitle(dc.isOpen ? '🚪 Close Door' : '🚪 Open Door')
+								.onClick(() => {
+									dc.isOpen = !dc.isOpen;
+									if (!dc.isOpen) {
+										dc.openAngle = 0;
+										if (dc.behaviour === 'sliding') dc.slidePosition = 0;
+									} else {
+										if (dc.behaviour !== 'sliding') {
+											const dir = dc.openDirection || 1;
+											dc.openAngle = dir * 90;
+										}
+										if (dc.behaviour === 'sliding') dc.slidePosition = 1;
+									}
+									redrawAnnotations();
+									plugin.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								})
+							);
+							if (dc.behaviour !== 'sliding') {
+								menu.addItem(item => item
+									.setTitle('↔️ Reverse Open Direction')
+									.onClick(() => {
+										dc.openDirection = (dc.openDirection || 1) * -1;
+										dc.openAngle = dc.openDirection * 90;
+										if (!dc.isOpen) dc.isOpen = true;
+										redrawAnnotations();
+										plugin.saveMapAnnotations(config, el);
+										if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									})
+								);
+							}
+							menu.showAtMouseEvent(e);
+							return; // Don't fall through to marker menu
+						}
 					}
 				}
 				

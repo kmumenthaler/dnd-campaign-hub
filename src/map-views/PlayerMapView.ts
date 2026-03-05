@@ -19,6 +19,7 @@ export class PlayerMapView extends ItemView {
   private canvas: HTMLCanvasElement | null = null;
   private mapImage: MapMediaElement | null = null;
   private markerImageCache: Map<string, HTMLImageElement> = new Map();
+  private envAssetImageCache: Map<string, HTMLImageElement> = new Map();
   // Tabletop mode state
   private tabletopMode: boolean = true;
   private tabletopPanX: number = 0;
@@ -916,12 +917,94 @@ export class PlayerMapView extends ItemView {
     return null;
   }
 
+  private loadEnvAssetImage(path: string): HTMLImageElement | null {
+    if (this.envAssetImageCache.has(path)) {
+      const cached = this.envAssetImageCache.get(path)!;
+      return cached.complete && cached.naturalWidth > 0 ? cached : null;
+    }
+    const img = new Image();
+    this.envAssetImageCache.set(path, img);
+    try {
+      img.src = this.plugin.app.vault.adapter.getResourcePath(path);
+      img.onload = () => this.redrawAnnotations();
+    } catch {
+      // invalid path
+    }
+    return null;
+  }
+
+  /**
+   * Draw environmental assets (scatter, doors, traps) on the player view canvas.
+   * Assets are rendered above the map image but BEFORE fog-of-war, so they are
+   * naturally hidden by darkness and only visible in revealed areas.
+   */
+  private drawEnvAssets(ctx: CanvasRenderingContext2D, config: any) {
+    if (!config.envAssets || config.envAssets.length === 0) return;
+
+    // Sort by zIndex ascending (lower = drawn first = further back)
+    const sorted = [...config.envAssets].sort(
+      (a: EnvAssetInstance, b: EnvAssetInstance) => (a.zIndex || 0) - (b.zIndex || 0)
+    );
+
+    for (const inst of sorted) {
+      const def = this.plugin.envAssetLibrary.getAsset(inst.assetId);
+      if (!def) continue;
+
+      // Skip traps that are hidden from players
+      if (def.category === 'trap' && inst.trapConfig?.hidden) continue;
+
+      const img = this.loadEnvAssetImage(def.imageFile);
+
+      ctx.save();
+      ctx.translate(inst.position.x, inst.position.y);
+      ctx.rotate((inst.rotation || 0) * Math.PI / 180);
+
+      const hw = inst.width / 2;
+      const hh = inst.height / 2;
+
+      // For doors: apply open-angle or slide offset
+      if (def.category === 'door' && inst.doorConfig) {
+        const dc = inst.doorConfig;
+        if (dc.isOpen && dc.behaviour !== 'sliding' && dc.openAngle) {
+          const pivot = dc.customPivot || { x: 0, y: 0.5 };
+          const pivotX = (pivot.x - 0.5) * inst.width;
+          const pivotY = (pivot.y - 0.5) * inst.height;
+          ctx.translate(pivotX, pivotY);
+          ctx.rotate((dc.openAngle || 0) * Math.PI / 180);
+          ctx.translate(-pivotX, -pivotY);
+        }
+        if (dc.isOpen && dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
+          const p0 = dc.slidePath[0]!;
+          const p1 = dc.slidePath[dc.slidePath.length - 1]!;
+          const t = dc.slidePosition;
+          ctx.translate((p1.x - p0.x) * t, (p1.y - p0.y) * t);
+        }
+      }
+
+      // Draw the image (or placeholder while loading)
+      if (img) {
+        ctx.drawImage(img, -hw, -hh, inst.width, inst.height);
+      } else {
+        // Placeholder while image loads
+        ctx.fillStyle = 'rgba(100,100,100,0.3)';
+        ctx.fillRect(-hw, -hh, inst.width, inst.height);
+      }
+
+      ctx.restore();
+    }
+  }
+
   private redrawAnnotations() {
     if (!this.canvas || !this.mapConfig) return;
     const ctx = this.canvas.getContext('2d');
     if (!ctx) {
       return;
     }
+
+    // Invalidate visibility-polygon cache so door open/close, wall edits, etc.
+    // produce fresh sight-lines this frame. The cache still deduplicates the
+    // many computeVisibilityPolygon calls within a single redraw pass.
+    _visCacheMap.clear();
 
     const config = this.mapConfig;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -1002,6 +1085,10 @@ export class PlayerMapView extends ItemView {
 
     // Draw drawings
     playerDrawings.forEach((d: any) => this.drawDrawing(ctx, d));
+
+    // Draw environmental assets (above map image, below fog-of-war)
+    // These are rendered as part of the map — fog will cover them naturally
+    this.drawEnvAssets(ctx, config);
 
     // Separate player tokens from other markers - player tokens should always be visible
     // visibleToPlayers ("Show to Players") tokens are treated as player tokens:
