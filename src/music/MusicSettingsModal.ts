@@ -44,6 +44,11 @@ export class MusicSettingsModal extends Modal {
 
   private render() {
     const { contentEl } = this;
+
+    // Preserve scroll position of the scrollable body across re-renders
+    const prevBody = contentEl.querySelector('.music-settings-body');
+    const savedScroll = prevBody ? prevBody.scrollTop : 0;
+
     contentEl.empty();
 
     // Tab bar
@@ -87,6 +92,12 @@ export class MusicSettingsModal extends Modal {
     });
     const cancelBtn = footer.createEl('button', { text: 'Cancel' });
     cancelBtn.addEventListener('click', () => this.close());
+
+    // Restore scroll position
+    if (savedScroll) {
+      const newBody = contentEl.querySelector('.music-settings-body');
+      if (newBody) newBody.scrollTop = savedScroll;
+    }
   }
 
   // ─── Playlists Tab ────────────────────────────────────────
