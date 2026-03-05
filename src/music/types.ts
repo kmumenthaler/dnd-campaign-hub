@@ -116,6 +116,10 @@ export interface SceneMusicConfig {
   ambientPlaylistId: string | null;
   /** Specific track path to start on within the ambient playlist (null = first / shuffle) */
   ambientTrackPath: string | null;
+  /** Volume for the primary layer 0-100 (null = use global default) */
+  primaryVolume?: number | null;
+  /** Volume for the ambient layer 0-100 (null = use global default) */
+  ambientVolume?: number | null;
   /** Whether to auto-play when the codeblock's play button is clicked */
   autoPlay: boolean;
 }

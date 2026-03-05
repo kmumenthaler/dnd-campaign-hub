@@ -306,6 +306,10 @@ export class MusicPlayer {
     if (config.primaryPlaylistId) {
       const pl = this.settings.playlists.find(p => p.id === config.primaryPlaylistId);
       if (pl) {
+        // Apply per-scene volume if specified, otherwise keep current layer volume
+        if (config.primaryVolume != null) {
+          this.primary.setVolume(config.primaryVolume);
+        }
         this.primary.loadPlaylist(pl);
         if (config.primaryTrackPath) {
           const idx = pl.trackPaths.indexOf(config.primaryTrackPath);
@@ -321,6 +325,10 @@ export class MusicPlayer {
     if (config.ambientPlaylistId) {
       const pl = this.settings.playlists.find(p => p.id === config.ambientPlaylistId);
       if (pl) {
+        // Apply per-scene volume if specified, otherwise keep current layer volume
+        if (config.ambientVolume != null) {
+          this.ambient.setVolume(config.ambientVolume);
+        }
         this.ambient.loadPlaylist(pl);
         if (config.ambientTrackPath) {
           const idx = pl.trackPaths.indexOf(config.ambientTrackPath);

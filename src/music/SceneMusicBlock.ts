@@ -133,6 +133,39 @@ export class SceneMusicModal extends Modal {
       }
     }
 
+    // ── Volume controls ───────────────────────────────────
+    contentEl.createEl('h4', { text: '🔊 Volume' });
+
+    // Primary layer volume
+    const primaryVolVal = this.config.primaryVolume ?? this.settings.defaultVolume ?? 70;
+    const primaryVolSetting = new Setting(contentEl)
+      .setName('Primary Volume')
+      .setDesc(`Volume for the primary (melodic) layer: ${primaryVolVal}%`);
+    primaryVolSetting.addSlider(slider => {
+      slider.setLimits(0, 100, 1);
+      slider.setValue(primaryVolVal);
+      slider.setDynamicTooltip();
+      slider.onChange(val => {
+        this.config.primaryVolume = val;
+        primaryVolSetting.setDesc(`Volume for the primary (melodic) layer: ${val}%`);
+      });
+    });
+
+    // Ambient layer volume
+    const ambientVolVal = this.config.ambientVolume ?? this.settings.ambientVolume ?? 50;
+    const ambientVolSetting = new Setting(contentEl)
+      .setName('Ambient Volume')
+      .setDesc(`Volume for the ambient (background) layer: ${ambientVolVal}%`);
+    ambientVolSetting.addSlider(slider => {
+      slider.setLimits(0, 100, 1);
+      slider.setValue(ambientVolVal);
+      slider.setDynamicTooltip();
+      slider.onChange(val => {
+        this.config.ambientVolume = val;
+        ambientVolSetting.setDesc(`Volume for the ambient (background) layer: ${val}%`);
+      });
+    });
+
     // ── Options ────────────────────────────────────────────
     contentEl.createEl('h4', { text: '⚙️ Options' });
 
@@ -234,6 +267,9 @@ export function renderSceneMusicBlock(
       detail += ` → ${trackName}`;
     }
     primaryRow.createEl('span', { text: detail, cls: 'scene-music-value' });
+    if (config.primaryVolume != null) {
+      primaryRow.createEl('span', { text: `🔊 ${config.primaryVolume}%`, cls: 'scene-music-volume-badge' });
+    }
   } else {
     primaryRow.createEl('span', { text: 'None', cls: 'scene-music-value scene-music-none' });
   }
@@ -250,6 +286,9 @@ export function renderSceneMusicBlock(
       detail += ` → ${trackName}`;
     }
     ambientRow.createEl('span', { text: detail, cls: 'scene-music-value' });
+    if (config.ambientVolume != null) {
+      ambientRow.createEl('span', { text: `🔊 ${config.ambientVolume}%`, cls: 'scene-music-volume-badge' });
+    }
   } else {
     ambientRow.createEl('span', { text: 'None', cls: 'scene-music-value scene-music-none' });
   }
