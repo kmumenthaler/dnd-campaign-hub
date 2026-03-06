@@ -34,4 +34,4 @@ export function visCacheKey(
 }
 
 export const visCacheMap = new Map<string, { x: number; y: number }[]>();
-export const VIS_CACHE_MAX = 256;
+export const VIS_CACHE_MAX = 512;

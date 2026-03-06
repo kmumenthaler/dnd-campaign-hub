@@ -1001,10 +1001,10 @@ export class PlayerMapView extends ItemView {
       return;
     }
 
-    // Invalidate visibility-polygon cache so door open/close, wall edits, etc.
-    // produce fresh sight-lines this frame. The cache still deduplicates the
-    // many computeVisibilityPolygon calls within a single redraw pass.
-    _visCacheMap.clear();
+    // Visibility-polygon cache persists across redraws for performance.
+    // Cache keys incorporate wall positions, so stale entries from before
+    // door open/close or wall edits simply won't match — no manual clear needed.
+    // The cache evicts automatically when it hits VIS_CACHE_MAX.
 
     const config = this.mapConfig;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -3450,6 +3450,44 @@ export class PlayerMapView extends ItemView {
     fogCtx.fillStyle = '#000000';
     fogCtx.fillRect(0, 0, w, h);
 
+    // Build effective magic darkness mask: processes regions in order so that
+    // reveal / hide regions drawn AFTER magic-darkness properly cancel it.
+    // The mask canvas is white where magic darkness is still active.
+    let _hasMagicDarkness = false;
+    const _mdMask = _canvasPool.acquire(w, h);
+    const _mdCtx = _mdMask.getContext('2d');
+    if (_mdCtx) {
+      for (const region of (config.fogOfWar.regions || [])) {
+        if (region.type === 'magic-darkness') {
+          _hasMagicDarkness = true;
+          _mdCtx.globalCompositeOperation = 'source-over';
+          _mdCtx.fillStyle = '#ffffff';
+          _mdCtx.beginPath();
+          if (region.shape === 'rect') { _mdCtx.rect(region.x, region.y, region.width, region.height); }
+          else if (region.shape === 'circle') { _mdCtx.arc(region.cx, region.cy, region.radius, 0, Math.PI * 2); }
+          else if (region.shape === 'polygon' && region.points && region.points.length >= 3) {
+            _mdCtx.moveTo(region.points[0].x, region.points[0].y);
+            for (let i = 1; i < region.points.length; i++) _mdCtx.lineTo(region.points[i].x, region.points[i].y);
+            _mdCtx.closePath();
+          }
+          _mdCtx.fill();
+        } else if (_hasMagicDarkness && (region.type === 'reveal' || region.type === 'hide')) {
+          // Reveal or hide drawn after magic-darkness → cancel magic darkness there
+          _mdCtx.globalCompositeOperation = 'destination-out';
+          _mdCtx.fillStyle = '#ffffff';
+          _mdCtx.beginPath();
+          if (region.shape === 'rect') { _mdCtx.rect(region.x, region.y, region.width, region.height); }
+          else if (region.shape === 'circle') { _mdCtx.arc(region.cx, region.cy, region.radius, 0, Math.PI * 2); }
+          else if (region.shape === 'polygon' && region.points && region.points.length >= 3) {
+            _mdCtx.moveTo(region.points[0].x, region.points[0].y);
+            for (let i = 1; i < region.points.length; i++) _mdCtx.lineTo(region.points[i].x, region.points[i].y);
+            _mdCtx.closePath();
+          }
+          _mdCtx.fill();
+        }
+      }
+    }
+
     // In player view, IGNORE pre-revealed fog regions
     // Only player tokens (darkvision + lights) reveal areas
     // This implements "SchrÃ¶dinger's light" - light only exists when observed by a player
@@ -3650,9 +3688,16 @@ export class PlayerMapView extends ItemView {
       });
     }
     
+    // Accumulates all light reveals (clipped to player vision) for grayscale cutout reuse.
+    // This avoids re-computing visibility polygons and re-allocating canvases per light in the grayscale pass.
+    let _allLightsMask: HTMLCanvasElement | null = null;
+    let _allLightsMaskCtx: CanvasRenderingContext2D | null = null;
+
     // Draw lights - intersect each light with player vision cones
     if (allLights.length > 0 && playerVisionCtx) {
-      
+      _allLightsMask = _canvasPool.acquire(w, h);
+      _allLightsMaskCtx = _allLightsMask.getContext('2d');
+
       allLights.forEach((light: any, i: number) => {
         // Apply flicker/buzz modulation for lights
         const pvFlickerKey = `pv_light_${light.attachedToMarker || i}`;
@@ -3788,6 +3833,11 @@ export class PlayerMapView extends ItemView {
           lightCtx.globalCompositeOperation = 'destination-in';
           lightCtx.drawImage(playerVisionCanvas, 0, 0);
           
+          // Accumulate onto allLightsMask for grayscale cutout reuse
+          if (_allLightsMaskCtx) {
+            _allLightsMaskCtx.drawImage(lightCanvas, 0, 0);
+          }
+          
           // Apply to fog canvas (remove fog where light is)
           fogCtx.globalCompositeOperation = 'destination-out';
           fogCtx.drawImage(lightCanvas, 0, 0);
@@ -3864,152 +3914,30 @@ export class PlayerMapView extends ItemView {
       }
       
       // SECOND: Cut out areas where actual lights are visible to players - those should be full color
+      // Uses the pre-accumulated allLightsMask from the fog reveal pass to avoid re-computing
+      // visibility polygons and re-allocating canvases per light.
       grayCtx.globalCompositeOperation = 'destination-out';
-      if (allLights.length > 0 && playerVisionCtx) {
-        allLights.forEach((light: any, li: number) => {
-          // Apply flicker/buzz modulation for lights (grayscale cutout)
-          const gsFlickerKey = `pv_light_${light.attachedToMarker || li}`;
-          const gsIsBuzz = BUZZ_LIGHT_TYPES_SET.has(light.type);
-          const gsShouldFlicker = FLICKER_LIGHT_TYPES_SET.has(light.type);
-          const gsFlickerTime = performance.now() / 1000;
-          const gsFlicker = gsShouldFlicker
-            ? (gsIsBuzz
-              ? computeNeonBuzz(getFlickerSeedForKey(gsFlickerKey), gsFlickerTime)
-              : computeLightFlicker(getFlickerSeedForKey(gsFlickerKey), gsFlickerTime, 'high'))
-            : { radius: 1, alpha: 1 };
-          
-          const brightRadiusPx = light.bright * pixelsPerFoot * gsFlicker.radius;
-          const dimRadiusPx = light.dim * pixelsPerFoot * gsFlicker.radius;
-          const totalRadiusPx = brightRadiusPx + dimRadiusPx;
-          
-          if (totalRadiusPx <= 0) return;
-          
-          // Create temp canvas for this light's illuminated area
-          const lightCanvas = _canvasPool.acquire(w, h);
-          const lightCtx = lightCanvas.getContext('2d');
-          
-          if (lightCtx) {
-            if (light.start && light.end && light.type === 'walllight') {
-              // --- Wall light grayscale cutout: sample along line ---
-              const wlDx = light.end.x - light.start.x;
-              const wlDy = light.end.y - light.start.y;
-              const wlLen = Math.sqrt(wlDx * wlDx + wlDy * wlDy);
-              const wlStep = Math.min(totalRadiusPx * 0.4, 20);
-              const wlSamples = Math.max(Math.ceil(wlLen / wlStep), 2);
-
-              for (let si = 0; si < wlSamples; si++) {
-                const t = wlSamples <= 1 ? 0.5 : si / (wlSamples - 1);
-                const sx = light.start.x + wlDx * t;
-                const sy = light.start.y + wlDy * t;
-
-                const vis = this.computeVisibilityPolygon(sx, sy, totalRadiusPx, walls, light.elevation || 0);
-                if (vis.length < 3) continue;
-
-                lightCtx.save();
-                lightCtx.beginPath();
-                lightCtx.moveTo(vis[0]!.x, vis[0]!.y);
-                for (let vi = 1; vi < vis.length; vi++) lightCtx.lineTo(vis[vi]!.x, vis[vi]!.y);
-                lightCtx.closePath();
-                lightCtx.clip();
-
-                const gFeatherR = totalRadiusPx * 1.06;
-                const gGrad = lightCtx.createRadialGradient(sx, sy, 0, sx, sy, gFeatherR);
-                if (brightRadiusPx > 0 && dimRadiusPx > 0) {
-                  const gBR = brightRadiusPx / gFeatherR;
-                  gGrad.addColorStop(0, 'rgba(255,255,255,1)');
-                  gGrad.addColorStop(gBR * 0.8, 'rgba(255,255,255,1)');
-                  gGrad.addColorStop(gBR, 'rgba(255,255,255,0.78)');
-                  gGrad.addColorStop(gBR + (1 - gBR) * 0.45, 'rgba(255,255,255,0.45)');
-                  gGrad.addColorStop(totalRadiusPx / gFeatherR, 'rgba(255,255,255,0.18)');
-                  gGrad.addColorStop(1, 'rgba(255,255,255,0)');
-                } else if (brightRadiusPx > 0) {
-                  gGrad.addColorStop(0, 'rgba(255,255,255,1)');
-                  gGrad.addColorStop(0.65, 'rgba(255,255,255,0.85)');
-                  gGrad.addColorStop(totalRadiusPx / gFeatherR, 'rgba(255,255,255,0.2)');
-                  gGrad.addColorStop(1, 'rgba(255,255,255,0)');
-                } else {
-                  gGrad.addColorStop(0, 'rgba(255,255,255,0.7)');
-                  gGrad.addColorStop(0.5, 'rgba(255,255,255,0.45)');
-                  gGrad.addColorStop(totalRadiusPx / gFeatherR, 'rgba(255,255,255,0.1)');
-                  gGrad.addColorStop(1, 'rgba(255,255,255,0)');
-                }
-                lightCtx.fillStyle = gGrad;
-                lightCtx.beginPath();
-                lightCtx.arc(sx, sy, gFeatherR, 0, Math.PI * 2);
-                lightCtx.fill();
-                lightCtx.restore();
-              }
-
-              // Clip to player vision
-              lightCtx.globalCompositeOperation = 'destination-in';
-              lightCtx.drawImage(playerVisionCanvas, 0, 0);
-
-              // Remove from grayscale
-              grayCtx.drawImage(lightCanvas, 0, 0);
-            } else {
-            // Compute light visibility with wall occlusion
-            const lightVisPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadiusPx, walls, light.elevation || 0);
-            
-            if (lightVisPoly.length >= 3) {
-              lightCtx.save();
-              
-              // Clip to light visibility
-              lightCtx.beginPath();
-              const firstPt = lightVisPoly[0];
-              if (firstPt) {
-                lightCtx.moveTo(firstPt.x, firstPt.y);
-                for (let j = 1; j < lightVisPoly.length; j++) {
-                  const pt = lightVisPoly[j];
-                  if (pt) lightCtx.lineTo(pt.x, pt.y);
-                }
-                lightCtx.closePath();
-                lightCtx.clip();
-              }
-              
-              // Draw light with smooth gradient (where light IS present)
-              const gFeatherR = totalRadiusPx * 1.06;
-              const gGrad = lightCtx.createRadialGradient(
-                light.x, light.y, 0,
-                light.x, light.y, gFeatherR
-              );
-              if (brightRadiusPx > 0 && dimRadiusPx > 0) {
-                const gBR = brightRadiusPx / gFeatherR;
-                gGrad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
-                gGrad.addColorStop(gBR * 0.8, 'rgba(255, 255, 255, 1.0)');
-                gGrad.addColorStop(gBR, 'rgba(255, 255, 255, 0.78)');
-                gGrad.addColorStop(gBR + (1 - gBR) * 0.45, 'rgba(255, 255, 255, 0.45)');
-                gGrad.addColorStop(totalRadiusPx / gFeatherR, 'rgba(255, 255, 255, 0.18)');
-                gGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-              } else if (brightRadiusPx > 0) {
-                gGrad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
-                gGrad.addColorStop(0.65, 'rgba(255, 255, 255, 0.85)');
-                gGrad.addColorStop(totalRadiusPx / gFeatherR, 'rgba(255, 255, 255, 0.2)');
-                gGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-              } else {
-                gGrad.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
-                gGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.45)');
-                gGrad.addColorStop(totalRadiusPx / gFeatherR, 'rgba(255, 255, 255, 0.1)');
-                gGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-              }
-              lightCtx.fillStyle = gGrad;
-              lightCtx.beginPath();
-              lightCtx.arc(light.x, light.y, gFeatherR, 0, Math.PI * 2);
-              lightCtx.fill();
-              
-              lightCtx.restore();
-              
-              // Clip to player vision (only parts players can see)
-              lightCtx.globalCompositeOperation = 'destination-in';
-              lightCtx.drawImage(playerVisionCanvas, 0, 0);
-              
-              // Remove from grayscale (make these lit areas full color)
-              grayCtx.drawImage(lightCanvas, 0, 0);
-            }
-            } // end else (point light grayscale cutout)
-          }
-          _canvasPool.release(lightCanvas);
-        });
+      if (_allLightsMask) {
+        grayCtx.drawImage(_allLightsMask, 0, 0);
       }
+    }
+
+    // Re-apply effective magic darkness on top of light/darkvision reveals.
+    // Uses the pre-computed mask so reveals/hides drawn after magic-darkness cancel it.
+    if (_hasMagicDarkness) {
+      fogCtx.globalCompositeOperation = 'source-over';
+      // _mdMask is white where magic darkness is active → stamp black fog there
+      // Create a black version of the mask
+      const mdBlack = _canvasPool.acquire(w, h);
+      const mdBCtx = mdBlack.getContext('2d');
+      if (mdBCtx) {
+        mdBCtx.fillStyle = '#000000';
+        mdBCtx.fillRect(0, 0, w, h);
+        mdBCtx.globalCompositeOperation = 'destination-in';
+        mdBCtx.drawImage(_mdMask, 0, 0);
+        fogCtx.drawImage(mdBlack, 0, 0);
+      }
+      _canvasPool.release(mdBlack);
     }
 
     // Draw fully opaque fog for player view
@@ -4153,6 +4081,13 @@ export class PlayerMapView extends ItemView {
           _canvasPool.release(singleCanvas);
         });
 
+        // Cut out effective magic darkness areas from light colour overlay
+        if (_hasMagicDarkness) {
+          lcCtx.globalCompositeOperation = 'destination-out';
+          lcCtx.drawImage(_mdMask, 0, 0);
+          lcCtx.globalCompositeOperation = 'source-over';
+        }
+
         // Composite colour overlay onto the main canvas (over fog)
         ctx.save();
         ctx.globalCompositeOperation = 'source-over';
@@ -4164,6 +4099,12 @@ export class PlayerMapView extends ItemView {
     
     // Apply grayscale overlay on top (darkvision tint)
     if (darkvisionMarkers.length > 0 && grayCtx) {
+      // Remove grayscale tint from effective magic darkness areas
+      if (_hasMagicDarkness) {
+        grayCtx.globalCompositeOperation = 'destination-out';
+        grayCtx.drawImage(_mdMask, 0, 0);
+        grayCtx.globalCompositeOperation = 'source-over';
+      }
       ctx.save();
       ctx.globalAlpha = 1.0;
       ctx.globalCompositeOperation = 'source-over';
@@ -4171,7 +4112,8 @@ export class PlayerMapView extends ItemView {
       ctx.restore();
     } else {
     }
-    _canvasPool.releaseAll(playerVisionCanvas, playerDarkvisionCanvas, grayscaleCanvas);
+    _canvasPool.release(_mdMask);
+    _canvasPool.releaseAll(playerVisionCanvas, playerDarkvisionCanvas, grayscaleCanvas, _allLightsMask);
   }
 
   /**

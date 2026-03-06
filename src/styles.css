@@ -4329,6 +4329,13 @@
   color: #ff6666;
 }
 
+.dnd-map-aoe-shape-btn.fog-magic-darkness-mode {
+  background: rgba(106, 13, 173, 0.4);
+  border-color: rgba(155, 89, 182, 0.9);
+  box-shadow: 0 0 10px rgba(106, 13, 173, 0.6);
+  color: #c39bd3;
+}
+
 .dnd-fog-action-btn {
   padding: 4px 8px;
   border-radius: 4px;

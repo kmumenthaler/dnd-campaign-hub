@@ -354,7 +354,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			};
 			// Fog of War tool state
 			let selectedFogShape: 'circle' | 'rect' | 'polygon' | 'brush' = 'brush';
-			let fogMode: 'reveal' | 'hide' = 'reveal'; // Whether fog tool reveals or hides
+			let fogMode: 'reveal' | 'hide' | 'magic-darkness' = 'reveal'; // Whether fog tool reveals, hides, or creates impenetrable magic darkness
 			let fogDragStart: { x: number; y: number } | null = null;
 			let fogDragEnd: { x: number; y: number } | null = null;
 			let fogPolygonPoints: { x: number; y: number }[] = [];
@@ -1231,11 +1231,17 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		fogModeBtn.createEl('span', { text: '👁️' });
 		fogModeBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			fogMode = fogMode === 'reveal' ? 'hide' : 'reveal';
-			fogModeBtn.setAttribute('title', fogMode === 'reveal' ? 'Mode: Reveal' : 'Mode: Hide');
+			// Cycle: reveal → hide → magic-darkness → reveal
+			if (fogMode === 'reveal') fogMode = 'hide';
+			else if (fogMode === 'hide') fogMode = 'magic-darkness';
+			else fogMode = 'reveal';
+			const modeLabels: Record<string, string> = { 'reveal': 'Mode: Reveal', 'hide': 'Mode: Hide', 'magic-darkness': 'Mode: Magic Darkness (ignores light & darkvision)' };
+			const modeIcons: Record<string, string> = { 'reveal': '👁️', 'hide': '🚫', 'magic-darkness': '🔮' };
+			fogModeBtn.setAttribute('title', modeLabels[fogMode] || '');
 			const iconEl = fogModeBtn.querySelector('span');
-			if (iconEl) iconEl.textContent = fogMode === 'reveal' ? '👁️' : '🚫';
+			if (iconEl) iconEl.textContent = modeIcons[fogMode] || '👁️';
 			fogModeBtn.toggleClass('fog-hide-mode', fogMode === 'hide');
+			fogModeBtn.toggleClass('fog-magic-darkness-mode', fogMode === 'magic-darkness');
 		});
 		// Separator in picker
 		const fogSep = fogPicker.createDiv({ cls: 'dnd-fog-picker-sep' });
@@ -3864,7 +3870,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				// Drawn BEFORE light source icons so icons remain visible on top.
 				if (isOnBgLayer && backgroundEditView === 'lights' && annotationCanvas) {
 					try {
-						_visCacheMap.clear();
+						// Visibility cache keys include wall content, so no manual clear needed.
 						drawLightPreviewOverlay(ctx, annotationCanvas.width, annotationCanvas.height);
 					} catch (e) {
 						// Fallback: simple semi-transparent dark overlay
@@ -5894,12 +5900,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				fogCtx.fillStyle = '#000000';
 				fogCtx.fillRect(0, 0, w, h);
 				
-				// Process regions in order: reveal cuts holes, hide adds black
+				// Process regions in order: reveal cuts holes, hide/magic-darkness adds black
 				config.fogOfWar.regions.forEach((region: any) => {
 					if (region.type === 'reveal') {
 						fogCtx.globalCompositeOperation = 'destination-out';
 						fogCtx.fillStyle = '#ffffff';
 					} else {
+						// Both 'hide' and 'magic-darkness' add fog
 						fogCtx.globalCompositeOperation = 'source-over';
 						fogCtx.fillStyle = '#000000';
 					}
@@ -6001,6 +6008,47 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						}
 					});
 				}
+
+				// Build effective magic darkness mask: processes regions in order so that
+				// reveal/hide drawn AFTER magic-darkness properly cancels it.
+				// Mask is white where magic darkness is still active.
+				let _gmHasMD = false;
+				const _gmMdMask = _canvasPool.acquire(w, h);
+				const _gmMdCtx = _gmMdMask.getContext('2d');
+				if (_gmMdCtx) {
+					for (const region of (config.fogOfWar.regions || [])) {
+						if (region.type === 'magic-darkness') {
+							_gmHasMD = true;
+							_gmMdCtx.globalCompositeOperation = 'source-over';
+							_gmMdCtx.fillStyle = '#ffffff';
+							_gmMdCtx.beginPath();
+							clipFogRegion(_gmMdCtx, region);
+							_gmMdCtx.fill();
+						} else if (_gmHasMD && (region.type === 'reveal' || region.type === 'hide')) {
+							_gmMdCtx.globalCompositeOperation = 'destination-out';
+							_gmMdCtx.fillStyle = '#ffffff';
+							_gmMdCtx.beginPath();
+							clipFogRegion(_gmMdCtx, region);
+							_gmMdCtx.fill();
+						}
+					}
+				}
+
+				// Re-apply effective magic darkness after light-source reveals (player view only).
+				// In GM view, the ordered region processing already handles this correctly.
+				if (isPlayerView && _gmHasMD) {
+					fogCtx.globalCompositeOperation = 'source-over';
+					const mdBlack = _canvasPool.acquire(w, h);
+					const mdBCtx = mdBlack.getContext('2d');
+					if (mdBCtx) {
+						mdBCtx.fillStyle = '#000000';
+						mdBCtx.fillRect(0, 0, w, h);
+						mdBCtx.globalCompositeOperation = 'destination-in';
+						mdBCtx.drawImage(_gmMdMask, 0, 0);
+						fogCtx.drawImage(mdBlack, 0, 0);
+					}
+					_canvasPool.release(mdBlack);
+				}
 				
 				// Draw the fog canvas onto the main canvas
 				ctx.save();
@@ -6008,6 +6056,42 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				ctx.drawImage(fogCanvas, 0, 0);
 				ctx.restore();
 				_canvasPool.release(fogCanvas);
+
+				// Draw magic darkness overlay (GM view only): prominent purple tint + dashed border
+				// Uses the effective mask so reveals/hides drawn after magic-darkness cancel it.
+				if (!isPlayerView && _gmHasMD) {
+					// Purple fill
+					ctx.save();
+					ctx.globalAlpha = 0.5;
+					ctx.fillStyle = '#7b2fbe';
+					ctx.globalCompositeOperation = 'source-over';
+					const purpleCanvas = _canvasPool.acquire(w, h);
+					const purpleCtx = purpleCanvas.getContext('2d');
+					if (purpleCtx) {
+						purpleCtx.fillStyle = '#7b2fbe';
+						purpleCtx.fillRect(0, 0, w, h);
+						purpleCtx.globalCompositeOperation = 'destination-in';
+						purpleCtx.drawImage(_gmMdMask, 0, 0);
+						ctx.drawImage(purpleCanvas, 0, 0);
+					}
+					_canvasPool.release(purpleCanvas);
+					ctx.restore();
+					// Dashed purple border on each active magic-darkness region
+					// We still draw individual borders for visual clarity (cheap operation)
+					ctx.save();
+					ctx.globalAlpha = 0.8;
+					ctx.strokeStyle = '#a855f7';
+					ctx.lineWidth = 3;
+					ctx.setLineDash([8, 6]);
+					ctx.beginPath();
+					// Only stroke regions that haven't been fully overridden
+					config.fogOfWar.regions.forEach((region: any) => {
+						if (region.type === 'magic-darkness') clipFogRegion(ctx, region);
+					});
+					ctx.stroke();
+					ctx.restore();
+				}
+				_canvasPool.release(_gmMdMask);
 			};
 
 			// Draw fog preview while dragging
@@ -6015,8 +6099,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (!fogDragStart || !fogDragEnd) return;
 				ctx.save();
 				ctx.globalAlpha = 0.3;
-				ctx.fillStyle = fogMode === 'reveal' ? '#00ff00' : '#000000';
-				ctx.strokeStyle = fogMode === 'reveal' ? '#00ff00' : '#ff0000';
+				ctx.fillStyle = fogMode === 'reveal' ? '#00ff00' : fogMode === 'magic-darkness' ? '#6a0dad' : '#000000';
+				ctx.strokeStyle = fogMode === 'reveal' ? '#00ff00' : fogMode === 'magic-darkness' ? '#9b59b6' : '#ff0000';
 				ctx.lineWidth = 2;
 				ctx.setLineDash([6, 3]);
 				
@@ -6045,8 +6129,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (fogPolygonPoints.length === 0) return;
 				ctx.save();
 				ctx.globalAlpha = 0.3;
-				ctx.fillStyle = fogMode === 'reveal' ? '#00ff00' : '#000000';
-				ctx.strokeStyle = fogMode === 'reveal' ? '#00ff00' : '#ff0000';
+				ctx.fillStyle = fogMode === 'reveal' ? '#00ff00' : fogMode === 'magic-darkness' ? '#6a0dad' : '#000000';
+				ctx.strokeStyle = fogMode === 'reveal' ? '#00ff00' : fogMode === 'magic-darkness' ? '#9b59b6' : '#ff0000';
 				ctx.lineWidth = 2;
 				ctx.setLineDash([6, 3]);
 				
@@ -6061,7 +6145,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				
 				// Draw dots at each point
 				ctx.globalAlpha = 0.8;
-				ctx.fillStyle = fogMode === 'reveal' ? '#00ff00' : '#ff0000';
+				ctx.fillStyle = fogMode === 'reveal' ? '#00ff00' : fogMode === 'magic-darkness' ? '#9b59b6' : '#ff0000';
 				fogPolygonPoints.forEach(pt => {
 					ctx.beginPath();
 					ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
@@ -8036,7 +8120,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				fogPolygonPoints = [];
 				redrawAnnotations();
 				plugin.saveMapAnnotations(config, el);
-				new Notice(`Fog polygon ${fogMode === 'reveal' ? 'revealed' : 'hidden'}`);
+				new Notice(`Fog polygon ${fogMode === 'reveal' ? 'revealed' : fogMode === 'magic-darkness' ? 'shrouded in magic darkness' : 'hidden'}`);
 				e.preventDefault();
 				e.stopPropagation();
 			} else if (activeTool === 'walls' && wallPoints.length >= 2) {
@@ -8120,7 +8204,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							config.fogOfWar.regions.push(region);
 							redrawAnnotations();
 							plugin.saveMapAnnotations(config, el);
-							new Notice(`Fog region ${fogMode === 'reveal' ? 'revealed' : 'hidden'}`);
+							new Notice(`Fog region ${fogMode === 'reveal' ? 'revealed' : fogMode === 'magic-darkness' ? 'shrouded in magic darkness' : 'hidden'}`);
 						}
 					}
 					fogDragStart = null;
