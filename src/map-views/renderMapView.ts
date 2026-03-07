@@ -9037,8 +9037,33 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					isDragging = false;
 					isTemporaryPan = false;
 					if (previousToolBeforePan) {
-						setActiveTool(previousToolBeforePan);
+						// Restore the tool but keep sub-menus collapsed
+						activeTool = previousToolBeforePan;
 						previousToolBeforePan = null;
+						// Re-highlight the correct toolbar button without opening pickers
+						[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, fogBtn, wallsBtn, lightsBtn, elevationPaintBtn, moveGridBtn, terrainPaintBtn, climatePaintBtn, setStartHexBtn, hexDescBtn, envAssetBtn].forEach(btn => btn.removeClass('active'));
+						if (activeTool === 'walls' || activeTool === 'magic-wand') wallsBtn.addClass('active');
+						else if (activeTool === 'lights' || activeTool === 'walllight-draw') lightsBtn.addClass('active');
+						else if (activeTool === 'fog') fogBtn.addClass('active');
+						else if (activeTool === 'pan') panBtn.addClass('active');
+						else if (activeTool === 'select') selectBtn.addClass('active');
+						else if (activeTool === 'highlight') highlightBtn.addClass('active');
+						else if (activeTool === 'draw') drawBtn.addClass('active');
+						else if (activeTool === 'eraser') eraserBtn.addClass('active');
+						else if (activeTool === 'ruler') rulerBtn.addClass('active');
+						else if (activeTool === 'target-distance') targetDistBtn.addClass('active');
+						else if (activeTool === 'aoe') aoeBtn.addClass('active');
+						else if (activeTool === 'marker') markerBtn.addClass('active');
+						else if (activeTool === 'poi') poiBtn.addClass('active');
+						else if (activeTool === 'elevation-paint') elevationPaintBtn.addClass('active');
+						else if (activeTool === 'move-grid') moveGridBtn.addClass('active');
+						else if (activeTool === 'terrain-paint') terrainPaintBtn.addClass('active');
+						else if (activeTool === 'climate-paint') climatePaintBtn.addClass('active');
+						else if (activeTool === 'set-start-hex') setStartHexBtn.addClass('active');
+						else if (activeTool === 'hex-desc') hexDescBtn.addClass('active');
+						else if (activeTool === 'env-asset') envAssetBtn.addClass('active');
+						// Restore cursor
+						viewport.style.cursor = activeTool === 'pan' ? 'grab' : 'default';
 					}
 					return;
 				}
