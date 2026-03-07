@@ -131,6 +131,7 @@ import { DeleteMapConfirmModal } from './map-views/DeleteMapConfirmModal';
 import { TabletopCalibrationModal } from './map-views/TabletopCalibrationModal';
 import { GmMapView } from './map-views/GmMapView';
 import { PlayerMapView } from './map-views/PlayerMapView';
+import { ProjectionManager } from './map-views/ProjectionManager';
 
 // ── Extracted function modules ──
 import { renderMapView as renderMapViewFn } from './map-views/renderMapView';
@@ -174,6 +175,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   markerLibrary!: MarkerLibrary;
   envAssetLibrary!: EnvAssetLibrary;
   musicPlayer!: MusicPlayer;
+  projectionManager!: ProjectionManager;
   private _musicStatusBarEl: HTMLElement | null = null;
   private _musicStatusBarCleanup: (() => void) | null = null;
   _playerMapViews: Set<PlayerMapView> = new Set();
@@ -261,6 +263,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     // Initialize the music player
     this.musicPlayer = new MusicPlayer(this.app, this.settings.musicSettings);
+
+    // Initialize the projection manager (OBS-style project-to-monitor)
+    this.projectionManager = new ProjectionManager(this);
 
     // Restore persisted playback state (volumes, playlists, etc.)
     this.restoreMusicPlaybackState();
@@ -1333,6 +1338,8 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.saveMusicPlaybackState();
     if (this._musicStatusBarCleanup) this._musicStatusBarCleanup();
     this.musicPlayer?.destroy();
+    // Stop active projection
+    this.projectionManager?.stopProjection();
     // Close all player-view popout windows to prevent orphaned Electron windows
     if (this._playerMapViews) {
       this._playerMapViews.forEach((pv: any) => {

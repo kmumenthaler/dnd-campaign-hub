@@ -7,10 +7,28 @@ export interface TabletopCalibration {
   miniBaseMm: number;
 }
 
+/** Per-monitor projection target — saved so calibration is one-time. */
+export interface ProjectionTarget {
+  /** Stable key for the screen (label + position). */
+  screenKey: string;
+  /** Human-readable label (e.g. "DELL U2720Q"). */
+  screenLabel: string;
+  /** Pixel bounds in the virtual multi-monitor coordinate space. */
+  screenBounds: { left: number; top: number; width: number; height: number };
+  /** Device pixel ratio at the time of calibration. */
+  devicePixelRatio: number;
+  /** Physical calibration for this monitor. */
+  calibration: TabletopCalibration;
+}
+
 export interface DndCampaignHubSettings {
   currentCampaign: string;
   pluginVersion: string;
   tabletopCalibration: TabletopCalibration | null;
+  /** Per-monitor projection targets (keyed by screenKey). */
+  projectionTargets: ProjectionTarget[];
+  /** The screenKey of the last-used projection target (for quick re-project). */
+  lastProjectionScreenKey: string;
   musicSettings: MusicSettings;
   musicPlaybackState: MusicPlaybackState;
 }
@@ -19,6 +37,8 @@ export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   currentCampaign: "",
   pluginVersion: "0.0.0",
   tabletopCalibration: null,
+  projectionTargets: [],
+  lastProjectionScreenKey: "",
   musicSettings: { ...DEFAULT_MUSIC_SETTINGS },
   musicPlaybackState: { ...DEFAULT_PLAYBACK_STATE },
 };
