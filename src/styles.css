@@ -4575,7 +4575,7 @@
   z-index: 9999;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.4s ease;
+  transition: opacity 0.8s ease;
 }
 .dnd-player-map-swap-fade.active {
   opacity: 1;

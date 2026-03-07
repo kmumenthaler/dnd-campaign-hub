@@ -153,10 +153,10 @@ export class PlayerMapView extends ItemView {
     const fadeIn = () => {
       fade.classList.remove('active');
       // Remove the overlay once the transition finishes
-      setTimeout(() => fade.remove(), 500);
+      setTimeout(() => fade.remove(), 1000);
     };
 
-    // Give the fade 300ms to reach full opacity, then swap the content
+    // Give the fade 800ms to reach full opacity, then swap the content
     setTimeout(() => {
       this._doSwap(newMapId, newMapConfig, newImageResourcePath);
 
@@ -169,7 +169,7 @@ export class PlayerMapView extends ItemView {
         // No hook — fade in automatically after a short delay
         setTimeout(fadeIn, 100);
       }
-    }, 300);
+    }, 800);
   }
 
   /**
