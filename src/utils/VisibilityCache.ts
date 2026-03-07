@@ -5,25 +5,44 @@
  * when walls haven't changed.
  */
 
-/** Fast walls-array fingerprint (cached per array reference via WeakMap). */
-const wallsHashWM = new WeakMap<any[], string>();
+/**
+ * Content-based walls fingerprint using djb2 over ALL wall endpoints + open
+ * states.  Replaces the old WeakMap approach which missed across frames
+ * because the walls array is rebuilt (filter + push) every render.
+ * A Map<walls ref → hash> still short-circuits within the same frame.
+ */
+const _wallsHashCache = new WeakMap<any[], string>();
+let _wallsHashStr: string | null = null;
+let _wallsHashRef: any[] | null = null;
 
 export function getWallsHash(walls: any[]): string {
-  let h = wallsHashWM.get(walls);
-  if (h !== undefined) return h;
+  // Fast path: same array reference as last call (same frame)
+  if (walls === _wallsHashRef && _wallsHashStr !== null) return _wallsHashStr;
+  // WeakMap hit (same reference, different call site within frame)
+  const wm = _wallsHashCache.get(walls);
+  if (wm !== undefined) { _wallsHashRef = walls; _wallsHashStr = wm; return wm; }
+
+  // Content-based djb2 hash over every wall
+  let h = 5381;
   const n = walls.length;
-  if (n === 0) { h = '0'; wallsHashWM.set(walls, h); return h; }
-  const parts: string[] = [String(n)];
-  const samples = Math.min(n, 8);
-  for (let i = 0; i < samples; i++) {
-    const w = walls[Math.floor(i * n / samples)];
+  h = ((h << 5) + h + n) | 0;
+  for (let i = 0; i < n; i++) {
+    const w = walls[i];
     if (w?.start && w?.end) {
-      parts.push(`${w.start.x | 0},${w.start.y | 0},${w.end.x | 0},${w.end.y | 0}`);
+      h = ((h << 5) + h + (w.start.x | 0)) | 0;
+      h = ((h << 5) + h + (w.start.y | 0)) | 0;
+      h = ((h << 5) + h + (w.end.x | 0)) | 0;
+      h = ((h << 5) + h + (w.end.y | 0)) | 0;
     }
+    // Open/close state and wall height affect visibility
+    h = ((h << 5) + h + (w?.open ? 1 : 0)) | 0;
+    h = ((h << 5) + h + (w?.height || 0)) | 0;
   }
-  h = parts.join('|');
-  wallsHashWM.set(walls, h);
-  return h;
+  const hashStr = String(h);
+  _wallsHashCache.set(walls, hashStr);
+  _wallsHashRef = walls;
+  _wallsHashStr = hashStr;
+  return hashStr;
 }
 
 /** Quantised cache key. Position→1 px, radius→16 px buckets, elevation→int. */
@@ -34,4 +53,4 @@ export function visCacheKey(
 }
 
 export const visCacheMap = new Map<string, { x: number; y: number }[]>();
-export const VIS_CACHE_MAX = 512;
+export const VIS_CACHE_MAX = 1024;
