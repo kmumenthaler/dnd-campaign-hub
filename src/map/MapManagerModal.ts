@@ -3,6 +3,7 @@ import { MapManager } from './MapManager';
 import { MapCreationModal, BATTLEMAP_TEMPLATE_FOLDER } from './MapCreationModal';
 import { MapTemplateTagModal } from './MapTemplateTagModal';
 import { TemplatePickerModal } from './TemplatePickerModal';
+import { invalidateTemplateIndex } from './MapPersistence';
 import { MapTemplateTags, createDefaultTemplateTags } from './types';
 import type DndCampaignHubPlugin from '../main';
 
@@ -515,6 +516,9 @@ export class MapManagerModal extends Modal {
       if (await this.app.vault.adapter.exists(annotationPath)) {
         await this.app.vault.adapter.remove(annotationPath);
       }
+
+      // Invalidate template index cache
+      invalidateTemplateIndex();
 
       // Remove from in-memory list
       this.maps = this.maps.filter(m => m.mapId !== map.mapId);

@@ -5,6 +5,58 @@ import { normalizeMapAnnotations } from "./MapFactory";
 
 const SAVE_DEBOUNCE_MS = 1000;
 
+// ── Template index cache ──────────────────────────────────────────────
+/** Lightweight entry cached in the template index. */
+interface TemplateIndexEntry {
+	mapId: string;
+	name: string;
+	imageFile: string;
+	tags: any;
+}
+
+/** In-memory template index — built on first query, invalidated on save/delete. */
+let _templateIndex: TemplateIndexEntry[] | null = null;
+
+/** Force the next `queryMapTemplates` call to rebuild the index from disk. */
+export function invalidateTemplateIndex(): void {
+	_templateIndex = null;
+}
+
+/** Build (or return cached) template index by scanning annotation files once. */
+async function _getTemplateIndex(plugin: DndCampaignHubPlugin): Promise<TemplateIndexEntry[]> {
+	if (_templateIndex) return _templateIndex;
+
+	const entries: TemplateIndexEntry[] = [];
+	try {
+		const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
+		if (!(await plugin.app.vault.adapter.exists(annotationDir))) {
+			_templateIndex = entries;
+			return entries;
+		}
+
+		const listing = await plugin.app.vault.adapter.list(annotationDir);
+		for (const filePath of listing.files) {
+			if (!filePath.endsWith('.json')) continue;
+			try {
+				const raw = await plugin.app.vault.adapter.read(filePath);
+				const data = JSON.parse(raw);
+				if (!data.isTemplate || !data.templateTags) continue;
+				entries.push({
+					mapId: data.mapId,
+					name: data.name || 'Unnamed Template',
+					imageFile: data.imageFile,
+					tags: data.templateTags,
+				});
+			} catch { /* skip corrupt */ }
+		}
+	} catch (err) {
+		console.error('[MapPersistence] Error building template index:', err);
+	}
+
+	_templateIndex = entries;
+	return entries;
+}
+
 /**
  * Map annotation persistence: save, load, query, and migration.
  * Extracted from DndCampaignHubPlugin.
@@ -60,6 +112,9 @@ export async function _flushMapSave(plugin: DndCampaignHubPlugin, mapId: string)
 
 		// Only remove from pending saves AFTER successful write
 		plugin._pendingSaves.delete(mapId);
+
+		// Invalidate template index — the saved map may be a template
+		invalidateTemplateIndex();
 	} catch (error) {
 		console.error('Error saving map annotations:', error);
 		// Re-arm the debounce so the save is retried automatically
@@ -118,6 +173,7 @@ export async function queryMapTemplates(plugin: DndCampaignHubPlugin, criteria: 
 	tags: any;
 	matchScore: number;
 }>> {
+	const index = await _getTemplateIndex(plugin);
 	const results: Array<{
 		mapId: string;
 		name: string;
@@ -126,74 +182,24 @@ export async function queryMapTemplates(plugin: DndCampaignHubPlugin, criteria: 
 		matchScore: number;
 	}> = [];
 
-	try {
-		const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
-		if (!(await plugin.app.vault.adapter.exists(annotationDir))) return results;
+	for (const entry of index) {
+		const tags = entry.tags;
+		let score = 0;
 
-		const listing = await plugin.app.vault.adapter.list(annotationDir);
+		if (criteria.terrain && tags.terrain?.includes(criteria.terrain)) score += 3;
+		if (criteria.climate && tags.climate?.includes(criteria.climate)) score += 2;
+		if (criteria.location && tags.location?.includes(criteria.location)) score += 2;
+		if (criteria.timeOfDay && tags.timeOfDay?.includes(criteria.timeOfDay)) score += 1;
+		if (criteria.size && tags.size?.includes(criteria.size)) score += 1;
 
-		for (const filePath of listing.files) {
-			if (!filePath.endsWith('.json')) continue;
-
-			try {
-				const raw = await plugin.app.vault.adapter.read(filePath);
-				const data = JSON.parse(raw);
-
-				// Skip non-templates
-				if (!data.isTemplate || !data.templateTags) continue;
-
-				const tags = data.templateTags;
-				let score = 0;
-
-				// Terrain match (highest priority)
-				if (criteria.terrain && tags.terrain && tags.terrain.includes(criteria.terrain)) {
-					score += 3;
-				}
-
-				// Climate match
-				if (criteria.climate && tags.climate && tags.climate.includes(criteria.climate)) {
-					score += 2;
-				}
-
-				// Location match
-				if (criteria.location && tags.location && tags.location.includes(criteria.location)) {
-					score += 2;
-				}
-
-				// Time of day match
-				if (criteria.timeOfDay && tags.timeOfDay && tags.timeOfDay.includes(criteria.timeOfDay)) {
-					score += 1;
-				}
-
-				// Size match
-				if (criteria.size && tags.size && tags.size.includes(criteria.size)) {
-					score += 1;
-				}
-
-				// Include if any criteria matched, or if no criteria provided
-				const hasCriteria = criteria.terrain || criteria.climate || criteria.location;
-				if (score > 0 || !hasCriteria) {
-					results.push({
-						mapId: data.mapId,
-						name: data.name || 'Unnamed Template',
-						imageFile: data.imageFile,
-						tags,
-						matchScore: score,
-					});
-				}
-			} catch {
-				// Skip corrupt files
-			}
+		const hasCriteria = criteria.terrain || criteria.climate || criteria.location;
+		if (score > 0 || !hasCriteria) {
+			results.push({ ...entry, matchScore: score });
 		}
-
-		// Sort by score descending
-		results.sort((a, b) => b.matchScore - a.matchScore);
-
-		return results;
-	} catch (err) {
-		console.error('[Plugin] Error querying templates:', err);
-		return results;
 	}
+
+	results.sort((a, b) => b.matchScore - a.matchScore);
+	return results;
 }
 
 /**
