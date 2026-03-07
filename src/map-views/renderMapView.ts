@@ -3551,10 +3551,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					});
 				}
 				
-				// Draw markers
+				// Draw markers (surface / non-tunnel tokens first)
 				if (config.markers) {
 					const _CULL_SIZE_SQ: Record<string, number> = { 'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4 };
 					config.markers.forEach((marker: any) => {
+						if (marker.tunnelState) return; // tunnel tokens drawn after tunnel paths
 						// Viewport cull: skip markers entirely outside the view
 						const _mDef = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
 						const _mR = _mDef && _mDef.creatureSize ? ((_CULL_SIZE_SQ[_mDef.creatureSize] || 1) * (config.gridSize || 70)) / 2 : 30;
@@ -3571,6 +3572,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						
 					const tunnelWidth = getTunnelWidth(tunnel, config.gridSize);
 					ctx.save();
+						ctx.globalAlpha = 0.6;
 						ctx.strokeStyle = '#2a2a2a';
 						ctx.lineWidth = tunnelWidth;
 						ctx.lineCap = 'round';
@@ -3585,7 +3587,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						ctx.stroke();
 						
 						// Draw border for tunnel corridor
-						ctx.globalAlpha = 0.7;
+						ctx.globalAlpha = 0.5;
 						ctx.strokeStyle = '#654321';
 						ctx.lineWidth = tunnelWidth + 4;
 						ctx.beginPath();
@@ -3596,7 +3598,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						ctx.stroke();
 						
 						// Draw inner tunnel path (darker)
-						ctx.globalAlpha = 0.8;
+						ctx.globalAlpha = 0.5;
 						ctx.strokeStyle = '#1a1a1a';
 						ctx.lineWidth = tunnelWidth * 0.7;
 						ctx.beginPath();
@@ -3607,6 +3609,18 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						ctx.stroke();
 						
 						ctx.restore();
+					});
+				}
+				
+				// Draw tunnel tokens ON TOP of tunnel paths so they're visible
+				if (config.markers) {
+					const _CULL_SIZE_SQ: Record<string, number> = { 'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4 };
+					config.markers.forEach((marker: any) => {
+						if (!marker.tunnelState) return; // only tunnel tokens in this pass
+						const _mDef = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
+						const _mR = _mDef && _mDef.creatureSize ? ((_CULL_SIZE_SQ[_mDef.creatureSize] || 1) * (config.gridSize || 70)) / 2 : 30;
+						if (!_inViewCircle(marker.position.x, marker.position.y, _mR)) return;
+						drawMarker(ctx, marker);
 					});
 				}
 				
