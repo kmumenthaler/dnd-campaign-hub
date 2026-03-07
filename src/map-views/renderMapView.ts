@@ -2301,15 +2301,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					};
 				}
 				// Build target distance ruler data if active
-				let targetDistRuler: { origin: { x: number; y: number; elevation: number }; target: { x: number; y: number; elevation: number } } | null = null;
+				let targetDistRuler: { origin: { x: number; y: number; elevation: number; sizeSquares: number }; target: { x: number; y: number; elevation: number; sizeSquares: number } } | null = null;
 				if (targetDistOriginIdx >= 0 && targetDistTargetIdx >= 0 && config.markers[targetDistOriginIdx] && config.markers[targetDistTargetIdx]) {
 					const oMarker = config.markers[targetDistOriginIdx];
 					const tMarker = config.markers[targetDistTargetIdx];
 					const oElev = (oMarker.elevation?.height || 0) - (oMarker.elevation?.depth || 0);
 					const tElev = (tMarker.elevation?.height || 0) - (tMarker.elevation?.depth || 0);
+					const oDef = oMarker.markerId ? plugin.markerLibrary.getMarker(oMarker.markerId) : null;
+					const tDef = tMarker.markerId ? plugin.markerLibrary.getMarker(tMarker.markerId) : null;
+					const oSq = oDef?.creatureSize ? (CREATURE_SIZE_SQUARES[oDef.creatureSize] || 1) : 1;
+					const tSq = tDef?.creatureSize ? (CREATURE_SIZE_SQUARES[tDef.creatureSize] || 1) : 1;
 					targetDistRuler = {
-						origin: { x: oMarker.position.x, y: oMarker.position.y, elevation: oElev },
-						target: { x: tMarker.position.x, y: tMarker.position.y, elevation: tElev }
+						origin: { x: oMarker.position.x, y: oMarker.position.y, elevation: oElev, sizeSquares: oSq },
+						target: { x: tMarker.position.x, y: tMarker.position.y, elevation: tElev, sizeSquares: tSq }
 					};
 				}
 				const payload: any = {
@@ -4808,10 +4812,20 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						ctx.setLineDash([]);
 						ctx.restore();
 						
-						// Calculate D&D 5e RAW distance (5ft increments) with elevation
+						// Calculate D&D 5e RAW distance: edge-to-edge, not center-to-center
+						// Each token's space is sizeSquares × sizeSquares grid cells.
+						// Half-extent = (sizeSquares * gridSize) / 2 pixels from center to edge.
+						const originSizeSquares = originDef?.creatureSize ? (CREATURE_SIZE_SQUARES[originDef.creatureSize] || 1) : 1;
+						const targetSizeSquares = targetDef?.creatureSize ? (CREATURE_SIZE_SQUARES[targetDef.creatureSize] || 1) : 1;
+						const originHalf = (originSizeSquares * config.gridSize) / 2;
+						const targetHalf = (targetSizeSquares * config.gridSize) / 2;
+
 						const dx = targetPos.x - originPos.x;
 						const dy = targetPos.y - originPos.y;
-						const horizontalPixelDist = Math.sqrt(dx * dx + dy * dy);
+						// Edge-to-edge AABB distance: subtract each token's half-extent, clamp to 0
+						const edgeDx = Math.max(0, Math.abs(dx) - originHalf - targetHalf);
+						const edgeDy = Math.max(0, Math.abs(dy) - originHalf - targetHalf);
+						const horizontalPixelDist = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
 						const horizontalGridDist = horizontalPixelDist / config.gridSize;
 						const horizontalFeet = horizontalGridDist * config.scale.value;
 						

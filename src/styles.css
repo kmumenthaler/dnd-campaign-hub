@@ -4480,7 +4480,7 @@
 /* Projection status badge on the GM viewport — pulsing green dot */
 .dnd-map-projection-status {
   position: absolute;
-  top: 10px;
+  bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 1003;

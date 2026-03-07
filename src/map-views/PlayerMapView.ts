@@ -2609,11 +2609,19 @@ export class PlayerMapView extends ItemView {
     const { origin, target } = config.targetDistRuler;
     const dx = target.x - origin.x;
     const dy = target.y - origin.y;
-    const horizontalPixelDist = Math.sqrt(dx * dx + dy * dy);
 
     const gridSize = config.gridSize || 70;
     const scaleValue = config.scale?.value || 5;
     const scaleUnit = config.scale?.unit || 'feet';
+
+    // Edge-to-edge AABB distance: subtract each token's half-extent from the
+    // center-to-center offset so Large+ creatures measure from their nearest
+    // occupied grid edge, not their center.
+    const originHalf = ((origin.sizeSquares || 1) * gridSize) / 2;
+    const targetHalf = ((target.sizeSquares || 1) * gridSize) / 2;
+    const edgeDx = Math.max(0, Math.abs(dx) - originHalf - targetHalf);
+    const edgeDy = Math.max(0, Math.abs(dy) - originHalf - targetHalf);
+    const horizontalPixelDist = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
     const horizontalFeet = (horizontalPixelDist / gridSize) * scaleValue;
 
     // 3D distance with elevation
