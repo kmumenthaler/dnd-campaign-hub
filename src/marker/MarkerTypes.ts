@@ -80,6 +80,7 @@ export interface TunnelState {
 	tunnelId: string;      // Which tunnel the token is in
 	pathIndex: number;     // Current position along the tunnel path
 	enteredAt: number;     // Timestamp when token entered
+	previousLayer?: string; // Layer the token was on before entering the tunnel
 }
 
 /**

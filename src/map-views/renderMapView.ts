@@ -9530,7 +9530,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 											m.tunnelState = {
 												tunnelId: nearestTunnel.tunnel.id,
 												pathIndex: nearEntrance ? 0 : nearestTunnel.tunnel.path.length - 1,
-												enteredAt: Date.now()
+												enteredAt: Date.now(),
+												previousLayer: m.layer || 'Player'
 											};
 											
 											// Snap token to tunnel entrance/exit
@@ -9574,6 +9575,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 										
 										exitBtn.addEventListener('click', () => {
 											saveToHistory();
+											
+											// Restore the layer the token was on before entering
+											m.layer = m.tunnelState.previousLayer || 'Player';
 											delete m.tunnelState;
 											
 											// Clear tunnel-assigned depth (but keep manually set depth)
@@ -9585,8 +9589,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 													delete m.elevation;
 												}
 											}
-											
-											m.layer = 'Player';
 											
 											redrawAnnotations();
 											plugin.saveMapAnnotations(config, el);
