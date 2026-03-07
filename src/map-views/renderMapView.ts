@@ -2077,8 +2077,17 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			if (!pm) { new Notice('Projection manager not available'); return; }
 
 			const screens = await pm.getScreens();
-			if (screens.length <= 1 && !isMultiScreenSupported()) {
-				const screen = screens[0];
+			const occupied = pm.getOccupiedScreenKeys();
+			const available = screens.filter(s => !occupied.has(screenKey(s)));
+
+			if (available.length === 0 && screens.length > 0) {
+				new Notice('All screens are already in use');
+				return;
+			}
+
+			// Single screen: project directly (skip menu)
+			if (available.length <= 1 && !isMultiScreenSupported()) {
+				const screen = available[0] ?? screens[0];
 				if (!screen) { new Notice('No screens detected'); return; }
 				const mapId = config.mapId || resourcePath;
 				await pm.project(mapId, {
@@ -2095,18 +2104,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			}
 
 			const menu = new Menu();
-			if (pm.isProjectionAlive()) {
-				const activeScreen = pm.activeProjection?.screen;
-				const activeLabel = activeScreen ? `${activeScreen.label} (${activeScreen.width}×${activeScreen.height})` : '';
-				menu.addItem((item) => {
-					item.setTitle(`⏹ Stop Projection${activeLabel ? ' — ' + activeLabel : ''}`);
-					item.onClick(() => pm.stopProjection());
-				});
-				menu.showAtMouseEvent(e as MouseEvent);
-				return;
-			}
-
-			for (const screen of screens) {
+			for (const screen of available) {
 				const cal = pm.getCalibrationForScreen(screen);
 				const label = `${screen.isPrimary ? '🖥️' : '🖵'} ${screen.label} (${screen.width}×${screen.height})${cal ? ' ✓' : ''}`;
 				menu.addItem((item) => {
@@ -2138,21 +2136,28 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			menu.showAtMouseEvent(e as MouseEvent);
 		});
 
-		// -- Stop Projection --
-		const pvStopBtn = pvDropdown.createEl('button', { cls: 'dnd-map-pv-dropdown-item dnd-map-pv-stop-btn hidden' });
-		pvStopBtn.innerHTML = '⏹ Stop Projection';
-		pvStopBtn.addEventListener('click', () => {
-			pvDropdown.addClass('hidden');
-			plugin.projectionManager?.stopProjection();
-		});
+		// -- Dynamic projection actions container --
+		// Rebuilt every time the dropdown opens to reflect current state.
+		const pvProjActions = pvDropdown.createDiv({ cls: 'dnd-map-pv-proj-actions' });
 
-		// -- Transition to this Map --
-		const pvTransitionBtn = pvDropdown.createEl('button', { cls: 'dnd-map-pv-dropdown-item hidden' });
-		pvTransitionBtn.innerHTML = '🔄 Transition to this Map';
-		pvTransitionBtn.addEventListener('click', () => {
-			pvDropdown.addClass('hidden');
-			const mapId = config.mapId || resourcePath;
-			plugin.projectionManager?.swapMap(mapId, {
+		/** Helper: build projection-specific buttons dynamically. */
+		const buildProjectionActions = () => {
+			pvProjActions.empty();
+			const pm = plugin.projectionManager;
+			if (!pm) return;
+
+			const currentMapId = config.mapId || resourcePath;
+			const projections = pm.getLiveProjections();
+			if (projections.length === 0) return;
+
+			// Separator before projection actions
+			pvProjActions.createDiv({ cls: 'dnd-map-pv-dropdown-sep' });
+
+			// Find projection of THIS map (if any)
+			const thisMapProj = pm.getProjectionForMap(currentMapId);
+
+			// Build mapConfig payload once
+			const mapPayload = {
 				markers: config.markers, drawings: config.drawings,
 				highlights: config.highlights, aoeEffects: config.aoeEffects,
 				fogOfWar: config.fogOfWar, walls: config.walls,
@@ -2161,31 +2166,53 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				gridSize: config.gridSize, gridOffsetX: config.gridOffsetX || 0,
 				gridOffsetY: config.gridOffsetY || 0, scale: config.scale,
 				name: config.name, isVideo: config.isVideo, type: config.type
-			}, resourcePath);
-		});
+			};
+
+			// "Transition [screen] to this Map" for each projection NOT showing this map
+			for (const proj of projections) {
+				const sKey = screenKey(proj.screen);
+				if (proj.mapId === currentMapId) continue;
+				const btn = pvProjActions.createEl('button', { cls: 'dnd-map-pv-dropdown-item' });
+				btn.innerHTML = `🔄 Transition ${proj.screen.label} to this Map`;
+				btn.addEventListener('click', () => {
+					pvDropdown.addClass('hidden');
+					pm.swapMapOnScreen(sKey, currentMapId, mapPayload, resourcePath);
+				});
+			}
+
+			// Stop buttons for each active projection
+			for (const proj of projections) {
+				const sKey = screenKey(proj.screen);
+				const btn = pvProjActions.createEl('button', { cls: 'dnd-map-pv-dropdown-item dnd-map-pv-stop-btn' });
+				btn.innerHTML = `⏹ Stop — ${proj.screen.label}`;
+				btn.addEventListener('click', () => {
+					pvDropdown.addClass('hidden');
+					pm.stopProjectionOnScreen(sKey);
+				});
+			}
+
+			// "Stop All" if multiple projections
+			if (projections.length > 1) {
+				const btn = pvProjActions.createEl('button', { cls: 'dnd-map-pv-dropdown-item dnd-map-pv-stop-btn' });
+				btn.innerHTML = '⏹ Stop All Projections';
+				btn.addEventListener('click', () => {
+					pvDropdown.addClass('hidden');
+					pm.stopAllProjections();
+				});
+			}
+		};
 
 		// Update dropdown items visibility when dropdown opens
 		const updatePvDropdownState = () => {
-			const alive = plugin.projectionManager?.isProjectionAlive();
+			const pm = plugin.projectionManager;
 			const currentMapId = config.mapId || resourcePath;
-			const isDifferentMap = alive && plugin.projectionManager?.activeProjection?.mapId !== currentMapId;
+			const thisMapProj = pm?.getProjectionForMap(currentMapId);
 
-			// Projection-only items
-			pvStopBtn.toggleClass('hidden', !alive);
-			pvTransitionBtn.toggleClass('hidden', !isDifferentMap);
+			// Hide "Open Player View" if this map is already projected
+			pvOpenBtn.toggleClass('hidden', !!thisMapProj);
 
-			// Normal items — hidden when projection is active
-			pvOpenBtn.toggleClass('hidden', !!alive);
-			pvFsBtn.toggleClass('hidden', !!alive);
-			pvViewModeBtn.toggleClass('hidden', !!alive);
-			pvSep.toggleClass('hidden', !!alive);
-			pvCalBtn.toggleClass('hidden', !!alive);
-			pvProjectItem.toggleClass('hidden', !!alive);
-
-			if (alive) {
-				const label = plugin.projectionManager?.activeProjection?.screen?.label || 'screen';
-				pvStopBtn.innerHTML = `⏹ Stop Projection — ${label}`;
-			}
+			// Rebuild dynamic projection actions
+			buildProjectionActions();
 		};
 
 		// Toggle dropdown on button click
@@ -2326,22 +2353,24 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		};
 
 		// ── Projection status indicator ──────────────────────────────────
-		// Shows a pulsing green badge on the GM viewport when a projection is
-		// actively running.  Updated periodically and on projection changes.
+		// Shows a pulsing green badge on the GM viewport when projection(s)
+		// are actively running.  Updated periodically.
 		let projStatusEl: HTMLElement | null = null;
 		const updateProjectionStatus = () => {
-			const alive = plugin.projectionManager?.isProjectionAlive();
-			if (alive && !projStatusEl) {
+			const pm = plugin.projectionManager;
+			const projections = pm?.getLiveProjections() ?? [];
+			if (projections.length > 0 && !projStatusEl) {
+				const labels = projections.map(p => p.screen.label).join(', ');
 				projStatusEl = viewport.createEl('div', {
 					cls: 'dnd-map-projection-status',
-					text: `PROJECTING — ${plugin.projectionManager?.activeProjection?.screen?.label || 'screen'}`,
+					text: `PROJECTING — ${labels}`,
 				});
-			} else if (!alive && projStatusEl) {
+			} else if (projections.length === 0 && projStatusEl) {
 				projStatusEl.remove();
 				projStatusEl = null;
-			} else if (alive && projStatusEl) {
-				const label = plugin.projectionManager?.activeProjection?.screen?.label || 'screen';
-				projStatusEl.textContent = `PROJECTING — ${label}`;
+			} else if (projections.length > 0 && projStatusEl) {
+				const labels = projections.map(p => p.screen.label).join(', ');
+				projStatusEl.textContent = `PROJECTING — ${labels}`;
 			}
 		};
 		updateProjectionStatus();

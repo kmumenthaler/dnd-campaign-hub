@@ -1,11 +1,13 @@
 /**
  * ProjectionManager — orchestrates the "Project to Monitor" workflow.
  *
- * Manages the lifecycle of a single projected player view:
+ * Manages the lifecycle of one or more projected player views, each
+ * pinned to a different monitor:
  * - Opens a popout window positioned on a chosen monitor
  * - Auto-fullscreens and applies per-monitor calibration
- * - Supports seamless map transitions via `swapMap()`
+ * - Supports seamless map transitions via `swapMapOnScreen()`
  * - Persists per-monitor calibration so setup is one-time
+ * - Multiple maps can be projected to different monitors simultaneously
  */
 
 import { Notice, WorkspaceLeaf } from 'obsidian';
@@ -32,8 +34,20 @@ export interface ProjectionState {
 export class ProjectionManager {
   private plugin: DndCampaignHubPlugin;
 
-  /** The currently active projection, or null if nothing is projected. */
-  activeProjection: ProjectionState | null = null;
+  /** All currently active projections, keyed by screenKey. */
+  activeProjections: Map<string, ProjectionState> = new Map();
+
+  /**
+   * Compat getter — returns the first live projection, or null.
+   * Prefer iterating `activeProjections` directly when possible.
+   */
+  get activeProjection(): ProjectionState | null {
+    this.pruneDeadProjections();
+    for (const proj of this.activeProjections.values()) {
+      return proj;
+    }
+    return null;
+  }
 
   constructor(plugin: DndCampaignHubPlugin) {
     this.plugin = plugin;
@@ -44,10 +58,9 @@ export class ProjectionManager {
   /**
    * Project a map to a specific screen.
    *
-   * If an active projection exists and is still alive, this reuses the
-   * existing window (calling `swapMap`) rather than opening a new one.
-   * Otherwise it opens a new popout leaf, positions it on the target
-   * screen, fullscreens it, and applies stored calibration.
+   * If a projection already exists on that screen, it is swapped to the
+   * new map.  Otherwise a new popout window is opened and positioned on
+   * the target screen.
    */
   async project(
     mapId: string,
@@ -55,17 +68,17 @@ export class ProjectionManager {
     imageResourcePath: string,
     screen: ScreenInfo,
   ): Promise<void> {
-    // ── Reuse existing projection window if possible ───────────────
-    if (this.activeProjection && this.isProjectionAlive()) {
-      const pv = this.activeProjection.leaf.view as PlayerMapView | undefined;
-      if (pv && typeof pv.swapMap === 'function') {
-        this.activeProjection.mapId = mapId;
-        this.activeProjection.screen = screen;
+    const sKey = screenKey(screen);
 
-        // Auto-calibrate from EDID if no calibration exists for the new screen
+    // ── Reuse existing projection on the SAME screen ───────────────
+    const existing = this.activeProjections.get(sKey);
+    if (existing && this.isProjectionAliveOnScreen(sKey)) {
+      const pv = existing.leaf.view as PlayerMapView | undefined;
+      if (pv && typeof pv.swapMap === 'function') {
+        existing.mapId = mapId;
+
         await this.ensureCalibration(screen);
 
-        // Use onReady hook so calibration + orient happens while still faded
         pv.swapMap(mapId, mapConfig, imageResourcePath, (fadeIn) => {
           const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
           this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
@@ -93,25 +106,21 @@ export class ProjectionManager {
       },
     });
 
-    this.activeProjection = { leaf: popoutLeaf, screen, mapId };
+    this.activeProjections.set(sKey, { leaf: popoutLeaf, screen, mapId });
 
     // Save last-used screen preference
-    this.plugin.settings.lastProjectionScreenKey = screenKey(screen);
+    this.plugin.settings.lastProjectionScreenKey = sKey;
     await this.plugin.saveSettings();
 
     // Position + fullscreen after a short delay to let the window open
     setTimeout(async () => {
       await this.positionAndFullscreen(popoutLeaf, screen);
 
-      // Auto-calibrate from EDID if no calibration exists
       await this.ensureCalibration(screen);
 
-      // Apply per-monitor calibration
       const pv = popoutLeaf.view as PlayerMapView | undefined;
       if (pv) {
         const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
-        // Auto-orient (rotate if elongated) and fit-to-screen when no calibration
-        // Fade in once layout is settled
         this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
           if (typeof (pv as any).fadeInInitial === 'function') {
             (pv as any).fadeInInitial();
@@ -124,20 +133,23 @@ export class ProjectionManager {
   }
 
   /**
-   * Swap the map on an active projection without touching the window.
-   * No-ops if there is no active projection.
+   * Swap the map on a specific projection identified by its screenKey.
+   * No-ops if no projection exists for that screen.
    */
-  async swapMap(mapId: string, mapConfig: any, imageResourcePath: string): Promise<void> {
-    if (!this.activeProjection || !this.isProjectionAlive()) {
-      return;
-    }
-    const pv = this.activeProjection.leaf.view as PlayerMapView | undefined;
-    if (pv && typeof pv.swapMap === 'function') {
-      this.activeProjection.mapId = mapId;
-      const screen = this.activeProjection.screen;
+  async swapMapOnScreen(
+    sKey: string,
+    mapId: string,
+    mapConfig: any,
+    imageResourcePath: string,
+  ): Promise<void> {
+    const proj = this.activeProjections.get(sKey);
+    if (!proj || !this.isProjectionAliveOnScreen(sKey)) return;
 
-      // Use the onReady hook: the fade stays opaque until we call fadeIn(),
-      // giving calibration + auto-orient time to finish without visible jumps.
+    const pv = proj.leaf.view as PlayerMapView | undefined;
+    if (pv && typeof pv.swapMap === 'function') {
+      proj.mapId = mapId;
+      const screen = proj.screen;
+
       pv.swapMap(mapId, mapConfig, imageResourcePath, (fadeIn) => {
         const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
         this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
@@ -145,36 +157,101 @@ export class ProjectionManager {
         });
       });
 
-      new Notice(`Map transitioned — ${mapConfig.name || mapId}`);
+      new Notice(`Map transitioned on ${screen.label} — ${mapConfig.name || mapId}`);
     }
   }
 
-  /** Close the active projection and clean up. */
+  /**
+   * @deprecated Use swapMapOnScreen(). Swap map on the first active projection.
+   */
+  async swapMap(mapId: string, mapConfig: any, imageResourcePath: string): Promise<void> {
+    this.pruneDeadProjections();
+    const first = this.activeProjections.keys().next().value;
+    if (first) await this.swapMapOnScreen(first, mapId, mapConfig, imageResourcePath);
+  }
+
+  /** Stop a specific projection by screenKey. */
+  stopProjectionOnScreen(sKey: string): void {
+    const proj = this.activeProjections.get(sKey);
+    if (proj) {
+      try { proj.leaf.detach(); } catch { /* leaf may already be gone */ }
+      this.activeProjections.delete(sKey);
+      new Notice(`Projection stopped — ${proj.screen.label}`);
+    }
+  }
+
+  /** Stop all active projections. */
+  stopAllProjections(): void {
+    for (const [sKey, proj] of this.activeProjections) {
+      try { proj.leaf.detach(); } catch { /* leaf may already be gone */ }
+    }
+    this.activeProjections.clear();
+    new Notice('All projections stopped');
+  }
+
+  /** @deprecated compat — stops all projections. */
   stopProjection(): void {
-    if (this.activeProjection) {
-      try {
-        this.activeProjection.leaf.detach();
-      } catch { /* leaf may already be gone */ }
-      this.activeProjection = null;
-      new Notice('Projection stopped');
-    }
+    this.stopAllProjections();
   }
 
-  /** Whether there is a live projection window. */
+  /** Whether ANY projection is alive. */
   isProjectionAlive(): boolean {
-    if (!this.activeProjection) return false;
+    this.pruneDeadProjections();
+    return this.activeProjections.size > 0;
+  }
+
+  /** Whether a specific screen has a live projection. */
+  isProjectionAliveOnScreen(sKey: string): boolean {
+    const proj = this.activeProjections.get(sKey);
+    if (!proj) return false;
     try {
-      const view = this.activeProjection.leaf.view;
-      return !!view && !!(view as any).containerEl?.isConnected;
-    } catch {
-      this.activeProjection = null;
-      return false;
+      const view = proj.leaf.view;
+      if (view && (view as any).containerEl?.isConnected) return true;
+    } catch { /* ignore */ }
+    this.activeProjections.delete(sKey);
+    return false;
+  }
+
+  /** Get the set of screenKeys currently occupied by projections. */
+  getOccupiedScreenKeys(): Set<string> {
+    this.pruneDeadProjections();
+    return new Set(this.activeProjections.keys());
+  }
+
+  /** Get all live projections as an array. */
+  getLiveProjections(): ProjectionState[] {
+    this.pruneDeadProjections();
+    return Array.from(this.activeProjections.values());
+  }
+
+  /** Find the projection showing a specific mapId, if any. */
+  getProjectionForMap(mapId: string): { screenKey: string; state: ProjectionState } | null {
+    this.pruneDeadProjections();
+    for (const [sKey, proj] of this.activeProjections) {
+      if (proj.mapId === mapId) return { screenKey: sKey, state: proj };
     }
+    return null;
   }
 
   /** Get all available screens. */
   async getScreens(): Promise<ScreenInfo[]> {
     return enumerateScreens();
+  }
+
+  // ── Housekeeping ────────────────────────────────────────────────
+
+  /** Remove projections whose leaves are no longer connected. */
+  private pruneDeadProjections(): void {
+    for (const [sKey, proj] of this.activeProjections) {
+      try {
+        const view = proj.leaf.view;
+        if (!view || !(view as any).containerEl?.isConnected) {
+          this.activeProjections.delete(sKey);
+        }
+      } catch {
+        this.activeProjections.delete(sKey);
+      }
+    }
   }
 
   // ── Per-monitor calibration persistence ─────────────────────────
