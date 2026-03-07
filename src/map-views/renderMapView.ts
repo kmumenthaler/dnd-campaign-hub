@@ -4935,7 +4935,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			const getMarkerRadius = (markerDef: MarkerDefinition): number => {
 				if (['player', 'npc', 'creature'].includes(markerDef.type) && markerDef.creatureSize && config.gridSize) {
 					const squares = CREATURE_SIZE_SQUARES[markerDef.creatureSize] || 1;
-					return (squares * config.gridSize) / 2;
+					return (squares * config.gridSize * 0.90) / 2;
 				}
 				return (markerDef.pixelSize || 30) / 2;
 			};
