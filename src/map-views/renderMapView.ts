@@ -9643,6 +9643,103 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						}
 					}
 				}
+
+				// ── Wall door/window/pivot-door quick menu on ANY layer ──
+				// Allows the GM to open/close wall-based doors, windows and
+				// pivot doors from any layer without switching to the walls tool.
+				if (config.walls && config.walls.length > 0) {
+					const wallQuickRadius = 12;
+					let closestWallIdx = -1;
+					let closestWallDist = wallQuickRadius;
+					for (let wi = 0; wi < config.walls.length; wi++) {
+						const w = config.walls[wi];
+						const wt = w.type || 'wall';
+						if (wt !== 'door' && wt !== 'pivotDoor' && wt !== 'window' && wt !== 'secret') continue;
+						if (!w.start || !w.end) continue;
+						// Use the rendered position for pivot doors when open
+						const pts = (wt === 'pivotDoor' && w.open) ? getPivotDoorEndpoints(w) : w;
+						const dx = pts.end.x - pts.start.x;
+						const dy = pts.end.y - pts.start.y;
+						const lenSq = dx * dx + dy * dy;
+						if (lenSq < 1) continue;
+						const t = Math.max(0, Math.min(1, ((mapPos.x - pts.start.x) * dx + (mapPos.y - pts.start.y) * dy) / lenSq));
+						const px = pts.start.x + t * dx;
+						const py = pts.start.y + t * dy;
+						const d = Math.sqrt((mapPos.x - px) ** 2 + (mapPos.y - py) ** 2);
+						// Also check original position for open pivot doors
+						let dOrig = Infinity;
+						if (wt === 'pivotDoor' && w.open) {
+							const odx = w.end.x - w.start.x;
+							const ody = w.end.y - w.start.y;
+							const oLenSq = odx * odx + ody * ody;
+							if (oLenSq >= 1) {
+								const ot = Math.max(0, Math.min(1, ((mapPos.x - w.start.x) * odx + (mapPos.y - w.start.y) * ody) / oLenSq));
+								const opx = w.start.x + ot * odx;
+								const opy = w.start.y + ot * ody;
+								dOrig = Math.sqrt((mapPos.x - opx) ** 2 + (mapPos.y - opy) ** 2);
+							}
+						}
+						const best = Math.min(d, dOrig);
+						if (best < closestWallDist) {
+							closestWallDist = best;
+							closestWallIdx = wi;
+						}
+					}
+					if (closestWallIdx >= 0) {
+						e.preventDefault();
+						const wall = config.walls[closestWallIdx];
+						const wt = wall.type || 'wall';
+						const wallDef = WALL_TYPES[wt as WallType] || WALL_TYPES.wall;
+						const isOpen = wall.open === true;
+
+						const menu = new Menu();
+						menu.addItem(item => item.setTitle(`${wallDef.icon} ${wall.name || wallDef.name}`).setDisabled(true));
+						menu.addSeparator();
+
+						// Open / Close
+						menu.addItem(item => item
+							.setTitle(isOpen ? '🚪 Close' : '🚪 Open')
+							.onClick(() => {
+								saveToHistory();
+								wall.open = !isOpen;
+								redrawAnnotations();
+								plugin.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								new Notice(wall.open ? `${wallDef.name} opened` : `${wallDef.name} closed`);
+							})
+						);
+
+						// Pivot door extras
+						if (wt === 'pivotDoor') {
+							menu.addItem(item => item
+								.setTitle('↔️ Reverse Direction')
+								.onClick(() => {
+									saveToHistory();
+									wall.openDirection = (wall.openDirection || 1) * -1;
+									if (!wall.open) wall.open = true;
+									redrawAnnotations();
+									plugin.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									new Notice('Open direction reversed');
+								})
+							);
+							menu.addItem(item => item
+								.setTitle(`📌 Hinge: ${(wall.pivotEnd || 'start') === 'start' ? 'Start → End' : 'End → Start'}`)
+								.onClick(() => {
+									saveToHistory();
+									wall.pivotEnd = (wall.pivotEnd || 'start') === 'start' ? 'end' : 'start';
+									redrawAnnotations();
+									plugin.saveMapAnnotations(config, el);
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									new Notice(`Hinge moved to ${wall.pivotEnd}`);
+								})
+							);
+						}
+
+						menu.showAtMouseEvent(e);
+						return; // Don't fall through to marker menu
+					}
+				}
 				
 				for (let i = config.markers.length - 1; i >= 0; i--) {
 					const m = config.markers[i];
