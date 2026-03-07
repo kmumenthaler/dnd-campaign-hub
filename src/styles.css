@@ -6881,7 +6881,7 @@
   top: 100%;
   left: 0;
   right: 0;
-  z-index: 1000;
+  z-index: 1100;
   margin-top: 2px;
   border-radius: 4px;
   border: 1px solid var(--background-modifier-border);
