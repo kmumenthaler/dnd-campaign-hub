@@ -12,6 +12,7 @@ import type { CreatureSize, Layer } from "../marker/MarkerTypes";
 import type { EnvAssetInstance } from '../envasset/EnvAssetTypes';
 import { HexcrawlTracker } from '../hexcrawl';
 import { getTunnelWidth, getTunnelPortalRadius, drawTunnelPortal } from './tunnelUtils';
+import { WallSpatialIndex } from '../utils/WallSpatialIndex';
 
 export class PlayerMapView extends ItemView {
   plugin: DndCampaignHubPlugin;
@@ -57,6 +58,16 @@ export class PlayerMapView extends ItemView {
   // Cached filtered walls array – avoids re-filtering + door wall rebuild per frame
   private _cachedFogWalls: any[] | null = null;
   private _cachedFogWallsKey: string = '';    // wallsHash + envAsset door digest
+  // Spatial index for fast wall queries (survives across frames until walls change)
+  private _wallSpatialIndex: WallSpatialIndex | null = null;
+  private _wallSpatialIndexHash: string = '';
+  // Static light atlas: pre-baked vis-polys for non-moving lights (invalidated on wall change)
+  private _staticLightAtlas: HTMLCanvasElement | null = null;
+  private _staticLightColorAtlas: HTMLCanvasElement | null = null;
+  private _staticLightAtlasHash: string = ''; // wallsHash + static light positions digest
+  // Cell-change drag gating: only recompute fog when dragged token crosses a grid cell
+  private _dragLastFogCol: number = -1;
+  private _dragLastFogRow: number = -1;
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -3474,6 +3485,9 @@ export class PlayerMapView extends ItemView {
 
     if (allWalls.length === 0) return; // Nothing to occlude
 
+    // Build spatial index once for all vis-poly queries
+    const wallIndex = this._ensureWallIndex(allWalls);
+
     // For each vision-relevant player token, compute visibility polygon
     // (infinite range â€” only limited by walls) and cut it out of the fog.
     fogCtx.globalCompositeOperation = 'destination-out';
@@ -3485,7 +3499,8 @@ export class PlayerMapView extends ItemView {
         pt.position.x, pt.position.y,
         10000, // effectively infinite range for daylight
         allWalls,
-        viewerElev
+        viewerElev,
+        wallIndex
       );
 
       if (visPoly.length >= 3) {
@@ -3526,7 +3541,7 @@ export class PlayerMapView extends ItemView {
     for (const light of allLights) {
       const totalRadius = ((light.bright || 0) + (light.dim || 0)) * pixelsPerFoot;
       if (totalRadius <= 0) continue;
-      const visPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadius, allWalls);
+      const visPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadius, allWalls, 0, wallIndex);
       if (visPoly.length >= 3) {
         fogCtx.beginPath();
         const first = visPoly[0];
@@ -3642,18 +3657,38 @@ export class PlayerMapView extends ItemView {
     const isDragging = !!config.draggingMarkerId;
     const _freezeFlicker = isDragging;
 
-    // ── Fast path: freeze fog entirely during drag ──
-    // Visibility polygons are O(n²) and take 350-550 ms per frame.
-    // During a drag the only thing changing is the dragged token's position,
-    // which moves the vision cone slightly — visually insignificant while
-    // the user is focused on token placement.  Reuse the cached fog atlas
-    // from the last non-drag frame and skip all vis-polygon work.
-    // The accurate fog is recomputed on drop (see drag-end deferral below).
+    // ── Fast path: cell-change drag gating ──
+    // During drag, only recompute fog when the dragged token crosses a grid
+    // cell boundary.  With the spatial-index vis-poly the per-frame cost is
+    // now low enough for infrequent updates, and fog that tracks the token
+    // across cell boundaries looks far better than a completely frozen atlas.
     if (isDragging && this._fogAtlasCanvas &&
         this._fogAtlasW === w && this._fogAtlasH === h) {
-      ctx.drawImage(this._fogAtlasCanvas, 0, 0);
-      this._wasDragging = true;
-      return;
+      const gridSize = config.gridSize || 70;
+      const draggedMarker = (config.markers || []).find((m: any) => m.id === config.draggingMarkerId);
+      if (draggedMarker) {
+        const col = Math.floor((draggedMarker.position?.x || 0) / gridSize);
+        const row = Math.floor((draggedMarker.position?.y || 0) / gridSize);
+        if (col === this._dragLastFogCol && row === this._dragLastFogRow) {
+          // Same cell — reuse cached atlas
+          ctx.drawImage(this._fogAtlasCanvas, 0, 0);
+          this._wasDragging = true;
+          return;
+        }
+        // Cell changed — allow full recompute below, update tracked cell
+        this._dragLastFogCol = col;
+        this._dragLastFogRow = row;
+      } else {
+        // Dragged marker not found (shouldn't happen) — freeze
+        ctx.drawImage(this._fogAtlasCanvas, 0, 0);
+        this._wasDragging = true;
+        return;
+      }
+    }
+    // Reset cell tracking when not dragging
+    if (!isDragging) {
+      this._dragLastFogCol = -1;
+      this._dragLastFogRow = -1;
     }
 
     // ── Fog atlas cache: skip when the digest is unchanged ──
@@ -3884,6 +3919,9 @@ export class PlayerMapView extends ItemView {
       }
     }
     
+    // Build spatial index once for all vis-poly queries in drawFogOfWar
+    const wallIndex = this._ensureWallIndex(walls);
+
     // Create player NORMAL VISION mask - union of all player vision cones
     // Normal vision allows players to see lights from any distance (only blocked by walls)
     const playerVisionCanvas = _canvasPool.acquire(w, h);
@@ -3894,7 +3932,7 @@ export class PlayerMapView extends ItemView {
       playerTokens.forEach((pt: any) => {
         // Normal vision extends very far (simulate infinite by using large radius)
         const normalVisionRadius = 10000; // px, effectively infinite
-        const visPoly = this.computeVisibilityPolygon(pt.x, pt.y, normalVisionRadius, walls, pt.elevation);
+        const visPoly = this.computeVisibilityPolygon(pt.x, pt.y, normalVisionRadius, walls, pt.elevation, wallIndex);
         if (visPoly.length >= 3) {
           playerVisionCtx.beginPath();
           const first = visPoly[0];
@@ -3920,7 +3958,7 @@ export class PlayerMapView extends ItemView {
       playerTokens.forEach((pt: any) => {
         if (pt.darkvision > 0) {
           const radiusPx = pt.darkvision * pixelsPerFoot;
-          const visPoly = this.computeVisibilityPolygon(pt.x, pt.y, radiusPx, walls, pt.elevation);
+          const visPoly = this.computeVisibilityPolygon(pt.x, pt.y, radiusPx, walls, pt.elevation, wallIndex);
           if (visPoly.length >= 3) {
             playerDarkvisionCtx.beginPath();
             const first = visPoly[0];
@@ -3988,7 +4026,7 @@ export class PlayerMapView extends ItemView {
               const sx = light.start.x + wlDx * t;
               const sy = light.start.y + wlDy * t;
 
-              const vis = this.computeVisibilityPolygon(sx, sy, totalRadiusPx, walls, light.elevation || 0);
+              const vis = this.computeVisibilityPolygon(sx, sy, totalRadiusPx, walls, light.elevation || 0, wallIndex);
               if (vis.length < 3) continue;
 
               lightCtx.save();
@@ -4030,7 +4068,7 @@ export class PlayerMapView extends ItemView {
           lightCtx.save();
           
           // Compute light visibility with wall occlusion
-          const lightVisPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadiusPx, walls, light.elevation || 0);
+          const lightVisPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadiusPx, walls, light.elevation || 0, wallIndex);
           
           if (lightVisPoly.length >= 3) {
             // Clip to light visibility
@@ -4149,7 +4187,7 @@ export class PlayerMapView extends ItemView {
         const radiusPx = dv.range * pixelsPerFoot;
         if (radiusPx > 0) {
           // Darkvision reveals fog with wall occlusion (pass elevation so elevated tokens see over low walls)
-          this.drawLightWithShadows(fogCtx, dv.x, dv.y, radiusPx, 0, walls, dv.elevation || 0);
+          this.drawLightWithShadows(fogCtx, dv.x, dv.y, radiusPx, 0, walls, dv.elevation || 0, wallIndex);
         }
       });
       
@@ -4241,7 +4279,7 @@ export class PlayerMapView extends ItemView {
               const sx = light.start.x + wlDx * t;
               const sy = light.start.y + wlDy * t;
 
-              const vis = this.computeVisibilityPolygon(sx, sy, totalPx, walls, light.elevation || 0);
+              const vis = this.computeVisibilityPolygon(sx, sy, totalPx, walls, light.elevation || 0, wallIndex);
               if (vis.length < 3) continue;
 
               sCtx.save();
@@ -4277,7 +4315,7 @@ export class PlayerMapView extends ItemView {
             }
           } else {
           // Compute wall-occluded visibility
-          const visPoly = this.computeVisibilityPolygon(light.x, light.y, totalPx, walls, light.elevation || 0);
+          const visPoly = this.computeVisibilityPolygon(light.x, light.y, totalPx, walls, light.elevation || 0, wallIndex);
           if (visPoly.length < 3) return;
 
           sCtx.save();
@@ -4390,13 +4428,14 @@ export class PlayerMapView extends ItemView {
     brightRadius: number,
     dimRadius: number,
     walls: any[],
-    viewerElevation: number = 0
+    viewerElevation: number = 0,
+    spatialIndex?: WallSpatialIndex
   ) {
     const totalRadius = brightRadius + dimRadius;
     if (totalRadius <= 0) return;
 
     // Compute visibility polygon using ray casting (pass elevation so elevated viewers see over low walls)
-    const visibilityPoly = this.computeVisibilityPolygon(lightX, lightY, totalRadius, walls, viewerElevation);
+    const visibilityPoly = this.computeVisibilityPolygon(lightX, lightY, totalRadius, walls, viewerElevation, spatialIndex);
     
     if (visibilityPoly.length < 3) {
       // No walls or no valid polygon - draw full circle with smooth gradient
@@ -4498,7 +4537,8 @@ export class PlayerMapView extends ItemView {
     x2: number, y2: number,
     walls: any[],
     viewerElevation: number = 0,
-    targetElevation: number = 0
+    targetElevation: number = 0,
+    spatialIndex?: WallSpatialIndex
   ): boolean {
     const dx = x2 - x1;
     const dy = y2 - y1;
@@ -4509,8 +4549,13 @@ export class PlayerMapView extends ItemView {
     const dirX = dx / distance;
     const dirY = dy / distance;
     
+    // Use spatial index to narrow wall candidates to those near the query segment
+    const candidateWalls = spatialIndex
+      ? spatialIndex.querySegment(x1, y1, x2, y2)
+      : walls;
+
     // Check if ray from (x1,y1) to (x2,y2) intersects any wall
-    for (const wall of walls) {
+    for (const wall of candidateWalls) {
       if (!wall.start || !wall.end) continue;
       
       // D&D wall height model: if EITHER the viewer OR the target is above the wall,
@@ -4540,12 +4585,27 @@ export class PlayerMapView extends ItemView {
 
   // Tunnel wall generation is now handled by tunnelUtils.generateTunnelWalls()
 
+  /**
+   * Ensure the wall spatial index is built and cached for the given walls.
+   * Returns the index (reuses the existing one if wallsHash matches).
+   */
+  private _ensureWallIndex(walls: any[]): WallSpatialIndex {
+    const hash = _getWallsHash(walls);
+    if (this._wallSpatialIndex && this._wallSpatialIndexHash === hash) {
+      return this._wallSpatialIndex;
+    }
+    this._wallSpatialIndex = new WallSpatialIndex(walls, 200);
+    this._wallSpatialIndexHash = hash;
+    return this._wallSpatialIndex;
+  }
+
   private computeVisibilityPolygon(
     originX: number,
     originY: number,
     maxRadius: number,
     walls: any[],
-    viewerElevation: number = 0
+    viewerElevation: number = 0,
+    spatialIndex?: WallSpatialIndex
   ): { x: number; y: number }[] {
     // â”€â”€ Memoization: check cache before doing O(nÂ²) work â”€â”€
     const _wHash = _getWallsHash(walls);
@@ -4569,28 +4629,33 @@ export class PlayerMapView extends ItemView {
       });
     }
     
-    // Add wall segments
-    walls.forEach((wall: any) => {
-      if (!wall.start || !wall.end) return;
+    // Add wall segments — use spatial index when available for fast lookup
+    const nearWalls = spatialIndex
+      ? spatialIndex.queryCircle(originX, originY, maxRadius * 2)
+      : walls;
+    for (let _wi = 0; _wi < nearWalls.length; _wi++) {
+      const wall = nearWalls[_wi];
+      if (!wall.start || !wall.end) continue;
       
       // Wall height check: viewer above this wall can see over it
-      if (wall.height !== undefined && wall.height !== null && viewerElevation > wall.height) return;
+      if (wall.height !== undefined && wall.height !== null && viewerElevation > wall.height) continue;
       
       // Only consider walls that might be within range
       const dx1 = wall.start.x - originX;
       const dy1 = wall.start.y - originY;
       const dx2 = wall.end.x - originX;
       const dy2 = wall.end.y - originY;
-      const dist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
-      const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+      const dist1Sq = dx1 * dx1 + dy1 * dy1;
+      const dist2Sq = dx2 * dx2 + dy2 * dy2;
+      const maxDistSq = (maxRadius * 2) * (maxRadius * 2);
       
-      if (dist1 > maxRadius * 2 && dist2 > maxRadius * 2) return;
+      if (dist1Sq > maxDistSq && dist2Sq > maxDistSq) continue;
       
       segments.push({
         p1: { x: wall.start.x, y: wall.start.y },
         p2: { x: wall.end.x, y: wall.end.y }
       });
-    });
+    }
     
     // --- Wall gap prevention: snap nearby endpoints + extend segments ---
     // This fixes light leaking through tiny gaps where walls don't perfectly meet.
@@ -4765,13 +4830,14 @@ export class PlayerMapView extends ItemView {
     brightRadius: number,
     dimRadius: number,
     walls: any[],
-    playerVisCanvas: HTMLCanvasElement
+    playerVisCanvas: HTMLCanvasElement,
+    spatialIndex?: WallSpatialIndex
   ) {
     const totalRadius = brightRadius + dimRadius;
     if (totalRadius <= 0) return;
 
     // Compute light's visibility polygon
-    const lightVisPoly = this.computeVisibilityPolygon(lightX, lightY, totalRadius, walls);
+    const lightVisPoly = this.computeVisibilityPolygon(lightX, lightY, totalRadius, walls, 0, spatialIndex);
     
     if (lightVisPoly.length < 3) {
       // No valid polygon - fallback
