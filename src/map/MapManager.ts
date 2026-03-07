@@ -1,23 +1,22 @@
-import { App, TFile, Notice } from 'obsidian';
-import { MapData, GridDetection, MAP_PRESETS, isVideoExtension } from './types';
+import { App, TFile } from 'obsidian';
+import { MapData, GridDetection, isVideoExtension } from './types';
 
 /**
- * Manages map creation, storage, and retrieval
+ * Stateless utilities for map creation, image analysis, and code-block generation.
+ * Persistence is handled entirely by MapPersistence.
  */
 export class MapManager {
   private app: App;
-  private maps: Map<string, MapData>;
 
   constructor(app: App) {
     this.app = app;
-    this.maps = new Map();
   }
 
   /**
    * Generate unique ID for maps
    */
   generateMapId(): string {
-    return `map_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `map_${crypto.randomUUID()}`;
   }
 
   /**
@@ -166,32 +165,7 @@ export class MapManager {
       lastModified: now
     };
 
-    this.maps.set(mapData.id, mapData);
     return mapData;
-  }
-
-  /**
-   * Get map by ID
-   */
-  getMap(id: string): MapData | undefined {
-    return this.maps.get(id);
-  }
-
-  /**
-   * Update map
-   */
-  updateMap(id: string, updates: Partial<MapData>): void {
-    const map = this.maps.get(id);
-    if (map) {
-      Object.assign(map, updates, { lastModified: new Date().toISOString() });
-    }
-  }
-
-  /**
-   * Delete map
-   */
-  deleteMap(id: string): void {
-    this.maps.delete(id);
   }
 
   /**
@@ -208,24 +182,4 @@ ${JSON.stringify(config, null, 2)}
 \`\`\``;
   }
 
-  /**
-   * Parse map code block from markdown
-   */
-  parseMapCodeBlock(content: string): MapData | null {
-    try {
-      const match = content.match(/```dnd-map\n([\s\S]*?)\n```/);
-      if (match && match[1]) {
-        const config = JSON.parse(match[1]);
-        return {
-          ...config,
-          tokens: [],
-          createdDate: config.createdDate || new Date().toISOString(),
-          lastModified: new Date().toISOString()
-        };
-      }
-    } catch (error) {
-      console.error('Error parsing map code block:', error);
-    }
-    return null;
-  }
 }
