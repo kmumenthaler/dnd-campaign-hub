@@ -219,20 +219,17 @@ export class ProjectionManager {
    */
   private async ensureCalibration(screen: ScreenInfo): Promise<void> {
     const existingPerScreen = this.getCalibrationForScreen(screen);
-    const existingGlobal = this.plugin.settings.tabletopCalibration;
 
     console.log('ProjectionManager: ensureCalibration', {
       screenLabel: screen.label,
       screenKey: screenKey(screen),
       hasPerScreenCal: !!existingPerScreen,
       perScreenCal: existingPerScreen?.calibration,
-      hasGlobalCal: !!existingGlobal,
-      globalCal: existingGlobal,
     });
 
-    // Skip if a manual/previous auto calibration already exists
-    if (existingPerScreen || existingGlobal) {
-      console.log('ProjectionManager: ensureCalibration — skipped (calibration exists)');
+    // Only skip if this specific screen already has calibration data
+    if (existingPerScreen) {
+      console.log('ProjectionManager: ensureCalibration — skipped (per-screen calibration exists)');
       return;
     }
 
