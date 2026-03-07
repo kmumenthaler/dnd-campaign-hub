@@ -1850,20 +1850,6 @@ export class PlayerMapView extends ItemView {
       this.drawMarker(ctx, m);
     });
 
-    // Draw drag ruler (distance indicator) if a marker is being moved
-    // In the Player View, only show the drag ruler for player tokens or
-    // tokens explicitly marked as "Show to Players".
-    if (config.dragRuler) {
-      const dragMarkerDef = config.dragRuler.markerId
-        ? this.plugin.markerLibrary.getMarker(config.dragRuler.markerId)
-        : null;
-      const isPlayerToken = dragMarkerDef && dragMarkerDef.type === 'player';
-      const isVisibleToPlayers = !!config.dragRuler.visibleToPlayers;
-      if (isPlayerToken || isVisibleToPlayers) {
-        this.drawDragRuler(ctx, config);
-      }
-    }
-
     // Draw Fog of War (Player view: fully opaque black with light source revelation)
     // Fog must be enabled for darkness to appear - lights reveal areas within the fog
     const hasFogGlobal = config.fogOfWar && config.fogOfWar.enabled;
@@ -2142,6 +2128,21 @@ export class PlayerMapView extends ItemView {
     // Draw AoE effects on top of fog (Player layer only)
     const playerAoeEffects = (config.aoeEffects || []).filter((a: any) => (a.layer || 'Player') === 'Player');
     playerAoeEffects.forEach((aoe: any) => this.drawAoeEffect(ctx, aoe, config));
+
+    // Draw drag ruler (distance indicator) if a marker is being moved
+    // Drawn after player tokens so the distance label is not obscured by the token.
+    // In the Player View, only show the drag ruler for player tokens or
+    // tokens explicitly marked as "Show to Players".
+    if (config.dragRuler) {
+      const dragMarkerDef = config.dragRuler.markerId
+        ? this.plugin.markerLibrary.getMarker(config.dragRuler.markerId)
+        : null;
+      const isPlayerToken = dragMarkerDef && dragMarkerDef.type === 'player';
+      const isVisibleToPlayers = !!config.dragRuler.visibleToPlayers;
+      if (isPlayerToken || isVisibleToPlayers) {
+        this.drawDragRuler(ctx, config);
+      }
+    }
 
     // Draw measure ruler if active
     if (config.measureRuler) {

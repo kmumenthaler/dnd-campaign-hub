@@ -1613,6 +1613,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			calibrateBtn.toggleClass('hidden', shouldHideGridTools);
 			moveGridBtn.toggleClass('hidden', shouldHideGridTools);
 			measureBtn.toggleClass('hidden', shouldHideGridTools);
+
+			// Hide the SETUP section header when all its tools are hidden
+			setupSectionHeader.toggleClass('hidden', shouldHideGridTools);
+			setupContent.toggleClass('hidden', shouldHideGridTools);
 			
 			// PoI button only visible for hexcrawl maps
 			poiBtn.toggleClass('hidden', !isHexcrawl);
@@ -4432,9 +4436,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					});
 				}
 
-        // Draw GM-side player view rectangle if present (rotated to match player orientation)
+        // Draw GM-side player view rectangle only when View Mode tool is active
+        // (keeps it out of the way during normal map editing)
         try {
-          const gmRect = (plugin as any)._gmViewRect || (viewport as any)._gmViewRect;
+          const gmRect = activeTool === 'player-view' ? ((plugin as any)._gmViewRect || (viewport as any)._gmViewRect) : null;
           if (gmRect && gmRect.w && gmRect.h) {
             ctx.save();
             

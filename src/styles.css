@@ -6831,8 +6831,9 @@
 /* === Vision Token Selector (Custom Dropdown) === */
 .dnd-map-vision-selector {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   padding: 4px 0;
   border-top: 1px solid var(--background-modifier-border);
   margin-top: 8px;
@@ -6846,8 +6847,7 @@
 
 .dnd-map-vision-dropdown {
   position: relative;
-  flex: 1;
-  max-width: 150px;
+  width: 100%;
 }
 
 .dnd-map-vision-selected {
