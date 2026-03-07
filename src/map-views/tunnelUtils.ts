@@ -43,6 +43,48 @@ export function computeTunnelWidth(creatureSize: CreatureSize, gridSize: number)
 	return (squares + TUNNEL_WIDTH_PADDING) * gridSize;
 }
 
+// ── Lateral movement helpers ─────────────────────────────────────────
+
+/**
+ * Return the unit perpendicular vector at a given path index.
+ * The perpendicular is rotated 90° clockwise from the tangent direction
+ * so that positive dot-products map to the "right" side of the path.
+ */
+export function getPathPerpendicular(
+	path: Array<{ x: number; y: number }>,
+	index: number,
+): { x: number; y: number } {
+	let dx: number, dy: number;
+	if (index < path.length - 1) {
+		dx = path[index + 1].x - path[index].x;
+		dy = path[index + 1].y - path[index].y;
+	} else if (index > 0) {
+		dx = path[index].x - path[index - 1].x;
+		dy = path[index].y - path[index - 1].y;
+	} else {
+		return { x: 0, y: 0 };
+	}
+	const len = Math.sqrt(dx * dx + dy * dy);
+	if (len === 0) return { x: 0, y: 0 };
+	// Perpendicular = rotate tangent 90° clockwise → (dy, -dx) normalised
+	return { x: -dy / len, y: dx / len };
+}
+
+/**
+ * Compute the maximum lateral offset (px) a token of `tokenSize` has
+ * inside a tunnel built for `tunnelCreatureSize`.
+ * Returns 0 when the token is the same size (or larger) than the tunnel.
+ */
+export function computeMaxLateral(
+	tunnel: TunnelSegment,
+	tokenSizeSquares: number,
+	gridSize: number,
+): number {
+	const tunnelWidth = getTunnelWidth(tunnel, gridSize);
+	const tokenWidth = tokenSizeSquares * gridSize;
+	return Math.max(0, (tunnelWidth - tokenWidth) / 2);
+}
+
 // ── Tunnel wall generation ───────────────────────────────────────────
 
 /**

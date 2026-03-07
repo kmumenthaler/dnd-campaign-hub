@@ -81,6 +81,7 @@ export interface TunnelState {
 	pathIndex: number;     // Current position along the tunnel path
 	enteredAt: number;     // Timestamp when token entered
 	previousLayer?: string; // Layer the token was on before entering the tunnel
+	lateralOffset?: number; // Perpendicular offset from tunnel centre-line (px, +right/−left relative to path direction)
 }
 
 /**

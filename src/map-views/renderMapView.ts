@@ -11,7 +11,7 @@ import { magicWandDetect } from "../map/MagicWandWallModal";
 import { MarkerLibrary } from "../marker/MarkerLibrary";
 import { MarkerReference, MarkerDefinition, MarkerType, CREATURE_SIZE_SQUARES, CreatureSize, Layer, type TunnelSegment } from "../marker/MarkerTypes";
 import { MarkerPickerModal } from "../marker/MarkerPickerModal";
-import { getTunnelWidth, computeTunnelWidth, generateTunnelWalls, drawTunnelPortal, getTunnelPortalRadius, isZigZag, createTunnelSegment, findNearTunnelEntrance, findNearTunnelExit, ejectTokensFromTunnels, deactivateTunnelsForMarker, ensureTunnelWalls, TUNNEL_MIN_PATH_SPACING, TUNNEL_CORNER_BLOCK_ANGLE } from "./tunnelUtils";
+import { getTunnelWidth, computeTunnelWidth, generateTunnelWalls, drawTunnelPortal, getTunnelPortalRadius, isZigZag, createTunnelSegment, findNearTunnelEntrance, findNearTunnelExit, ejectTokensFromTunnels, deactivateTunnelsForMarker, ensureTunnelWalls, getPathPerpendicular, computeMaxLateral, TUNNEL_MIN_PATH_SPACING, TUNNEL_CORNER_BLOCK_ANGLE } from "./tunnelUtils";
 import { GridCalibrationModal } from "../utils/GridCalibrationModal";
 import { CreatureSelectorModal, MultiCreatureSelectorModal, RenameCreatureModal } from "../utils/CreatureModals";
 import { ClearDrawingsConfirmModal, ClearTokensConfirmModal } from "../utils/ConfirmModal";
@@ -7884,7 +7884,33 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const _tSizeSq = _tMarkerDef?.creatureSize
 								? (CREATURE_SIZE_SQUARES[_tMarkerDef.creatureSize] || 1) : 1;
 							const _tSnapped = snapTokenToGrid(_tpRaw.x, _tpRaw.y, _tSizeSq);
-							draggedMarker.position = { x: _tSnapped.x, y: _tSnapped.y };
+
+							// ── Lateral freedom for smaller creatures in wider tunnels ──
+							const gs = config.gridSize || 70;
+							const maxLat = computeMaxLateral(tunnel, _tSizeSq, gs);
+							if (maxLat > 0) {
+								const perp = getPathPerpendicular(tunnel.path, closestIndex);
+								// Project desired offset from centre-line onto perpendicular
+								const offX = desiredPos.x - _tSnapped.x;
+								const offY = desiredPos.y - _tSnapped.y;
+								let latRaw = offX * perp.x + offY * perp.y;
+								// Snap lateral offset to grid increments so movement stays grid-aligned
+								latRaw = Math.round(latRaw / gs) * gs;
+								// Clamp to available room
+								latRaw = Math.max(-maxLat, Math.min(maxLat, latRaw));
+								draggedMarker.tunnelState.lateralOffset = latRaw;
+								// Compute final position and re-snap to grid
+								const candidate = snapTokenToGrid(
+									_tSnapped.x + perp.x * latRaw,
+									_tSnapped.y + perp.y * latRaw,
+									_tSizeSq,
+								);
+								draggedMarker.position = { x: candidate.x, y: candidate.y };
+							} else {
+								draggedMarker.tunnelState.lateralOffset = 0;
+								draggedMarker.position = { x: _tSnapped.x, y: _tSnapped.y };
+							}
+
 							// Update elevation to match tunnel path at this point
 							const pathElevation = _tpRaw.elevation;
 							if (pathElevation !== undefined) {
@@ -8672,60 +8698,156 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							
 							let newIndex = marker.tunnelState.pathIndex;
 							const gs = config.gridSize || 70;
+							const _akMarkerDef = marker.markerId
+								? plugin.markerLibrary.getMarker(marker.markerId) : null;
+							const _akSizeSq = _akMarkerDef?.creatureSize
+								? (CREATURE_SIZE_SQUARES[_akMarkerDef.creatureSize] || 1) : 1;
+							const maxLat = computeMaxLateral(tunnel, _akSizeSq, gs);
+							let latOff = marker.tunnelState.lateralOffset || 0;
+
+							// ── Left / Right → lateral movement (perpendicular to path) ──
+							if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && maxLat > 0) {
+								const step = gs; // one grid cell
+								if (e.key === 'ArrowRight') latOff = Math.min(maxLat, latOff + step);
+								else latOff = Math.max(-maxLat, latOff - step);
+								// Snap to grid multiples
+								latOff = Math.round(latOff / gs) * gs;
+								latOff = Math.max(-maxLat, Math.min(maxLat, latOff));
+								marker.tunnelState.lateralOffset = latOff;
+								// Re-apply position with new lateral offset
+								const curPathPt = tunnel.path[newIndex];
+								const perp = getPathPerpendicular(tunnel.path, newIndex);
+								const latSnapped = snapTokenToGrid(
+									curPathPt.x + perp.x * latOff,
+									curPathPt.y + perp.y * latOff,
+									_akSizeSq,
+								);
+								marker.position.x = latSnapped.x;
+								marker.position.y = latSnapped.y;
+								redrawAnnotations();
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								// Skip the along-path logic below
+							}
+							// ── Up / Down → forward / backward along tunnel path ──
+							else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+								if (e.key === 'ArrowUp') {
+									// Walk forward along path until cumulative distance >= gridSize
+									let dist = 0;
+									for (let pi = newIndex; pi < tunnel.path.length - 1; pi++) {
+										const a = tunnel.path[pi], b = tunnel.path[pi + 1];
+										dist += Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
+										if (dist >= gs) { newIndex = pi + 1; break; }
+									}
+									// If we didn't reach gridSize, jump to the end
+									if (dist < gs && newIndex === marker.tunnelState.pathIndex) {
+										newIndex = tunnel.path.length - 1;
+									}
+								} else {
+									// Walk backward along path until cumulative distance >= gridSize
+									let dist = 0;
+									for (let pi = newIndex; pi > 0; pi--) {
+										const a = tunnel.path[pi], b = tunnel.path[pi - 1];
+										dist += Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
+										if (dist >= gs) { newIndex = pi - 1; break; }
+									}
+									// If we didn't reach gridSize, jump to the start
+									if (dist < gs && newIndex === marker.tunnelState.pathIndex) {
+										newIndex = 0;
+									}
+								}
 							
-							// Arrow keys move one grid cell along the tunnel path
-							if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
-								// Walk forward along path until cumulative distance >= gridSize
+								// Update position and path index — preserve lateral offset
+								if (newIndex !== marker.tunnelState.pathIndex) {
+									marker.tunnelState.pathIndex = newIndex;
+									const newPos = tunnel.path[newIndex];
+									const _akSnapped = snapTokenToGrid(newPos.x, newPos.y, _akSizeSq);
+									// Re-apply lateral offset at the new path index
+									if (latOff !== 0 && maxLat > 0) {
+										const perp = getPathPerpendicular(tunnel.path, newIndex);
+										const latSnapped = snapTokenToGrid(
+											_akSnapped.x + perp.x * latOff,
+											_akSnapped.y + perp.y * latOff,
+											_akSizeSq,
+										);
+										marker.position.x = latSnapped.x;
+										marker.position.y = latSnapped.y;
+									} else {
+										marker.position.x = _akSnapped.x;
+										marker.position.y = _akSnapped.y;
+									}
+									// Update elevation to match tunnel path at this point
+									if (newPos.elevation !== undefined) {
+										if (!marker.elevation) marker.elevation = {};
+										marker.elevation.depth = newPos.elevation;
+									}
+									const progress = Math.round((newIndex / (tunnel.path.length - 1)) * 100);
+									new Notice(`Tunnel progress: ${progress}%`, 1000);
+									redrawAnnotations();
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								} else if (newIndex === tunnel.path.length - 1 && e.key === 'ArrowUp') {
+									// Reached end of tunnel
+									new Notice('Reached tunnel exit - right-click to exit tunnel');
+								} else if (newIndex === 0 && e.key === 'ArrowDown') {
+									// Reached start of tunnel
+									new Notice('Reached tunnel entrance - right-click to exit tunnel');
+								}
+							}
+							// Left/Right when there's no lateral room — fall through to forward/backward
+							else if (e.key === 'ArrowRight') {
 								let dist = 0;
 								for (let pi = newIndex; pi < tunnel.path.length - 1; pi++) {
 									const a = tunnel.path[pi], b = tunnel.path[pi + 1];
 									dist += Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
 									if (dist >= gs) { newIndex = pi + 1; break; }
 								}
-								// If we didn't reach gridSize, jump to the end
 								if (dist < gs && newIndex === marker.tunnelState.pathIndex) {
 									newIndex = tunnel.path.length - 1;
 								}
-							} else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
-								// Walk backward along path until cumulative distance >= gridSize
+								if (newIndex !== marker.tunnelState.pathIndex) {
+									marker.tunnelState.pathIndex = newIndex;
+									const newPos = tunnel.path[newIndex];
+									const _akSnapped = snapTokenToGrid(newPos.x, newPos.y, _akSizeSq);
+									marker.position.x = _akSnapped.x;
+									marker.position.y = _akSnapped.y;
+									if (newPos.elevation !== undefined) {
+										if (!marker.elevation) marker.elevation = {};
+										marker.elevation.depth = newPos.elevation;
+									}
+									const progress = Math.round((newIndex / (tunnel.path.length - 1)) * 100);
+									new Notice(`Tunnel progress: ${progress}%`, 1000);
+									redrawAnnotations();
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								} else {
+									new Notice('Reached tunnel exit - right-click to exit tunnel');
+								}
+							}
+							else if (e.key === 'ArrowLeft') {
 								let dist = 0;
 								for (let pi = newIndex; pi > 0; pi--) {
 									const a = tunnel.path[pi], b = tunnel.path[pi - 1];
 									dist += Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
 									if (dist >= gs) { newIndex = pi - 1; break; }
 								}
-								// If we didn't reach gridSize, jump to the start
 								if (dist < gs && newIndex === marker.tunnelState.pathIndex) {
 									newIndex = 0;
 								}
-							}
-							
-							// Update position and path index (grid-snapped)
-							if (newIndex !== marker.tunnelState.pathIndex) {
-								marker.tunnelState.pathIndex = newIndex;
-								const newPos = tunnel.path[newIndex];
-								const _akMarkerDef = marker.markerId
-									? plugin.markerLibrary.getMarker(marker.markerId) : null;
-								const _akSizeSq = _akMarkerDef?.creatureSize
-									? (CREATURE_SIZE_SQUARES[_akMarkerDef.creatureSize] || 1) : 1;
-								const _akSnapped = snapTokenToGrid(newPos.x, newPos.y, _akSizeSq);
-								marker.position.x = _akSnapped.x;
-								marker.position.y = _akSnapped.y;
-								// Update elevation to match tunnel path at this point
-								if (newPos.elevation !== undefined) {
-									if (!marker.elevation) marker.elevation = {};
-									marker.elevation.depth = newPos.elevation;
+								if (newIndex !== marker.tunnelState.pathIndex) {
+									marker.tunnelState.pathIndex = newIndex;
+									const newPos = tunnel.path[newIndex];
+									const _akSnapped = snapTokenToGrid(newPos.x, newPos.y, _akSizeSq);
+									marker.position.x = _akSnapped.x;
+									marker.position.y = _akSnapped.y;
+									if (newPos.elevation !== undefined) {
+										if (!marker.elevation) marker.elevation = {};
+										marker.elevation.depth = newPos.elevation;
+									}
+									const progress = Math.round((newIndex / (tunnel.path.length - 1)) * 100);
+									new Notice(`Tunnel progress: ${progress}%`, 1000);
+									redrawAnnotations();
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								} else {
+									new Notice('Reached tunnel entrance - right-click to exit tunnel');
 								}
-								const progress = Math.round((newIndex / (tunnel.path.length - 1)) * 100);
-								new Notice(`Tunnel progress: ${progress}%`, 1000);
-								redrawAnnotations();
-								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-							} else if (newIndex === tunnel.path.length - 1 && (e.key === 'ArrowUp' || e.key === 'ArrowRight')) {
-								// Reached end of tunnel
-								new Notice('Reached tunnel exit - right-click to exit tunnel');
-							} else if (newIndex === 0 && (e.key === 'ArrowDown' || e.key === 'ArrowLeft')) {
-								// Reached start of tunnel
-								new Notice('Reached tunnel entrance - right-click to exit tunnel');
 							}
 						}
 					}
