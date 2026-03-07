@@ -376,10 +376,24 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			let wallSelectionRect: { startX: number; startY: number; endX: number; endY: number } | null = null;
 			let selectedWallIndices: number[] = [];
 			let wallClickStartPos: { x: number; y: number } | null = null; // For detecting click vs drag on walls
+
+			// ── Grid-proportional snap helpers ───────────────────────────
+			// All thresholds scale with gridSize so snapping feels consistent
+			// regardless of the grid resolution.  The base fraction (0.12)
+			// means 12 % of one cell width, clamped to [4, 20] map-pixels
+			// to keep behaviour sensible at tiny and huge grid sizes.
+			const WALL_SNAP_FRACTION = 0.12;
+			const WALL_SNAP_MIN_PX = 4;
+			const WALL_SNAP_MAX_PX = 20;
+			/** Compute wall-snap threshold in map pixels. */
+			const getWallSnapThreshold = (): number => {
+				const gs = config.gridSize || 70;
+				return Math.max(WALL_SNAP_MIN_PX, Math.min(WALL_SNAP_MAX_PX, gs * WALL_SNAP_FRACTION));
+			};
 			
 			// Find all walls connected to a starting wall via shared endpoints
 			const findConnectedWalls = (startIdx: number, walls: any[]): number[] => {
-				const EPSILON = 2; // tolerance in pixels for endpoint matching
+				const EPSILON = getWallSnapThreshold() * 0.25; // ~3 % of grid
 				const visited = new Set<number>();
 				const queue = [startIdx];
 				visited.add(startIdx);
@@ -5621,7 +5635,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				// Snap nearby wall endpoints + extend to seal gaps
 				const wallSegStart = circleSegments;
-				const snapDistSq = 16; // 4px
+				const _snapThr = getWallSnapThreshold();
+				const snapDistSq = _snapThr * _snapThr;
 				const wepRefs: { x: number; y: number }[] = [];
 				for (let wi = wallSegStart; wi < segments.length; wi++) {
 					wepRefs.push(segments[wi]!.p1, segments[wi]!.p2);
@@ -5639,7 +5654,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						}
 					}
 				}
-				const extPx = 2;
+				const extPx = _snapThr * 0.25; // proportional wall extension
 				for (let wi = wallSegStart; wi < segments.length; wi++) {
 					const seg = segments[wi]!;
 					const edx = seg.p2.x - seg.p1.x, edy = seg.p2.y - seg.p1.y;
@@ -7250,10 +7265,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						fogDragEnd = { x: mapPos.x, y: mapPos.y };
 					}
 	            } else if (activeTool === 'walls') {
-					// Add point to wall chain — snap to existing wall endpoints within 8px
+					// Add point to wall chain — snap to existing wall endpoints
 					let snapX = mapPos.x;
 					let snapY = mapPos.y;
-					const wallSnapThreshold = 8;
+					const wallSnapThreshold = getWallSnapThreshold();
 					let bestSnapDist = wallSnapThreshold;
 					if (config.walls && config.walls.length > 0) {
 						for (const w of config.walls) {
@@ -8032,7 +8047,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					// Update wall preview position — snap to existing wall endpoints
 					let wpSnapX = mapPos.x;
 					let wpSnapY = mapPos.y;
-					const wpSnapThreshold = 8;
+					const wpSnapThreshold = getWallSnapThreshold();
 					let wpBestDist = wpSnapThreshold;
 					if (config.walls && config.walls.length > 0) {
 						for (const w of config.walls) {
