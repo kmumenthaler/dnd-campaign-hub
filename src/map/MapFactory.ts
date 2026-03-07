@@ -1,10 +1,103 @@
 /**
- * MapFactory — shared utilities for creating battlemaps from templates.
+ * MapFactory — shared utilities for creating battlemaps from templates,
+ * schema versioning, and annotation normalisation.
  *
- * Centralises the deep-clone + identity-reset logic so that
- * TemplatePickerModal, EncounterBattlemapModal, and any future
- * consumer all share a single code path.
+ * This module is the **single source of truth** for:
+ *   • the current schema version
+ *   • default values for every annotation field
+ *   • deep-clone + identity-reset when instantiating a template
+ *   • load-time normalisation / migration of old annotation JSON
  */
+
+// ── Schema version ───────────────────────────────────────────────────
+/** Bump this whenever the annotation shape changes. */
+export const MAP_SCHEMA_VERSION = 1;
+
+// ── Canonical defaults ───────────────────────────────────────────────
+/**
+ * Every field that can appear in a map annotation JSON, together with
+ * its default value.  Used by `normalizeMapAnnotations`, `_flushMapSave`
+ * and `cloneTemplateToMap` so the field list is maintained in one place.
+ */
+export function getMapAnnotationDefaults(): Record<string, any> {
+  return {
+    schemaVersion: MAP_SCHEMA_VERSION,
+    mapId: '',
+    name: '',
+    imageFile: '',
+    isVideo: false,
+    type: 'battlemap',
+    dimensions: {},
+    gridType: 'square',
+    gridSize: 70,
+    gridOffsetX: 0,
+    gridOffsetY: 0,
+    gridSizeW: undefined,
+    gridSizeH: undefined,
+    gridVisible: true,
+    scale: { value: 5, unit: 'feet' },
+    activeLayer: 'Player',
+    // Annotations
+    highlights: [],
+    markers: [],
+    drawings: [],
+    tunnels: [],
+    poiReferences: [],
+    hexTerrains: [],
+    hexClimates: [],
+    customTerrainDescriptions: {},
+    hexcrawlState: null,
+    fogOfWar: { enabled: false, regions: [] },
+    walls: [],
+    lightSources: [],
+    tileElevations: {},
+    difficultTerrain: {},
+    envAssets: [],
+    // Template system
+    isTemplate: false,
+    templateTags: undefined,
+    // Metadata
+    lastModified: '',
+  };
+}
+
+// ── Normalise / migrate ──────────────────────────────────────────────
+/**
+ * Ensure every expected field exists with a sensible default.
+ * Called on load so that older annotation files are transparently
+ * upgraded to the current schema without data loss.
+ *
+ * @param raw  The parsed JSON from disk (may be missing fields).
+ * @returns    A complete annotation object with all fields present.
+ */
+export function normalizeMapAnnotations(raw: any): any {
+  if (!raw || typeof raw !== 'object') return { ...getMapAnnotationDefaults() };
+
+  const defaults = getMapAnnotationDefaults();
+  const out: any = {};
+
+  for (const [key, defaultVal] of Object.entries(defaults)) {
+    // Use existing value if present, otherwise fall back to default.
+    // Special-case: `gridVisible` — false is a valid explicit value.
+    if (key === 'gridVisible') {
+      out[key] = raw[key] !== undefined ? raw[key] : defaultVal;
+    } else {
+      out[key] = raw[key] ?? defaultVal;
+    }
+  }
+
+  // Preserve any extra keys the caller may have set (e.g. linkedEncounter)
+  for (const key of Object.keys(raw)) {
+    if (!(key in out)) {
+      out[key] = raw[key];
+    }
+  }
+
+  // Stamp the current schema version
+  out.schemaVersion = MAP_SCHEMA_VERSION;
+
+  return out;
+}
 
 /**
  * Deep-clone a template's annotation data into a new active battlemap config.
@@ -24,35 +117,12 @@ export function cloneTemplateToMap(
   mapName: string,
   overrides?: Record<string, any>,
 ): any {
-  // Single deep-clone of the entire template
-  const cloned = structuredClone(templateData);
+  // Single deep-clone of the entire template, then normalise
+  const cloned = normalizeMapAnnotations(structuredClone(templateData));
 
   // ── Identity — new map ─────────────────────────────────────────
   cloned.mapId = newMapId;
   cloned.name = mapName;
-
-  // ── Ensure required fields have sensible defaults ──────────────
-  cloned.imageFile = cloned.imageFile || '';
-  cloned.isVideo = cloned.isVideo || false;
-  cloned.type = 'battlemap';
-  cloned.dimensions = cloned.dimensions || {};
-  cloned.gridType = cloned.gridType || 'square';
-  cloned.gridSize = cloned.gridSize || 70;
-  cloned.gridOffsetX = cloned.gridOffsetX || 0;
-  cloned.gridOffsetY = cloned.gridOffsetY || 0;
-  cloned.gridVisible = cloned.gridVisible !== undefined ? cloned.gridVisible : true;
-  cloned.scale = cloned.scale || { value: 5, unit: 'feet' };
-
-  // Annotation arrays — already cloned, just ensure they exist
-  cloned.walls = cloned.walls || [];
-  cloned.lightSources = cloned.lightSources || [];
-  cloned.fogOfWar = cloned.fogOfWar || { enabled: false, regions: [] };
-  cloned.drawings = cloned.drawings || [];
-  cloned.tileElevations = cloned.tileElevations || {};
-  cloned.difficultTerrain = cloned.difficultTerrain || {};
-  cloned.tunnels = cloned.tunnels || [];
-  cloned.envAssets = cloned.envAssets || [];
-  cloned.markers = cloned.markers || [];
 
   // ── Reset instance-specific fields ─────────────────────────────
   cloned.highlights = [];            // template highlights stay with the template

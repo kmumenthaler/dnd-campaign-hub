@@ -1,6 +1,7 @@
 ﻿import { Notice, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { BATTLEMAP_TEMPLATE_FOLDER } from "./MapCreationModal";
+import { normalizeMapAnnotations } from "./MapFactory";
 
 const SAVE_DEBOUNCE_MS = 1000;
 
@@ -41,47 +42,9 @@ export async function _flushMapSave(plugin: DndCampaignHubPlugin, mapId: string)
 
 	const config = entry.config;
 	try {
-		// Prepare annotation data (includes full config + annotations)
-		const mapData = {
-			// Map settings
-			mapId: config.mapId,
-			name: config.name || '',
-			imageFile: config.imageFile,
-			isVideo: config.isVideo || false,
-			type: config.type || 'battlemap',
-			dimensions: config.dimensions || {},
-			gridType: config.gridType || 'none',
-			gridSize: config.gridSize || 70,
-			gridOffsetX: config.gridOffsetX || 0,
-			gridOffsetY: config.gridOffsetY || 0,
-			gridSizeW: config.gridSizeW || undefined,
-			gridSizeH: config.gridSizeH || undefined,
-			gridVisible: config.gridVisible !== undefined ? config.gridVisible : true,
-			scale: config.scale || { value: 5, unit: 'feet' },
-			// Layer settings
-			activeLayer: config.activeLayer || 'Player',
-			// Annotations
-			highlights: config.highlights || [],
-			markers: config.markers || [],
-			drawings: config.drawings || [],
-			// aoeEffects intentionally omitted — session-only, not persisted
-			tunnels: config.tunnels || [],
-			poiReferences: config.poiReferences || [],
-			hexTerrains: config.hexTerrains || [],
-			hexClimates: config.hexClimates || [],
-			customTerrainDescriptions: config.customTerrainDescriptions || {},
-			hexcrawlState: config.hexcrawlState || null,
-			fogOfWar: config.fogOfWar || { enabled: false, regions: [] },
-			walls: config.walls || [],
-			lightSources: config.lightSources || [],
-			tileElevations: config.tileElevations || {},
-			difficultTerrain: config.difficultTerrain || {},
-			envAssets: config.envAssets || [],
-			// Template system
-			isTemplate: config.isTemplate || false,
-			templateTags: config.templateTags || undefined,
-			lastModified: new Date().toISOString()
-		};
+		// Normalise through the canonical schema so every field is present
+		const mapData = normalizeMapAnnotations(config);
+		mapData.lastModified = new Date().toISOString();
 
 		// Ensure annotation directory exists
 		const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
@@ -126,7 +89,8 @@ export async function loadMapAnnotations(plugin: DndCampaignHubPlugin, mapId: st
 		if (await plugin.app.vault.adapter.exists(annotationPath)) {
 			const data = await plugin.app.vault.adapter.read(annotationPath);
 			const parsedData = JSON.parse(data);
-			return parsedData;
+			// Normalise through canonical schema so missing fields get defaults
+			return normalizeMapAnnotations(parsedData);
 		} else {
 			return {};
 		}
