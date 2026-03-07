@@ -30,6 +30,8 @@ export interface ScreenInfo {
   availHeight: number;
   /** Device pixel ratio (retina / HiDPI scale factor). */
   devicePixelRatio: number;
+  /** @internal Native ScreenDetailed object — used by requestFullscreen({ screen }). */
+  _native?: any;
 }
 
 // ── Public API ────────────────────────────────────────────────────────
@@ -64,6 +66,7 @@ export async function enumerateScreens(): Promise<ScreenInfo[]> {
           availWidth: s.availWidth ?? s.width ?? 1920,
           availHeight: s.availHeight ?? s.height ?? 1080,
           devicePixelRatio: s.devicePixelRatio ?? window.devicePixelRatio ?? 1,
+          _native: s,
         }));
       }
     }
