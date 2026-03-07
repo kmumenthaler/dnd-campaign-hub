@@ -4,7 +4,6 @@ import { MAP_PRESETS, MAP_MEDIA_EXTENSIONS, isVideoExtension, isMapMediaExtensio
 import type DndCampaignHubPlugin from '../main';
 import { CREATURE_SIZE_SQUARES } from '../marker/MarkerTypes';
 import type { MarkerDefinition } from '../marker/MarkerTypes';
-import { TemplatePickerModal } from './TemplatePickerModal';
 
 /** Folder where battlemap template notes are stored */
 export const BATTLEMAP_TEMPLATE_FOLDER = 'z_BattlemapTemplates';
@@ -79,10 +78,9 @@ export class MapCreationModal extends Modal {
       this.mapType = 'battlemap';
       this.buildMapForm(contentEl);
     } else {
-      // Direct map creation not allowed — redirect to template picker
-      this.close();
-      new TemplatePickerModal(this.app, this.plugin, this.mapManager).open();
-      return;
+      // Direct map creation: image → grid config → insert map
+      contentEl.createEl('h2', { text: '🗺️ Create Battle Map' });
+      this.buildMapForm(contentEl);
     }
   }
 
@@ -876,10 +874,34 @@ export class MapCreationModal extends Modal {
           templateTags: createDefaultTemplateTags(),
         };
       } else {
-        // Direct map creation is not allowed; maps must be created from templates.
-        new Notice('⚠️ Maps must be created from a template. Use "Create Battle Map (from template)".');
-        this.close();
-        return;
+        // Direct map creation: new map with blank annotations
+        fullConfig = {
+          mapId: mapData.id,
+          name: mapData.name,
+          imageFile: mapData.imageFile,
+          isVideo: mapData.isVideo || false,
+          type: mapData.type,
+          dimensions: mapData.dimensions,
+          gridType: mapData.gridType,
+          gridSize: mapData.gridSize,
+          gridOffsetX: 0,
+          gridOffsetY: 0,
+          gridVisible: true,
+          scale: mapData.scale,
+          highlights: [],
+          markers: [],
+          drawings: [],
+          walls: [],
+          lightSources: [],
+          fogOfWar: { enabled: false, regions: [] },
+          tileElevations: {},
+          difficultTerrain: {},
+          tunnels: [],
+          envAssets: [],
+          poiReferences: [],
+          isTemplate: false,
+          activeLayer: 'Player',
+        };
       }
 
       // Use a dummy element since we don't have a rendered map yet

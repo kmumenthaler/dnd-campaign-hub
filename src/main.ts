@@ -660,6 +660,12 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "insert-battlemap",
+      name: "🗺️ Insert Battle Map (from image)",
+      callback: () => this.createMapDirect(),
+    });
+
+    this.addCommand({
       id: "create-map",
       name: "🗺️ Create Battle Map (from template)",
       callback: () => this.createMap(),
@@ -2641,8 +2647,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	async createMap() {
-		// Open Template Picker — battlemaps are always created from templates
+		// Open Template Picker — battlemaps created from templates
 		new TemplatePickerModal(this.app, this, this.mapManager).open();
+	}
+
+	/**
+	 * Open the MapCreationModal in direct mode — image → grid config → insert map.
+	 * Bypasses the template workflow for quick one-off maps.
+	 */
+	async createMapDirect() {
+		new MapCreationModal(this.app, this, this.mapManager).open();
 	}
 
 	/**
