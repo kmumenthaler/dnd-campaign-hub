@@ -153,10 +153,10 @@ export class PlayerMapView extends ItemView {
     const fadeIn = () => {
       fade.classList.remove('active');
       // Remove the overlay once the transition finishes
-      setTimeout(() => fade.remove(), 1000);
+      setTimeout(() => fade.remove(), 500);
     };
 
-    // Give the fade 800ms to reach full opacity, then swap the content
+    // Give the fade 400ms to reach full opacity, then swap the content
     setTimeout(() => {
       this._doSwap(newMapId, newMapConfig, newImageResourcePath);
 
@@ -169,7 +169,7 @@ export class PlayerMapView extends ItemView {
         // No hook — fade in automatically after a short delay
         setTimeout(fadeIn, 100);
       }
-    }, 800);
+    }, 400);
   }
 
   /**
@@ -678,7 +678,7 @@ export class PlayerMapView extends ItemView {
     // signals that calibration + layout is done.  Non-projection opens
     // auto-fade after 1.5 s so the view is never stuck on black.
     const initFade = document.createElement('div');
-    initFade.className = 'dnd-player-map-swap-fade active';
+    initFade.className = 'dnd-player-map-swap-fade slow active';
     container.appendChild(initFade);
     (this as any)._initFade = initFade;
     // Safety: auto-remove after 5 s in case no-one calls fadeInInitial()
