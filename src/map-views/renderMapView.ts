@@ -203,6 +203,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		let _dragRedrawRafId = 0;           // non-zero while a drag-redraw rAF is pending
 		let _staticLayerCanvas: HTMLCanvasElement | null = null; // cached background during drag
 		let _staticLayerDirty = true;       // set true to force static layer rebuild
+		let _buildingStaticLayer = false;   // true while building static snapshot (skip drag-dynamic items)
 		let _sortedEnvAssetsCache: any[] | null = null; // avoid re-sorting env assets every frame
 
 		// Fog of war cached canvas — persists across redraws, rebuilt only when fog data changes
@@ -3034,9 +3035,173 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (_dragRedrawRafId) return; // already scheduled
 				_dragRedrawRafId = requestAnimationFrame(() => {
 					_dragRedrawRafId = 0;
-					redrawAnnotations();
+					_dragRedrawFast();
 					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 				});
+			};
+
+			// Fast-path drag redraw: cache all static content once, then only
+			// repaint the dragged token + ruler on each subsequent frame.
+			const _dragRedrawFast = () => {
+				if (!annotationCanvas) return;
+				const ctx = annotationCanvas.getContext('2d');
+				if (!ctx) return;
+
+				const w = annotationCanvas.width;
+				const h = annotationCanvas.height;
+
+				// Rebuild static layer cache if needed
+				if (_staticLayerDirty || !_staticLayerCanvas ||
+					_staticLayerCanvas.width !== w || _staticLayerCanvas.height !== h) {
+					if (!_staticLayerCanvas) _staticLayerCanvas = document.createElement('canvas');
+					_staticLayerCanvas.width = w;
+					_staticLayerCanvas.height = h;
+
+					// Draw everything EXCEPT the dragged marker & ruler into annotationCanvas
+					_buildingStaticLayer = true;
+					redrawAnnotations();
+					_buildingStaticLayer = false;
+
+					// Snapshot the static content
+					const sCtx = _staticLayerCanvas.getContext('2d');
+					if (sCtx) {
+						sCtx.clearRect(0, 0, w, h);
+						sCtx.drawImage(annotationCanvas, 0, 0);
+					}
+					_staticLayerDirty = false;
+
+					// First frame: annotationCanvas already has static content — overlay on top
+					_drawDragOverlay(ctx);
+					return;
+				}
+
+				// Fast path: stamp cached static layer + draw dynamic drag items
+				ctx.clearRect(0, 0, w, h);
+				ctx.drawImage(_staticLayerCanvas, 0, 0);
+				_drawDragOverlay(ctx);
+			};
+
+			// Draw only the elements that move during a marker drag:
+			//  1. dragged marker's light glow
+			//  2. dragged marker's auras
+			//  3. anchored AoE effects moving with the token
+			//  4. the dragged marker itself
+			//  5. drag ruler + tunnel preview + movement path
+			const _drawDragOverlay = (ctx: CanvasRenderingContext2D) => {
+				if (draggingMarkerIndex < 0 || !config.markers) return;
+				const draggedMarker = config.markers[draggingMarkerIndex];
+				if (!draggedMarker) return;
+
+				// 1. Light glow
+				if (draggedMarker.light && draggedMarker.light.bright !== undefined) {
+					const pxPerFt = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+					const baseBrightPx = draggedMarker.light.bright * pxPerFt;
+					const baseDimPx = draggedMarker.light.dim * pxPerFt;
+					const flickerKey = `marker_${draggedMarker.id || draggingMarkerIndex}`;
+					const isBuzz = BUZZ_LIGHT_TYPES.has(draggedMarker.light.type);
+					const shouldFlicker = FLICKER_LIGHT_TYPES.has(draggedMarker.light.type);
+					const flickerTime = performance.now() / 1000;
+					const flicker = shouldFlicker
+						? (isBuzz
+							? computeBuzz(getFlickerSeed(flickerKey), flickerTime)
+							: computeFlicker(getFlickerSeed(flickerKey), flickerTime, 'high'))
+						: { radius: 1, alpha: 1 };
+					const brightR = baseBrightPx * flicker.radius;
+					const dimR = baseDimPx * flicker.radius;
+					const totalR = brightR + dimR;
+					if (totalR > 0) {
+						const mlc = hexToRgb(draggedMarker.light.customColor || getDefaultLightColor(draggedMarker.light.type));
+						const mlcD = { r: Math.floor(mlc.r * 0.7), g: Math.floor(mlc.g * 0.7), b: Math.floor(mlc.b * 0.7) };
+						ctx.globalAlpha = flicker.alpha;
+						const grad = ctx.createRadialGradient(
+							draggedMarker.position.x, draggedMarker.position.y, 0,
+							draggedMarker.position.x, draggedMarker.position.y, totalR
+						);
+						if (brightR > 0 && dimR > 0) {
+							const bRatio = brightR / totalR;
+							grad.addColorStop(0, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0.25)`);
+							grad.addColorStop(bRatio * 0.75, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0.18)`);
+							grad.addColorStop(bRatio, `rgba(${mlcD.r}, ${mlcD.g}, ${mlcD.b}, 0.10)`);
+							grad.addColorStop(Math.min(bRatio + (1 - bRatio) * 0.5, 0.95), `rgba(${mlcD.r}, ${mlcD.g}, ${mlcD.b}, 0.04)`);
+							grad.addColorStop(1, `rgba(${mlcD.r}, ${mlcD.g}, ${mlcD.b}, 0)`);
+						} else if (brightR > 0) {
+							grad.addColorStop(0, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0.25)`);
+							grad.addColorStop(0.7, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0.12)`);
+							grad.addColorStop(1, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0)`);
+						} else {
+							grad.addColorStop(0, `rgba(${mlc.r}, ${mlc.g}, ${mlc.b}, 0.22)`);
+							grad.addColorStop(0.5, `rgba(${mlcD.r}, ${mlcD.g}, ${mlcD.b}, 0.10)`);
+							grad.addColorStop(1, `rgba(${mlcD.r}, ${mlcD.g}, ${mlcD.b}, 0)`);
+						}
+						ctx.fillStyle = grad;
+						ctx.beginPath();
+						ctx.arc(draggedMarker.position.x, draggedMarker.position.y, totalR, 0, Math.PI * 2);
+						ctx.fill();
+						ctx.globalAlpha = 1.0;
+					}
+				}
+
+				// 2. Auras
+				if (draggedMarker.auras && draggedMarker.auras.length > 0) {
+					const pxPerFt = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+					draggedMarker.auras.forEach((aura: any) => {
+						const radiusPx = (aura.radius || 0) * pxPerFt;
+						if (radiusPx > 0) {
+							ctx.globalAlpha = aura.opacity || 0.25;
+							ctx.fillStyle = aura.color || '#ffcc00';
+							ctx.beginPath();
+							ctx.arc(draggedMarker.position.x, draggedMarker.position.y, radiusPx, 0, Math.PI * 2);
+							ctx.fill();
+							ctx.globalAlpha = Math.min((aura.opacity || 0.25) + 0.3, 0.8);
+							ctx.strokeStyle = aura.color || '#ffcc00';
+							ctx.lineWidth = 2;
+							ctx.stroke();
+							ctx.globalAlpha = 1.0;
+						}
+					});
+				}
+
+				// 3. Anchored AoE effects
+				if (config.aoeEffects) {
+					config.aoeEffects.forEach((aoe: any) => {
+						if (aoe.anchorMarkerId === draggedMarker.id) {
+							drawAoeEffect(ctx, aoe);
+						}
+					});
+				}
+
+				// 4. The dragged marker itself
+				drawMarker(ctx, draggedMarker);
+
+				// 5. Drag ruler + tunnel preview + movement path
+				if (markerDragOrigin) {
+					const currentPos = draggedMarker.position;
+
+					// Tunnel preview
+					if (draggedMarker.elevation?.isBurrowing && draggedMarker.elevation?.leaveTunnel && config.tunnels) {
+						const activeTunnel = config.tunnels.find((t: any) =>
+							t.creatorMarkerId === draggedMarker.id && t.active
+						);
+						if (activeTunnel && activeTunnel.path.length > 0) {
+							const tunnelWidth = getTunnelWidth(activeTunnel, config.gridSize);
+							ctx.save();
+							ctx.globalAlpha = 0.6;
+							ctx.strokeStyle = '#8B4513';
+							ctx.lineWidth = tunnelWidth + 4;
+							ctx.lineCap = 'round';
+							ctx.lineJoin = 'round';
+							ctx.setLineDash([10, 5]);
+							const lastPoint = activeTunnel.path[activeTunnel.path.length - 1];
+							ctx.beginPath();
+							ctx.moveTo(lastPoint.x, lastPoint.y);
+							ctx.lineTo(currentPos.x, currentPos.y);
+							ctx.stroke();
+							ctx.restore();
+						}
+					}
+
+					drawMovementPath(ctx, markerDragOrigin, currentPos);
+				}
 			};
 
 			// Invalidate static layer cache (call when env assets / fog / walls change)
@@ -3275,7 +3440,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				// Draw AoE effects
 				if (config.aoeEffects) {
+					const _dragId = _buildingStaticLayer && draggingMarkerIndex >= 0 && config.markers
+						? config.markers[draggingMarkerIndex]?.id : null;
 					config.aoeEffects.forEach((aoe: any) => {
+						if (_dragId && aoe.anchorMarkerId === _dragId) return; // drawn in overlay
 						drawAoeEffect(ctx, aoe);
 					});
 				}
@@ -3284,6 +3452,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (config.markers) {
 					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
 					config.markers.forEach((marker: any, mIdx: number) => {
+						if (_buildingStaticLayer && mIdx === draggingMarkerIndex) return; // drawn in overlay
 						if (marker.light && marker.light.bright !== undefined) {
 							const baseBrightPx = marker.light.bright * pixelsPerFoot;
 							const baseDimPx = marker.light.dim * pixelsPerFoot;
@@ -3569,7 +3738,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				if (config.markers) {
 					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
-					config.markers.forEach((marker: any) => {
+					config.markers.forEach((marker: any, _auraIdx: number) => {
+						if (_buildingStaticLayer && _auraIdx === draggingMarkerIndex) return; // drawn in overlay
 						if (marker.auras && marker.auras.length > 0) {
 							marker.auras.forEach((aura: any) => {
 								const radiusPx = (aura.radius || 0) * pixelsPerFoot;
@@ -3594,7 +3764,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				// Draw markers (surface / non-tunnel tokens first)
 				if (config.markers) {
 					const _CULL_SIZE_SQ: Record<string, number> = { 'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4 };
-					config.markers.forEach((marker: any) => {
+					config.markers.forEach((marker: any, _mIdx: number) => {
+						if (_buildingStaticLayer && _mIdx === draggingMarkerIndex) return; // drawn in overlay
 						if (marker.tunnelState) return; // tunnel tokens drawn after tunnel paths
 						// Viewport cull: skip markers entirely outside the view
 						const _mDef = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
@@ -3658,7 +3829,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				// Draw tunnel tokens ON TOP of tunnel paths so they're visible
 				if (config.markers) {
 					const _CULL_SIZE_SQ: Record<string, number> = { 'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4 };
-					config.markers.forEach((marker: any) => {
+					config.markers.forEach((marker: any, _tIdx: number) => {
+						if (_buildingStaticLayer && _tIdx === draggingMarkerIndex) return; // drawn in overlay
 						if (!marker.tunnelState) return; // only tunnel tokens in this pass
 						const _mDef = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
 						const _mR = _mDef && _mDef.creatureSize ? ((_CULL_SIZE_SQ[_mDef.creatureSize] || 1) * (config.gridSize || 70)) / 2 : 30;
@@ -4516,8 +4688,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 				}
 
-				// Draw marker drag ruler
-				if (markerDragOrigin && draggingMarkerIndex >= 0) {
+				// Draw marker drag ruler (skip when building static layer — drawn in overlay)
+				if (markerDragOrigin && draggingMarkerIndex >= 0 && !_buildingStaticLayer) {
 					const draggedMarker = config.markers[draggingMarkerIndex];
 					const currentPos = draggedMarker.position;
 					
@@ -8473,6 +8645,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 					draggingMarkerIndex = -1;
 					markerDragOrigin = null;
+					_staticLayerDirty = true; // invalidate drag cache for next drag
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
 					plugin.saveMapAnnotations(config, el);
@@ -8627,6 +8800,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
 					draggingMarkerIndex = -1;
 					markerDragOrigin = null;
+					_staticLayerDirty = true; // invalidate drag cache
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
 					plugin.saveMapAnnotations(config, el);
