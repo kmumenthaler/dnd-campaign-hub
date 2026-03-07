@@ -111,7 +111,12 @@ export class ProjectionManager {
       if (pv) {
         const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
         // Auto-orient (rotate if elongated) and fit-to-screen when no calibration
-        this.autoOrientAndFit(pv, screen, !hasCalibration);
+        // Fade in once layout is settled
+        this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
+          if (typeof (pv as any).fadeInInitial === 'function') {
+            (pv as any).fadeInInitial();
+          }
+        });
       }
     }, 300);
 

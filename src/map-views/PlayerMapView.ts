@@ -173,6 +173,21 @@ export class PlayerMapView extends ItemView {
   }
 
   /**
+   * Remove the initial black overlay with a fade-in.
+   * Called by ProjectionManager once calibration + layout is ready,
+   * or automatically after the safety timeout.
+   */
+  fadeInInitial() {
+    const fade = (this as any)._initFade as HTMLElement | undefined;
+    if (!fade || !fade.isConnected) return;
+    const safety = (this as any)._initFadeSafety;
+    if (safety) { clearTimeout(safety); (this as any)._initFadeSafety = null; }
+    fade.classList.remove('active');
+    setTimeout(() => { try { fade.remove(); } catch {} }, 1000);
+    (this as any)._initFade = null;
+  }
+
+  /**
    * Internal: perform the actual map swap (called after fade-out).
    */
   private _doSwap(newMapId: string, newMapConfig: any, newImageResourcePath: string) {
@@ -554,6 +569,8 @@ export class PlayerMapView extends ItemView {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass('dnd-player-map-container');
+    // Ensure the container background is black while waiting for render
+    container.style.background = '#000';
 
     // Don't hide chrome by default - let fullscreen toggle handle it
 
@@ -655,6 +672,18 @@ export class PlayerMapView extends ItemView {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass('dnd-player-map-container');
+
+    // ── Initial fade-in overlay ─────────────────────────────────────
+    // Starts fully opaque (black); removed once the projection manager
+    // signals that calibration + layout is done.  Non-projection opens
+    // auto-fade after 1.5 s so the view is never stuck on black.
+    const initFade = document.createElement('div');
+    initFade.className = 'dnd-player-map-swap-fade active';
+    container.appendChild(initFade);
+    (this as any)._initFade = initFade;
+    // Safety: auto-remove after 5 s in case no-one calls fadeInInitial()
+    const safetyTimer = setTimeout(() => this.fadeInInitial(), 5000);
+    (this as any)._initFadeSafety = safetyTimer;
 
     // Button toolbar (top-right corner)
     const toolbar = container.createDiv({ cls: 'dnd-player-toolbar' });
