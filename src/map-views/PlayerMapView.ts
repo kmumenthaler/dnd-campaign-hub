@@ -14,9 +14,12 @@ import { HexcrawlTracker } from '../hexcrawl';
 import { getTunnelWidth, getTunnelPortalRadius, drawTunnelPortal } from './tunnelUtils';
 import { WallSpatialIndex } from '../utils/WallSpatialIndex';
 
+/** Returns true for wall types that use pivot-hinge rotation. */
+function isPivotType(t: string): boolean { return t === 'pivotDoor' || t === 'secretPivot'; }
+
 /** Compute effective endpoints for an open pivot door (rotates around hinge). */
 function getPivotDoorEndpoints(wall: any): { start: { x: number; y: number }; end: { x: number; y: number } } {
-  if (!wall.open || wall.type !== 'pivotDoor') {
+  if (!wall.open || !isPivotType(wall.type)) {
     return { start: wall.start, end: wall.end };
   }
   const hingeIsStart = (wall.pivotEnd || 'start') === 'start';
@@ -322,7 +325,7 @@ export class PlayerMapView extends ItemView {
     for (let i = 0; i < walls.length; i++) {
       const wl = walls[i];
       n(wl.open ? 1 : 0);
-      if (wl.type === 'pivotDoor') {
+      if (isPivotType(wl.type)) {
         n(wl.openDirection || 1);
         n(wl.pivotEnd === 'end' ? 2 : 1);
       }
@@ -1301,6 +1304,355 @@ export class PlayerMapView extends ItemView {
     }
   }
 
+  /**
+   * Draw wall-tool doors and pivot doors on the player view canvas.
+   * These are rendered BEFORE fog-of-war so they are naturally hidden
+   * by darkness and only visible in revealed / lit areas.
+   * Secret doors are excluded — they are invisible to players.
+   */
+  private drawWallDoors(ctx: CanvasRenderingContext2D, config: any) {
+    if (!config.walls || config.walls.length === 0) return;
+
+    for (const wall of config.walls) {
+      const wallType = wall.type || 'wall';
+      // Only render door and pivotDoor — secret doors stay hidden from players
+      if (wallType !== 'door' && wallType !== 'pivotDoor') continue;
+      if (!wall.start || !wall.end) continue;
+
+      const isOpen = wall.open === true;
+      const sx = wall.start.x, sy = wall.start.y;
+      const ex = wall.end.x, ey = wall.end.y;
+      const dx = ex - sx;
+      const dy = ey - sy;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      if (length < 1) continue;
+
+      const midX = (sx + ex) / 2;
+      const midY = (sy + ey) / 2;
+      const angle = Math.atan2(dy, dx);
+      const doorWidth = Math.max(length, 20);
+      const doorHeight = 10;
+
+      if (wallType === 'pivotDoor') {
+        // ── Pivot Door ──
+        const hingeIsStart = (wall.pivotEnd || 'start') === 'start';
+        const dir = wall.openDirection || 1;
+        const hinge = hingeIsStart ? wall.start : wall.end;
+        const free = hingeIsStart ? wall.end : wall.start;
+
+        if (isOpen) {
+          // Bright doorway opening highlight at original position
+          ctx.save();
+          ctx.translate(midX, midY);
+          ctx.rotate(angle);
+          // Glow behind the opening
+          ctx.shadowColor = '#FFD700';
+          ctx.shadowBlur = 10;
+          ctx.strokeStyle = '#DAA520';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+          ctx.shadowBlur = 0;
+          // Fill the opening with a subtle warm tint
+          ctx.fillStyle = 'rgba(255, 215, 0, 0.15)';
+          ctx.fillRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+          ctx.restore();
+
+          // Door panel at rotated position
+          const pts = getPivotDoorEndpoints(wall);
+          const rdx = pts.end.x - pts.start.x;
+          const rdy = pts.end.y - pts.start.y;
+          const rMidX = (pts.start.x + pts.end.x) / 2;
+          const rMidY = (pts.start.y + pts.end.y) / 2;
+          const rAngle = Math.atan2(rdy, rdx);
+          ctx.save();
+          ctx.translate(rMidX, rMidY);
+          ctx.rotate(rAngle);
+          ctx.fillStyle = '#8B6914';
+          ctx.globalAlpha = 0.9;
+          ctx.fillRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+          ctx.strokeStyle = '#654321';
+          ctx.lineWidth = 2.5;
+          ctx.globalAlpha = 1.0;
+          ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+          ctx.restore();
+
+          // Swing arc from hinge (thicker, more visible)
+          ctx.save();
+          ctx.strokeStyle = '#AAA';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([5, 3]);
+          const arcRadius = Math.sqrt((free.x - hinge.x) ** 2 + (free.y - hinge.y) ** 2);
+          const baseAngle = Math.atan2(free.y - hinge.y, free.x - hinge.x);
+          const openAngle = baseAngle + dir * (Math.PI / 2);
+          ctx.beginPath();
+          if (dir > 0) {
+            ctx.arc(hinge.x, hinge.y, arcRadius, baseAngle, openAngle, false);
+          } else {
+            ctx.arc(hinge.x, hinge.y, arcRadius, openAngle, baseAngle, false);
+          }
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+
+          // Hinge dot (larger, with outline)
+          ctx.save();
+          ctx.fillStyle = '#FFD700';
+          ctx.strokeStyle = '#654321';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(hinge.x, hinge.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          // Closed pivot door — thicker, bolder
+          ctx.save();
+          ctx.translate(midX, midY);
+          ctx.rotate(angle);
+          ctx.fillStyle = '#8B4513';
+          ctx.fillRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+          ctx.strokeStyle = '#5C2E00';
+          ctx.lineWidth = 2.5;
+          ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+          // Centre line detail
+          ctx.strokeStyle = '#6B3A1F';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(-doorWidth / 2 + 4, 0);
+          ctx.lineTo(doorWidth / 2 - 4, 0);
+          ctx.stroke();
+          ctx.restore();
+
+          // Hinge dot (larger, with outline)
+          ctx.save();
+          ctx.fillStyle = '#FFD700';
+          ctx.strokeStyle = '#654321';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(hinge.x, hinge.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        }
+
+      } else {
+        // ── Regular Door ──
+        ctx.save();
+        ctx.translate(midX, midY);
+        ctx.rotate(angle);
+
+        if (isOpen) {
+          // Bright doorway opening highlight
+          ctx.shadowColor = '#FFD700';
+          ctx.shadowBlur = 10;
+          ctx.strokeStyle = '#DAA520';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+          ctx.shadowBlur = 0;
+          // Warm tint fill for the opening
+          ctx.fillStyle = 'rgba(255, 215, 0, 0.15)';
+          ctx.fillRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+
+          // Door panel swung open (perpendicular, full opacity)
+          ctx.fillStyle = '#8B6914';
+          ctx.globalAlpha = 0.9;
+          ctx.save();
+          ctx.rotate(Math.PI / 2);
+          ctx.fillRect(-doorWidth / 2, -doorHeight / 2 - doorWidth / 2, doorWidth, doorHeight);
+          ctx.strokeStyle = '#654321';
+          ctx.lineWidth = 2.5;
+          ctx.globalAlpha = 1.0;
+          ctx.strokeRect(-doorWidth / 2, -doorHeight / 2 - doorWidth / 2, doorWidth, doorHeight);
+          ctx.restore();
+
+          // Swing arc (thicker)
+          ctx.strokeStyle = '#AAA';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([5, 3]);
+          ctx.beginPath();
+          ctx.arc(-doorWidth / 2, 0, doorWidth, 0, -Math.PI / 2, true);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        } else {
+          // Closed door: bold solid panel + handle
+          ctx.fillStyle = '#8B4513';
+          ctx.fillRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+          ctx.strokeStyle = '#5C2E00';
+          ctx.lineWidth = 2.5;
+          ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+          // Centre line detail
+          ctx.strokeStyle = '#6B3A1F';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(-doorWidth / 2 + 4, 0);
+          ctx.lineTo(doorWidth / 2 - 4, 0);
+          ctx.stroke();
+
+          // Door handle (larger, with outline)
+          ctx.fillStyle = '#FFD700';
+          ctx.strokeStyle = '#654321';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(doorWidth / 2 - 6, 0, 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+    }
+  }
+
+  /**
+   * Draw door icons ON TOP of fog-of-war so they remain visible.
+   * Only draws icons for doors visible to at least one vision-relevant token.
+   * Secret doors are excluded.
+   */
+  private drawWallDoorIcons(
+    ctx: CanvasRenderingContext2D,
+    config: any,
+    visionRelevantTokens: any[]
+  ) {
+    if (!config.walls || config.walls.length === 0) return;
+
+    // Build sight-blocking walls (same filter as drawFogOfWar / wall-occlusion)
+    const sightBlockingWalls: any[] = (config.walls || []).filter((wall: any) => {
+      const type = wall.type || 'wall';
+      if ((type === 'door' || type === 'secret') && wall.open) return false;
+      if (type === 'window') return false;
+      if (type === 'terrain') return false;
+      return true;
+    }).map((wall: any) => {
+      if (isPivotType(wall.type) && wall.open) {
+        const pts = getPivotDoorEndpoints(wall);
+        return { ...wall, start: pts.start, end: pts.end };
+      }
+      return wall;
+    });
+    // Add env-asset vision-blocking walls
+    if (config.envAssets && config.envAssets.length > 0) {
+      for (const inst of config.envAssets as EnvAssetInstance[]) {
+        if (inst.doorConfig) {
+          const def = this.plugin.envAssetLibrary.getAsset(inst.assetId);
+          if (def && def.category === 'door') {
+            if (inst.doorConfig.isOpen && inst.doorConfig.behaviour === 'sliding') continue;
+            const pad = 2;
+            const useW = inst.width >= inst.height;
+            const halfSpan = (useW ? inst.width : inst.height) / 2 - pad;
+            let p1x = useW ? -halfSpan : 0, p1y = useW ? 0 : -halfSpan;
+            let p2x = useW ? halfSpan : 0, p2y = useW ? 0 : halfSpan;
+            const dc = inst.doorConfig;
+            if (dc.isOpen) {
+              if (dc.behaviour !== 'sliding' && dc.openAngle) {
+                const pivot = dc.customPivot || { x: 0, y: 0.5 };
+                const pvX = (pivot.x - 0.5) * inst.width;
+                const pvY = (pivot.y - 0.5) * inst.height;
+                const a = (dc.openAngle || 0) * Math.PI / 180;
+                const cosA = Math.cos(a), sinA = Math.sin(a);
+                let rx = p1x - pvX, ry = p1y - pvY;
+                p1x = pvX + rx * cosA - ry * sinA;
+                p1y = pvY + rx * sinA + ry * cosA;
+                rx = p2x - pvX; ry = p2y - pvY;
+                p2x = pvX + rx * cosA - ry * sinA;
+                p2y = pvY + rx * sinA + ry * cosA;
+              }
+              if (dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
+                const sp0 = dc.slidePath[0]!;
+                const sp1 = dc.slidePath[dc.slidePath.length - 1]!;
+                const t = dc.slidePosition;
+                p1x += (sp1.x - sp0.x) * t; p1y += (sp1.y - sp0.y) * t;
+                p2x += (sp1.x - sp0.x) * t; p2y += (sp1.y - sp0.y) * t;
+              }
+            }
+            const rad = (inst.rotation || 0) * Math.PI / 180;
+            const cosR = Math.cos(rad), sinR = Math.sin(rad);
+            sightBlockingWalls.push({
+              type: 'wall',
+              start: { x: inst.position.x + p1x * cosR - p1y * sinR, y: inst.position.y + p1x * sinR + p1y * cosR },
+              end:   { x: inst.position.x + p2x * cosR - p2y * sinR, y: inst.position.y + p2x * sinR + p2y * cosR },
+              open: false,
+            });
+            continue;
+          }
+        }
+        if (inst.scatterConfig && inst.scatterConfig.blocksVision) {
+          const cx = inst.position.x, cy = inst.position.y;
+          const hw = inst.width / 2, hh = inst.height / 2;
+          const rad = (inst.rotation || 0) * Math.PI / 180;
+          const cosR = Math.cos(rad), sinR = Math.sin(rad);
+          const corners = [
+            { x: cx + (-hw) * cosR - (-hh) * sinR, y: cy + (-hw) * sinR + (-hh) * cosR },
+            { x: cx + ( hw) * cosR - (-hh) * sinR, y: cy + ( hw) * sinR + (-hh) * cosR },
+            { x: cx + ( hw) * cosR - ( hh) * sinR, y: cy + ( hw) * sinR + ( hh) * cosR },
+            { x: cx + (-hw) * cosR - ( hh) * sinR, y: cy + (-hw) * sinR + ( hh) * cosR },
+          ];
+          for (let ei = 0; ei < 4; ei++) {
+            const s = corners[ei]!;
+            const e = corners[(ei + 1) % 4]!;
+            sightBlockingWalls.push({ type: 'wall', start: s, end: e, open: false });
+          }
+        }
+      }
+    }
+
+    const hasWalls = sightBlockingWalls.length > 0;
+    const hasFog = config.fogOfWar && config.fogOfWar.enabled;
+
+    for (const wall of config.walls) {
+      const wallType = wall.type || 'wall';
+      if (wallType !== 'door' && wallType !== 'pivotDoor') continue;
+      if (!wall.start || !wall.end) continue;
+
+      const midX = (wall.start.x + wall.end.x) / 2;
+      const midY = (wall.start.y + wall.end.y) / 2;
+
+      // Visibility check: at least one vision-relevant token must see this door
+      if ((hasFog || hasWalls) && visionRelevantTokens.length > 0) {
+        let visibleToAny = false;
+        for (const pt of visionRelevantTokens) {
+          // Range check: use max of darkvision + light range
+          let visionFeet = pt.darkvision || 0;
+          if (pt.light) {
+            visionFeet = Math.max(visionFeet, (pt.light.bright || 0) + (pt.light.dim || 0));
+          }
+          const pxPerFt = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+          const visionPx = visionFeet * pxPerFt;
+          if (visionPx > 0) {
+            const ddx = midX - pt.position.x;
+            const ddy = midY - pt.position.y;
+            if (Math.sqrt(ddx * ddx + ddy * ddy) > visionPx) continue;
+          }
+          // LOS check
+          if (hasWalls) {
+            if (!this.hasLineOfSight(
+              pt.position.x, pt.position.y, midX, midY, sightBlockingWalls,
+              (pt.elevation?.height || 0) - (pt.elevation?.depth || 0), 0
+            )) continue;
+          }
+          visibleToAny = true;
+          break;
+        }
+        if (!visibleToAny) continue;
+      } else if (visionRelevantTokens.length === 0 && hasFog) {
+        continue; // No tokens to see it, fog hides everything
+      }
+
+      // Draw the icon
+      ctx.save();
+      ctx.font = 'bold 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.7)';
+      ctx.shadowBlur = 4;
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 3;
+      ctx.strokeText('🚪', midX, midY);
+      ctx.fillText('🚪', midX, midY);
+      ctx.restore();
+    }
+  }
+
   private redrawAnnotations() {
     if (!this.canvas || !this.mapConfig) return;
     const ctx = this.canvas.getContext('2d');
@@ -1396,6 +1748,10 @@ export class PlayerMapView extends ItemView {
     // Draw environmental assets (above map image, below fog-of-war)
     // These are rendered as part of the map — fog will cover them naturally
     this.drawEnvAssets(ctx, config);
+
+    // Draw wall-tool doors & pivot doors (visible to players, below fog-of-war)
+    // Secret doors are intentionally NOT drawn — they're invisible to players.
+    this.drawWallDoors(ctx, config);
 
     // Separate player tokens from other markers - player tokens should always be visible
     // visibleToPlayers ("Show to Players") tokens are treated as player tokens:
@@ -1765,7 +2121,7 @@ export class PlayerMapView extends ItemView {
           return true;
         }).map((wall: any) => {
           // Pivot doors stay blocking but with rotated endpoints when open
-          if (wall.type === 'pivotDoor' && wall.open) {
+          if (isPivotType(wall.type) && wall.open) {
             const pts = getPivotDoorEndpoints(wall);
             return { ...wall, start: pts.start, end: pts.end };
           }
@@ -2006,6 +2362,9 @@ export class PlayerMapView extends ItemView {
         }
       }
     }
+
+    // Draw door icons ON TOP of fog so players can identify doors in visible areas
+    this.drawWallDoorIcons(ctx, config, visionRelevantTokens);
 
     // Draw player tokens on top of fog - they should always be visible
     // Separate tunnel players to draw them on top of tunnel paths
@@ -3449,7 +3808,7 @@ export class PlayerMapView extends ItemView {
       return true;
     }).map((wall: any) => {
       // Pivot doors stay blocking but with rotated endpoints when open
-      if (wall.type === 'pivotDoor' && wall.open) {
+      if (isPivotType(wall.type) && wall.open) {
         const pts = getPivotDoorEndpoints(wall);
         return { ...wall, start: pts.start, end: pts.end };
       }
@@ -3675,7 +4034,7 @@ export class PlayerMapView extends ItemView {
       const wl = walls[i];
       n(wl.open ? 1 : 0);
       n(wl.height || 0);
-      if (wl.type === 'pivotDoor') {
+      if (isPivotType(wl.type)) {
         n(wl.openDirection || 1);
         n(wl.pivotEnd === 'end' ? 2 : 1);
       }
@@ -3951,7 +4310,7 @@ export class PlayerMapView extends ItemView {
       return true;
     }).map((wall: any) => {
       // Pivot doors stay blocking but with rotated endpoints when open
-      if (wall.type === 'pivotDoor' && wall.open) {
+      if (isPivotType(wall.type) && wall.open) {
         const pts = getPivotDoorEndpoints(wall);
         return { ...wall, start: pts.start, end: pts.end };
       }

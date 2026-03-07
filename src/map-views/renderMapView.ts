@@ -412,7 +412,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 			/** True for wall types that use 2-click (start→end) drawing instead of multi-point chains. */
 			const isDoorLikeType = (t: WallType): boolean =>
-				t === 'door' || t === 'pivotDoor' || t === 'window' || t === 'secret';
+				t === 'door' || t === 'pivotDoor' || t === 'window' || t === 'secret' || t === 'secretPivot';
+
+			/** True for pivot-style doors (hinge rotation) — includes both visible and secret variants. */
+			const isPivotType = (t: string): boolean => t === 'pivotDoor' || t === 'secretPivot';
+
+			/** True for secret door types (invisible to players). */
+			const isSecretType = (t: string): boolean => t === 'secret' || t === 'secretPivot';
 
 			/**
 			 * Find the closest point on any existing wall segment body to `pos`.
@@ -692,20 +698,21 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			};
 			// Wall types for dynamic lighting
 			const WALL_TYPES = {
-				wall: { name: 'Wall', icon: '🧱', color: '#ff4500', style: 'solid', blocksSight: true, blocksMovement: true },
-				door: { name: 'Door', icon: '🚪', color: '#8B4513', style: 'door', blocksSight: true, blocksMovement: true },
-				window: { name: 'Window', icon: '🪟', color: '#87CEEB', style: 'window', blocksSight: false, blocksMovement: true },
-				secret: { name: 'Secret Door', icon: '🔒', color: '#666666', style: 'dashed', blocksSight: true, blocksMovement: true },
-				invisible: { name: 'Invisible Wall', icon: '👻', color: '#cccccc', style: 'dotted', blocksSight: true, blocksMovement: true },
-				terrain: { name: 'Terrain', icon: '🪨', color: '#8B7355', style: 'solid', blocksSight: false, blocksMovement: true },
-				pivotDoor: { name: 'Pivot Door', icon: '🔄', color: '#8B4513', style: 'pivotDoor', blocksSight: true, blocksMovement: true },
+				wall: { name: 'Wall', icon: '🧱', color: '#ff4500', style: 'solid', blocksSight: true, blocksMovement: true, group: 'wall' },
+				door: { name: 'Door', icon: '🚪', color: '#8B4513', style: 'door', blocksSight: true, blocksMovement: true, group: 'door' },
+				pivotDoor: { name: 'Pivot Door', icon: '🔄', color: '#8B4513', style: 'pivotDoor', blocksSight: true, blocksMovement: true, group: 'door' },
+				secret: { name: 'Secret Door', icon: '🔒', color: '#666666', style: 'dashed', blocksSight: true, blocksMovement: true, group: 'door' },
+				secretPivot: { name: 'Secret Pivot', icon: '🔐', color: '#666666', style: 'pivotDoor', blocksSight: true, blocksMovement: true, group: 'door' },
+				window: { name: 'Window', icon: '🪟', color: '#87CEEB', style: 'window', blocksSight: false, blocksMovement: true, group: 'wall' },
+				invisible: { name: 'Invisible Wall', icon: '👻', color: '#cccccc', style: 'dotted', blocksSight: true, blocksMovement: true, group: 'wall' },
+				terrain: { name: 'Terrain', icon: '🪨', color: '#8B7355', style: 'solid', blocksSight: false, blocksMovement: true, group: 'wall' },
 			} as const;
 			type WallType = keyof typeof WALL_TYPES;
 			let selectedWallType: WallType = 'wall';
 
 			/** Compute effective endpoints for an open pivot door (rotates around hinge). */
 			const getPivotDoorEndpoints = (wall: any): { start: { x: number; y: number }; end: { x: number; y: number } } => {
-				if (!wall.open || wall.type !== 'pivotDoor') {
+				if (!wall.open || !isPivotType(wall.type)) {
 					return { start: wall.start, end: wall.end };
 				}
 				const hingeIsStart = (wall.pivotEnd || 'start') === 'start';
@@ -1513,7 +1520,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		// Wall type picker sub-menu (shown when walls tool is active)
 		const wallsPicker = wallsBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
 		const wallTypeButtons: Map<string, HTMLButtonElement> = new Map();
-		(Object.entries(WALL_TYPES) as [WallType, typeof WALL_TYPES[WallType]][]).forEach(([type, wallDef]) => {
+
+		// Separate wall entries into top-level ("wall" group) and door sub-group
+		const wallGroupTypes = (Object.entries(WALL_TYPES) as [WallType, typeof WALL_TYPES[WallType]][]).filter(([, d]) => d.group === 'wall');
+		const doorGroupTypes = (Object.entries(WALL_TYPES) as [WallType, typeof WALL_TYPES[WallType]][]).filter(([, d]) => d.group === 'door');
+
+		// Render top-level wall buttons (Wall, Window, Invisible, Terrain)
+		wallGroupTypes.forEach(([type, wallDef]) => {
 			const btn = wallsPicker.createEl('button', {
 				cls: 'dnd-map-aoe-shape-btn' + (type === selectedWallType ? ' active' : ''),
 				attr: { title: wallDef.name }
@@ -1521,11 +1534,46 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			btn.createEl('span', { text: wallDef.icon });
 			wallTypeButtons.set(type, btn);
 			btn.addEventListener('click', (e) => {
-				e.stopPropagation(); // Prevent bubbling to wallsBtn which would re-show the picker
+				e.stopPropagation();
 				selectedWallType = type;
 				wallTypeButtons.forEach((b) => b.removeClass('active'));
 				btn.addClass('active');
-				// Collapse the picker after selecting a wall type so the map is not obstructed
+				// Also deactivate door-group highlight
+				doorGroupBtn.removeClass('active');
+				wallsPicker.addClass('hidden');
+			});
+		});
+
+		// Door group submenu button (🚪▾ — expands to show all door variants)
+		const doorGroupBtn = wallsPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn' + (doorGroupTypes.some(([t]) => t === selectedWallType) ? ' active' : ''),
+			attr: { title: 'Doors (click to expand)' }
+		});
+		doorGroupBtn.createEl('span', { text: '🚪▾' });
+		const doorSubPicker = wallsPicker.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
+		doorSubPicker.style.cssText = 'position: relative; margin-left: 4px; padding: 2px 0;';
+		doorGroupBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			doorSubPicker.toggleClass('hidden');
+		});
+
+		doorGroupTypes.forEach(([type, wallDef]) => {
+			const btn = doorSubPicker.createEl('button', {
+				cls: 'dnd-map-aoe-shape-btn' + (type === selectedWallType ? ' active' : ''),
+				attr: { title: wallDef.name }
+			});
+			btn.createEl('span', { text: wallDef.icon });
+			wallTypeButtons.set(type, btn);
+			btn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				selectedWallType = type;
+				wallTypeButtons.forEach((b) => b.removeClass('active'));
+				btn.addClass('active');
+				doorGroupBtn.addClass('active');
+				// Update the door group button icon to reflect selection
+				doorGroupBtn.empty();
+				doorGroupBtn.createEl('span', { text: wallDef.icon + '▾' });
+				doorSubPicker.addClass('hidden');
 				wallsPicker.addClass('hidden');
 			});
 		});
@@ -4355,6 +4403,118 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 				}
 
+				// ── Subtle door / window / pivot-door indicators on non-Background layers ──
+				// Lets the GM quickly spot interactive wall elements while on Player/DM/etc layers.
+				if (config.activeLayer !== 'Background' && config.walls && config.walls.length > 0) {
+					ctx.save();
+					ctx.globalAlpha = 0.45;
+					config.walls.forEach((wall: any) => {
+						const wallType = wall.type || 'wall';
+						if (wallType !== 'door' && wallType !== 'pivotDoor' && wallType !== 'window' && wallType !== 'secret' && wallType !== 'secretPivot') return;
+						if (!wall.start || !wall.end) return;
+
+						// Viewport cull
+						const _wMinX2 = Math.min(wall.start.x, wall.end.x);
+						const _wMinY2 = Math.min(wall.start.y, wall.end.y);
+						const _wW2 = Math.abs(wall.end.x - wall.start.x);
+						const _wH2 = Math.abs(wall.end.y - wall.start.y);
+						if (!_inViewRect(_wMinX2, _wMinY2, _wW2, _wH2)) return;
+
+						const isOpen = wall.open === true;
+						const wallDef = WALL_TYPES[wallType as WallType] || WALL_TYPES.wall;
+
+						// For open pivot doors use rotated position
+						let sx = wall.start.x, sy = wall.start.y, ex = wall.end.x, ey = wall.end.y;
+						if (isPivotType(wallType) && isOpen) {
+							const pts = getPivotDoorEndpoints(wall);
+							sx = pts.start.x; sy = pts.start.y;
+							ex = pts.end.x; ey = pts.end.y;
+						}
+
+						const dx = ex - sx;
+						const dy = ey - sy;
+						const length = Math.sqrt(dx * dx + dy * dy);
+						if (length < 1) return;
+						const midX = (sx + ex) / 2;
+						const midY = (sy + ey) / 2;
+						const angle = Math.atan2(dy, dx);
+						const doorWidth = Math.max(length, 20);
+						const doorHeight = 6;
+
+						if (wallType === 'window') {
+							// Window: thin blue-tinted rectangle
+							ctx.save();
+							ctx.translate(midX, midY);
+							ctx.rotate(angle);
+							ctx.fillStyle = '#4488aa';
+							ctx.globalAlpha = 0.3;
+							ctx.fillRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+							ctx.strokeStyle = '#336688';
+							ctx.lineWidth = 1.5;
+							ctx.globalAlpha = 0.5;
+							ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+							ctx.restore();
+						} else {
+							// Door / pivot door / secret door
+							ctx.save();
+							ctx.translate(midX, midY);
+							ctx.rotate(angle);
+							if (isOpen) {
+								// Open: dashed outline
+								ctx.strokeStyle = wallDef.color;
+								ctx.lineWidth = 1.5;
+								ctx.setLineDash([4, 3]);
+								ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+								ctx.setLineDash([]);
+							} else {
+								// Closed: solid muted fill
+								ctx.fillStyle = wallDef.color;
+								ctx.globalAlpha = 0.35;
+								ctx.fillRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+								ctx.strokeStyle = wallDef.color;
+								ctx.lineWidth = 1.5;
+								ctx.globalAlpha = 0.55;
+								ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+							}
+							ctx.restore();
+
+							// Door/secret icon label at midpoint
+							ctx.save();
+							ctx.font = 'bold 18px sans-serif';
+							ctx.textAlign = 'center';
+							ctx.textBaseline = 'middle';
+							ctx.globalAlpha = 0.75;
+							ctx.shadowColor = 'rgba(0,0,0,0.5)';
+							ctx.shadowBlur = 3;
+							const icon = isOpen ? '○' : (isSecretType(wallType) ? '🔒' : '🚪');
+							ctx.fillStyle = '#ffffff';
+							ctx.strokeStyle = '#000000';
+							ctx.lineWidth = 3;
+							ctx.strokeText(icon, midX, midY);
+							ctx.fillText(icon, midX, midY);
+							ctx.restore();
+						}
+
+						// For open pivot doors, also draw faint original position
+						if (isPivotType(wallType) && isOpen) {
+							const omidX = (wall.start.x + wall.end.x) / 2;
+							const omidY = (wall.start.y + wall.end.y) / 2;
+							const oAngle = Math.atan2(wall.end.y - wall.start.y, wall.end.x - wall.start.x);
+							ctx.save();
+							ctx.translate(omidX, omidY);
+							ctx.rotate(oAngle);
+							ctx.strokeStyle = wallDef.color;
+							ctx.lineWidth = 1;
+							ctx.setLineDash([3, 3]);
+							ctx.globalAlpha = 0.2;
+							ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+							ctx.setLineDash([]);
+							ctx.restore();
+						}
+					});
+					ctx.restore();
+				}
+
 				// Draw selection rectangle overlay and highlight selected walls
 				if (wallSelectionRect && activeTool === 'select') {
 					const sr = wallSelectionRect;
@@ -6287,7 +6447,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					return true;
 				}).map((wall: any) => {
 					// Pivot doors stay blocking but with rotated endpoints when open
-					if (wall.type === 'pivotDoor' && wall.open) {
+					if (isPivotType(wall.type) && wall.open) {
 						const pts = getPivotDoorEndpoints(wall);
 						return { ...wall, start: pts.start, end: pts.end };
 					}
@@ -9654,10 +9814,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					for (let wi = 0; wi < config.walls.length; wi++) {
 						const w = config.walls[wi];
 						const wt = w.type || 'wall';
-						if (wt !== 'door' && wt !== 'pivotDoor' && wt !== 'window' && wt !== 'secret') continue;
+						if (wt !== 'door' && wt !== 'pivotDoor' && wt !== 'window' && wt !== 'secret' && wt !== 'secretPivot') continue;
 						if (!w.start || !w.end) continue;
 						// Use the rendered position for pivot doors when open
-						const pts = (wt === 'pivotDoor' && w.open) ? getPivotDoorEndpoints(w) : w;
+						const pts = (isPivotType(wt) && w.open) ? getPivotDoorEndpoints(w) : w;
 						const dx = pts.end.x - pts.start.x;
 						const dy = pts.end.y - pts.start.y;
 						const lenSq = dx * dx + dy * dy;
@@ -9668,7 +9828,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						const d = Math.sqrt((mapPos.x - px) ** 2 + (mapPos.y - py) ** 2);
 						// Also check original position for open pivot doors
 						let dOrig = Infinity;
-						if (wt === 'pivotDoor' && w.open) {
+						if (isPivotType(wt) && w.open) {
 							const odx = w.end.x - w.start.x;
 							const ody = w.end.y - w.start.y;
 							const oLenSq = odx * odx + ody * ody;
@@ -9710,7 +9870,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						);
 
 						// Pivot door extras
-						if (wt === 'pivotDoor') {
+						if (isPivotType(wt)) {
 							menu.addItem(item => item
 								.setTitle('↔️ Reverse Direction')
 								.onClick(() => {
@@ -10892,7 +11052,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							header.textContent = wall.name || wallDef.name;
 							
 							// Door open/close toggle (for sliding doors and pivot doors)
-							if (wallType === 'door' || wallType === 'pivotDoor') {
+							if (wallType === 'door' || wallType === 'pivotDoor' || wallType === 'secret' || wallType === 'secretPivot') {
 								const isOpen = wall.open === true;
 								const toggleOption = contextMenu.createDiv({ 
 									cls: 'dnd-map-context-menu-item'
@@ -10911,7 +11071,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								});
 
 								// Pivot door: reverse open direction
-								if (wallType === 'pivotDoor') {
+								if (isPivotType(wallType)) {
 									const revOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
 									revOption.innerHTML = `<span>↔️</span> Reverse Direction`;
 									revOption.addEventListener('click', () => {
@@ -11016,11 +11176,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									wall.type = type;
 									wall.name = def.name;
 									// Reset open state when changing away from door types
-									if (type !== 'door' && type !== 'pivotDoor') {
+									if (type !== 'door' && type !== 'pivotDoor' && type !== 'secret' && type !== 'secretPivot') {
 										wall.open = false;
 									}
 									// Clean up pivot-door properties when switching to non-pivot type
-									if (type !== 'pivotDoor') {
+									if (!isPivotType(type)) {
 										delete wall.openDirection;
 										delete wall.pivotEnd;
 									}
