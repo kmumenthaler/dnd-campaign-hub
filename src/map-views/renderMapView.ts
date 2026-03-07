@@ -28,7 +28,7 @@ import { EnvAssetLibrary } from "../envasset/EnvAssetLibrary";
 import { showEnvAssetContextMenu } from "../envasset/EnvAssetContextMenu";
 import { EnvAssetPickerModal } from "../envasset/EnvAssetPickerModal";
 import type { EnvAssetInstance, EnvAssetDefinition, TransformHandle } from "../envasset/EnvAssetTypes";
-import { TRANSFORM_HANDLE_SIZE, ROTATION_HANDLE_OFFSET, PIVOT_HANDLE_SIZE } from "../envasset/EnvAssetTypes";
+import { TRANSFORM_HANDLE_SIZE, ROTATION_HANDLE_OFFSET } from "../envasset/EnvAssetTypes";
 import {
   HexcrawlTracker,
   HexProcedureModal,
@@ -3204,16 +3204,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const rotY = -hh - ROTATION_HANDLE_OFFSET;
 				if (Math.abs(lx) < hs && Math.abs(ly - rotY) < hs) return 'rotate';
 
-				// Pivot handle (for non-sliding doors)
-				const def = inst.assetId ? plugin.envAssetLibrary.getAsset(inst.assetId) : null;
-				if (def?.category === 'door' && inst.doorConfig && inst.doorConfig.behaviour !== 'sliding') {
-					const pivot = inst.doorConfig.customPivot || { x: 0, y: 0.5 };
-					const pvX = (pivot.x - 0.5) * inst.width;
-					const pvY = (pivot.y - 0.5) * inst.height;
-					const pvTol = PIVOT_HANDLE_SIZE / 2 + 4;
-					if (Math.abs(lx - pvX) < pvTol && Math.abs(ly - pvY) < pvTol) return 'pivot';
-				}
-
 				// Corner & edge handles
 				const handles: { handle: TransformHandle; x: number; y: number }[] = [
 					{ handle: 'top-left',    x: -hw, y: -hh },
@@ -3449,81 +3439,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					if (!isOnBgLayer) return 1; // non-bg layer: always full (or handled per-section)
 					if (backgroundEditView === 'all') return 1;
 					return backgroundEditView === group ? 1 : bgViewDimAlpha;
-				};
-
-				// ── Helper: compute door-wall segments for env-asset doors ──
-				// Returns a single wall segment per door, spanning the width of the
-				// door asset with a small inset, transformed by position, rotation,
-				// and the door's open state (pivot / slide).
-				const computeDoorWallSegments = (): { id: string; type: string; start: { x: number; y: number }; end: { x: number; y: number }; open: boolean; linkedDoorId: string }[] => {
-					const result: { id: string; type: string; start: { x: number; y: number }; end: { x: number; y: number }; open: boolean; linkedDoorId: string }[] = [];
-					if (!config.envAssets || config.envAssets.length === 0) return result;
-					for (const inst of config.envAssets as EnvAssetInstance[]) {
-						const def = plugin.envAssetLibrary.getAsset(inst.assetId);
-						if (!def || def.category !== 'door') continue;
-						const dc = inst.doorConfig;
-
-						// Open sliding doors don't block – the doorway is clear
-						if (dc && dc.isOpen && dc.behaviour === 'sliding') continue;
-
-						const pad = 2; // inset padding in pixels
-						// Span the largest dimension of the door asset
-						const useWidth = inst.width >= inst.height;
-						const halfSpan = (useWidth ? inst.width : inst.height) / 2 - pad;
-
-						// Wall endpoints in local space along the longest axis
-						let p1x = useWidth ? -halfSpan : 0, p1y = useWidth ? 0 : -halfSpan;
-						let p2x = useWidth ?  halfSpan : 0, p2y = useWidth ? 0 :  halfSpan;
-
-						// Apply door open transform (pivot rotation or slide offset)
-						if (dc && dc.isOpen) {
-							if (dc.behaviour !== 'sliding' && dc.openAngle) {
-								const pivot = dc.customPivot || { x: 0, y: 0.5 };
-								const pvX = (pivot.x - 0.5) * inst.width;
-								const pvY = (pivot.y - 0.5) * inst.height;
-								const a = (dc.openAngle || 0) * Math.PI / 180;
-								const cosA = Math.cos(a), sinA = Math.sin(a);
-								// Rotate p1 around pivot
-								let rx = p1x - pvX, ry = p1y - pvY;
-								p1x = pvX + rx * cosA - ry * sinA;
-								p1y = pvY + rx * sinA + ry * cosA;
-								// Rotate p2 around pivot
-								rx = p2x - pvX; ry = p2y - pvY;
-								p2x = pvX + rx * cosA - ry * sinA;
-								p2y = pvY + rx * sinA + ry * cosA;
-							}
-							if (dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
-								const sp0 = dc.slidePath[0]!;
-								const sp1 = dc.slidePath[dc.slidePath.length - 1]!;
-								const t = dc.slidePosition;
-								const sdx = (sp1.x - sp0.x) * t;
-								const sdy = (sp1.y - sp0.y) * t;
-								p1x += sdx; p1y += sdy;
-								p2x += sdx; p2y += sdy;
-							}
-						}
-
-						// Apply instance rotation + position to get world coordinates
-						const rad = (inst.rotation || 0) * Math.PI / 180;
-						const cosR = Math.cos(rad), sinR = Math.sin(rad);
-						const worldP1 = {
-							x: inst.position.x + p1x * cosR - p1y * sinR,
-							y: inst.position.y + p1x * sinR + p1y * cosR,
-						};
-						const worldP2 = {
-							x: inst.position.x + p2x * cosR - p2y * sinR,
-							y: inst.position.y + p2x * sinR + p2y * cosR,
-						};
-						result.push({
-							id: `door_wall_${inst.id}`,
-							type: 'wall',
-							start: worldP1,
-							end: worldP2,
-							open: !!(dc && dc.isOpen),
-							linkedDoorId: inst.id,
-						});
-					}
-					return result;
 				};
 
 				// Draw tile elevations (Background layer visualization)
@@ -3770,39 +3685,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						const hw = inst.width / 2;
 						const hh = inst.height / 2;
 
-						// For doors: ensure doorConfig exists and apply open-angle or slide offset
-						if (def.category === 'door') {
-							if (!inst.doorConfig) {
-								inst.doorConfig = { behaviour: 'pivot', customPivot: { x: 0, y: 0.5 } };
-							}
-							const dc = inst.doorConfig;
-							// Runtime migration: convert legacy normal/custom-pivot to unified pivot
-							if (dc.behaviour === 'normal' || dc.behaviour === 'custom-pivot') {
-								if (dc.behaviour === 'normal' && !dc.customPivot) {
-									dc.customPivot = (dc as any).pivotEdge === 'right' ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 };
-								}
-								dc.behaviour = 'pivot';
-							}
-							if (dc.behaviour !== 'sliding' && !dc.customPivot) {
-								dc.customPivot = { x: 0, y: 0.5 };
-							}
-							if (dc.isOpen && dc.behaviour !== 'sliding' && dc.openAngle) {
-								// Resolve pivot point from customPivot
-								const pivotX = (dc.customPivot!.x - 0.5) * inst.width;
-								const pivotY = (dc.customPivot!.y - 0.5) * inst.height;
-								ctx.translate(pivotX, pivotY);
-								ctx.rotate((dc.openAngle || 0) * Math.PI / 180);
-								ctx.translate(-pivotX, -pivotY);
-							}
-							if (dc.isOpen && dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
-								// Slide offset along the path (linear interpolation between first two waypoints)
-								const p0 = dc.slidePath[0]!;
-								const p1 = dc.slidePath[dc.slidePath.length - 1]!;
-								const t = dc.slidePosition;
-								ctx.translate((p1.x - p0.x) * t, (p1.y - p0.y) * t);
-							}
-						}
-
 						// Draw the image (or placeholder)
 						if (img) {
 							ctx.drawImage(img, -hw, -hh, inst.width, inst.height);
@@ -3907,31 +3789,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							ctx.textAlign = 'center';
 							ctx.textBaseline = 'middle';
 							ctx.fillText('↻', 0, rotY);
-
-							// ── Pivot handle (yellow dot for non-sliding doors) ──
-							if (def.category === 'door' && inst.doorConfig && inst.doorConfig.behaviour !== 'sliding') {
-								const pivot = inst.doorConfig.customPivot || { x: 0, y: 0.5 };
-								const pvX = (pivot.x - 0.5) * inst.width;
-								const pvY = (pivot.y - 0.5) * inst.height;
-								const pvR = PIVOT_HANDLE_SIZE / 2;
-								// Yellow filled circle with dark outline
-								ctx.beginPath();
-								ctx.arc(pvX, pvY, pvR, 0, Math.PI * 2);
-								ctx.fillStyle = '#ffcc00';
-								ctx.fill();
-								ctx.strokeStyle = '#886600';
-								ctx.lineWidth = 2;
-								ctx.stroke();
-								// Small cross-hair inside
-								ctx.strokeStyle = '#886600';
-								ctx.lineWidth = 1;
-								ctx.beginPath();
-								ctx.moveTo(pvX - pvR * 0.5, pvY);
-								ctx.lineTo(pvX + pvR * 0.5, pvY);
-								ctx.moveTo(pvX, pvY - pvR * 0.5);
-								ctx.lineTo(pvX, pvY + pvR * 0.5);
-								ctx.stroke();
-							}
 
 							ctx.restore();
 						}
@@ -4381,39 +4238,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						ctx.setLineDash([]);
 					});
 					ctx.restore();
-				}
-
-				// ── Draw door-wall segments from env-asset doors (visible in wall view) ──
-				if (config.activeLayer === 'Background') {
-					const doorWalls = computeDoorWallSegments();
-					if (doorWalls.length > 0) {
-						const wallAlpha = bgViewAlpha('walls');
-						ctx.save();
-						ctx.globalAlpha = wallAlpha;
-						ctx.strokeStyle = '#ff4500'; // same red as regular wall
-						ctx.lineWidth = 4;
-						ctx.lineCap = 'round';
-						ctx.setLineDash([]);
-						for (const dw of doorWalls) {
-							// Open doors: draw as dashed + semi-transparent
-							if (dw.open) {
-								ctx.save();
-								ctx.globalAlpha = wallAlpha * 0.35;
-								ctx.setLineDash([6, 4]);
-								ctx.beginPath();
-								ctx.moveTo(dw.start.x, dw.start.y);
-								ctx.lineTo(dw.end.x, dw.end.y);
-								ctx.stroke();
-								ctx.restore();
-							} else {
-								ctx.beginPath();
-								ctx.moveTo(dw.start.x, dw.start.y);
-								ctx.lineTo(dw.end.x, dw.end.y);
-								ctx.stroke();
-							}
-						}
-						ctx.restore();
-					}
 				}
 
 				// ── Subtle door / window / pivot-door indicators on non-Background layers ──
@@ -6466,50 +6290,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 					return wall;
 				});
-				// Inline env-asset door wall computation (same logic as computeDoorWallSegments)
-				if (config.envAssets && config.envAssets.length > 0) {
-					for (const inst of config.envAssets as EnvAssetInstance[]) {
-						const def = plugin.envAssetLibrary.getAsset(inst.assetId);
-						if (!def || def.category !== 'door') continue;
-						const dc = inst.doorConfig;
-						if (dc && dc.isOpen && dc.behaviour === 'sliding') continue;
-						const pad = 2;
-						const useWidth = inst.width >= inst.height;
-						const halfSpan = (useWidth ? inst.width : inst.height) / 2 - pad;
-						let p1x = useWidth ? -halfSpan : 0, p1y = useWidth ? 0 : -halfSpan;
-						let p2x = useWidth ?  halfSpan : 0, p2y = useWidth ? 0 :  halfSpan;
-						if (dc && dc.isOpen) {
-							if (dc.behaviour !== 'sliding' && dc.openAngle) {
-								const pivot = dc.customPivot || { x: 0, y: 0.5 };
-								const pvX = (pivot.x - 0.5) * inst.width;
-								const pvY = (pivot.y - 0.5) * inst.height;
-								const a = (dc.openAngle || 0) * Math.PI / 180;
-								const cosA = Math.cos(a), sinA = Math.sin(a);
-								let rx = p1x - pvX, ry = p1y - pvY;
-								p1x = pvX + rx * cosA - ry * sinA;
-								p1y = pvY + rx * sinA + ry * cosA;
-								rx = p2x - pvX; ry = p2y - pvY;
-								p2x = pvX + rx * cosA - ry * sinA;
-								p2y = pvY + rx * sinA + ry * cosA;
-							}
-							if (dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
-								const sp0 = dc.slidePath[0]!;
-								const sp1 = dc.slidePath[dc.slidePath.length - 1]!;
-								const t = dc.slidePosition;
-								p1x += (sp1.x - sp0.x) * t; p1y += (sp1.y - sp0.y) * t;
-								p2x += (sp1.x - sp0.x) * t; p2y += (sp1.y - sp0.y) * t;
-							}
-						}
-						const rad = (inst.rotation || 0) * Math.PI / 180;
-						const cosR = Math.cos(rad), sinR = Math.sin(rad);
-						previewWalls.push({
-							type: 'wall',
-							start: { x: inst.position.x + p1x * cosR - p1y * sinR, y: inst.position.y + p1x * sinR + p1y * cosR },
-							end:   { x: inst.position.x + p2x * cosR - p2y * sinR, y: inst.position.y + p2x * sinR + p2y * cosR },
-							open: false,
-						});
-					}
-				}
 
 				const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
 
@@ -7557,10 +7337,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									if (handle === 'rotate') {
 										envAssetRotateStart = Math.atan2(mapPos.y - selInst.position.y, mapPos.x - selInst.position.x);
 									}
-									if (handle === 'pivot' && selInst.doorConfig) {
-										if (!selInst.doorConfig.customPivot) selInst.doorConfig.customPivot = { x: 0, y: 0.5 };
-									}
-									viewport.style.cursor = handle === 'rotate' ? 'grab' : handle === 'pivot' ? 'move' : 'nwse-resize';
+									viewport.style.cursor = handle === 'rotate' ? 'grab' : 'nwse-resize';
 									foundEnvAsset = true;
 									e.preventDefault();
 								}
@@ -7890,10 +7667,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								if (handle === 'rotate') {
 									envAssetRotateStart = Math.atan2(mapPos.y - selInst.position.y, mapPos.x - selInst.position.x);
 								}
-								if (handle === 'pivot' && selInst.doorConfig) {
-									if (!selInst.doorConfig.customPivot) selInst.doorConfig.customPivot = { x: 0, y: 0.5 };
-								}
-								viewport.style.cursor = handle === 'rotate' ? 'grab' : handle === 'pivot' ? 'move' : 'nwse-resize';
+								viewport.style.cursor = handle === 'rotate' ? 'grab' : 'nwse-resize';
 								e.preventDefault();
 								return;
 							}
@@ -7933,25 +7707,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								placedAt: Date.now(),
 							};
 							// Inherit category-specific config from definition
-							if (assetDef.category === 'door' && assetDef.doorConfig) {
-								newInst.doorConfig = JSON.parse(JSON.stringify(assetDef.doorConfig));
-								// Migrate legacy behaviours
-								const dc = newInst.doorConfig!;
-								if (dc.behaviour === 'normal' || dc.behaviour === 'custom-pivot') {
-									if (dc.behaviour === 'normal' && !dc.customPivot) {
-										dc.customPivot = dc.pivotEdge === 'right' ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 };
-									}
-									dc.behaviour = 'pivot';
-								}
-								if (dc.behaviour !== 'sliding' && !dc.customPivot) {
-									dc.customPivot = { x: 0, y: 0.5 };
-								}
-							}
 							if (assetDef.category === 'scatter' && assetDef.scatterConfig) {
 								newInst.scatterConfig = JSON.parse(JSON.stringify(assetDef.scatterConfig));
-							}
-							if (assetDef.category === 'trap' && assetDef.trapConfig) {
-								newInst.trapConfig = JSON.parse(JSON.stringify(assetDef.trapConfig));
 							}
 							config.envAssets.push(newInst);
 							selectedEnvAssetInstanceId = newInst.id;
@@ -8692,20 +8449,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const angle = Math.atan2(mapPos.y - inst.position.y, mapPos.x - inst.position.x);
 							const delta = (angle - envAssetRotateStart) * 180 / Math.PI;
 							inst.rotation = ((envAssetTransformStart.rot + delta) % 360 + 360) % 360;
-							_requestDragRedraw();
-						} else if (envAssetTransformHandle === 'pivot' && inst.doorConfig) {
-							// Drag pivot handle: convert mouse to local normalised coords
-							const dxP = mapPos.x - inst.position.x;
-							const dyP = mapPos.y - inst.position.y;
-							const radP = -(inst.rotation || 0) * Math.PI / 180;
-							const localX = dxP * Math.cos(radP) - dyP * Math.sin(radP);
-							const localY = dxP * Math.sin(radP) + dyP * Math.cos(radP);
-							// Normalise to 0–1 and clamp within the asset bounds
-							const nx = Math.max(0, Math.min(1, (localX / inst.width) + 0.5));
-							const ny = Math.max(0, Math.min(1, (localY / inst.height) + 0.5));
-							if (!inst.doorConfig.customPivot) inst.doorConfig.customPivot = { x: 0, y: 0.5 };
-							inst.doorConfig.customPivot.x = nx;
-							inst.doorConfig.customPivot.y = ny;
 							_requestDragRedraw();
 						} else if (envAssetTransformHandle && envAssetTransformStart) {
 							// Anchored-edge resize: the opposite edge stays fixed
@@ -9827,74 +9570,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							);
 						});
 						return; // Don't fall through to marker menu
-					}
-				}
-
-				// ── Door env-asset quick menu on ANY layer (open / close) ──
-				// When the GM is NOT on the Background layer, allow a mini
-				// right-click menu on door assets so they can toggle open/close
-				// without switching layers.
-				if (config.activeLayer !== 'Background') {
-					const hitDoorAsset = findEnvAssetAtPoint(mapPos.x, mapPos.y);
-					if (hitDoorAsset) {
-						const doorDef = plugin.envAssetLibrary.getAsset(hitDoorAsset.assetId);
-						if (doorDef && doorDef.category === 'door') {
-							e.preventDefault();
-							// Ensure doorConfig exists
-							if (!hitDoorAsset.doorConfig) {
-								hitDoorAsset.doorConfig = { ...(doorDef.doorConfig || { behaviour: 'pivot' }) };
-							}
-							const dc = hitDoorAsset.doorConfig;
-							// Migrate legacy behaviours
-							if (dc.behaviour === 'normal' || dc.behaviour === 'custom-pivot') {
-								if (dc.behaviour === 'normal' && !dc.customPivot) {
-									dc.customPivot = (dc as any).pivotEdge === 'right' ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 };
-								}
-								dc.behaviour = 'pivot';
-							}
-							if (dc.behaviour !== 'sliding' && !dc.customPivot) {
-								dc.customPivot = { x: 0, y: 0.5 };
-							}
-
-							const menu = new Menu();
-							const doorLabel = doorDef.name ?? 'Door';
-							menu.addItem(item => item.setTitle(`🚪 ${doorLabel}`).setDisabled(true));
-							menu.addSeparator();
-							menu.addItem(item => item
-								.setTitle(dc.isOpen ? '🚪 Close Door' : '🚪 Open Door')
-								.onClick(() => {
-									dc.isOpen = !dc.isOpen;
-									if (!dc.isOpen) {
-										dc.openAngle = 0;
-										if (dc.behaviour === 'sliding') dc.slidePosition = 0;
-									} else {
-										if (dc.behaviour !== 'sliding') {
-											const dir = dc.openDirection || 1;
-											dc.openAngle = dir * 90;
-										}
-										if (dc.behaviour === 'sliding') dc.slidePosition = 1;
-									}
-									redrawAnnotations();
-									plugin.saveMapAnnotations(config, el);
-									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-								})
-							);
-							if (dc.behaviour !== 'sliding') {
-								menu.addItem(item => item
-									.setTitle('↔️ Reverse Open Direction')
-									.onClick(() => {
-										dc.openDirection = (dc.openDirection || 1) * -1;
-										dc.openAngle = dc.openDirection * 90;
-										if (!dc.isOpen) dc.isOpen = true;
-										redrawAnnotations();
-										plugin.saveMapAnnotations(config, el);
-										if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-									})
-								);
-							}
-							menu.showAtMouseEvent(e);
-							return; // Don't fall through to marker menu
-						}
 					}
 				}
 

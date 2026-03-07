@@ -2,11 +2,8 @@ import { App, Modal, Setting, Notice, TFile } from 'obsidian';
 import {
 	EnvAssetDefinition,
 	EnvAssetCategory,
-	DoorBehaviour,
-	DoorConfig,
 	ScatterConfig,
 	ENV_ASSET_CATEGORIES,
-	DOOR_BEHAVIOURS,
 } from './EnvAssetTypes';
 import { EnvAssetLibrary } from './EnvAssetLibrary';
 
@@ -20,9 +17,7 @@ export class EnvAssetLibraryModal extends Modal {
 	private onSave: (asset: EnvAssetDefinition) => void;
 	private previewEl!: HTMLElement;
 
-	// ── Door config UI elements (toggled by category) ────────────────────────
-	private doorConfigEl!: HTMLElement;
-	private doorSlideEl!: HTMLElement;
+
 	// ── Scatter config UI elements ───────────────────────────────────────────
 	private scatterConfigEl!: HTMLElement;
 	private scatterHeightEl!: HTMLElement;
@@ -33,9 +28,6 @@ export class EnvAssetLibraryModal extends Modal {
 	private imageFile = '';
 	private defaultWidth = 70;
 	private defaultHeight = 70;
-
-	// Door form values
-	private doorBehaviour: DoorBehaviour = 'pivot';
 
 	// Scatter form values
 	private scatterBlocksVision = false;
@@ -59,11 +51,6 @@ export class EnvAssetLibraryModal extends Modal {
 			this.defaultWidth = asset.defaultWidth;
 			this.defaultHeight = asset.defaultHeight;
 
-			if (asset.doorConfig) {
-				// Migrate legacy 'normal'/'custom-pivot' to 'pivot'
-				const b = asset.doorConfig.behaviour;
-				this.doorBehaviour = (b === 'normal' || b === 'custom-pivot') ? 'pivot' : b;
-			}
 			if (asset.scatterConfig) {
 				this.scatterBlocksVision = asset.scatterConfig.blocksVision;
 				this.scatterWallHeight = asset.scatterConfig.wallHeight ?? 5;
@@ -94,21 +81,6 @@ export class EnvAssetLibraryModal extends Modal {
 				.onChange(v => { this.name = v; })
 			);
 
-		// ── Category ─────────────────────────────────────────────────────────
-		new Setting(contentEl)
-			.setName('Category')
-			.setDesc('Determines available configuration options')
-			.addDropdown(dd => {
-				for (const cat of ENV_ASSET_CATEGORIES) {
-					dd.addOption(cat.value, `${cat.icon} ${cat.label}`);
-				}
-				dd.setValue(this.category);
-				dd.onChange(v => {
-					this.category = v as EnvAssetCategory;
-					this.toggleCategoryControls();
-					this.updatePreview();
-				});
-			});
 
 		// ── Image ────────────────────────────────────────────────────────────
 		const imgSetting = new Setting(contentEl)
@@ -204,38 +176,6 @@ export class EnvAssetLibraryModal extends Modal {
 				.onChange(v => { this.defaultHeight = Math.max(10, parseInt(v) || 70); })
 			);
 
-		// ── Door Configuration ───────────────────────────────────────────────
-		this.doorConfigEl = contentEl.createDiv({ cls: 'env-asset-door-config' });
-		this.doorConfigEl.createEl('h3', { text: '🚪 Door Configuration' });
-
-		new Setting(this.doorConfigEl)
-			.setName('Door Behaviour')
-			.setDesc('How the door opens')
-			.addDropdown(dd => {
-				for (const b of DOOR_BEHAVIOURS) {
-					dd.addOption(b.value, `${b.icon} ${b.label}`);
-				}
-				dd.setValue(this.doorBehaviour);
-				dd.onChange(v => {
-					this.doorBehaviour = v as DoorBehaviour;
-					this.toggleDoorSubControls();
-				});
-			});
-
-		// Pivot info (pivot door)
-		const pivotInfoEl = this.doorConfigEl.createDiv();
-		pivotInfoEl.createEl('p', {
-			text: 'Pivot point is set on the map — select the door and drag the yellow handle.',
-			cls: 'setting-item-description'
-		});
-
-		// Sliding path info (set on the map later)
-		this.doorSlideEl = this.doorConfigEl.createDiv();
-		this.doorSlideEl.createEl('p', {
-			text: 'Sliding path is configured on the map after placement.',
-			cls: 'setting-item-description'
-		});
-
 		// ── Scatter Configuration ────────────────────────────────────────────
 		this.scatterConfigEl = contentEl.createDiv({ cls: 'env-asset-scatter-config' });
 		this.scatterConfigEl.createEl('h3', { text: '🪨 Scatter Configuration' });
@@ -262,8 +202,7 @@ export class EnvAssetLibraryModal extends Modal {
 			);
 
 		// ── Initialize visibility ────────────────────────────────────────────
-		this.toggleCategoryControls();
-		this.toggleDoorSubControls();
+
 		this.toggleScatterHeightControl();
 
 		// ── Buttons ──────────────────────────────────────────────────────────
@@ -277,12 +216,7 @@ export class EnvAssetLibraryModal extends Modal {
 	// ── Visibility helpers ───────────────────────────────────────────────────
 
 	private toggleCategoryControls() {
-		this.doorConfigEl.style.display = this.category === 'door' ? '' : 'none';
 		this.scatterConfigEl.style.display = this.category === 'scatter' ? '' : 'none';
-	}
-
-	private toggleDoorSubControls() {
-		this.doorSlideEl.style.display = this.doorBehaviour === 'sliding' ? '' : 'none';
 	}
 
 	private toggleScatterHeightControl() {
@@ -362,14 +296,7 @@ export class EnvAssetLibraryModal extends Modal {
 			updatedAt: now,
 		};
 
-		if (this.category === 'door') {
-			const dc: DoorConfig = { behaviour: this.doorBehaviour };
-			if (this.doorBehaviour !== 'sliding') {
-				// Default pivot: left edge center
-				dc.customPivot = { x: 0, y: 0.5 };
-			}
-			def.doorConfig = dc;
-		} else if (this.category === 'scatter') {
+		if (this.category === 'scatter') {
 			const sc: ScatterConfig = { blocksVision: this.scatterBlocksVision };
 			if (this.scatterBlocksVision) {
 				sc.wallHeight = this.scatterWallHeight;

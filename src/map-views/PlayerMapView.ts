@@ -348,17 +348,11 @@ export class PlayerMapView extends ItemView {
     n(c.tunnels?.length || 0);
     n(c.poiReferences?.length || 0);
 
-    // Env assets — include door open/close/angle/slide state so the digest
-    // changes when a door is toggled (otherwise fog + vision won't update).
+    // Env assets — include scatter vision state in digest
     const envAssets: any[] = c.envAssets || [];
     n(envAssets.length);
     for (let i = 0; i < envAssets.length; i++) {
       const ea = envAssets[i];
-      if (ea.doorConfig) {
-        n(ea.doorConfig.isOpen ? 1 : 0);
-        n(ea.doorConfig.openAngle || 0);
-        n(ea.doorConfig.slidePosition || 0);
-      }
       if (ea.scatterConfig?.blocksVision) n(1);
     }
 
@@ -1260,9 +1254,6 @@ export class PlayerMapView extends ItemView {
       const def = this.plugin.envAssetLibrary.getAsset(inst.assetId);
       if (!def) continue;
 
-      // Skip traps that are hidden from players
-      if (def.category === 'trap' && inst.trapConfig?.hidden) continue;
-
       const img = this.loadEnvAssetImage(def.imageFile);
 
       ctx.save();
@@ -1271,25 +1262,6 @@ export class PlayerMapView extends ItemView {
 
       const hw = inst.width / 2;
       const hh = inst.height / 2;
-
-      // For doors: apply open-angle or slide offset
-      if (def.category === 'door' && inst.doorConfig) {
-        const dc = inst.doorConfig;
-        if (dc.isOpen && dc.behaviour !== 'sliding' && dc.openAngle) {
-          const pivot = dc.customPivot || { x: 0, y: 0.5 };
-          const pivotX = (pivot.x - 0.5) * inst.width;
-          const pivotY = (pivot.y - 0.5) * inst.height;
-          ctx.translate(pivotX, pivotY);
-          ctx.rotate((dc.openAngle || 0) * Math.PI / 180);
-          ctx.translate(-pivotX, -pivotY);
-        }
-        if (dc.isOpen && dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
-          const p0 = dc.slidePath[0]!;
-          const p1 = dc.slidePath[dc.slidePath.length - 1]!;
-          const t = dc.slidePosition;
-          ctx.translate((p1.x - p0.x) * t, (p1.y - p0.y) * t);
-        }
-      }
 
       // Draw the image (or placeholder while loading)
       if (img) {
@@ -1529,52 +1501,9 @@ export class PlayerMapView extends ItemView {
       }
       return wall;
     });
-    // Add env-asset vision-blocking walls
+    // Add env-asset vision-blocking walls (scatter only)
     if (config.envAssets && config.envAssets.length > 0) {
       for (const inst of config.envAssets as EnvAssetInstance[]) {
-        if (inst.doorConfig) {
-          const def = this.plugin.envAssetLibrary.getAsset(inst.assetId);
-          if (def && def.category === 'door') {
-            if (inst.doorConfig.isOpen && inst.doorConfig.behaviour === 'sliding') continue;
-            const pad = 2;
-            const useW = inst.width >= inst.height;
-            const halfSpan = (useW ? inst.width : inst.height) / 2 - pad;
-            let p1x = useW ? -halfSpan : 0, p1y = useW ? 0 : -halfSpan;
-            let p2x = useW ? halfSpan : 0, p2y = useW ? 0 : halfSpan;
-            const dc = inst.doorConfig;
-            if (dc.isOpen) {
-              if (dc.behaviour !== 'sliding' && dc.openAngle) {
-                const pivot = dc.customPivot || { x: 0, y: 0.5 };
-                const pvX = (pivot.x - 0.5) * inst.width;
-                const pvY = (pivot.y - 0.5) * inst.height;
-                const a = (dc.openAngle || 0) * Math.PI / 180;
-                const cosA = Math.cos(a), sinA = Math.sin(a);
-                let rx = p1x - pvX, ry = p1y - pvY;
-                p1x = pvX + rx * cosA - ry * sinA;
-                p1y = pvY + rx * sinA + ry * cosA;
-                rx = p2x - pvX; ry = p2y - pvY;
-                p2x = pvX + rx * cosA - ry * sinA;
-                p2y = pvY + rx * sinA + ry * cosA;
-              }
-              if (dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
-                const sp0 = dc.slidePath[0]!;
-                const sp1 = dc.slidePath[dc.slidePath.length - 1]!;
-                const t = dc.slidePosition;
-                p1x += (sp1.x - sp0.x) * t; p1y += (sp1.y - sp0.y) * t;
-                p2x += (sp1.x - sp0.x) * t; p2y += (sp1.y - sp0.y) * t;
-              }
-            }
-            const rad = (inst.rotation || 0) * Math.PI / 180;
-            const cosR = Math.cos(rad), sinR = Math.sin(rad);
-            sightBlockingWalls.push({
-              type: 'wall',
-              start: { x: inst.position.x + p1x * cosR - p1y * sinR, y: inst.position.y + p1x * sinR + p1y * cosR },
-              end:   { x: inst.position.x + p2x * cosR - p2y * sinR, y: inst.position.y + p2x * sinR + p2y * cosR },
-              open: false,
-            });
-            continue;
-          }
-        }
         if (inst.scatterConfig && inst.scatterConfig.blocksVision) {
           const cx = inst.position.x, cy = inst.position.y;
           const hw = inst.width / 2, hh = inst.height / 2;
@@ -2127,55 +2056,9 @@ export class PlayerMapView extends ItemView {
           }
           return wall;
         });
-        // Add env asset vision-blocking walls
+        // Add env asset vision-blocking walls (scatter only)
         if (config.envAssets && config.envAssets.length > 0) {
           for (const inst of config.envAssets as EnvAssetInstance[]) {
-            // â”€â”€ Doors: single wall segment across the door width â”€â”€
-            if (inst.doorConfig) {
-              const def = this.plugin.envAssetLibrary.getAsset(inst.assetId);
-              if (def && def.category === 'door') {
-                // Open sliding doors don't block â€“ the doorway is clear
-                if (inst.doorConfig.isOpen && inst.doorConfig.behaviour === 'sliding') continue;
-                const pad = 2;
-                const useW = inst.width >= inst.height;
-                const halfSpan = (useW ? inst.width : inst.height) / 2 - pad;
-                let p1x = useW ? -halfSpan : 0, p1y = useW ? 0 : -halfSpan, p2x = useW ? halfSpan : 0, p2y = useW ? 0 : halfSpan;
-                const dc = inst.doorConfig;
-                // Apply door open transform (pivot rotation or slide offset)
-                if (dc.isOpen) {
-                  if (dc.behaviour !== 'sliding' && dc.openAngle) {
-                    const pivot = dc.customPivot || { x: 0, y: 0.5 };
-                    const pvX = (pivot.x - 0.5) * inst.width;
-                    const pvY = (pivot.y - 0.5) * inst.height;
-                    const a = (dc.openAngle || 0) * Math.PI / 180;
-                    const cosA = Math.cos(a), sinA = Math.sin(a);
-                    let rx = p1x - pvX, ry = p1y - pvY;
-                    p1x = pvX + rx * cosA - ry * sinA;
-                    p1y = pvY + rx * sinA + ry * cosA;
-                    rx = p2x - pvX; ry = p2y - pvY;
-                    p2x = pvX + rx * cosA - ry * sinA;
-                    p2y = pvY + rx * sinA + ry * cosA;
-                  }
-                  if (dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
-                    const sp0 = dc.slidePath[0]!;
-                    const sp1 = dc.slidePath[dc.slidePath.length - 1]!;
-                    const t = dc.slidePosition;
-                    p1x += (sp1.x - sp0.x) * t; p1y += (sp1.y - sp0.y) * t;
-                    p2x += (sp1.x - sp0.x) * t; p2y += (sp1.y - sp0.y) * t;
-                  }
-                }
-                const rad = (inst.rotation || 0) * Math.PI / 180;
-                const cosR = Math.cos(rad), sinR = Math.sin(rad);
-                sightBlockingWalls.push({
-                  type: 'wall',
-                  start: { x: inst.position.x + p1x * cosR - p1y * sinR, y: inst.position.y + p1x * sinR + p1y * cosR },
-                  end:   { x: inst.position.x + p2x * cosR - p2y * sinR, y: inst.position.y + p2x * sinR + p2y * cosR },
-                  open: false,
-                });
-                continue;
-              }
-            }
-            // â”€â”€ Scatter: 4-edge bounding box â”€â”€
             if (inst.scatterConfig && inst.scatterConfig.blocksVision) {
               const cx = inst.position.x;
               const cy = inst.position.y;
@@ -2226,7 +2109,7 @@ export class PlayerMapView extends ItemView {
     const hasFogGlobal = config.fogOfWar && config.fogOfWar.enabled;
     if (hasFogGlobal) {
       this.drawFogOfWar(ctx, this.canvas!.width, this.canvas!.height, config);
-    } else if (((config.walls && config.walls.length > 0) || (config.envAssets && config.envAssets.some((a: any) => (a.doorConfig && (!a.doorConfig.isOpen || a.doorConfig.behaviour !== 'sliding')) || (a.scatterConfig && a.scatterConfig.blocksVision)))) && visionRelevantTokens.length > 0) {
+    } else if (((config.walls && config.walls.length > 0) || (config.envAssets && config.envAssets.some((a: any) => (a.scatterConfig && a.scatterConfig.blocksVision)))) && visionRelevantTokens.length > 0) {
       // No fog of war, but walls exist â€” draw wall-occlusion overlay.
       // In daylight, players can see infinitely far EXCEPT through walls.
       // Areas behind walls are darkened so the DM's hidden content stays hidden.
@@ -3815,69 +3698,10 @@ export class PlayerMapView extends ItemView {
       return wall;
     });
 
-    // Generate virtual walls from env-asset door/scatter instances
+    // Generate virtual walls from env-asset scatter instances
     const envAssetWalls: any[] = [];
     if (config.envAssets && config.envAssets.length > 0) {
       for (const inst of config.envAssets) {
-        // â”€â”€ Doors: single wall segment across the door width (moves with open state) â”€â”€
-        if (inst.doorConfig) {
-          const def = this.plugin.envAssetLibrary.getAsset(inst.assetId);
-          if (!def || def.category !== 'door') continue;
-
-          // Open sliding doors don't block â€“ the doorway is clear
-          if (inst.doorConfig.isOpen && inst.doorConfig.behaviour === 'sliding') continue;
-
-          const pad = 2;
-          const useW = inst.width >= inst.height;
-          const halfSpan = (useW ? inst.width : inst.height) / 2 - pad;
-          let p1x = useW ? -halfSpan : 0, p1y = useW ? 0 : -halfSpan;
-          let p2x = useW ?  halfSpan : 0, p2y = useW ? 0 :  halfSpan;
-          const dc = inst.doorConfig;
-
-          // Apply door open transform (pivot rotation or slide offset)
-          if (dc.isOpen) {
-            if (dc.behaviour !== 'sliding' && dc.openAngle) {
-              const pivot = dc.customPivot || { x: 0, y: 0.5 };
-              const pvX = (pivot.x - 0.5) * inst.width;
-              const pvY = (pivot.y - 0.5) * inst.height;
-              const a = (dc.openAngle || 0) * Math.PI / 180;
-              const cosA = Math.cos(a), sinA = Math.sin(a);
-              let rx = p1x - pvX, ry = p1y - pvY;
-              p1x = pvX + rx * cosA - ry * sinA;
-              p1y = pvY + rx * sinA + ry * cosA;
-              rx = p2x - pvX; ry = p2y - pvY;
-              p2x = pvX + rx * cosA - ry * sinA;
-              p2y = pvY + rx * sinA + ry * cosA;
-            }
-            if (dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
-              const sp0 = dc.slidePath[0]!;
-              const sp1 = dc.slidePath[dc.slidePath.length - 1]!;
-              const t = dc.slidePosition;
-              p1x += (sp1.x - sp0.x) * t; p1y += (sp1.y - sp0.y) * t;
-              p2x += (sp1.x - sp0.x) * t; p2y += (sp1.y - sp0.y) * t;
-            }
-          }
-
-          const rad = (inst.rotation || 0) * Math.PI / 180;
-          const cosR = Math.cos(rad), sinR = Math.sin(rad);
-          envAssetWalls.push({
-            id: `door_wall_${inst.id}`,
-            type: 'wall',
-            start: {
-              x: inst.position.x + p1x * cosR - p1y * sinR,
-              y: inst.position.y + p1x * sinR + p1y * cosR,
-            },
-            end: {
-              x: inst.position.x + p2x * cosR - p2y * sinR,
-              y: inst.position.y + p2x * sinR + p2y * cosR,
-            },
-            height: dc.wallHeight || 10,
-            open: false,
-          });
-          continue;
-        }
-
-        // â”€â”€ Scatter: 4-edge bounding box (existing behaviour) â”€â”€
         if (inst.scatterConfig && inst.scatterConfig.blocksVision) {
           const wallHeight = inst.scatterConfig.wallHeight || 10;
           const cx = inst.position.x;
@@ -4068,16 +3892,11 @@ export class PlayerMapView extends ItemView {
     // Vision selection
     if (config.selectedVisionTokenId) s(config.selectedVisionTokenId);
 
-    // Env-asset doors (affect wall list)
+    // Env-asset scatter (affects wall list)
     const envAssets: any[] = config.envAssets || [];
     n(envAssets.length);
     for (let i = 0; i < envAssets.length; i++) {
       const ea = envAssets[i];
-      if (ea.doorConfig) {
-        n(ea.doorConfig.isOpen ? 1 : 0);
-        n(ea.doorConfig.openAngle || 0);
-        n(ea.doorConfig.slidePosition || 0);
-      }
       if (ea.scatterConfig?.blocksVision) n(1);
     }
 
@@ -4316,54 +4135,6 @@ export class PlayerMapView extends ItemView {
       }
       return wall;
     });
-
-    // Add door-wall segments from env-asset doors
-    if (config.envAssets && config.envAssets.length > 0) {
-      for (const inst of config.envAssets as EnvAssetInstance[]) {
-        if (!inst.doorConfig) continue;
-        const def = this.plugin.envAssetLibrary.getAsset(inst.assetId);
-        if (!def || def.category !== 'door') continue;
-        // Open sliding doors don't block â€“ the doorway is clear
-        if (inst.doorConfig.isOpen && inst.doorConfig.behaviour === 'sliding') continue;
-        const pad = 2;
-        const useW = inst.width >= inst.height;
-        const halfSpan = (useW ? inst.width : inst.height) / 2 - pad;
-        let p1x = useW ? -halfSpan : 0, p1y = useW ? 0 : -halfSpan, p2x = useW ? halfSpan : 0, p2y = useW ? 0 : halfSpan;
-        // Apply door open transform (pivot rotation or slide offset)
-        const dc = inst.doorConfig;
-        if (dc.isOpen) {
-          if (dc.behaviour !== 'sliding' && dc.openAngle) {
-            const pivot = dc.customPivot || { x: 0, y: 0.5 };
-            const pvX = (pivot.x - 0.5) * inst.width;
-            const pvY = (pivot.y - 0.5) * inst.height;
-            const a = (dc.openAngle || 0) * Math.PI / 180;
-            const cosA = Math.cos(a), sinA = Math.sin(a);
-            let rx = p1x - pvX, ry = p1y - pvY;
-            p1x = pvX + rx * cosA - ry * sinA;
-            p1y = pvY + rx * sinA + ry * cosA;
-            rx = p2x - pvX; ry = p2y - pvY;
-            p2x = pvX + rx * cosA - ry * sinA;
-            p2y = pvY + rx * sinA + ry * cosA;
-          }
-          if (dc.behaviour === 'sliding' && dc.slidePosition && dc.slidePath && dc.slidePath.length >= 2) {
-            const sp0 = dc.slidePath[0]!;
-            const sp1 = dc.slidePath[dc.slidePath.length - 1]!;
-            const t = dc.slidePosition;
-            p1x += (sp1.x - sp0.x) * t; p1y += (sp1.y - sp0.y) * t;
-            p2x += (sp1.x - sp0.x) * t; p2y += (sp1.y - sp0.y) * t;
-          }
-        }
-        const rad = (inst.rotation || 0) * Math.PI / 180;
-        const cosR = Math.cos(rad), sinR = Math.sin(rad);
-        walls.push({
-          id: `door_wall_${inst.id}`,
-          type: 'wall',
-          start: { x: inst.position.x + p1x * cosR - p1y * sinR, y: inst.position.y + p1x * sinR + p1y * cosR },
-          end:   { x: inst.position.x + p2x * cosR - p2y * sinR, y: inst.position.y + p2x * sinR + p2y * cosR },
-          open: false,
-        });
-      }
-    }
     
     // Build spatial index once for all vis-poly queries in drawFogOfWar
     const wallIndex = this._ensureWallIndex(walls);

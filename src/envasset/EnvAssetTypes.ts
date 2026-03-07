@@ -2,57 +2,18 @@
  * Environmental Asset Types for Battlemap System
  *
  * Environmental assets are PNG-based objects placed on the Background layer
- * of a battlemap. They represent scatter (rocks, foliage), doors/walls,
- * traps, and other environmental features that can be resized, rotated,
- * and configured with special behaviours.
+ * of a battlemap. They represent scatter objects (rocks, foliage, custom
+ * images, GIFs/animations, etc.) that can be resized, rotated, and
+ * configured with special behaviours like vision-blocking.
  */
 
 // ─── Core Asset Category ─────────────────────────────────────────────────────
 
 /**
  * Top-level category for environmental assets.
- * - scatter: Decorative objects (rocks, foliage, debris) — optionally block vision
- * - door:    Openable barriers with pivot/slide mechanics — always block vision when closed
- * - trap:    Hazardous features (pit, spikes, etc.) — future expansion
+ * - scatter: Custom images/animations (rocks, foliage, debris, GIFs) — optionally block vision
  */
-export type EnvAssetCategory = 'scatter' | 'door' | 'trap';
-
-// ─── Door Sub-Types ──────────────────────────────────────────────────────────
-
-/**
- * Specific door behaviour.
- * - normal:       (Legacy) treated as 'pivot' at runtime
- * - custom-pivot: (Legacy) treated as 'pivot' at runtime
- * - pivot:        Pivots on a user-draggable point (default: left edge)
- * - sliding:      Slides along a user-defined path (animated in player view)
- */
-export type DoorBehaviour = 'normal' | 'custom-pivot' | 'pivot' | 'sliding';
-
-/**
- * @deprecated Kept for backward compatibility — use customPivot instead.
- */
-export type DoorPivotEdge = 'left' | 'right';
-
-/**
- * Door-specific configuration stored per-definition and overridable per-instance.
- */
-export interface DoorConfig {
-	behaviour: DoorBehaviour;
-	/** For normal doors: which edge to pivot on */
-	pivotEdge?: DoorPivotEdge;
-	/** For custom-pivot doors: normalised pivot point relative to asset bounds (0–1) */
-	customPivot?: { x: number; y: number };
-	/** For sliding doors: path waypoints in local (pixel) coordinates */
-	slidePath?: Array<{ x: number; y: number }>;
-	/** Current open-angle in degrees (0 = closed). Persisted per-instance. */
-	openAngle?: number;
-	/** Preferred swing direction: 1 = default, -1 = reversed. Persisted per-instance. */
-	openDirection?: number;
-	/** Whether the door is currently open */
-	isOpen?: boolean;
-	/** Slide position (0 = start, 1 = end of slidePath). Persisted per-instance. */
-	slidePosition?: number;
-}
+export type EnvAssetCategory = 'scatter';
 
 // ─── Scatter Sub-Type Config ─────────────────────────────────────────────────
 
@@ -64,17 +25,6 @@ export interface ScatterConfig {
 	blocksVision: boolean;
 	/** If blocksVision is true, the effective wall height in feet (for partial cover) */
 	wallHeight?: number;
-}
-
-// ─── Trap Sub-Type Config (Stub for future) ──────────────────────────────────
-
-/**
- * Trap-specific configuration — placeholder for future implementation.
- */
-export interface TrapConfig {
-	trapType?: 'pit' | 'spikes' | 'dispenser' | 'flamethrower' | 'custom';
-	/** Whether the trap is visible to players or hidden */
-	hidden?: boolean;
 }
 
 // ─── Asset Definition (Library Entry) ────────────────────────────────────────
@@ -94,9 +44,7 @@ export interface EnvAssetDefinition {
 	/** Default height in pixels (as authored) */
 	defaultHeight: number;
 	/** Category-specific configuration */
-	doorConfig?: DoorConfig;
 	scatterConfig?: ScatterConfig;
-	trapConfig?: TrapConfig;
 	/** Optional campaign scope */
 	campaign?: string;
 	createdAt: number;
@@ -124,10 +72,8 @@ export interface EnvAssetInstance {
 	rotation: number;
 	/** Z-order within the background layer (higher = on top) */
 	zIndex: number;
-	/** Instance-level overrides for door/scatter/trap config */
-	doorConfig?: DoorConfig;
+	/** Instance-level overrides for scatter config */
 	scatterConfig?: ScatterConfig;
-	trapConfig?: TrapConfig;
 	/** Whether this asset is locked (prevents accidental move/resize) */
 	locked?: boolean;
 	/** Timestamp */
@@ -175,20 +121,5 @@ export const ENV_ASSET_CATEGORIES: Array<{
 	icon: string;
 	description: string;
 }> = [
-	{ value: 'scatter', label: 'Scatter', icon: '🪨', description: 'Rocks, foliage, debris, barrels, crates…' },
-	{ value: 'door',    label: 'Door',    icon: '🚪', description: 'Doors, gates, portcullises — pivot or slide' },
-	{ value: 'trap',    label: 'Trap',    icon: '⚠️', description: 'Pit traps, spike plates, flame vents…' },
+	{ value: 'scatter', label: 'Scatter', icon: '🪨', description: 'Custom images, animations, rocks, foliage, debris…' },
 ];
-
-export const DOOR_BEHAVIOURS: Array<{
-	value: DoorBehaviour;
-	label: string;
-	icon: string;
-	description: string;
-}> = [
-	{ value: 'pivot',   label: 'Pivot Door',   icon: '🚪', description: 'Pivots on a draggable point (default: left edge)' },
-	{ value: 'sliding', label: 'Sliding Door',  icon: '↔️',  description: 'Slides along a defined path' },
-];
-
-/** Size of the pivot handle in CSS pixels. */
-export const PIVOT_HANDLE_SIZE = 10;

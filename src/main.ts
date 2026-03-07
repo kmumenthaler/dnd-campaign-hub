@@ -68,7 +68,6 @@ import type {
 import {
   TRANSFORM_HANDLE_SIZE,
   ROTATION_HANDLE_OFFSET,
-  PIVOT_HANDLE_SIZE,
 } from './envasset/EnvAssetTypes';
 import type {
   TerrainType,

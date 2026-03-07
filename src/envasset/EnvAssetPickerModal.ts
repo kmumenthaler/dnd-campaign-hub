@@ -1,15 +1,13 @@
 import { App, Modal, Notice } from 'obsidian';
 import { EnvAssetLibrary } from './EnvAssetLibrary';
 import { EnvAssetLibraryModal } from './EnvAssetLibraryModal';
-import { EnvAssetDefinition, EnvAssetCategory, ENV_ASSET_CATEGORIES } from './EnvAssetTypes';
+import { EnvAssetDefinition, ENV_ASSET_CATEGORIES } from './EnvAssetTypes';
 
-const CATEGORY_LABELS: Record<EnvAssetCategory, string> = {
+const CATEGORY_LABELS: Record<string, string> = {
 	scatter: '🪨 Scatter',
-	door: '🚪 Doors',
-	trap: '⚠️ Traps',
 };
 
-const CATEGORY_ORDER: EnvAssetCategory[] = ['scatter', 'door', 'trap'];
+const CATEGORY_ORDER: string[] = ['scatter'];
 
 /**
  * Modal for picking an environmental asset from the library.
@@ -103,12 +101,6 @@ export class EnvAssetPickerModal extends Modal {
 				});
 
 				// Mini-config summary
-				if (asset.category === 'door' && asset.doorConfig) {
-					info.createEl('span', {
-						text: `Behaviour: ${asset.doorConfig.behaviour}`,
-						cls: 'env-asset-picker-detail',
-					});
-				}
 				if (asset.category === 'scatter' && asset.scatterConfig) {
 					info.createEl('span', {
 						text: asset.scatterConfig.blocksVision

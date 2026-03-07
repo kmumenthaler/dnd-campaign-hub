@@ -2,7 +2,6 @@ import { App, Menu, Notice } from 'obsidian';
 import {
 	EnvAssetInstance,
 	EnvAssetDefinition,
-	DOOR_BEHAVIOURS,
 } from './EnvAssetTypes';
 import { EnvAssetLibrary } from './EnvAssetLibrary';
 
@@ -13,10 +12,6 @@ import { EnvAssetLibrary } from './EnvAssetLibrary';
  *  - Rotate (90° increments)
  *  - Lock / Unlock (prevent accidental edits)
  *  - Delete
- *  ── Door-specific ──
- *  - Toggle open / closed
- *  - Change door behaviour
- *  - Change pivot edge
  *  ── Scatter-specific ──
  *  - Toggle blocks-vision
  *  - Set wall height
@@ -89,83 +84,6 @@ export function showEnvAssetContextMenu(
 			callbacks.onSave();
 		})
 	);
-
-	// ── Door-specific ────────────────────────────────────────────────────────
-	if (definition?.category === 'door') {
-		menu.addSeparator();
-
-		// Ensure instance has a doorConfig (inherit from definition)
-		if (!instance.doorConfig) {
-			instance.doorConfig = { ...(definition.doorConfig || { behaviour: 'pivot' }) };
-		}
-		// Migrate legacy behaviours
-		const dc = instance.doorConfig!;
-		if (dc.behaviour === 'normal' || dc.behaviour === 'custom-pivot') {
-			if (dc.behaviour === 'normal') {
-				// Convert pivotEdge to customPivot
-				dc.customPivot = dc.pivotEdge === 'right' ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 };
-			}
-			dc.behaviour = 'pivot';
-		}
-		if (dc.behaviour !== 'sliding' && !dc.customPivot) {
-			dc.customPivot = { x: 0, y: 0.5 };
-		}
-
-		// Open / Close toggle
-		menu.addItem(item => item
-			.setTitle(dc.isOpen ? '🚪 Close Door' : '🚪 Open Door')
-			.onClick(() => {
-				dc.isOpen = !dc.isOpen;
-				if (!dc.isOpen) {
-					dc.openAngle = 0;
-					if (dc.behaviour === 'sliding') dc.slidePosition = 0;
-				} else {
-					if (dc.behaviour !== 'sliding') {
-						const dir = dc.openDirection || 1;
-						dc.openAngle = dir * 90;
-					}
-					if (dc.behaviour === 'sliding') dc.slidePosition = 1;
-				}
-				callbacks.onUpdate(instance);
-				callbacks.onRedraw();
-				callbacks.onSave();
-			})
-		);
-
-		// Open to the other side (reverse swing direction)
-		if (dc.behaviour !== 'sliding') {
-			menu.addItem(item => item
-				.setTitle('↔️ Reverse Open Direction')
-				.onClick(() => {
-					// Flip the persisted direction
-					dc.openDirection = (dc.openDirection || 1) * -1;
-					dc.openAngle = dc.openDirection * 90;
-					if (!dc.isOpen) {
-						dc.isOpen = true;
-					}
-					callbacks.onUpdate(instance);
-					callbacks.onRedraw();
-					callbacks.onSave();
-				})
-			);
-		}
-
-		// Behaviour submenu
-		for (const b of DOOR_BEHAVIOURS) {
-			menu.addItem(item => item
-				.setTitle(`${dc.behaviour === b.value ? '● ' : '○ '}${b.icon} ${b.label}`)
-				.onClick(() => {
-					dc.behaviour = b.value;
-					if (b.value !== 'sliding' && !dc.customPivot) {
-						dc.customPivot = { x: 0, y: 0.5 };
-					}
-					callbacks.onUpdate(instance);
-					callbacks.onRedraw();
-					callbacks.onSave();
-				})
-			);
-		}
-	}
 
 	// ── Scatter-specific ─────────────────────────────────────────────────────
 	if (definition?.category === 'scatter') {
