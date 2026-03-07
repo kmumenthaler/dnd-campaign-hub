@@ -90,8 +90,6 @@ export function queryPhysicalMonitorSizes(): PhysicalMonitorInfo[] {
     // Clean up temp file (best effort)
     try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
 
-    console.log('MonitorPhysicalSize: raw output:', output);
-
     if (!output || output === '[]') {
       _cache = [];
       _cacheTs = Date.now();
@@ -110,7 +108,6 @@ export function queryPhysicalMonitorSizes(): PhysicalMonitorInfo[] {
       }));
     _cacheTs = Date.now();
 
-    console.log('MonitorPhysicalSize: detected', _cache);
     return _cache;
   } catch (e) {
     console.warn('queryPhysicalMonitorSizes failed:', e);

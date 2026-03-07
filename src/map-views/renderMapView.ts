@@ -2207,12 +2207,169 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			plugin.refreshHexcrawlView();
 		}
 
-		// Add Player View button (top right)
+		// Add Player View button (top right) — toggles a dropdown menu
 		const playerViewBtn = viewport.createEl('button', {
 			cls: 'dnd-map-player-view-btn',
-			attr: { title: 'Open Player View' }
+			attr: { title: 'Player View Menu' }
 		});
-		playerViewBtn.innerHTML = '👁️ Player View';
+		playerViewBtn.innerHTML = '👁️ Player View ▼';
+
+		// ── PV Dropdown Menu ─────────────────────────────────────────
+		const pvDropdown = viewport.createDiv({ cls: 'dnd-map-pv-dropdown hidden' });
+
+		// -- Open Player View --
+		const pvOpenBtn = pvDropdown.createEl('button', { cls: 'dnd-map-pv-dropdown-item' });
+		pvOpenBtn.innerHTML = '👁️ Open Player View';
+
+		// -- Toggle Fullscreen --
+		const pvFsBtn = pvDropdown.createEl('button', { cls: 'dnd-map-pv-dropdown-item' });
+		pvFsBtn.innerHTML = '🖵 Toggle Fullscreen';
+		pvFsBtn.addEventListener('click', () => {
+			pvDropdown.addClass('hidden');
+			if ((plugin as any)._playerMapViews) {
+				const mapId = config.mapId || resourcePath;
+				(plugin as any)._playerMapViews.forEach((pv: any) => {
+					if ((pv as any).mapId !== mapId) return;
+					try { if (typeof pv.toggleFullscreen === 'function') pv.toggleFullscreen(); } catch (e) {}
+				});
+			}
+		});
+
+		// -- Separator --
+		pvDropdown.createDiv({ cls: 'dnd-map-pv-dropdown-sep' });
+
+		// -- Calibrate --
+		const pvCalBtn = pvDropdown.createEl('button', { cls: 'dnd-map-pv-dropdown-item' });
+		pvCalBtn.innerHTML = '🎯 Calibrate';
+		pvCalBtn.addEventListener('click', () => {
+			pvDropdown.addClass('hidden');
+			new TabletopCalibrationModal(plugin.app, plugin, window, () => {
+				try {
+					if ((plugin as any)._playerMapViews) {
+						const mapId = config.mapId || resourcePath;
+						(plugin as any)._playerMapViews.forEach((pv: any) => {
+							if ((pv as any).mapId !== mapId) return;
+							try {
+								const cal = plugin.settings.tabletopCalibration;
+								const gridSize = config?.gridSize || 0;
+								if (cal && gridSize > 0) {
+									const calibratedScale = (cal.pixelsPerMm * cal.miniBaseMm) / gridSize;
+									const safeScale = Math.max(0.001, Math.min(100, calibratedScale));
+									if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(safeScale as number);
+									else pv.tabletopScale = safeScale;
+									if (typeof pv.syncCanvasToImage === 'function') pv.syncCanvasToImage();
+								}
+							} catch (e) {}
+						});
+					}
+				} catch (e) {}
+			}).open();
+		});
+
+		// -- Project to Monitor --
+		const pvProjectItem = pvDropdown.createEl('button', { cls: 'dnd-map-pv-dropdown-item' });
+		pvProjectItem.innerHTML = '📺 Project to Monitor';
+		pvProjectItem.addEventListener('click', async (e) => {
+			pvDropdown.addClass('hidden');
+			const pm = plugin.projectionManager;
+			if (!pm) { new Notice('Projection manager not available'); return; }
+
+			const screens = await pm.getScreens();
+			if (screens.length <= 1 && !isMultiScreenSupported()) {
+				const screen = screens[0];
+				if (!screen) { new Notice('No screens detected'); return; }
+				const mapId = config.mapId || resourcePath;
+				await pm.project(mapId, {
+					markers: config.markers, drawings: config.drawings,
+					highlights: config.highlights, aoeEffects: config.aoeEffects,
+					fogOfWar: config.fogOfWar, walls: config.walls,
+					lightSources: config.lightSources, tunnels: config.tunnels,
+					poiReferences: config.poiReferences, gridType: config.gridType,
+					gridSize: config.gridSize, gridOffsetX: config.gridOffsetX || 0,
+					gridOffsetY: config.gridOffsetY || 0, scale: config.scale,
+					name: config.name, isVideo: config.isVideo, type: config.type
+				}, resourcePath, screen);
+				return;
+			}
+
+			const menu = new Menu();
+			if (pm.isProjectionAlive()) {
+				const activeScreen = pm.activeProjection?.screen;
+				const activeLabel = activeScreen ? `${activeScreen.label} (${activeScreen.width}×${activeScreen.height})` : '';
+				menu.addItem((item) => {
+					item.setTitle(`⏹ Stop Projection${activeLabel ? ' — ' + activeLabel : ''}`);
+					item.onClick(() => pm.stopProjection());
+				});
+				menu.showAtMouseEvent(e as MouseEvent);
+				return;
+			}
+
+			for (const screen of screens) {
+				const cal = pm.getCalibrationForScreen(screen);
+				const label = `${screen.isPrimary ? '🖥️' : '🖵'} ${screen.label} (${screen.width}×${screen.height})${cal ? ' ✓' : ''}`;
+				menu.addItem((item) => {
+					item.setTitle(label);
+					item.onClick(async () => {
+						const mapId = config.mapId || resourcePath;
+						await pm.project(mapId, {
+							markers: config.markers, drawings: config.drawings,
+							highlights: config.highlights, aoeEffects: config.aoeEffects,
+							fogOfWar: config.fogOfWar, walls: config.walls,
+							lightSources: config.lightSources, tunnels: config.tunnels,
+							poiReferences: config.poiReferences, gridType: config.gridType,
+							gridSize: config.gridSize, gridOffsetX: config.gridOffsetX || 0,
+							gridOffsetY: config.gridOffsetY || 0, scale: config.scale,
+							name: config.name, isVideo: config.isVideo, type: config.type
+						}, resourcePath, screen);
+					});
+				});
+			}
+			menu.addSeparator();
+			menu.addItem((item) => {
+				item.setTitle('⚙️ Manage Calibrations...');
+				item.onClick(() => {
+					new TabletopCalibrationModal(plugin.app, plugin, window, () => {
+						new Notice('Calibration saved');
+					}).open();
+				});
+			});
+			menu.showAtMouseEvent(e as MouseEvent);
+		});
+
+		// -- Stop Projection --
+		const pvStopBtn = pvDropdown.createEl('button', { cls: 'dnd-map-pv-dropdown-item dnd-map-pv-stop-btn hidden' });
+		pvStopBtn.innerHTML = '⏹ Stop Projection';
+		pvStopBtn.addEventListener('click', () => {
+			pvDropdown.addClass('hidden');
+			plugin.projectionManager?.stopProjection();
+		});
+
+		// Update stop-btn visibility when dropdown opens
+		const updatePvDropdownState = () => {
+			const alive = plugin.projectionManager?.isProjectionAlive();
+			pvStopBtn.toggleClass('hidden', !alive);
+			if (alive) {
+				const label = plugin.projectionManager?.activeProjection?.screen?.label || 'screen';
+				pvStopBtn.innerHTML = `⏹ Stop Projection — ${label}`;
+			}
+		};
+
+		// Toggle dropdown on button click
+		playerViewBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			const isHidden = pvDropdown.hasClass('hidden');
+			pvDropdown.toggleClass('hidden', !isHidden);
+			if (isHidden) updatePvDropdownState();
+		});
+
+		// Close dropdown when clicking outside
+		viewport.ownerDocument.addEventListener('click', (e) => {
+			if (!pvDropdown.hasClass('hidden') &&
+				!pvDropdown.contains(e.target as Node) &&
+				!playerViewBtn.contains(e.target as Node)) {
+				pvDropdown.addClass('hidden');
+			}
+		});
 		
 		// Sync function installed at viewport scope so it persists across
 		// re-renders when the GM view moves to a new leaf / DOM element.
@@ -2366,9 +2523,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			projStatusObserver.observe(viewport.parentElement, { childList: true });
 		}
 		
-		playerViewBtn.addEventListener('click', async () => {
-            // Allow multiple player views; do not close existing player view windows
-			
+		// ── "Open Player View" handler (wired to pvOpenBtn in dropdown) ──
+		pvOpenBtn.addEventListener('click', async () => {
+			pvDropdown.addClass('hidden');
+
 			// Open a popout window with the player map view
 			const popoutLeaf = plugin.app.workspace.openPopoutLeaf({
 				size: { width: 1920, height: 1080 }

@@ -4478,8 +4478,9 @@
 /* Projection status badge on the GM viewport — pulsing green dot */
 .dnd-map-projection-status {
   position: absolute;
-  top: 10px;
-  right: 200px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   z-index: 1003;
   display: flex;
   align-items: center;
@@ -4495,6 +4496,64 @@
   pointer-events: none;
   user-select: none;
 }
+
+/* Player View dropdown menu */
+.dnd-map-pv-dropdown {
+  position: absolute;
+  top: 50px;
+  right: 10px;
+  z-index: 1004;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: linear-gradient(135deg, rgba(30, 27, 75, 0.97), rgba(25, 20, 55, 0.97));
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4),
+              0 1px 4px rgba(0, 0, 0, 0.2),
+              inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  min-width: 200px;
+}
+.dnd-map-pv-dropdown.hidden {
+  display: none;
+}
+.dnd-map-pv-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  white-space: nowrap;
+  text-align: left;
+  width: 100%;
+}
+.dnd-map-pv-dropdown-item:hover {
+  background: rgba(124, 58, 237, 0.3);
+}
+.dnd-map-pv-dropdown-item.hidden {
+  display: none;
+}
+.dnd-map-pv-dropdown-sep {
+  height: 1px;
+  margin: 2px 6px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.dnd-map-pv-stop-btn {
+  color: rgba(239, 68, 68, 0.9);
+}
+.dnd-map-pv-stop-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
 .dnd-map-projection-status::before {
   content: '';
   width: 8px;

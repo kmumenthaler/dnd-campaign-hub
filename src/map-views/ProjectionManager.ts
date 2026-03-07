@@ -220,18 +220,8 @@ export class ProjectionManager {
   private async ensureCalibration(screen: ScreenInfo): Promise<void> {
     const existingPerScreen = this.getCalibrationForScreen(screen);
 
-    console.log('ProjectionManager: ensureCalibration', {
-      screenLabel: screen.label,
-      screenKey: screenKey(screen),
-      hasPerScreenCal: !!existingPerScreen,
-      perScreenCal: existingPerScreen?.calibration,
-    });
-
     // Only skip if this specific screen already has calibration data
-    if (existingPerScreen) {
-      console.log('ProjectionManager: ensureCalibration — skipped (per-screen calibration exists)');
-      return;
-    }
+    if (existingPerScreen) return;
 
     const autoCal = this.autoCalibrate(screen);
     if (autoCal) {
@@ -241,8 +231,6 @@ export class ProjectionManager {
         `${autoCal.monitorDiagonalInch}" diagonal, ` +
         `${autoCal.pixelsPerMm.toFixed(1)} px/mm`
       );
-    } else {
-      console.warn('ProjectionManager: ensureCalibration — autoCalibrate returned null');
     }
   }
 
@@ -256,32 +244,16 @@ export class ProjectionManager {
   private autoCalibrate(screen: ScreenInfo): TabletopCalibration | null {
     try {
       const monitors = queryPhysicalMonitorSizes();
-      console.log('ProjectionManager: autoCalibrate — EDID monitors:', monitors);
-
-      if (!monitors.length) {
-        console.warn('ProjectionManager: autoCalibrate — no physical monitors detected from WMI');
-        return null;
-      }
+      if (!monitors.length) return null;
 
       const matched = matchScreenToPhysical(screen.label, monitors);
-      console.log('ProjectionManager: autoCalibrate — matchScreenToPhysical result:', matched, 'for label:', screen.label);
-
-      if (!matched || matched.widthCm <= 0) {
-        console.warn('ProjectionManager: autoCalibrate — no match or zero width');
-        return null;
-      }
+      if (!matched || matched.widthCm <= 0) return null;
 
       const physWidthMm = matched.widthCm * 10;
       const physHeightMm = matched.heightCm * 10;
       const pixelsPerMm = screen.width / physWidthMm;
       const diagMm = Math.sqrt(physWidthMm ** 2 + physHeightMm ** 2);
       const diagInch = Math.round((diagMm / 25.4) * 10) / 10;
-
-      console.log(
-        `ProjectionManager: autoCalibrate matched "${screen.label}" → ` +
-        `"${matched.friendlyName}" (${matched.widthCm}×${matched.heightCm} cm, ` +
-        `${diagInch}", ${pixelsPerMm.toFixed(2)} px/mm)`
-      );
 
       return {
         monitorDiagonalInch: diagInch,
@@ -314,10 +286,7 @@ export class ProjectionManager {
         ?? leaf.view?.containerEl?.ownerDocument?.defaultView
         ?? null;
 
-      if (!win || win === window) {
-        console.warn('ProjectionManager: no popout window reference');
-        return;
-      }
+      if (!win || win === window) return;
 
       const pv = leaf.view as PlayerMapView | undefined;
       const targetBounds = {
@@ -330,7 +299,6 @@ export class ProjectionManager {
       // ── Strategy 1: Electron BrowserWindow API ──────────────────
       const bw = this.getElectronBrowserWindow(win);
       if (bw) {
-        console.log('ProjectionManager: setBounds', targetBounds);
         bw.setBounds(targetBounds);
         await new Promise(r => setTimeout(r, 200));
         bw.setFullScreen(true);
@@ -436,7 +404,6 @@ export class ProjectionManager {
       }
     } catch { /* not available */ }
 
-    console.warn('ProjectionManager: could not obtain Electron BrowserWindow');
     return null;
   }
 
@@ -449,37 +416,14 @@ export class ProjectionManager {
     const target = this.getCalibrationForScreen(screen);
     const cal: TabletopCalibration | null = target?.calibration ?? this.plugin.settings.tabletopCalibration;
 
-    console.log('ProjectionManager: applyCalibration', {
-      screenLabel: screen.label,
-      hasPerScreenTarget: !!target,
-      calibration: cal,
-      gridSize: mapConfig?.gridSize,
-    });
-
-    if (!cal) {
-      console.warn('ProjectionManager: applyCalibration — no calibration data');
-      return false;
-    }
+    if (!cal) return false;
 
     const gridSize = mapConfig?.gridSize || 0;
-    if (gridSize <= 0) {
-      console.warn('ProjectionManager: applyCalibration — gridSize is', gridSize);
-      return false;
-    }
+    if (gridSize <= 0) return false;
 
     // Scale such that (gridSize * scale) CSS px == (miniBaseMm * pixelsPerMm)
     const calibratedScale = (cal.pixelsPerMm * cal.miniBaseMm) / gridSize;
     const safeScale = Math.max(0.001, Math.min(100, calibratedScale));
-
-    console.log('ProjectionManager: applyCalibration — computed', {
-      pixelsPerMm: cal.pixelsPerMm,
-      miniBaseMm: cal.miniBaseMm,
-      gridSize,
-      calibratedScale,
-      safeScale,
-      expectedCellMm: `${cal.miniBaseMm}mm`,
-      expectedCellCssPx: cal.pixelsPerMm * cal.miniBaseMm,
-    });
 
     if (typeof (pv as any).setTabletopScale === 'function') {
       (pv as any).setTabletopScale(safeScale);
@@ -601,14 +545,6 @@ export class ProjectionManager {
       if (typeof (pv as any).applyTabletopTransform === 'function') {
         (pv as any).applyTabletopTransform();
       }
-
-      console.log('ProjectionManager: centerMapInViewport', {
-        viewport: `${rect.width}×${rect.height}`,
-        bbox: `${bboxW.toFixed(0)}×${bboxH.toFixed(0)}`,
-        pan: `${panX.toFixed(1)}, ${panY.toFixed(1)}`,
-        scale: s,
-        rotation: deg,
-      });
 
       return true;
     };
