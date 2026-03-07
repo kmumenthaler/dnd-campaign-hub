@@ -15,6 +15,8 @@ import type DndCampaignHubPlugin from '../main';
 import { MapManager } from './MapManager';
 import { cloneTemplateToMap } from './MapFactory';
 import type { MapTemplateTags } from './types';
+import { LOCATION_TYPES } from './types';
+import { TERRAIN_DEFINITIONS, CLIMATE_DEFINITIONS } from '../hexcrawl/types';
 
 /** Lightweight info about a template returned by queryMapTemplates */
 interface TemplateInfo {
@@ -42,6 +44,10 @@ export class TemplatePickerModal extends Modal {
   private searchQuery = '';
   private loading = true;
   private listContainer: HTMLElement | null = null;
+  private filterBarContainer: HTMLElement | null = null;
+  private activeFilters: { terrain: Set<string>; climate: Set<string>; location: Set<string> } = {
+    terrain: new Set(), climate: new Set(), location: new Set(),
+  };
 
   constructor(
     app: App,
@@ -97,6 +103,10 @@ export class TemplatePickerModal extends Modal {
       (this.app as any).commands.executeCommandById(`${this.plugin.manifest.id}:create-battlemap-template`);
     });
 
+    // Tag filter bar (populated after templates load)
+    this.filterBarContainer = contentEl.createDiv({ cls: 'dnd-tp-filter-bar' });
+    this.filterBarContainer.style.marginBottom = '10px';
+
     // Template grid container
     this.listContainer = contentEl.createDiv({ cls: 'dnd-tp-grid-container' });
     this.listContainer.style.maxHeight = '400px';
@@ -137,6 +147,7 @@ export class TemplatePickerModal extends Modal {
 
     // Load templates
     await this.loadTemplates();
+    this.renderFilterBar();
     this.renderTemplateGrid();
     setTimeout(() => searchInput.focus(), 50);
   }
@@ -154,6 +165,138 @@ export class TemplatePickerModal extends Modal {
     this.loading = false;
   }
 
+  // ── Filter bar ──────────────────────────────────────────────────────
+
+  /**
+   * Collect the distinct tags actually used by loaded templates, then
+   * render one row of toggle-chips per category (terrain / climate / location).
+   * Clicking a chip toggles it in `activeFilters` and re-renders the grid.
+   */
+  private renderFilterBar(): void {
+    if (!this.filterBarContainer) return;
+    this.filterBarContainer.empty();
+
+    // Collect unique tag IDs actually present in the loaded templates
+    const usedTerrain = new Set<string>();
+    const usedClimate = new Set<string>();
+    const usedLocation = new Set<string>();
+    for (const t of this.templates) {
+      if (!t.tags) continue;
+      for (const v of t.tags.terrain ?? []) usedTerrain.add(v);
+      for (const v of t.tags.climate ?? []) usedClimate.add(v);
+      for (const v of t.tags.location ?? []) usedLocation.add(v);
+    }
+
+    // Nothing to filter
+    if (usedTerrain.size + usedClimate.size + usedLocation.size === 0) return;
+
+    // Lookup helpers
+    const terrainLookup = new Map(TERRAIN_DEFINITIONS.map(d => [d.id, d]));
+    const climateLookup = new Map(CLIMATE_DEFINITIONS.map(d => [d.id, d]));
+    const locationLookup = new Map(LOCATION_TYPES.map(d => [d.id, d]));
+
+    const totalActive =
+      this.activeFilters.terrain.size +
+      this.activeFilters.climate.size +
+      this.activeFilters.location.size;
+
+    // Header row with "Clear" button
+    if (totalActive > 0) {
+      const headerRow = this.filterBarContainer.createDiv({ cls: 'dnd-tp-filter-header' });
+      headerRow.style.display = 'flex';
+      headerRow.style.justifyContent = 'space-between';
+      headerRow.style.alignItems = 'center';
+      headerRow.style.marginBottom = '4px';
+
+      const badge = headerRow.createSpan();
+      badge.style.fontSize = '11px';
+      badge.style.color = 'var(--text-muted)';
+      badge.setText(`${totalActive} filter${totalActive > 1 ? 's' : ''} active`);
+
+      const clearBtn = headerRow.createEl('button', { text: '✕ Clear filters' });
+      clearBtn.style.fontSize = '11px';
+      clearBtn.style.padding = '2px 8px';
+      clearBtn.style.borderRadius = '4px';
+      clearBtn.style.cursor = 'pointer';
+      clearBtn.style.border = '1px solid var(--background-modifier-border)';
+      clearBtn.style.background = 'transparent';
+      clearBtn.style.color = 'var(--text-muted)';
+      clearBtn.addEventListener('click', () => {
+        this.activeFilters.terrain.clear();
+        this.activeFilters.climate.clear();
+        this.activeFilters.location.clear();
+        this.renderFilterBar();
+        this.renderTemplateGrid();
+      });
+    }
+
+    // Render a row of chips for a single category
+    const renderCategory = (
+      label: string,
+      ids: Set<string>,
+      lookup: Map<string, { id: string; name?: string; label?: string; icon: string }>,
+      activeSet: Set<string>,
+    ) => {
+      if (ids.size === 0) return;
+      const row = this.filterBarContainer!.createDiv({ cls: 'dnd-tp-filter-row' });
+      row.style.display = 'flex';
+      row.style.flexWrap = 'wrap';
+      row.style.gap = '4px';
+      row.style.alignItems = 'center';
+      row.style.marginBottom = '4px';
+
+      const rowLabel = row.createSpan({ cls: 'dnd-tp-filter-label' });
+      rowLabel.style.fontSize = '11px';
+      rowLabel.style.fontWeight = '600';
+      rowLabel.style.color = 'var(--text-muted)';
+      rowLabel.style.marginRight = '4px';
+      rowLabel.style.whiteSpace = 'nowrap';
+      rowLabel.setText(label);
+
+      // Sort chips alphabetically by display name
+      const sorted = [...ids].sort((a, b) => {
+        const la = lookup.get(a);
+        const lb = lookup.get(b);
+        return ((la?.name ?? la?.label ?? a).localeCompare(lb?.name ?? lb?.label ?? b));
+      });
+
+      for (const id of sorted) {
+        const def = lookup.get(id);
+        const displayName = def ? (def.name ?? (def as any).label ?? id) : id;
+        const icon = def?.icon ?? '';
+        const active = activeSet.has(id);
+
+        const chip = row.createEl('button', { cls: 'dnd-tp-filter-chip' });
+        chip.setText(`${icon} ${displayName}`);
+        chip.style.fontSize = '11px';
+        chip.style.padding = '2px 8px';
+        chip.style.borderRadius = '12px';
+        chip.style.cursor = 'pointer';
+        chip.style.border = active
+          ? '1px solid var(--interactive-accent)'
+          : '1px solid var(--background-modifier-border)';
+        chip.style.background = active
+          ? 'var(--interactive-accent)'
+          : 'var(--background-secondary)';
+        chip.style.color = active
+          ? 'var(--text-on-accent)'
+          : 'var(--text-normal)';
+        chip.style.transition = 'all 0.12s';
+
+        chip.addEventListener('click', () => {
+          if (activeSet.has(id)) activeSet.delete(id);
+          else activeSet.add(id);
+          this.renderFilterBar();
+          this.renderTemplateGrid();
+        });
+      }
+    };
+
+    renderCategory('Terrain', usedTerrain, terrainLookup as any, this.activeFilters.terrain);
+    renderCategory('Climate', usedClimate, climateLookup as any, this.activeFilters.climate);
+    renderCategory('Location', usedLocation, locationLookup as any, this.activeFilters.location);
+  }
+
   // ── Rendering ──────────────────────────────────────────────────────
 
   private renderTemplateGrid(): void {
@@ -165,7 +308,7 @@ export class TemplatePickerModal extends Modal {
       return;
     }
 
-    // Filter
+    // Filter by text search
     let filtered = this.templates;
     if (this.searchQuery) {
       const terms = this.searchQuery.split(/\s+/);
@@ -181,6 +324,24 @@ export class TemplatePickerModal extends Modal {
       });
     }
 
+    // Filter by active tag chips (OR within category, AND across categories)
+    const { terrain, climate, location } = this.activeFilters;
+    if (terrain.size > 0) {
+      filtered = filtered.filter(t =>
+        (t.tags?.terrain ?? []).some(v => terrain.has(v)),
+      );
+    }
+    if (climate.size > 0) {
+      filtered = filtered.filter(t =>
+        (t.tags?.climate ?? []).some(v => climate.has(v)),
+      );
+    }
+    if (location.size > 0) {
+      filtered = filtered.filter(t =>
+        (t.tags?.location ?? []).some(v => location.has(v)),
+      );
+    }
+
     if (filtered.length === 0) {
       const emptyEl = this.listContainer.createDiv();
       emptyEl.style.padding = '32px';
@@ -189,9 +350,18 @@ export class TemplatePickerModal extends Modal {
       if (this.templates.length === 0) {
         emptyEl.setText('No templates found. Create a template first using the ➕ New Template button or the "Create Battlemap Template" command.');
       } else {
-        emptyEl.setText('No templates match your search.');
+        emptyEl.setText('No templates match your search / filters.');
       }
       return;
+    }
+
+    // Result count badge
+    if (filtered.length < this.templates.length) {
+      const countBadge = this.listContainer.createDiv();
+      countBadge.style.fontSize = '11px';
+      countBadge.style.color = 'var(--text-muted)';
+      countBadge.style.marginBottom = '8px';
+      countBadge.setText(`Showing ${filtered.length} of ${this.templates.length} templates`);
     }
 
     // Grid
