@@ -1550,8 +1550,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			attr: { title: 'Doors (click to expand)' }
 		});
 		doorGroupBtn.createEl('span', { text: '🚪▾' });
-		const doorSubPicker = wallsPicker.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
-		doorSubPicker.style.cssText = 'position: relative; margin-left: 4px; padding: 2px 0;';
+		const doorSubPicker = wallsPicker.createDiv({ cls: 'dnd-door-sub-picker hidden' });
+		doorSubPicker.style.cssText = 'display: flex; flex-direction: row; gap: 4px; align-items: center;';
 		doorGroupBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			doorSubPicker.toggleClass('hidden', !doorSubPicker.hasClass('hidden'));

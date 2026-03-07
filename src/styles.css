@@ -4288,6 +4288,10 @@
   display: none;
 }
 
+.dnd-door-sub-picker.hidden {
+  display: none;
+}
+
 .dnd-map-aoe-shape-btn {
   width: 32px;
   height: 32px;
