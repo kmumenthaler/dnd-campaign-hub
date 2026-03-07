@@ -3378,14 +3378,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				
 				// Draw tunnel entrances and exits (below markers so tokens aren't covered)
 				if (config.tunnels && config.tunnels.length > 0) {
-					const CREATURE_SIZE_SQUARES: Record<string, number> = {
-						'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-					};
-					
 					config.tunnels.forEach((tunnel: any) => {
 						if (!tunnel.visible) return;
 						
-						const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
+						const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize as CreatureSize] || 1;
 						const radius = (squares * config.gridSize) / 2.5;
 						
 						// Viewport cull: skip tunnel if both entrance & exit are off-screen
@@ -3698,16 +3694,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				// Draw tunnel paths (GM view only - shows where burrowed creatures traveled)
 				// Only visible on Subterranean layer to avoid visual clutter
 				if (config.tunnels && config.tunnels.length > 0 && config.activeLayer === 'Subterranean') {
-					const CREATURE_SIZE_SQUARES: Record<string, number> = {
-						'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-					};
-					
 					config.tunnels.forEach((tunnel: any) => {
 						if (!tunnel.path || tunnel.path.length < 2) return;
 						
 					// Use stored tunnel width, or calculate as (size + 0.5) * gridSize
-					const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
+					const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize as CreatureSize] || 1;
 					const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
+					ctx.save();
 						ctx.strokeStyle = '#2a2a2a';
 						ctx.lineWidth = tunnelWidth;
 						ctx.lineCap = 'round';
@@ -4607,12 +4600,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							t.creatorMarkerId === draggedMarker.id && t.active
 						);
 						if (activeTunnel && activeTunnel.path.length > 0) {
-							const CREATURE_SIZE_SQUARES: Record<string, number> = {
-								'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-							};
 							const mDef = draggedMarker.markerId ? plugin.markerLibrary.getMarker(draggedMarker.markerId) : null;
 							const squares = mDef?.creatureSize ? CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1 : 1;
-							const tunnelWidth = (squares * config.gridSize) / 2;
+							const tunnelWidth = activeTunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
 							
 							ctx.save();
 							ctx.globalAlpha = 0.6;
@@ -5195,11 +5185,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						ctx.save();
 						ctx.globalAlpha = 0.8;
 						
-						const CREATURE_SIZE_SQUARES: Record<string, number> = {
-							'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-						};
-						const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize] || 1;
-						const tunnelWidth = (squares * config.gridSize) / 2;
+						const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize as CreatureSize] || 1;
+						const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
 						
 						// Draw path up to current position in bright color
 						ctx.strokeStyle = '#FFD700';  // Gold
@@ -9745,11 +9732,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 										const nearestTunnel = nearEntrance || nearExit;
 										if (nearestTunnel) {
 											// Check if token is small enough to enter tunnel
-											const CREATURE_SIZE_SQUARES: Record<string, number> = {
-												'tiny': 0.5, 'small': 1, 'medium': 1, 'large': 2, 'huge': 3, 'gargantuan': 4
-											};
 											const tokenSize = CREATURE_SIZE_SQUARES[mDef.creatureSize || 'medium'] || 1;
-											const tunnelCreatureSize = nearestTunnel.tunnel.creatureSize || 'medium';
+											const tunnelCreatureSize = (nearestTunnel.tunnel.creatureSize || 'medium') as CreatureSize;
 											const tunnelSize = CREATURE_SIZE_SQUARES[tunnelCreatureSize] || 1;
 											
 											// Token must be <= tunnel creator size to enter

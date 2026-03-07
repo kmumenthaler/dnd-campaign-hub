@@ -96,6 +96,36 @@ export function normalizeMapAnnotations(raw: any): any {
   // Stamp the current schema version
   out.schemaVersion = MAP_SCHEMA_VERSION;
 
+  // ── Strip runtime-only fields (prefixed with "_") from nested objects ──
+  // These are set at render-time and must not leak into save files.
+  if (Array.isArray(out.markers)) {
+    out.markers = out.markers.map((m: any) => {
+      const cleaned = _stripRuntimeFields(m);
+      if (cleaned.elevation && typeof cleaned.elevation === 'object') {
+        cleaned.elevation = _stripRuntimeFields(cleaned.elevation);
+      }
+      if (cleaned.tunnelState && typeof cleaned.tunnelState === 'object') {
+        cleaned.tunnelState = _stripRuntimeFields(cleaned.tunnelState);
+      }
+      return cleaned;
+    });
+  }
+
+  return out;
+}
+
+/**
+ * Remove any keys starting with "_" from a shallow copy of `obj`.
+ * Convention: underscore-prefixed fields are runtime-only and must
+ * not be persisted to disk.
+ */
+function _stripRuntimeFields(obj: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (!key.startsWith('_')) {
+      out[key] = val;
+    }
+  }
   return out;
 }
 

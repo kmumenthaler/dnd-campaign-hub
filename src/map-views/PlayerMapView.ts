@@ -691,7 +691,7 @@ export class PlayerMapView extends ItemView {
     // Fullscreen button
     const fullscreenBtn = toolbar.createEl('button', {
       cls: 'dnd-player-toolbar-btn',
-      text: 'ðŸ–µ Fullscreen'
+      text: '🖵 Fullscreen'
     });
     fullscreenBtn.addEventListener('click', () => {
       this.toggleFullscreen();
@@ -714,13 +714,13 @@ export class PlayerMapView extends ItemView {
     // Tabletop mode button
     const tabletopBtn = toolbar.createEl('button', {
       cls: 'dnd-player-toolbar-btn',
-      text: this.tabletopMode ? 'ðŸŽ² Tabletop: ON' : 'ðŸŽ² Tabletop: OFF'
+      text: this.tabletopMode ? '🎲 Tabletop: ON' : '🎲 Tabletop: OFF'
     });
 
     // Calibrate button
     const calibrateBtn = toolbar.createEl('button', {
       cls: 'dnd-player-toolbar-btn',
-      text: 'ðŸŽ¯ Calibrate'
+      text: '🎯 Calibrate'
     });
 
     // Hide player-side calibrate UI: calibration is managed from the GM map view
@@ -982,7 +982,7 @@ export class PlayerMapView extends ItemView {
 
     // --- Tabletop button handlers ---
     const applyTabletopMode = () => {
-      tabletopBtn.setText(this.tabletopMode ? 'ðŸŽ² Tabletop: ON' : 'ðŸŽ² Tabletop: OFF');
+      tabletopBtn.setText(this.tabletopMode ? '🎲 Tabletop: ON' : '🎲 Tabletop: OFF');
       tabletopBtn.toggleClass('active', this.tabletopMode);
       mapContainer.style.cursor = this.tabletopMode ? 'grab' : '';
       if (!this.tabletopMode) {
@@ -1384,7 +1384,7 @@ export class PlayerMapView extends ItemView {
         ctx.font = `${Math.max(12, radius * 0.8)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('ðŸ•³ï¸', entrance.x, entrance.y);
+        ctx.fillText('🕳️', entrance.x, entrance.y);
         
         ctx.restore();
         
@@ -1420,7 +1420,7 @@ export class PlayerMapView extends ItemView {
             ctx.font = `${Math.max(12, radius * 0.8)}px sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('ðŸ•³ï¸', exit.x, exit.y);
+            ctx.fillText('🕳️', exit.x, exit.y);
             
             ctx.restore();
           }
@@ -1872,7 +1872,7 @@ export class PlayerMapView extends ItemView {
       const pixelsPerFootTunnel = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
       
       for (const tunnel of config.tunnels) {
-        if (!tunnel.visible || !tunnel.active || !tunnel.path || tunnel.path.length < 2) continue;
+        if (!tunnel.visible || !tunnel.path || tunnel.path.length < 2) continue;
         
         // Check if any tunnel player (respecting vision selection) is in this tunnel
         const playersInThisTunnel = tunnelPlayersForVision.filter((p: any) => 
@@ -2445,7 +2445,7 @@ export class PlayerMapView extends ItemView {
       ctx.font = `${Math.round(iconRadius * 1.4)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('ðŸ•ï¸', pp.x, pp.y);
+      ctx.fillText('🏕️', pp.x, pp.y);
       ctx.restore();
     }
 
@@ -2568,7 +2568,7 @@ export class PlayerMapView extends ItemView {
       ctx.font = `${Math.round(iconRadius * 1.3)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('ðŸ§­', cx, cy);
+      ctx.fillText('🧭', cx, cy);
       ctx.restore();
 
       // Trail line behind the moving marker
@@ -3054,7 +3054,7 @@ export class PlayerMapView extends ItemView {
     }
     
     // Load icon from PoI file
-    let icon = 'ðŸ“'; // Default icon
+    let icon = '📍'; // Default icon
     try {
       const fileCache = this.plugin.app.metadataCache.getCache(poiRef.poiFile);
       if (fileCache?.frontmatter?.icon) {
@@ -3344,7 +3344,7 @@ export class PlayerMapView extends ItemView {
       ctx.font = `bold ${Math.max(10, badgeSize * 0.6)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('ðŸ”¦', badgeX, badgeY);
+      ctx.fillText('🔦', badgeX, badgeY);
       
       ctx.restore();
       
