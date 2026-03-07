@@ -574,6 +574,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			
 			// Undo/Redo history stack
 			interface HistoryState {
+				// Annotation arrays
 				markers: any[];
 				walls: any[];
 				lightSources: any[];
@@ -583,6 +584,23 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				aoeEffects: any[];
 				tunnels: any[];
 				envAssets: any[];
+				// Grid configuration
+				gridSize: number;
+				gridSizeW?: number;
+				gridSizeH?: number;
+				gridOffsetX: number;
+				gridOffsetY: number;
+				gridVisible?: boolean;
+				// Hexcrawl data
+				hexTerrains: any[];
+				hexClimates: any[];
+				customTerrainDescriptions: any;
+				hexcrawlState: any;
+				// Tile data
+				tileElevations: any;
+				difficultTerrain: any;
+				// References
+				poiReferences: any[];
 			}
 			const undoStack: HistoryState[] = [];
 			const redoStack: HistoryState[] = [];
@@ -601,7 +619,20 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				highlights: structuredClone(config.highlights || []),
 				aoeEffects: structuredClone(config.aoeEffects || []),
 				tunnels: structuredClone(config.tunnels || []),
-				envAssets: structuredClone(config.envAssets || [])
+				envAssets: structuredClone(config.envAssets || []),
+				gridSize: config.gridSize,
+				gridSizeW: config.gridSizeW,
+				gridSizeH: config.gridSizeH,
+				gridOffsetX: config.gridOffsetX ?? 0,
+				gridOffsetY: config.gridOffsetY ?? 0,
+				gridVisible: config.gridVisible,
+				hexTerrains: structuredClone(config.hexTerrains || []),
+				hexClimates: structuredClone(config.hexClimates || []),
+				customTerrainDescriptions: structuredClone(config.customTerrainDescriptions || {}),
+				hexcrawlState: structuredClone(config.hexcrawlState || null),
+				tileElevations: structuredClone(config.tileElevations || {}),
+				difficultTerrain: structuredClone(config.difficultTerrain || {}),
+				poiReferences: structuredClone(config.poiReferences || []),
 			});
 
 			/** Restore a snapshot onto the live config. */
@@ -615,6 +646,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				config.aoeEffects = s.aoeEffects;
 				config.tunnels = s.tunnels;
 				config.envAssets = s.envAssets || [];
+				config.gridSize = s.gridSize;
+				config.gridSizeW = s.gridSizeW;
+				config.gridSizeH = s.gridSizeH;
+				config.gridOffsetX = s.gridOffsetX;
+				config.gridOffsetY = s.gridOffsetY;
+				if (s.gridVisible !== undefined) config.gridVisible = s.gridVisible;
+				config.hexTerrains = s.hexTerrains;
+				config.hexClimates = s.hexClimates;
+				config.customTerrainDescriptions = s.customTerrainDescriptions;
+				config.hexcrawlState = s.hexcrawlState;
+				config.tileElevations = s.tileElevations;
+				config.difficultTerrain = s.difficultTerrain;
+				config.poiReferences = s.poiReferences;
 			};
 
 			// Save current state to undo stack
@@ -835,6 +879,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		clearTerrainBtn.createEl('span', { text: '🗑️' });
 		clearTerrainBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
+			saveToHistory();
 			config.hexTerrains = [];
 			redrawTerrainLayer();
 			redrawAnnotations();
@@ -892,6 +937,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		clearClimateBtn.createEl('span', { text: '🗑️' });
 		clearClimateBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
+			saveToHistory();
 			config.hexClimates = [];
 			redrawTerrainLayer();
 			redrawAnnotations();
@@ -1262,6 +1308,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		fogRevealAllBtn.createEl('span', { text: '☀️' });
 		fogRevealAllBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
+			saveToHistory();
 			config.fogOfWar.regions = [];
 			config.fogOfWar.enabled = false;
 			redrawAnnotations();
@@ -1278,6 +1325,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		fogHideAllBtn.createEl('span', { text: '🌑' });
 		fogHideAllBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
+			saveToHistory();
 			config.fogOfWar.regions = [];
 			config.fogOfWar.enabled = true;
 			redrawAnnotations();
@@ -1436,6 +1484,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		clearLightsBtn.createEl('span', { text: '🌑' });
 		clearLightsBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
+			saveToHistory();
 			config.lightSources = [];
 			redrawAnnotations();
 			plugin.saveMapAnnotations(config, el);
@@ -1645,6 +1694,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				plugin.app,
 				config,
 				async (gs, gw, gh) => {
+					saveToHistory();
 					config.gridSize = gs;
 					config.gridSizeW = gw;
 					config.gridSizeH = gh;
@@ -1694,6 +1744,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			}
 			
 			const tunnelCount = config.tunnels.length;
+			saveToHistory();
 			config.tunnels = [];
 			plugin.saveMapAnnotations(config, el);
 			redrawAnnotations();
@@ -6633,6 +6684,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							plugin.app,
 							config,
 							async (gs, gw, gh) => {
+								saveToHistory();
 								config.gridSize = gs;
 								config.gridSizeW = gw;
 								config.gridSizeH = gh;
@@ -6662,6 +6714,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					startY = e.clientY - translateY;
 					viewport.style.cursor = 'grabbing';
 				} else if (activeTool === 'move-grid') {
+					saveToHistory();
 					isDragging = true;
 					startX = e.clientX;
 					startY = e.clientY;
@@ -8090,6 +8143,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					type: fogMode,
 					points: [...fogPolygonPoints]
 				};
+				saveToHistory();
 				config.fogOfWar.enabled = true;
 				config.fogOfWar.regions.push(region);
 				fogPolygonPoints = [];
@@ -9031,6 +9085,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								mlColorPicker.style.height = '30px';
 								mlColorPicker.addEventListener('input', (e) => {
 									e.stopPropagation();
+									if (!m.light.customColor) saveToHistory();
 									m.light.customColor = (e.target as HTMLInputElement).value;
 									redrawAnnotations();
 								});
@@ -9046,6 +9101,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								mlResetBtn.style.cursor = 'pointer';
 								mlResetBtn.addEventListener('click', (e) => {
 									e.stopPropagation();
+									saveToHistory();
 									delete m.light.customColor;
 									mlColorPicker.value = markerLightDefault;
 									redrawAnnotations();
@@ -9688,6 +9744,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								? `<span>🔆</span> Active (click to extinguish)`
 								: `<span>💡</span> Inactive (click to ignite)`;
 							toggleOption.addEventListener('click', () => {
+								saveToHistory();
 								light.active = !isActive;
 								updateFlickerAnimation();
 								redrawAnnotations();
@@ -9762,6 +9819,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								});
 								option.innerHTML = `<span>${icon}</span> ${name}`;
 								option.addEventListener('click', () => {
+									saveToHistory();
 									const lightDef = LIGHT_SOURCES[type];
 									light.type = type;
 									light.bright = lightDef.bright;
@@ -9878,6 +9936,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 											colorPicker.style.cursor = 'pointer';
 											colorPicker.addEventListener('input', (e) => {
 												e.stopPropagation();
+												if (!light.customColor) saveToHistory(); // snapshot before first change
 												light.customColor = (e.target as HTMLInputElement).value;
 												redrawAnnotations();
 											});
@@ -9893,6 +9952,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 											resetBtn.style.cursor = 'pointer';
 											resetBtn.addEventListener('click', (e) => {
 												e.stopPropagation();
+												saveToHistory();
 												delete light.customColor;
 												colorPicker.value = lightDefaultColor;
 												redrawAnnotations();
@@ -10452,6 +10512,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			});
 			clearBtn.addEventListener('click', () => {
 				new ClearDrawingsConfirmModal(plugin.app, () => {
+					saveToHistory();
 					config.drawings = [];
 					redrawAnnotations();
 					plugin.saveMapAnnotations(config, el);

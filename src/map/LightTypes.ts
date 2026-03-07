@@ -46,16 +46,16 @@ export const LIGHT_SOURCE_KEYS = Object.keys(LIGHT_SOURCES) as LightSourceType[]
 
 /** Placeable point-lights — everything except wall-mounted line lights. */
 export const PLACEABLE_LIGHT_TYPES: LightSourceType[] =
-  LIGHT_SOURCE_KEYS.filter(k => !LIGHT_SOURCES[k].isLine);
+  LIGHT_SOURCE_KEYS.filter(k => !(LIGHT_SOURCES[k] as LightSourceDef).isLine);
 
 /** Light types that exhibit flame-like flickering. */
 export const FLICKER_LIGHT_TYPES_SET = new Set<string>(
-  LIGHT_SOURCE_KEYS.filter(k => LIGHT_SOURCES[k].flicker),
+  LIGHT_SOURCE_KEYS.filter(k => (LIGHT_SOURCES[k] as LightSourceDef).flicker),
 );
 
 /** Subset: lights that use neon-buzz animation instead of flame flicker. */
 export const BUZZ_LIGHT_TYPES_SET = new Set<string>(
-  LIGHT_SOURCE_KEYS.filter(k => LIGHT_SOURCES[k].buzz),
+  LIGHT_SOURCE_KEYS.filter(k => (LIGHT_SOURCES[k] as LightSourceDef).buzz),
 );
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
