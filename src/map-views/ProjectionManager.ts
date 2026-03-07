@@ -497,6 +497,7 @@ export class ProjectionManager {
   /**
    * Auto-rotate the map 90° if that orientation fills the screen better,
    * and (when no physical calibration is active) scale the map to fit.
+   * Always centers the map in the viewport afterwards.
    *
    * Waits for the player view image to load before making the decision.
    */
@@ -530,6 +531,9 @@ export class ProjectionManager {
         }
       }
 
+      // Center the map in the viewport (poll until layout is ready)
+      this.centerMapInViewport(pv);
+
       return true;
     };
 
@@ -542,6 +546,82 @@ export class ProjectionManager {
           clearInterval(interval);
         }
       }, 250);
+    }
+  }
+
+  /**
+   * Center the map image in the player view viewport.
+   *
+   * The viewport may not have real layout dimensions immediately after
+   * the popout window opens, so this method polls up to ~3 s until the
+   * container reports a non-zero size, then computes the correct pan.
+   */
+  private centerMapInViewport(pv: PlayerMapView): void {
+    const tryCenter = (): boolean => {
+      const img: HTMLImageElement | null = (pv as any).mapImage;
+      const container: HTMLElement | null = (pv as any).mapContainer;
+      if (!img || !container) return false;
+
+      const rect = container.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return false;
+
+      const s = (pv as any).tabletopScale || 1;
+      const deg = ((pv as any).tabletopRotation || 0);
+      const rad = (deg * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+
+      const mw = img.naturalWidth * s;
+      const mh = img.naturalHeight * s;
+
+      // Compute rotated bounding box
+      const corners = [
+        { x: 0, y: 0 }, { x: mw, y: 0 },
+        { x: 0, y: mh }, { x: mw, y: mh },
+      ].map(p => ({
+        x: cos * p.x - sin * p.y,
+        y: sin * p.x + cos * p.y,
+      }));
+      const minX = Math.min(...corners.map(p => p.x));
+      const maxX = Math.max(...corners.map(p => p.x));
+      const minY = Math.min(...corners.map(p => p.y));
+      const maxY = Math.max(...corners.map(p => p.y));
+
+      const bboxW = maxX - minX;
+      const bboxH = maxY - minY;
+
+      // Center: pan so that the bbox center aligns with viewport center
+      const panX = (rect.width - bboxW) / 2 - minX;
+      const panY = (rect.height - bboxH) / 2 - minY;
+
+      (pv as any).tabletopPanX = panX;
+      (pv as any).tabletopPanY = panY;
+
+      // Re-apply transform with the new pan
+      if (typeof (pv as any).applyTabletopTransform === 'function') {
+        (pv as any).applyTabletopTransform();
+      }
+
+      console.log('ProjectionManager: centerMapInViewport', {
+        viewport: `${rect.width}×${rect.height}`,
+        bbox: `${bboxW.toFixed(0)}×${bboxH.toFixed(0)}`,
+        pan: `${panX.toFixed(1)}, ${panY.toFixed(1)}`,
+        scale: s,
+        rotation: deg,
+      });
+
+      return true;
+    };
+
+    // Try immediately, then poll with increasing delays
+    if (!tryCenter()) {
+      const delays = [100, 200, 400, 600, 1000, 1500, 2000, 3000];
+      let i = 0;
+      const retry = () => {
+        if (tryCenter() || i >= delays.length) return;
+        setTimeout(retry, delays[i++]);
+      };
+      setTimeout(retry, delays[i++]);
     }
   }
 }
