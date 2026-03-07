@@ -20,6 +20,9 @@ import { queryPhysicalMonitorSizes, matchScreenToPhysical } from '../utils/Monit
 
 // ── Types ──────────────────────────────────────────────────────────────
 
+/** Projection mode: 'battle' = auto-calibrated grid-scale, 'free' = user-controlled pan/zoom. */
+export type ProjectionMode = 'battle' | 'free';
+
 export interface ProjectionState {
   /** The player view leaf currently being projected. */
   leaf: WorkspaceLeaf;
@@ -27,6 +30,8 @@ export interface ProjectionState {
   screen: ScreenInfo;
   /** The mapId currently displayed. */
   mapId: string;
+  /** Projection mode. */
+  mode: ProjectionMode;
 }
 
 // ── Class ──────────────────────────────────────────────────────────────
@@ -58,15 +63,15 @@ export class ProjectionManager {
   /**
    * Project a map to a specific screen.
    *
-   * If a projection already exists on that screen, it is swapped to the
-   * new map.  Otherwise a new popout window is opened and positioned on
-   * the target screen.
+   * @param mode  'battle' = auto-calibrate grid to 32 mm minis, auto-orient.
+   *              'free'   = user controls pan/zoom via View Mode, no auto-calibration.
    */
   async project(
     mapId: string,
     mapConfig: any,
     imageResourcePath: string,
     screen: ScreenInfo,
+    mode: ProjectionMode = 'battle',
   ): Promise<void> {
     const sKey = screenKey(screen);
 
@@ -76,15 +81,20 @@ export class ProjectionManager {
       const pv = existing.leaf.view as PlayerMapView | undefined;
       if (pv && typeof pv.swapMap === 'function') {
         existing.mapId = mapId;
+        existing.mode = mode;
 
-        await this.ensureCalibration(screen);
-
-        pv.swapMap(mapId, mapConfig, imageResourcePath, (fadeIn) => {
-          const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
-          this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
-            fadeIn();
+        if (mode === 'battle') {
+          await this.ensureCalibration(screen);
+          pv.swapMap(mapId, mapConfig, imageResourcePath, (fadeIn) => {
+            const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
+            this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
+              fadeIn();
+            });
           });
-        });
+        } else {
+          // Free mode: swap map, fade in immediately (no calibration/orient)
+          pv.swapMap(mapId, mapConfig, imageResourcePath);
+        }
 
         new Notice(`Projection updated — ${mapConfig.name || mapId}`);
         return;
@@ -106,7 +116,7 @@ export class ProjectionManager {
       },
     });
 
-    this.activeProjections.set(sKey, { leaf: popoutLeaf, screen, mapId });
+    this.activeProjections.set(sKey, { leaf: popoutLeaf, screen, mapId, mode });
 
     // Save last-used screen preference
     this.plugin.settings.lastProjectionScreenKey = sKey;
@@ -116,24 +126,31 @@ export class ProjectionManager {
     setTimeout(async () => {
       await this.positionAndFullscreen(popoutLeaf, screen);
 
-      await this.ensureCalibration(screen);
-
       const pv = popoutLeaf.view as PlayerMapView | undefined;
       if (pv) {
-        const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
-        this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
+        if (mode === 'battle') {
+          await this.ensureCalibration(screen);
+          const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
+          this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
+            if (typeof (pv as any).fadeInInitial === 'function') {
+              (pv as any).fadeInInitial();
+            }
+          });
+        } else {
+          // Free mode: just fade in (user will position via View Mode)
           if (typeof (pv as any).fadeInInitial === 'function') {
             (pv as any).fadeInInitial();
           }
-        });
+        }
       }
     }, 300);
 
-    new Notice(`Projecting to ${screen.label}`);
+    new Notice(`Projecting to ${screen.label} (${mode === 'battle' ? 'Battle' : 'Free'})`);
   }
 
   /**
    * Swap the map on a specific projection identified by its screenKey.
+   * Preserves the existing projection mode.
    * No-ops if no projection exists for that screen.
    */
   async swapMapOnScreen(
@@ -150,12 +167,17 @@ export class ProjectionManager {
       proj.mapId = mapId;
       const screen = proj.screen;
 
-      pv.swapMap(mapId, mapConfig, imageResourcePath, (fadeIn) => {
-        const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
-        this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
-          fadeIn();
+      if (proj.mode === 'battle') {
+        pv.swapMap(mapId, mapConfig, imageResourcePath, (fadeIn) => {
+          const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
+          this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
+            fadeIn();
+          });
         });
-      });
+      } else {
+        // Free mode: swap map without calibration/orient
+        pv.swapMap(mapId, mapConfig, imageResourcePath);
+      }
 
       new Notice(`Map transitioned on ${screen.label} — ${mapConfig.name || mapId}`);
     }

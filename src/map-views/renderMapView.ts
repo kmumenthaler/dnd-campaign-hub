@@ -2068,10 +2068,20 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			}).open();
 		});
 
-		// -- Project to Monitor --
-		const pvProjectItem = pvDropdown.createEl('button', { cls: 'dnd-map-pv-dropdown-item' });
-		pvProjectItem.innerHTML = '📺 Project to Monitor';
-		pvProjectItem.addEventListener('click', async (e) => {
+		// -- Helpers for projection mode buttons --
+		const buildMapPayload = () => ({
+			markers: config.markers, drawings: config.drawings,
+			highlights: config.highlights, aoeEffects: config.aoeEffects,
+			fogOfWar: config.fogOfWar, walls: config.walls,
+			lightSources: config.lightSources, tunnels: config.tunnels,
+			poiReferences: config.poiReferences, gridType: config.gridType,
+			gridSize: config.gridSize, gridOffsetX: config.gridOffsetX || 0,
+			gridOffsetY: config.gridOffsetY || 0, scale: config.scale,
+			name: config.name, isVideo: config.isVideo, type: config.type
+		});
+
+		/** Launch a projection in the given mode, picking a screen first if needed. */
+		const launchProjection = async (mode: 'battle' | 'free', mouseEvent: MouseEvent) => {
 			pvDropdown.addClass('hidden');
 			const pm = plugin.projectionManager;
 			if (!pm) { new Notice('Projection manager not available'); return; }
@@ -2085,21 +2095,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				return;
 			}
 
+			const mapId = config.mapId || resourcePath;
+			const payload = buildMapPayload();
+
 			// Single screen: project directly (skip menu)
 			if (available.length <= 1 && !isMultiScreenSupported()) {
 				const screen = available[0] ?? screens[0];
 				if (!screen) { new Notice('No screens detected'); return; }
-				const mapId = config.mapId || resourcePath;
-				await pm.project(mapId, {
-					markers: config.markers, drawings: config.drawings,
-					highlights: config.highlights, aoeEffects: config.aoeEffects,
-					fogOfWar: config.fogOfWar, walls: config.walls,
-					lightSources: config.lightSources, tunnels: config.tunnels,
-					poiReferences: config.poiReferences, gridType: config.gridType,
-					gridSize: config.gridSize, gridOffsetX: config.gridOffsetX || 0,
-					gridOffsetY: config.gridOffsetY || 0, scale: config.scale,
-					name: config.name, isVideo: config.isVideo, type: config.type
-				}, resourcePath, screen);
+				await pm.project(mapId, payload, resourcePath, screen, mode);
 				return;
 			}
 
@@ -2110,31 +2113,33 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				menu.addItem((item) => {
 					item.setTitle(label);
 					item.onClick(async () => {
-						const mapId = config.mapId || resourcePath;
-						await pm.project(mapId, {
-							markers: config.markers, drawings: config.drawings,
-							highlights: config.highlights, aoeEffects: config.aoeEffects,
-							fogOfWar: config.fogOfWar, walls: config.walls,
-							lightSources: config.lightSources, tunnels: config.tunnels,
-							poiReferences: config.poiReferences, gridType: config.gridType,
-							gridSize: config.gridSize, gridOffsetX: config.gridOffsetX || 0,
-							gridOffsetY: config.gridOffsetY || 0, scale: config.scale,
-							name: config.name, isVideo: config.isVideo, type: config.type
-						}, resourcePath, screen);
+						await pm.project(mapId, payload, resourcePath, screen, mode);
 					});
 				});
 			}
-			menu.addSeparator();
-			menu.addItem((item) => {
-				item.setTitle('⚙️ Manage Calibrations...');
-				item.onClick(() => {
-					new TabletopCalibrationModal(plugin.app, plugin, window, () => {
-						new Notice('Calibration saved');
-					}).open();
+			if (mode === 'battle') {
+				menu.addSeparator();
+				menu.addItem((item) => {
+					item.setTitle('⚙️ Manage Calibrations...');
+					item.onClick(() => {
+						new TabletopCalibrationModal(plugin.app, plugin, window, () => {
+							new Notice('Calibration saved');
+						}).open();
+					});
 				});
-			});
-			menu.showAtMouseEvent(e as MouseEvent);
-		});
+			}
+			menu.showAtMouseEvent(mouseEvent);
+		};
+
+		// -- Project: Battle Mode --
+		const pvBattleBtn = pvDropdown.createEl('button', { cls: 'dnd-map-pv-dropdown-item' });
+		pvBattleBtn.innerHTML = '⚔️ Battle Mode — Project';
+		pvBattleBtn.addEventListener('click', (e) => launchProjection('battle', e as MouseEvent));
+
+		// -- Project: Free Mode --
+		const pvFreeBtn = pvDropdown.createEl('button', { cls: 'dnd-map-pv-dropdown-item' });
+		pvFreeBtn.innerHTML = '🔍 Free Mode — Project';
+		pvFreeBtn.addEventListener('click', (e) => launchProjection('free', e as MouseEvent));
 
 		// -- Dynamic projection actions container --
 		// Rebuilt every time the dropdown opens to reflect current state.
@@ -2156,24 +2161,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			// Find projection of THIS map (if any)
 			const thisMapProj = pm.getProjectionForMap(currentMapId);
 
-			// Build mapConfig payload once
-			const mapPayload = {
-				markers: config.markers, drawings: config.drawings,
-				highlights: config.highlights, aoeEffects: config.aoeEffects,
-				fogOfWar: config.fogOfWar, walls: config.walls,
-				lightSources: config.lightSources, tunnels: config.tunnels,
-				poiReferences: config.poiReferences, gridType: config.gridType,
-				gridSize: config.gridSize, gridOffsetX: config.gridOffsetX || 0,
-				gridOffsetY: config.gridOffsetY || 0, scale: config.scale,
-				name: config.name, isVideo: config.isVideo, type: config.type
-			};
+			const mapPayload = buildMapPayload();
 
 			// "Transition [screen] to this Map" for each projection NOT showing this map
 			for (const proj of projections) {
 				const sKey = screenKey(proj.screen);
 				if (proj.mapId === currentMapId) continue;
+				const modeTag = proj.mode === 'battle' ? '⚔️' : '🔍';
 				const btn = pvProjActions.createEl('button', { cls: 'dnd-map-pv-dropdown-item' });
-				btn.innerHTML = `🔄 Transition ${proj.screen.label} to this Map`;
+				btn.innerHTML = `🔄 Transition ${proj.screen.label} ${modeTag} to this Map`;
 				btn.addEventListener('click', () => {
 					pvDropdown.addClass('hidden');
 					pm.swapMapOnScreen(sKey, currentMapId, mapPayload, resourcePath);
@@ -2183,8 +2179,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			// Stop buttons for each active projection
 			for (const proj of projections) {
 				const sKey = screenKey(proj.screen);
+				const modeTag = proj.mode === 'battle' ? '⚔️' : '🔍';
 				const btn = pvProjActions.createEl('button', { cls: 'dnd-map-pv-dropdown-item dnd-map-pv-stop-btn' });
-				btn.innerHTML = `⏹ Stop — ${proj.screen.label}`;
+				btn.innerHTML = `⏹ Stop ${modeTag} — ${proj.screen.label}`;
 				btn.addEventListener('click', () => {
 					pvDropdown.addClass('hidden');
 					pm.stopProjectionOnScreen(sKey);
@@ -2207,9 +2204,23 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			const pm = plugin.projectionManager;
 			const currentMapId = config.mapId || resourcePath;
 			const thisMapProj = pm?.getProjectionForMap(currentMapId);
+			const projMode = thisMapProj?.state?.mode;
 
 			// Hide "Open Player View" if this map is already projected
 			pvOpenBtn.toggleClass('hidden', !!thisMapProj);
+
+			// Hide project buttons when this map is already projected
+			pvBattleBtn.toggleClass('hidden', !!thisMapProj);
+			pvFreeBtn.toggleClass('hidden', !!thisMapProj);
+
+			// View Mode: only available when projecting in Free Mode
+			// (no projection → show for local PV use; Battle → hidden)
+			const showViewMode = !thisMapProj || projMode === 'free';
+			pvViewModeBtn.toggleClass('hidden', !showViewMode);
+
+			// Calibrate: relevant for Battle Mode or no projection
+			const showCalibrate = !thisMapProj || projMode === 'battle';
+			pvCalBtn.toggleClass('hidden', !showCalibrate);
 
 			// Rebuild dynamic projection actions
 			buildProjectionActions();
@@ -2360,7 +2371,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			const pm = plugin.projectionManager;
 			const projections = pm?.getLiveProjections() ?? [];
 			if (projections.length > 0 && !projStatusEl) {
-				const labels = projections.map(p => p.screen.label).join(', ');
+				const labels = projections.map(p => {
+					const modeTag = p.mode === 'battle' ? '⚔️' : '🔍';
+					return `${p.screen.label} ${modeTag}`;
+				}).join(', ');
 				projStatusEl = viewport.createEl('div', {
 					cls: 'dnd-map-projection-status',
 					text: `PROJECTING — ${labels}`,
@@ -2369,7 +2383,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				projStatusEl.remove();
 				projStatusEl = null;
 			} else if (projections.length > 0 && projStatusEl) {
-				const labels = projections.map(p => p.screen.label).join(', ');
+				const labels = projections.map(p => {
+					const modeTag = p.mode === 'battle' ? '⚔️' : '🔍';
+					return `${p.screen.label} ${modeTag}`;
+				}).join(', ');
 				projStatusEl.textContent = `PROJECTING — ${labels}`;
 			}
 		};
@@ -6547,6 +6564,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					aoeBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
         } else if (tool === 'player-view') {
+          // Block View Mode when this map is projected in Battle Mode
+          const _pvMapId = config.mapId || resourcePath;
+          const _pvProj = plugin.projectionManager?.getProjectionForMap(_pvMapId);
+          if (_pvProj && _pvProj.state.mode === 'battle') {
+            new Notice('View Mode is disabled during Battle Mode projection');
+            return;
+          }
           viewport.style.cursor = 'crosshair';
           viewport.focus(); // Focus viewport so keyboard events work
           new Notice('Player View Mode: Drag to position, Q/E or [/] to rotate 90°', 4000);
