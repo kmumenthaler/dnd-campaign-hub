@@ -2689,7 +2689,7 @@ export class PlayerMapView extends ItemView {
     const midY = (origin.y + target.y) / 2 - 14;
     let distText = `${totalFeet} ${scaleUnit}`;
     if (verticalFeet > 0) {
-      distText += ` (â†•${verticalFeet}ft)`;
+      distText += ` (↕${verticalFeet}ft)`;
     }
 
     // Background pill for readability
@@ -2814,7 +2814,7 @@ export class PlayerMapView extends ItemView {
     }
     let labelText = `${displayDist} ${scaleUnit}`;
     if (climbDist > 0) {
-      labelText += ` (â†•${climbDist}ft)`;
+      labelText += ` (↕${climbDist}ft)`;
     }
     ctx.font = 'bold 22px sans-serif';
     ctx.textAlign = 'center';
