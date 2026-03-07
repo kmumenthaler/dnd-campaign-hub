@@ -218,8 +218,23 @@ export class ProjectionManager {
    * from EDID via WMI and compute pixelsPerMm automatically.
    */
   private async ensureCalibration(screen: ScreenInfo): Promise<void> {
-    // Skip if any calibration already exists (manual or previous auto)
-    if (this.getCalibrationForScreen(screen) || this.plugin.settings.tabletopCalibration) return;
+    const existingPerScreen = this.getCalibrationForScreen(screen);
+    const existingGlobal = this.plugin.settings.tabletopCalibration;
+
+    console.log('ProjectionManager: ensureCalibration', {
+      screenLabel: screen.label,
+      screenKey: screenKey(screen),
+      hasPerScreenCal: !!existingPerScreen,
+      perScreenCal: existingPerScreen?.calibration,
+      hasGlobalCal: !!existingGlobal,
+      globalCal: existingGlobal,
+    });
+
+    // Skip if a manual/previous auto calibration already exists
+    if (existingPerScreen || existingGlobal) {
+      console.log('ProjectionManager: ensureCalibration — skipped (calibration exists)');
+      return;
+    }
 
     const autoCal = this.autoCalibrate(screen);
     if (autoCal) {
@@ -229,6 +244,8 @@ export class ProjectionManager {
         `${autoCal.monitorDiagonalInch}" diagonal, ` +
         `${autoCal.pixelsPerMm.toFixed(1)} px/mm`
       );
+    } else {
+      console.warn('ProjectionManager: ensureCalibration — autoCalibrate returned null');
     }
   }
 
@@ -242,10 +259,20 @@ export class ProjectionManager {
   private autoCalibrate(screen: ScreenInfo): TabletopCalibration | null {
     try {
       const monitors = queryPhysicalMonitorSizes();
-      if (!monitors.length) return null;
+      console.log('ProjectionManager: autoCalibrate — EDID monitors:', monitors);
+
+      if (!monitors.length) {
+        console.warn('ProjectionManager: autoCalibrate — no physical monitors detected from WMI');
+        return null;
+      }
 
       const matched = matchScreenToPhysical(screen.label, monitors);
-      if (!matched || matched.widthCm <= 0) return null;
+      console.log('ProjectionManager: autoCalibrate — matchScreenToPhysical result:', matched, 'for label:', screen.label);
+
+      if (!matched || matched.widthCm <= 0) {
+        console.warn('ProjectionManager: autoCalibrate — no match or zero width');
+        return null;
+      }
 
       const physWidthMm = matched.widthCm * 10;
       const physHeightMm = matched.heightCm * 10;
@@ -425,14 +452,37 @@ export class ProjectionManager {
     const target = this.getCalibrationForScreen(screen);
     const cal: TabletopCalibration | null = target?.calibration ?? this.plugin.settings.tabletopCalibration;
 
-    if (!cal) return false;
+    console.log('ProjectionManager: applyCalibration', {
+      screenLabel: screen.label,
+      hasPerScreenTarget: !!target,
+      calibration: cal,
+      gridSize: mapConfig?.gridSize,
+    });
+
+    if (!cal) {
+      console.warn('ProjectionManager: applyCalibration — no calibration data');
+      return false;
+    }
 
     const gridSize = mapConfig?.gridSize || 0;
-    if (gridSize <= 0) return false;
+    if (gridSize <= 0) {
+      console.warn('ProjectionManager: applyCalibration — gridSize is', gridSize);
+      return false;
+    }
 
     // Scale such that (gridSize * scale) CSS px == (miniBaseMm * pixelsPerMm)
     const calibratedScale = (cal.pixelsPerMm * cal.miniBaseMm) / gridSize;
     const safeScale = Math.max(0.001, Math.min(100, calibratedScale));
+
+    console.log('ProjectionManager: applyCalibration — computed', {
+      pixelsPerMm: cal.pixelsPerMm,
+      miniBaseMm: cal.miniBaseMm,
+      gridSize,
+      calibratedScale,
+      safeScale,
+      expectedCellMm: `${cal.miniBaseMm}mm`,
+      expectedCellCssPx: cal.pixelsPerMm * cal.miniBaseMm,
+    });
 
     if (typeof (pv as any).setTabletopScale === 'function') {
       (pv as any).setTabletopScale(safeScale);
