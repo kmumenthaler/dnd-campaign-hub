@@ -9722,14 +9722,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 												previousLayer: m.layer || 'Player'
 											};
 											
-											// Snap token to tunnel entrance/exit
+											// Snap token to tunnel entrance/exit, grid-aligned for token's own size
 											const snapPoint = nearEntrance 
 												? nearestTunnel.tunnel.entrancePosition 
 												: nearestTunnel.tunnel.path[nearestTunnel.tunnel.path.length - 1];
-									if (snapPoint) {
-										m.position.x = snapPoint.x;
-										m.position.y = snapPoint.y;
-									}
+											if (snapPoint) {
+												const _entSnapped = snapTokenToGrid(snapPoint.x, snapPoint.y, tokenSize);
+												m.position.x = _entSnapped.x;
+												m.position.y = _entSnapped.y;
+											}
 											// Mark that this depth was set by tunnel (so we can clear it on exit)
 											m.elevation._tunnelDepth = nearestTunnel.tunnel.depth || 10; // Default 10ft if not specified
 											m.elevation.depth = m.elevation._tunnelDepth;
@@ -9747,13 +9748,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								}
 								
 								if (isInTunnel) {
-									// Check if token is at entrance or exit of the tunnel
-									const tunnel = config.tunnels?.find((t: any) => t.id === m.tunnelState.tunnelId);
-									const isAtEntranceOrExit = tunnel && (
-										m.tunnelState.pathIndex === 0 || 
-										m.tunnelState.pathIndex === tunnel.path.length - 1
-									);
-									
+											// Check if token is close enough to entrance or exit to leave
+											const tunnel = config.tunnels?.find((t: any) => t.id === m.tunnelState.tunnelId);
+											let isAtEntranceOrExit = false;
+											if (tunnel && tunnel.path.length > 0) {
+												const gs = config.gridSize || 70;
+												const portalR = getTunnelPortalRadius((tunnel.creatureSize || 'medium') as CreatureSize, gs);
+												const exitThresh = Math.max(gs * 1.5, portalR + gs * 0.5);
+												const ent = tunnel.entrancePosition;
+												const ext = tunnel.path[tunnel.path.length - 1]!;
+												const dEnt = Math.sqrt((m.position.x - ent.x) ** 2 + (m.position.y - ent.y) ** 2);
+												const dExt = Math.sqrt((m.position.x - ext.x) ** 2 + (m.position.y - ext.y) ** 2);
+												isAtEntranceOrExit = dEnt <= exitThresh || dExt <= exitThresh;
+											}
 									if (isAtEntranceOrExit) {
 										// Show "Exit Tunnel" button
 										const exitBtn = tunnelActionsRow.createEl('button', {

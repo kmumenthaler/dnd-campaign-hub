@@ -267,10 +267,12 @@ export function findNearTunnelEntrance(
 ): { tunnel: TunnelSegment; distance: number } | null {
 	if (!tunnels || tunnels.length === 0) return null;
 
-	const threshold = gridSize * TUNNEL_PROXIMITY_FACTOR;
 	let nearest: { tunnel: TunnelSegment; distance: number } | null = null;
 
 	for (const tunnel of tunnels) {
+		// Scale threshold so it always covers the visual portal circle
+		const portalR = getTunnelPortalRadius((tunnel.creatureSize || 'medium') as CreatureSize, gridSize);
+		const threshold = Math.max(gridSize * TUNNEL_PROXIMITY_FACTOR, portalR + gridSize * 0.5);
 		const entrance = tunnel.entrancePosition;
 		const dist = Math.sqrt(
 			(position.x - entrance.x) ** 2 + (position.y - entrance.y) ** 2,
@@ -293,11 +295,13 @@ export function findNearTunnelExit(
 ): { tunnel: TunnelSegment; distance: number } | null {
 	if (!tunnels || tunnels.length === 0) return null;
 
-	const threshold = gridSize * TUNNEL_PROXIMITY_FACTOR;
 	let nearest: { tunnel: TunnelSegment; distance: number } | null = null;
 
 	for (const tunnel of tunnels) {
 		if (tunnel.path.length === 0) continue;
+		// Scale threshold so it always covers the visual portal circle
+		const portalR = getTunnelPortalRadius((tunnel.creatureSize || 'medium') as CreatureSize, gridSize);
+		const threshold = Math.max(gridSize * TUNNEL_PROXIMITY_FACTOR, portalR + gridSize * 0.5);
 		const exit = tunnel.path[tunnel.path.length - 1]!;
 		const dist = Math.sqrt(
 			(position.x - exit.x) ** 2 + (position.y - exit.y) ** 2,
