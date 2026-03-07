@@ -14,6 +14,7 @@ import type { PlayerMapView } from '../map-views/PlayerMapView';
 import { PLAYER_MAP_VIEW_TYPE } from '../constants';
 import type { ProjectionTarget, TabletopCalibration } from '../types';
 import { enumerateScreens, screenKey, type ScreenInfo } from '../utils/ScreenEnumeration';
+import { queryPhysicalMonitorSizes, matchScreenToPhysical } from '../utils/MonitorPhysicalSize';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -62,6 +63,9 @@ export class ProjectionManager {
         this.activeProjection.mapId = mapId;
         this.activeProjection.screen = screen;
 
+        // Auto-calibrate from EDID if no calibration exists for the new screen
+        await this.ensureCalibration(screen);
+
         // Apply calibration for potentially different screen
         const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
 
@@ -99,6 +103,9 @@ export class ProjectionManager {
     // Position + fullscreen after a short delay to let the window open
     setTimeout(async () => {
       await this.positionAndFullscreen(popoutLeaf, screen);
+
+      // Auto-calibrate from EDID if no calibration exists
+      await this.ensureCalibration(screen);
 
       // Apply per-monitor calibration
       const pv = popoutLeaf.view as PlayerMapView | undefined;
@@ -201,6 +208,66 @@ export class ProjectionManager {
     const key = screenKey(screen);
     this.plugin.settings.projectionTargets = this.plugin.settings.projectionTargets.filter(t => t.screenKey !== key);
     await this.plugin.saveSettings();
+  }
+
+  // ── Auto-calibration ─────────────────────────────────────────────
+
+  /**
+   * Ensure calibration data exists for a screen.
+   * If no manual calibration is saved, auto-detect physical dimensions
+   * from EDID via WMI and compute pixelsPerMm automatically.
+   */
+  private async ensureCalibration(screen: ScreenInfo): Promise<void> {
+    // Skip if any calibration already exists (manual or previous auto)
+    if (this.getCalibrationForScreen(screen) || this.plugin.settings.tabletopCalibration) return;
+
+    const autoCal = this.autoCalibrate(screen);
+    if (autoCal) {
+      await this.saveCalibrationForScreen(screen, autoCal);
+      new Notice(
+        `Auto-calibrated ${screen.label}: ` +
+        `${autoCal.monitorDiagonalInch}" diagonal, ` +
+        `${autoCal.pixelsPerMm.toFixed(1)} px/mm`
+      );
+    }
+  }
+
+  /**
+   * Attempt to compute calibration from the monitor's EDID physical
+   * dimensions (queried via WMI on Windows).
+   *
+   * @returns A TabletopCalibration if physical dimensions were found,
+   *          or null if detection failed.
+   */
+  private autoCalibrate(screen: ScreenInfo): TabletopCalibration | null {
+    try {
+      const monitors = queryPhysicalMonitorSizes();
+      if (!monitors.length) return null;
+
+      const matched = matchScreenToPhysical(screen.label, monitors);
+      if (!matched || matched.widthCm <= 0) return null;
+
+      const physWidthMm = matched.widthCm * 10;
+      const physHeightMm = matched.heightCm * 10;
+      const pixelsPerMm = screen.width / physWidthMm;
+      const diagMm = Math.sqrt(physWidthMm ** 2 + physHeightMm ** 2);
+      const diagInch = Math.round((diagMm / 25.4) * 10) / 10;
+
+      console.log(
+        `ProjectionManager: autoCalibrate matched "${screen.label}" → ` +
+        `"${matched.friendlyName}" (${matched.widthCm}×${matched.heightCm} cm, ` +
+        `${diagInch}", ${pixelsPerMm.toFixed(2)} px/mm)`
+      );
+
+      return {
+        monitorDiagonalInch: diagInch,
+        pixelsPerMm,
+        miniBaseMm: 25, // standard D&D miniature base
+      };
+    } catch (e) {
+      console.warn('ProjectionManager: autoCalibrate failed', e);
+      return null;
+    }
   }
 
   // ── Internals ───────────────────────────────────────────────────
