@@ -1554,7 +1554,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		doorSubPicker.style.cssText = 'position: relative; margin-left: 4px; padding: 2px 0;';
 		doorGroupBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			doorSubPicker.toggleClass('hidden');
+			doorSubPicker.toggleClass('hidden', !doorSubPicker.hasClass('hidden'));
 		});
 
 		doorGroupTypes.forEach(([type, wallDef]) => {
