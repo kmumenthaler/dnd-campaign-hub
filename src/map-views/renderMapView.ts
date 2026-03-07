@@ -3564,30 +3564,22 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					});
 				}
 				
-				// Draw tunnel paths (GM view only - shows where burrowed creatures traveled)
-				// Only visible on Subterranean layer to avoid visual clutter
-				if (config.tunnels && config.tunnels.length > 0 && config.activeLayer === 'Subterranean') {
+				// Draw tunnel paths (GM view - always show a subtle indication of tunnels)
+				if (config.tunnels && config.tunnels.length > 0) {
+					// Tunnels are more prominent on the Subterranean layer, subtler on other layers
+					const isSubLayer = config.activeLayer === 'Subterranean';
+					const baseAlpha = isSubLayer ? 0.6 : 0.25;
+					
 					config.tunnels.forEach((tunnel: any) => {
 						if (!tunnel.path || tunnel.path.length < 2) return;
 						
 					const tunnelWidth = getTunnelWidth(tunnel, config.gridSize);
 					ctx.save();
-						ctx.globalAlpha = 0.6;
-						ctx.strokeStyle = '#2a2a2a';
-						ctx.lineWidth = tunnelWidth;
 						ctx.lineCap = 'round';
 						ctx.lineJoin = 'round';
 						
-						// Draw tunnel path as a thick line
-						ctx.beginPath();
-						ctx.moveTo(tunnel.path[0].x, tunnel.path[0].y);
-						for (let i = 1; i < tunnel.path.length; i++) {
-							ctx.lineTo(tunnel.path[i].x, tunnel.path[i].y);
-						}
-						ctx.stroke();
-						
 						// Draw border for tunnel corridor
-						ctx.globalAlpha = 0.5;
+						ctx.globalAlpha = baseAlpha * 0.8;
 						ctx.strokeStyle = '#654321';
 						ctx.lineWidth = tunnelWidth + 4;
 						ctx.beginPath();
@@ -3597,8 +3589,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						}
 						ctx.stroke();
 						
-						// Draw inner tunnel path (darker)
-						ctx.globalAlpha = 0.5;
+						// Draw tunnel path as a thick line
+						ctx.globalAlpha = baseAlpha;
+						ctx.strokeStyle = '#2a2a2a';
+						ctx.lineWidth = tunnelWidth;
+						ctx.beginPath();
+						ctx.moveTo(tunnel.path[0].x, tunnel.path[0].y);
+						for (let i = 1; i < tunnel.path.length; i++) {
+							ctx.lineTo(tunnel.path[i].x, tunnel.path[i].y);
+						}
+						ctx.stroke();
+						
+						// Draw inner tunnel path (darker center line)
+						ctx.globalAlpha = baseAlpha * 0.85;
 						ctx.strokeStyle = '#1a1a1a';
 						ctx.lineWidth = tunnelWidth * 0.7;
 						ctx.beginPath();
