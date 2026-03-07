@@ -14,6 +14,29 @@ import { HexcrawlTracker } from '../hexcrawl';
 import { getTunnelWidth, getTunnelPortalRadius, drawTunnelPortal } from './tunnelUtils';
 import { WallSpatialIndex } from '../utils/WallSpatialIndex';
 
+/** Compute effective endpoints for an open pivot door (rotates around hinge). */
+function getPivotDoorEndpoints(wall: any): { start: { x: number; y: number }; end: { x: number; y: number } } {
+  if (!wall.open || wall.type !== 'pivotDoor') {
+    return { start: wall.start, end: wall.end };
+  }
+  const hingeIsStart = (wall.pivotEnd || 'start') === 'start';
+  const hinge = hingeIsStart ? wall.start : wall.end;
+  const free = hingeIsStart ? wall.end : wall.start;
+  const dir = wall.openDirection || 1;
+  const angle = dir * (Math.PI / 2); // 90 degrees
+  const dx = free.x - hinge.x;
+  const dy = free.y - hinge.y;
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+  const rotated = {
+    x: hinge.x + dx * cosA - dy * sinA,
+    y: hinge.y + dx * sinA + dy * cosA,
+  };
+  return hingeIsStart
+    ? { start: hinge, end: rotated }
+    : { start: rotated, end: hinge };
+}
+
 export class PlayerMapView extends ItemView {
   plugin: DndCampaignHubPlugin;
   private mapConfig: any = null;
@@ -293,10 +316,17 @@ export class PlayerMapView extends ItemView {
       if (m.layer) s(m.layer);
     }
 
-    // Walls (count + open-state; positions are static per-session)
+    // Walls (count + open-state + pivot door properties)
     const walls: any[] = c.walls || [];
     n(walls.length);
-    for (let i = 0; i < walls.length; i++) n(walls[i].open ? 1 : 0);
+    for (let i = 0; i < walls.length; i++) {
+      const wl = walls[i];
+      n(wl.open ? 1 : 0);
+      if (wl.type === 'pivotDoor') {
+        n(wl.openDirection || 1);
+        n(wl.pivotEnd === 'end' ? 2 : 1);
+      }
+    }
 
     // Light sources
     const lights: any[] = c.lightSources || [];
@@ -1727,12 +1757,19 @@ export class PlayerMapView extends ItemView {
       // Filter walls the same way drawFogOfWar does: open doors, windows,
       // and terrain don't block line of sight.
       if (!hasFog && ((config.walls && config.walls.length > 0) || (config.envAssets && config.envAssets.length > 0)) && visionRelevantTokens.length > 0) {
-        const sightBlockingWalls = (config.walls || []).filter((wall: any) => {
+        const sightBlockingWalls: any[] = (config.walls || []).filter((wall: any) => {
           const type = wall.type || 'wall';
           if ((type === 'door' || type === 'secret') && wall.open) return false;
           if (type === 'window') return false;
           if (type === 'terrain') return false;
           return true;
+        }).map((wall: any) => {
+          // Pivot doors stay blocking but with rotated endpoints when open
+          if (wall.type === 'pivotDoor' && wall.open) {
+            const pts = getPivotDoorEndpoints(wall);
+            return { ...wall, start: pts.start, end: pts.end };
+          }
+          return wall;
         });
         // Add env asset vision-blocking walls
         if (config.envAssets && config.envAssets.length > 0) {
@@ -3410,6 +3447,13 @@ export class PlayerMapView extends ItemView {
       if (type === 'window') return false;
       if (type === 'terrain') return false;
       return true;
+    }).map((wall: any) => {
+      // Pivot doors stay blocking but with rotated endpoints when open
+      if (wall.type === 'pivotDoor' && wall.open) {
+        const pts = getPivotDoorEndpoints(wall);
+        return { ...wall, start: pts.start, end: pts.end };
+      }
+      return wall;
     });
 
     // Generate virtual walls from env-asset door/scatter instances
@@ -3624,13 +3668,17 @@ export class PlayerMapView extends ItemView {
       if (m.markerId) s(m.markerId);
     }
 
-    // Walls (count + per-wall open state / height)
+    // Walls (count + per-wall open state / height + pivot door properties)
     const walls: any[] = config.walls || [];
     n(walls.length);
     for (let i = 0; i < walls.length; i++) {
       const wl = walls[i];
       n(wl.open ? 1 : 0);
       n(wl.height || 0);
+      if (wl.type === 'pivotDoor') {
+        n(wl.openDirection || 1);
+        n(wl.pivotEnd === 'end' ? 2 : 1);
+      }
     }
 
     // Standalone light sources
@@ -3901,6 +3949,13 @@ export class PlayerMapView extends ItemView {
         return false;
       }
       return true;
+    }).map((wall: any) => {
+      // Pivot doors stay blocking but with rotated endpoints when open
+      if (wall.type === 'pivotDoor' && wall.open) {
+        const pts = getPivotDoorEndpoints(wall);
+        return { ...wall, start: pts.start, end: pts.end };
+      }
+      return wall;
     });
 
     // Add door-wall segments from env-asset doors

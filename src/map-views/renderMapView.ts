@@ -584,10 +584,34 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				secret: { name: 'Secret Door', icon: '🔒', color: '#666666', style: 'dashed', blocksSight: true, blocksMovement: true },
 				invisible: { name: 'Invisible Wall', icon: '👻', color: '#cccccc', style: 'dotted', blocksSight: true, blocksMovement: true },
 				terrain: { name: 'Terrain', icon: '🪨', color: '#8B7355', style: 'solid', blocksSight: false, blocksMovement: true },
+				pivotDoor: { name: 'Pivot Door', icon: '🔄', color: '#8B4513', style: 'pivotDoor', blocksSight: true, blocksMovement: true },
 			} as const;
 			type WallType = keyof typeof WALL_TYPES;
 			let selectedWallType: WallType = 'wall';
-			
+
+			/** Compute effective endpoints for an open pivot door (rotates around hinge). */
+			const getPivotDoorEndpoints = (wall: any): { start: { x: number; y: number }; end: { x: number; y: number } } => {
+				if (!wall.open || wall.type !== 'pivotDoor') {
+					return { start: wall.start, end: wall.end };
+				}
+				const hingeIsStart = (wall.pivotEnd || 'start') === 'start';
+				const hinge = hingeIsStart ? wall.start : wall.end;
+				const free = hingeIsStart ? wall.end : wall.start;
+				const dir = wall.openDirection || 1;
+				const angle = dir * (Math.PI / 2); // 90 degrees
+				const dx = free.x - hinge.x;
+				const dy = free.y - hinge.y;
+				const cosA = Math.cos(angle);
+				const sinA = Math.sin(angle);
+				const rotated = {
+					x: hinge.x + dx * cosA - dy * sinA,
+					y: hinge.y + dx * sinA + dy * cosA,
+				};
+				return hingeIsStart
+					? { start: hinge, end: rotated }
+					: { start: rotated, end: hinge };
+			};
+
 			// Helper function to calculate bounding size of rotated rectangle
 			const getRotatedRectBoundingSize = (rect: any): { w: number; h: number } => {
 				const deg = (rect.rotation || 0);
@@ -3995,6 +4019,121 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							}
 							
 							ctx.restore();
+
+						} else if (wallDef.style === 'pivotDoor') {
+							// Pivot door: panel rotates around one endpoint (hinge)
+							const doorWidth = Math.max(length, 20);
+							const doorHeight = 8;
+							const hingeIsStart = (wall.pivotEnd || 'start') === 'start';
+							const dir = wall.openDirection || 1;
+							// Hinge and free end in world coordinates
+							const hinge = hingeIsStart ? wall.start : wall.end;
+							const free = hingeIsStart ? wall.end : wall.start;
+
+							if (isOpen) {
+								// --- Open state ---
+								// Doorway outline at original position (dashed)
+								ctx.save();
+								ctx.translate(midX, midY);
+								ctx.rotate(angle);
+								ctx.strokeStyle = '#654321';
+								ctx.lineWidth = 2;
+								ctx.setLineDash([6, 4]);
+								ctx.globalAlpha = 0.5;
+								ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+								ctx.setLineDash([]);
+								ctx.globalAlpha = 1.0;
+								ctx.restore();
+
+								// Door panel at rotated position
+								const pts = getPivotDoorEndpoints(wall);
+								const rdx = pts.end.x - pts.start.x;
+								const rdy = pts.end.y - pts.start.y;
+								const rMidX = (pts.start.x + pts.end.x) / 2;
+								const rMidY = (pts.start.y + pts.end.y) / 2;
+								const rAngle = Math.atan2(rdy, rdx);
+								ctx.save();
+								ctx.translate(rMidX, rMidY);
+								ctx.rotate(rAngle);
+								ctx.fillStyle = '#8B6914';
+								ctx.globalAlpha = 0.85;
+								ctx.fillRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+								ctx.strokeStyle = '#654321';
+								ctx.lineWidth = 2;
+								ctx.globalAlpha = 1.0;
+								ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+								ctx.restore();
+
+								// Swing arc from hinge
+								ctx.save();
+								ctx.strokeStyle = '#888888';
+								ctx.lineWidth = 1;
+								ctx.setLineDash([4, 4]);
+								const arcRadius = Math.sqrt(
+									(free.x - hinge.x) ** 2 + (free.y - hinge.y) ** 2
+								);
+								const baseAngle = Math.atan2(free.y - hinge.y, free.x - hinge.x);
+								const openAngle = baseAngle + dir * (Math.PI / 2);
+								ctx.beginPath();
+								if (dir > 0) {
+									ctx.arc(hinge.x, hinge.y, arcRadius, baseAngle, openAngle, false);
+								} else {
+									ctx.arc(hinge.x, hinge.y, arcRadius, openAngle, baseAngle, false);
+								}
+								ctx.stroke();
+								ctx.setLineDash([]);
+								ctx.restore();
+
+								// Hinge dot
+								ctx.save();
+								ctx.fillStyle = '#FFD700';
+								ctx.beginPath();
+								ctx.arc(hinge.x, hinge.y, 4, 0, Math.PI * 2);
+								ctx.fill();
+								ctx.restore();
+							} else {
+								// --- Closed state ---
+								ctx.save();
+								ctx.translate(midX, midY);
+								ctx.rotate(angle);
+								// Solid door panel
+								ctx.fillStyle = '#8B4513';
+								ctx.fillRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+								ctx.strokeStyle = '#654321';
+								ctx.lineWidth = 2;
+								ctx.strokeRect(-doorWidth / 2, -doorHeight / 2, doorWidth, doorHeight);
+								ctx.restore();
+
+								// Hinge dot
+								ctx.save();
+								ctx.fillStyle = '#FFD700';
+								ctx.beginPath();
+								ctx.arc(hinge.x, hinge.y, 4, 0, Math.PI * 2);
+								ctx.fill();
+								ctx.restore();
+
+								// Swing arc hint
+								ctx.save();
+								ctx.strokeStyle = '#888888';
+								ctx.lineWidth = 1;
+								ctx.setLineDash([4, 4]);
+								ctx.globalAlpha = 0.4;
+								const arcRadius = Math.sqrt(
+									(free.x - hinge.x) ** 2 + (free.y - hinge.y) ** 2
+								);
+								const baseAngle = Math.atan2(free.y - hinge.y, free.x - hinge.x);
+								const openAngle = baseAngle + dir * (Math.PI / 2);
+								ctx.beginPath();
+								if (dir > 0) {
+									ctx.arc(hinge.x, hinge.y, arcRadius, baseAngle, openAngle, false);
+								} else {
+									ctx.arc(hinge.x, hinge.y, arcRadius, openAngle, baseAngle, false);
+								}
+								ctx.stroke();
+								ctx.setLineDash([]);
+								ctx.globalAlpha = 1.0;
+								ctx.restore();
+							}
 							
 						} else if (wallDef.style === 'window') {
 							// Roll20-style window: rectangular pane with cross-hatching
@@ -6032,6 +6171,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					if ((t === 'door' || t === 'secret') && wall.open) return false;
 					if (t === 'window' || t === 'terrain') return false;
 					return true;
+				}).map((wall: any) => {
+					// Pivot doors stay blocking but with rotated endpoints when open
+					if (wall.type === 'pivotDoor' && wall.open) {
+						const pts = getPivotDoorEndpoints(wall);
+						return { ...wall, start: pts.start, end: pts.end };
+					}
+					return wall;
 				});
 				// Inline env-asset door wall computation (same logic as computeDoorWallSegments)
 				if (config.envAssets && config.envAssets.length > 0) {
@@ -10456,8 +10602,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const header = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
 							header.textContent = wall.name || wallDef.name;
 							
-							// Door open/close toggle (only for doors)
-							if (wallType === 'door') {
+							// Door open/close toggle (for sliding doors and pivot doors)
+							if (wallType === 'door' || wallType === 'pivotDoor') {
 								const isOpen = wall.open === true;
 								const toggleOption = contextMenu.createDiv({ 
 									cls: 'dnd-map-context-menu-item'
@@ -10474,6 +10620,35 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 									new Notice(wall.open ? 'Door opened' : 'Door closed');
 								});
+
+								// Pivot door: reverse open direction
+								if (wallType === 'pivotDoor') {
+									const revOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+									revOption.innerHTML = `<span>↔️</span> Reverse Direction`;
+									revOption.addEventListener('click', () => {
+										saveToHistory();
+										wall.openDirection = (wall.openDirection || 1) * -1;
+										if (!wall.open) wall.open = true;
+										redrawAnnotations();
+										plugin.saveMapAnnotations(config, el);
+										if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+										if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+										new Notice('Open direction reversed');
+									});
+
+									const hingeOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+									const curHinge = wall.pivotEnd || 'start';
+									hingeOption.innerHTML = `<span>📌</span> Hinge: ${curHinge === 'start' ? 'Start → End' : 'End → Start'}`;
+									hingeOption.addEventListener('click', () => {
+										saveToHistory();
+										wall.pivotEnd = curHinge === 'start' ? 'end' : 'start';
+										redrawAnnotations();
+										plugin.saveMapAnnotations(config, el);
+										if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+										if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+										new Notice(`Hinge moved to ${wall.pivotEnd}`);
+									});
+								}
 								
 								contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
 							}
@@ -10551,9 +10726,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									saveToHistory();
 									wall.type = type;
 									wall.name = def.name;
-									// Reset open state when changing away from door
-									if (type !== 'door') {
+									// Reset open state when changing away from door types
+									if (type !== 'door' && type !== 'pivotDoor') {
 										wall.open = false;
+									}
+									// Clean up pivot-door properties when switching to non-pivot type
+									if (type !== 'pivotDoor') {
+										delete wall.openDirection;
+										delete wall.pivotEnd;
 									}
 									redrawAnnotations();
 									plugin.saveMapAnnotations(config, el);
