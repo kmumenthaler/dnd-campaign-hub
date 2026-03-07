@@ -199,6 +199,18 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		let dragOffsetY = 0;
 		let markerDragOrigin: { x: number; y: number } | null = null; // Original position when dragging a marker
 
+		// ── Drag-performance: rAF coalescing & static layer caching ─────────
+		let _dragRedrawRafId = 0;           // non-zero while a drag-redraw rAF is pending
+		let _staticLayerCanvas: HTMLCanvasElement | null = null; // cached background during drag
+		let _staticLayerDirty = true;       // set true to force static layer rebuild
+		let _sortedEnvAssetsCache: any[] | null = null; // avoid re-sorting env assets every frame
+
+		// Fog of war cached canvas — persists across redraws, rebuilt only when fog data changes
+		let _fogCacheCanvas: HTMLCanvasElement | null = null;
+		let _fogCacheValid = false;
+		let _fogCacheW = 0;
+		let _fogCacheH = 0;
+
 		// ── Environment Asset state ──────────────────────────────────────────
 		let selectedEnvAssetId: string | null = null; // Library definition id selected for placement
 		let selectedEnvAssetInstanceId: string | null = null; // Currently selected instance on the map
@@ -3010,6 +3022,25 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				return null;
 			};
 
+			// ── Drag-performance helpers ────────────────────────────────────────
+			// rAF-coalesced redraw: multiple mousemove events within a single
+			// animation frame only trigger ONE redraw (the last state wins).
+			const _requestDragRedraw = () => {
+				if (_dragRedrawRafId) return; // already scheduled
+				_dragRedrawRafId = requestAnimationFrame(() => {
+					_dragRedrawRafId = 0;
+					redrawAnnotations();
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+				});
+			};
+
+			// Invalidate static layer cache (call when env assets / fog / walls change)
+			const _invalidateStaticLayer = () => {
+				_staticLayerDirty = true;
+				_fogCacheValid = false;
+				_sortedEnvAssetsCache = null;
+			};
+
 			// Function to redraw annotations
 			const redrawAnnotations = () => {
 				if (!annotationCanvas) return;
@@ -3341,7 +3372,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (config.envAssets && config.envAssets.length > 0) {
 					const envAlpha = bgViewAlpha('env-assets');
 					// Sort by zIndex ascending (lower = drawn first = further back)
-					const sorted = [...config.envAssets].sort((a: EnvAssetInstance, b: EnvAssetInstance) => (a.zIndex || 0) - (b.zIndex || 0));
+					// Cache the sorted order — invalidated when env assets change
+					if (!_sortedEnvAssetsCache || _sortedEnvAssetsCache.length !== config.envAssets.length) {
+						_sortedEnvAssetsCache = [...config.envAssets].sort((a: EnvAssetInstance, b: EnvAssetInstance) => (a.zIndex || 0) - (b.zIndex || 0));
+					}
+					const sorted = _sortedEnvAssetsCache;
 					sorted.forEach((inst: EnvAssetInstance) => {
 						// Viewport cull: use half-diagonal as conservative radius for rotated assets
 						const _envR = (inst.width + inst.height) / 2;
@@ -6002,6 +6037,16 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			// Draw fog of war using an offscreen canvas
 			const drawFogOfWar = (ctx: CanvasRenderingContext2D, w: number, h: number, isPlayerView: boolean) => {
 				const fogAlpha = isPlayerView ? 1.0 : 0.45;
+
+				// ── Fog cache: reuse pre-rendered fog when nothing changed (e.g. during drag) ──
+				const isDragging = draggingMarkerIndex >= 0 || draggingLightIndex >= 0 || draggingWallIndex >= 0;
+				if (isDragging && _fogCacheValid && _fogCacheCanvas && _fogCacheW === w && _fogCacheH === h) {
+					ctx.save();
+					ctx.globalAlpha = fogAlpha;
+					ctx.drawImage(_fogCacheCanvas, 0, 0);
+					ctx.restore();
+					return;
+				}
 				
 				// Create offscreen fog canvas (pooled)
 				const fogCanvas = _canvasPool.acquire(w, h);
@@ -6167,6 +6212,23 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				ctx.globalAlpha = fogAlpha;
 				ctx.drawImage(fogCanvas, 0, 0);
 				ctx.restore();
+
+				// ── Cache the rendered fog for reuse during drag ──
+				if (!_fogCacheCanvas) {
+					_fogCacheCanvas = document.createElement('canvas');
+				}
+				if (_fogCacheCanvas.width !== w || _fogCacheCanvas.height !== h) {
+					_fogCacheCanvas.width = w;
+					_fogCacheCanvas.height = h;
+				}
+				const _fcCtx = _fogCacheCanvas.getContext('2d');
+				if (_fcCtx) {
+					_fcCtx.clearRect(0, 0, w, h);
+					_fcCtx.drawImage(fogCanvas, 0, 0);
+					_fogCacheW = w;
+					_fogCacheH = h;
+					_fogCacheValid = true;
+				}
 				_canvasPool.release(fogCanvas);
 
 				// Draw magic darkness overlay (GM view only): prominent purple tint + dashed border
@@ -7896,15 +7958,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						}
 					});
 				}
-				redrawAnnotations();
-				// Sync marker position + drag ruler to player view in real-time
-				if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+				_requestDragRedraw();
 				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
 					// Dragging a light
 					const draggedLight = config.lightSources[draggingLightIndex];
 					draggedLight.x = mapPos.x + lightDragOffsetX;
 					draggedLight.y = mapPos.y + lightDragOffsetY;
-					redrawAnnotations();
+					_requestDragRedraw();
 				} else if (activeTool === 'select' && draggingWallIndex >= 0) {
 					// Dragging a wall/door/window
 					const draggedWall = config.walls[draggingWallIndex];
@@ -7912,7 +7972,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					draggedWall.start.y = mapPos.y + wallDragOffsetStartY;
 					draggedWall.end.x = mapPos.x + wallDragOffsetEndX;
 					draggedWall.end.y = mapPos.y + wallDragOffsetEndY;
-					redrawAnnotations();
+					_requestDragRedraw();
 				} else if ((activeTool === 'select' || activeTool === 'env-asset') && selectedEnvAssetInstanceId && (envAssetTransformHandle || envAssetDragOffset)) {
 					// ── Env asset drag / transform in progress (select or env-asset tool) ──
 					const inst = (config.envAssets || []).find((a: EnvAssetInstance) => a.id === selectedEnvAssetInstanceId);
@@ -7921,7 +7981,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const angle = Math.atan2(mapPos.y - inst.position.y, mapPos.x - inst.position.x);
 							const delta = (angle - envAssetRotateStart) * 180 / Math.PI;
 							inst.rotation = ((envAssetTransformStart.rot + delta) % 360 + 360) % 360;
-							redrawAnnotations();
+							_requestDragRedraw();
 						} else if (envAssetTransformHandle === 'pivot' && inst.doorConfig) {
 							// Drag pivot handle: convert mouse to local normalised coords
 							const dxP = mapPos.x - inst.position.x;
@@ -7935,7 +7995,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							if (!inst.doorConfig.customPivot) inst.doorConfig.customPivot = { x: 0, y: 0.5 };
 							inst.doorConfig.customPivot.x = nx;
 							inst.doorConfig.customPivot.y = ny;
-							redrawAnnotations();
+							_requestDragRedraw();
 						} else if (envAssetTransformHandle && envAssetTransformStart) {
 							// Anchored-edge resize: the opposite edge stays fixed
 							const s = envAssetTransformStart;
@@ -8004,19 +8064,18 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							inst.height = newH;
 							inst.position.x = s.x + worldDx2;
 							inst.position.y = s.y + worldDy2;
-							redrawAnnotations();
+							_requestDragRedraw();
 						} else if (envAssetDragOffset) {
 							inst.position.x = mapPos.x + envAssetDragOffset.x;
 							inst.position.y = mapPos.y + envAssetDragOffset.y;
-							redrawAnnotations();
-							if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+							_requestDragRedraw();
 						}
 					}
 				} else if (activeTool === 'select' && wallSelectionRect) {
 					// Updating wall selection rectangle
 					wallSelectionRect.endX = mapPos.x;
 					wallSelectionRect.endY = mapPos.y;
-					redrawAnnotations();
+					_requestDragRedraw();
 				} else if (activeTool === 'draw' && isDrawing) {
 					currentPath.push({ x: mapPos.x, y: mapPos.y });
 					redrawAnnotations();
