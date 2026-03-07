@@ -4918,19 +4918,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 				}
 				
-				// Add colored glow for elevated/subterranean
-				if (itemLayer === 'Elevated' || itemLayer === 'Subterranean') {
-					ctx.save();
-					ctx.shadowColor = itemLayer === 'Elevated' ? '#4DA6FF' : '#8B4513';
-					ctx.shadowBlur = 10;
-					ctx.beginPath();
-					ctx.arc(position.x, position.y, radius, 0, Math.PI * 2);
-					ctx.strokeStyle = itemLayer === 'Elevated' ? '#4DA6FF' : '#8B4513';
-					ctx.lineWidth = 3;
-					ctx.stroke();
-					ctx.restore();
-				}
-				
 				// Clip to circle
 				ctx.beginPath();
 				ctx.arc(position.x, position.y, radius, 0, Math.PI * 2);
@@ -5060,41 +5047,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					ctx.fillText('🔦', badgeX, badgeY);
 					
 					ctx.restore();
-					
-					// Draw highlighted tunnel path
-					const tunnel = config.tunnels?.find((t: any) => t.id === marker.tunnelState.tunnelId);
-					if (tunnel && tunnel.path.length > 1) {
-						ctx.save();
-						ctx.globalAlpha = 0.8;
-						
-						const tunnelWidth = getTunnelWidth(tunnel, config.gridSize);
-						
-						// Draw path up to current position in bright color
-						ctx.strokeStyle = '#FFD700';  // Gold
-						ctx.lineWidth = tunnelWidth + 2;
-						ctx.lineCap = 'round';
-						ctx.lineJoin = 'round';
-						ctx.beginPath();
-						ctx.moveTo(tunnel.path[0].x, tunnel.path[0].y);
-						for (let i = 1; i <= marker.tunnelState.pathIndex && i < tunnel.path.length; i++) {
-							ctx.lineTo(tunnel.path[i].x, tunnel.path[i].y);
-						}
-						ctx.stroke();
-						
-						// Draw remaining path in dimmer color
-						if (marker.tunnelState.pathIndex < tunnel.path.length - 1) {
-							ctx.strokeStyle = '#666666';
-							ctx.lineWidth = tunnelWidth;
-							ctx.beginPath();
-							ctx.moveTo(tunnel.path[marker.tunnelState.pathIndex].x, tunnel.path[marker.tunnelState.pathIndex].y);
-							for (let i = marker.tunnelState.pathIndex + 1; i < tunnel.path.length; i++) {
-								ctx.lineTo(tunnel.path[i].x, tunnel.path[i].y);
-							}
-							ctx.stroke();
-						}
-						
-						ctx.restore();
-					}
 				}
 				
 				// Reset globalAlpha
