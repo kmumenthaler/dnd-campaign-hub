@@ -1546,7 +1546,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 		// Door group submenu button (🚪▾ — expands to show all door variants)
 		const doorGroupWrap = wallsPicker.createDiv();
-		doorGroupWrap.style.cssText = 'position: relative;';
+		doorGroupWrap.style.cssText = 'position: relative; align-self: flex-start;';
 		const doorGroupBtn = doorGroupWrap.createEl('button', {
 			cls: 'dnd-map-aoe-shape-btn' + (doorGroupTypes.some(([t]) => t === selectedWallType) ? ' active' : ''),
 			attr: { title: 'Doors (click to expand)' }
