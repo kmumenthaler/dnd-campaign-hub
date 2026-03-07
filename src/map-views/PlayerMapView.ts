@@ -3,6 +3,7 @@ import type DndCampaignHubPlugin from "../main";
 import { PLAYER_MAP_VIEW_TYPE } from "../constants";
 import type { MapMediaElement } from "../constants";
 import { computeLightFlicker, computeNeonBuzz, hexToRgb, getFlickerSeedForKey, FLICKER_LIGHT_TYPES_SET, BUZZ_LIGHT_TYPES_SET } from "../utils/LightFlicker";
+import { getDefaultLightColor } from "../map/LightTypes";
 import { getWallsHash as _getWallsHash, visCacheKey as _visCacheKey, visCacheMap as _visCacheMap, VIS_CACHE_MAX as _VIS_CACHE_MAX } from "../utils/VisibilityCache";
 import { canvasPool as _canvasPool } from "../utils/CanvasPool";
 import type { MarkerReference, MarkerDefinition } from "../marker/MarkerTypes";
@@ -4054,7 +4055,7 @@ export class PlayerMapView extends ItemView {
       if (lcCtx) {
         allLights.forEach((light: any, li: number) => {
           // Resolve colour â€“ default warm yellow for normal lights, cyan for fluorescent
-          const defaultHex = light.type === 'fluorescent' ? '#00ffff' : light.type === 'bioluminescent' ? '#00ff44' : '#ffff88';
+          const defaultHex = getDefaultLightColor(light.type);
           const colHex = light.customColor || defaultHex;
           const col = hexToRgb(colHex);
           const colDim = { r: Math.floor(col.r * 0.7), g: Math.floor(col.g * 0.7), b: Math.floor(col.b * 0.7) };

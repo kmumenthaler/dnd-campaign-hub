@@ -19,6 +19,8 @@ import { TabletopCalibrationModal } from "../map-views/TabletopCalibrationModal"
 import { canvasPool as _canvasPool } from "../utils/CanvasPool";
 import { getWallsHash as _getWallsHash, visCacheKey as _visCacheKey, visCacheMap as _visCacheMap, VIS_CACHE_MAX as _VIS_CACHE_MAX } from "../utils/VisibilityCache";
 import { computeLightFlicker, computeNeonBuzz, hexToRgb, getFlickerSeedForKey, FLICKER_LIGHT_TYPES_SET, BUZZ_LIGHT_TYPES_SET } from "../utils/LightFlicker";
+import { LIGHT_SOURCES, PLACEABLE_LIGHT_TYPES, getDefaultLightColor } from "../map/LightTypes";
+import type { LightSourceType } from "../map/LightTypes";
 import { EnvAssetLibrary } from "../envasset/EnvAssetLibrary";
 import { showEnvAssetContextMenu } from "../envasset/EnvAssetContextMenu";
 import { EnvAssetPickerModal } from "../envasset/EnvAssetPickerModal";
@@ -279,22 +281,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 			// Ensure aoeEffects array exists on config
 			if (!config.aoeEffects) config.aoeEffects = [];
-			
-			// D&D 5e Light Source Definitions
-			const LIGHT_SOURCES = {
-				candle: { name: 'Candle', bright: 5, dim: 5, icon: '🕯️', flicker: true },
-				torch: { name: 'Torch', bright: 20, dim: 20, icon: '🔥', flicker: true },
-				lantern: { name: 'Lantern', bright: 30, dim: 30, icon: '🏮' },
-				bullseye: { name: 'Bullseye Lantern', bright: 60, dim: 60, cone: true, icon: '🔦' },
-				light: { name: 'Light Spell', bright: 20, dim: 20, icon: '✨' },
-				dancing: { name: 'Dancing Lights', bright: 0, dim: 10, icon: '💫', flicker: true },
-				continual: { name: 'Continual Flame', bright: 20, dim: 20, icon: '🔥', flicker: true },
-				daylight: { name: 'Daylight Spell', bright: 60, dim: 60, icon: '☀️' },
-				fluorescent: { name: 'Fluorescent', bright: 30, dim: 10, icon: '💡', flicker: true },
-				bioluminescent: { name: 'Bioluminescent', bright: 0, dim: 10, icon: '🧪' },
-				walllight: { name: 'Wall Light', bright: 15, dim: 15, icon: '📏', isLine: true }
-			} as const;
-			type LightSourceType = keyof typeof LIGHT_SOURCES;
 			
 			// ── Light Flicker Animation System ──
 			// Delegates to module-level computeLightFlicker() and getFlickerSeedForKey().
@@ -1411,18 +1397,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 		// Light Sources picker sub-menu (shown when lights tool is active)
 		const lightsPicker = lightsBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
-		const lightTypes: { type: string; source: any }[] = [
-			{ type: 'candle', source: LIGHT_SOURCES.candle },
-			{ type: 'torch', source: LIGHT_SOURCES.torch },
-			{ type: 'lantern', source: LIGHT_SOURCES.lantern },
-			{ type: 'bullseye', source: LIGHT_SOURCES.bullseye },
-			{ type: 'light', source: LIGHT_SOURCES.light },
-			{ type: 'dancing', source: LIGHT_SOURCES.dancing },
-			{ type: 'continual', source: LIGHT_SOURCES.continual },
-			{ type: 'daylight', source: LIGHT_SOURCES.daylight },
-			{ type: 'fluorescent', source: LIGHT_SOURCES.fluorescent },
-			{ type: 'bioluminescent', source: LIGHT_SOURCES.bioluminescent }
-		];
+		const lightTypes = PLACEABLE_LIGHT_TYPES.map(type => ({ type, source: LIGHT_SOURCES[type] }));
 		const lightTypeButtons: Map<string, HTMLButtonElement> = new Map();
 		lightTypes.forEach(({ type, source }) => {
 			const btn = lightsPicker.createEl('button', {
@@ -3053,7 +3028,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const totalRadiusPx = brightRadiusPx + dimRadiusPx;
 							
 							// Resolve light colour
-							const mlc = hexToRgb(marker.light.customColor || (marker.light.type === 'fluorescent' ? '#00ffff' : marker.light.type === 'bioluminescent' ? '#00ff44' : '#ffff88'));
+							const mlc = hexToRgb(marker.light.customColor || getDefaultLightColor(marker.light.type));
 							const mlcDim = { r: Math.floor(mlc.r * 0.7), g: Math.floor(mlc.g * 0.7), b: Math.floor(mlc.b * 0.7) };
 							
 							// Draw light glow behind marker with smooth gradient
@@ -3928,7 +3903,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								const flickDimPx = dimRadiusPx * flicker.radius;
 								const totalRadiusPx = flickBrightPx + flickDimPx;
 								// Resolve light colour (custom for fluorescent/bioluminescent, warm yellow default)
-								const lc = hexToRgb(light.customColor || (light.type === 'fluorescent' ? '#00ffff' : light.type === 'bioluminescent' ? '#00ff44' : '#ffff88'));
+								const lc = hexToRgb(light.customColor || getDefaultLightColor(light.type));
 								const lcDim = { r: Math.floor(lc.r * 0.7), g: Math.floor(lc.g * 0.7), b: Math.floor(lc.b * 0.7) };
 
 								// ── Wall Light (line source) ──
@@ -5772,7 +5747,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					const featherR = totalPx * 1.06;
 
 					// Resolve colour
-					const defaultHex = light.type === 'fluorescent' ? '#00ffff' : light.type === 'bioluminescent' ? '#00ff44' : '#ffff88';
+					const defaultHex = getDefaultLightColor(light.type);
 					const colHex = light.customColor || defaultHex;
 					const col = hexToRgb(colHex);
 					const colDim = { r: Math.floor(col.r * 0.7), g: Math.floor(col.g * 0.7), b: Math.floor(col.b * 0.7) };
@@ -8994,14 +8969,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const currentLight = m.light?.type || null;
 							
 							// Common light options for quick access
-							const lightOptions: { type: LightSourceType; icon: string; label: string }[] = [
-								{ type: 'candle', icon: '🕯️', label: 'Candle (5ft)' },
-								{ type: 'torch', icon: '🔥', label: 'Torch (20ft)' },
-								{ type: 'lantern', icon: '🏮', label: 'Lantern (30ft)' },
-								{ type: 'light', icon: '✨', label: 'Light Spell (20ft)' },
-								{ type: 'daylight', icon: '☀️', label: 'Daylight (60ft)' },
-								{ type: 'fluorescent', icon: '💡', label: 'Fluorescent (30ft)' },
-							];
+							const MARKER_QUICK_TYPES: LightSourceType[] = ['candle', 'torch', 'lantern', 'light', 'daylight', 'fluorescent'];
+							const lightOptions = MARKER_QUICK_TYPES.map(type => {
+								const s = LIGHT_SOURCES[type];
+								return { type, icon: s.icon, label: `${s.name} (${s.bright || s.dim}ft)` };
+							});
 							
 							// Add "Off" button
 							const offBtn = lightRow.createEl('button', {
@@ -9049,7 +9021,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							
 							// Light colour picker for marker-attached lights
 							if (m.light) {
-								const markerLightDefault = m.light.type === 'fluorescent' ? '#00ffff' : m.light.type === 'bioluminescent' ? '#00ff44' : '#ffff88';
+								const markerLightDefault = getDefaultLightColor(m.light.type);
 								const mlColorRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
 								mlColorRow.createEl('span', { cls: 'dnd-map-context-aoe-label', text: 'Light Colour:' });
 								const mlColorPicker = mlColorRow.createEl('input', {
@@ -9777,18 +9749,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const typeHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
 							typeHeader.textContent = 'Change Type:';
 							
-							// Light type options
-							const lightTypes: { type: LightSourceType; icon: string; name: string }[] = [
-								{ type: 'candle', icon: '🕯️', name: 'Candle (5ft)' },
-								{ type: 'torch', icon: '🔥', name: 'Torch (20ft)' },
-								{ type: 'lantern', icon: '🏮', name: 'Lantern (30ft)' },
-								{ type: 'bullseye', icon: '🔦', name: 'Bullseye (60ft)' },
-								{ type: 'light', icon: '✨', name: 'Light Spell (20ft)' },
-								{ type: 'dancing', icon: '💫', name: 'Dancing Lights (10ft dim)' },
-								{ type: 'daylight', icon: '☀️', name: 'Daylight (60ft)' },
-								{ type: 'fluorescent', icon: '💡', name: 'Fluorescent (30ft)' },
-								{ type: 'bioluminescent', icon: '🧪', name: 'Bioluminescent (10ft dim)' },
-							];
+							// Light type options (derived from canonical catalogue)
+							const lightTypes = PLACEABLE_LIGHT_TYPES.map(type => {
+								const s = LIGHT_SOURCES[type];
+								const range = s.bright > 0 ? `${s.bright}ft` : `${s.dim}ft dim`;
+								return { type, icon: s.icon, name: `${s.name} (${range})` };
+							});
 							
 							lightTypes.forEach(({ type, icon, name }) => {
 								const option = contextMenu.createDiv({ 
@@ -9894,7 +9860,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							
 // Custom colour picker for all light sources
 										{
-											const lightDefaultColor = light.type === 'fluorescent' ? '#00ffff' : light.type === 'bioluminescent' ? '#00ff44' : '#ffff88';
+											const lightDefaultColor = getDefaultLightColor(light.type);
 											contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
 											const colorHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
 											colorHeader.textContent = 'Light Colour:';

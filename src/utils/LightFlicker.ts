@@ -3,11 +3,8 @@
  * Shared by both the GM-view and the player-view rendering.
  */
 
-/** Light types that exhibit flame-like flickering. */
-export const FLICKER_LIGHT_TYPES_SET = new Set<string>(['candle', 'torch', 'dancing', 'continual', 'fluorescent']);
-
-/** Subset: lights that use neon-buzz animation instead of flame flicker. */
-export const BUZZ_LIGHT_TYPES_SET = new Set<string>(['fluorescent']);
+// Re-export canonical light-type sets from the single source of truth.
+export { FLICKER_LIGHT_TYPES_SET, BUZZ_LIGHT_TYPES_SET } from '../map/LightTypes';
 
 /**
  * Compute a flicker multiplier for a given light at the current time.
