@@ -7875,14 +7875,18 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								}
 							}
 							
-							// Update pathIndex and snap to that point
+							// Update pathIndex and snap position to the nearest grid-cell
+							// centre along the tunnel path so tunnel movement is grid-aligned.
 							draggedMarker.tunnelState.pathIndex = closestIndex;
-							draggedMarker.position = {
-								x: tunnel.path[closestIndex].x,
-								y: tunnel.path[closestIndex].y
-							};
+							const _tpRaw = tunnel.path[closestIndex];
+							const _tMarkerDef = draggedMarker.markerId
+								? plugin.markerLibrary.getMarker(draggedMarker.markerId) : null;
+							const _tSizeSq = _tMarkerDef?.creatureSize
+								? (CREATURE_SIZE_SQUARES[_tMarkerDef.creatureSize] || 1) : 1;
+							const _tSnapped = snapTokenToGrid(_tpRaw.x, _tpRaw.y, _tSizeSq);
+							draggedMarker.position = { x: _tSnapped.x, y: _tSnapped.y };
 							// Update elevation to match tunnel path at this point
-							const pathElevation = tunnel.path[closestIndex].elevation;
+							const pathElevation = _tpRaw.elevation;
 							if (pathElevation !== undefined) {
 								if (!draggedMarker.elevation) draggedMarker.elevation = {};
 								draggedMarker.elevation.depth = pathElevation;
@@ -8667,22 +8671,46 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							saveToHistory();
 							
 							let newIndex = marker.tunnelState.pathIndex;
+							const gs = config.gridSize || 70;
 							
-							// Arrow keys move forward/backward along path
+							// Arrow keys move one grid cell along the tunnel path
 							if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
-								// Move forward in tunnel
-								newIndex = Math.min(tunnel.path.length - 1, newIndex + 1);
+								// Walk forward along path until cumulative distance >= gridSize
+								let dist = 0;
+								for (let pi = newIndex; pi < tunnel.path.length - 1; pi++) {
+									const a = tunnel.path[pi], b = tunnel.path[pi + 1];
+									dist += Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
+									if (dist >= gs) { newIndex = pi + 1; break; }
+								}
+								// If we didn't reach gridSize, jump to the end
+								if (dist < gs && newIndex === marker.tunnelState.pathIndex) {
+									newIndex = tunnel.path.length - 1;
+								}
 							} else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
-								// Move backward in tunnel
-								newIndex = Math.max(0, newIndex - 1);
+								// Walk backward along path until cumulative distance >= gridSize
+								let dist = 0;
+								for (let pi = newIndex; pi > 0; pi--) {
+									const a = tunnel.path[pi], b = tunnel.path[pi - 1];
+									dist += Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
+									if (dist >= gs) { newIndex = pi - 1; break; }
+								}
+								// If we didn't reach gridSize, jump to the start
+								if (dist < gs && newIndex === marker.tunnelState.pathIndex) {
+									newIndex = 0;
+								}
 							}
 							
-							// Update position and path index
+							// Update position and path index (grid-snapped)
 							if (newIndex !== marker.tunnelState.pathIndex) {
 								marker.tunnelState.pathIndex = newIndex;
 								const newPos = tunnel.path[newIndex];
-								marker.position.x = newPos.x;
-								marker.position.y = newPos.y;
+								const _akMarkerDef = marker.markerId
+									? plugin.markerLibrary.getMarker(marker.markerId) : null;
+								const _akSizeSq = _akMarkerDef?.creatureSize
+									? (CREATURE_SIZE_SQUARES[_akMarkerDef.creatureSize] || 1) : 1;
+								const _akSnapped = snapTokenToGrid(newPos.x, newPos.y, _akSizeSq);
+								marker.position.x = _akSnapped.x;
+								marker.position.y = _akSnapped.y;
 								// Update elevation to match tunnel path at this point
 								if (newPos.elevation !== undefined) {
 									if (!marker.elevation) marker.elevation = {};
@@ -8690,6 +8718,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								}
 								const progress = Math.round((newIndex / (tunnel.path.length - 1)) * 100);
 								new Notice(`Tunnel progress: ${progress}%`, 1000);
+								redrawAnnotations();
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 							} else if (newIndex === tunnel.path.length - 1 && (e.key === 'ArrowUp' || e.key === 'ArrowRight')) {
 								// Reached end of tunnel
 								new Notice('Reached tunnel exit - right-click to exit tunnel');

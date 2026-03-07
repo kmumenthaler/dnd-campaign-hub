@@ -1365,7 +1365,7 @@ export class PlayerMapView extends ItemView {
     if (config.tunnels && config.tunnels.length > 0) {
       config.tunnels.forEach((tunnel: any) => {
         if (!tunnel.visible) return;
-        const portalRadius = getTunnelPortalRadius(tunnel, config.gridSize);
+        const portalRadius = getTunnelPortalRadius(tunnel.creatureSize || 'medium', config.gridSize);
         // Draw entrance portal
         drawTunnelPortal(ctx, tunnel.entrancePosition.x, tunnel.entrancePosition.y, portalRadius);
         // Draw exit portal if tunnel is completed and exit differs from entrance
