@@ -2625,8 +2625,11 @@ export class PlayerMapView extends ItemView {
     const horizontalFeet = (horizontalPixelDist / gridSize) * scaleValue;
 
     // 3D distance with elevation
+    // Add scaleValue to include the target's occupied square (PHB: "stop
+    // counting in the space of the other one" = you count INTO that space).
     const verticalFeet = Math.abs((target.elevation || 0) - (origin.elevation || 0));
-    const totalFeetRaw = Math.sqrt(horizontalFeet * horizontalFeet + verticalFeet * verticalFeet);
+    const edgeFeet = Math.sqrt(horizontalFeet * horizontalFeet + verticalFeet * verticalFeet);
+    const totalFeetRaw = edgeFeet + scaleValue;
     const totalFeet = Math.max(scaleValue, Math.round(totalFeetRaw / scaleValue) * scaleValue);
 
     ctx.save();

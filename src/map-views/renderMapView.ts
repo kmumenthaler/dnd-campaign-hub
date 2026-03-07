@@ -4837,7 +4837,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						const verticalFeet = Math.abs(targetHeight - originHeight);
 						
 						// 3D distance using Pythagorean theorem, rounded to nearest 5ft (D&D 5e)
-						const totalFeetRaw = Math.sqrt(horizontalFeet * horizontalFeet + verticalFeet * verticalFeet);
+						// Add scaleValue to include the target's occupied square (PHB: "stop
+						// counting in the space of the other one" = you count INTO that space).
+						const edgeFeet = Math.sqrt(horizontalFeet * horizontalFeet + verticalFeet * verticalFeet);
+						const totalFeetRaw = edgeFeet + config.scale.value;
 						const totalFeet = Math.max(config.scale.value, Math.round(totalFeetRaw / config.scale.value) * config.scale.value);
 						
 						// Draw measurement line (cyan, dashed)
