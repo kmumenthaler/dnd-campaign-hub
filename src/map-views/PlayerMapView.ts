@@ -120,6 +120,60 @@ export class PlayerMapView extends ItemView {
   }
 
   /**
+   * Swap the displayed map without destroying the window.
+   * Used by the projection system for seamless map transitions: the player
+   * view stays on the correct monitor, stays fullscreen, and simply loads
+   * a different map image + annotations.
+   */
+  swapMap(newMapId: string, newMapConfig: any, newImageResourcePath: string) {
+    // Cancel flicker loop before tearing down DOM
+    if (this._pvFlickerFrameId !== null) {
+      (this._pvFlickerWin || window).cancelAnimationFrame(this._pvFlickerFrameId);
+      this._pvFlickerFrameId = null;
+    }
+    if (this._pvFlickerRetryTimer) {
+      clearTimeout(this._pvFlickerRetryTimer);
+      this._pvFlickerRetryTimer = null;
+    }
+
+    // Clean up full-screen change handler from previous render
+    if ((this as any)._fullscreenChangeHandler) {
+      const win = (this.containerEl as any).win || this.containerEl.ownerDocument?.defaultView;
+      if (win) {
+        win.document.removeEventListener('fullscreenchange', (this as any)._fullscreenChangeHandler);
+      }
+      (this as any)._fullscreenChangeHandler = null;
+    }
+
+    // Update identity
+    this.mapId = newMapId;
+    this.mapConfig = newMapConfig;
+    this.imageResourcePath = newImageResourcePath;
+
+    // Reset rendering state
+    this._lastConfigDigest = 0;
+    this.canvas = null;
+    this.mapImage = null;
+    this.syncCanvasToImage = null;
+    this.markerImageCache.clear();
+    this.envAssetImageCache.clear();
+
+    // Reset viewport transform (GM will push the correct one after the swap)
+    this.tabletopPanX = 0;
+    this.tabletopPanY = 0;
+    this.tabletopScale = 1;
+    this.tabletopRotation = 0;
+    this.tabletopTargetX = null;
+    this.tabletopTargetY = null;
+
+    // Re-render with the new map — renderPlayerView() calls container.empty()
+    // which safely removes old DOM elements. _pvRendered is kept true so
+    // a concurrent setState won't trigger a second render.
+    this._pvRendered = true;
+    this.renderPlayerView();
+  }
+
+  /**
    * Compute a fast numeric hash (djb2) of player-relevant config fields.
    * Captures marker positions, wall open-states, light positions, rulers,
    * fog regions, grid settings, and vision selection.
