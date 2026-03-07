@@ -9223,12 +9223,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								const elevation = marker.elevation;
 								
 								if (!elevation || (!elevation.height && !elevation.depth)) {
-									// Only reset to Player if the token was on an elevation-driven layer
-									if (marker.layer === 'Elevated' || marker.layer === 'Subterranean') {
+									// Reset to Player if the token was on an elevation-driven layer
+									// (includes 'DM' when set by burrowing — identified by _wasBurrowing flag)
+									if (marker.layer === 'Elevated' || marker.layer === 'Subterranean' || (marker.layer === 'DM' && marker._wasBurrowing)) {
 										marker.layer = 'Player';
+										delete marker._wasBurrowing;
 									}
 								} else if (elevation.depth && elevation.depth > 0) {
 									if (elevation.isBurrowing) {
+										marker._wasBurrowing = true;
 										marker.layer = 'DM';  // Hidden from players
 									} else {
 										marker.layer = 'Subterranean';  // Visible but marked
