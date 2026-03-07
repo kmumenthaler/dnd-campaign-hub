@@ -1711,20 +1711,22 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			// Multi-monitor — show a context menu of available screens
 			const menu = new Menu();
 
-			// If there's an active projection, add a "Stop Projection" option
+			// If there's an active projection, only show Stop — no monitor list
 			if (pm.isProjectionAlive()) {
+				const activeScreen = pm.activeProjection?.screen;
+				const activeLabel = activeScreen ? `${activeScreen.label} (${activeScreen.width}×${activeScreen.height})` : '';
 				menu.addItem((item) => {
-					item.setTitle('⏹ Stop Projection');
+					item.setTitle(`⏹ Stop Projection${activeLabel ? ' — ' + activeLabel : ''}`);
 					item.onClick(() => pm.stopProjection());
 				});
-				menu.addSeparator();
+				menu.showAtMouseEvent(e as MouseEvent);
+				return;
 			}
 
 			for (const screen of screens) {
 				const key = screenKey(screen);
 				const cal = pm.getCalibrationForScreen(screen);
-				const isActive = pm.activeProjection?.screen?.label === screen.label;
-				const label = `${screen.isPrimary ? '🖥️' : '🖵'} ${screen.label} (${screen.width}×${screen.height})${cal ? ' ✓' : ''}${isActive ? ' ◄' : ''}`;
+				const label = `${screen.isPrimary ? '🖥️' : '🖵'} ${screen.label} (${screen.width}×${screen.height})${cal ? ' ✓' : ''}`;
 
 				menu.addItem((item) => {
 					item.setTitle(label);
