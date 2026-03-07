@@ -17,6 +17,7 @@ import { cloneTemplateToMap } from './MapFactory';
 import type { MapTemplateTags } from './types';
 import { LOCATION_TYPES } from './types';
 import { TERRAIN_DEFINITIONS, CLIMATE_DEFINITIONS } from '../hexcrawl/types';
+import { invalidateTemplateIndex } from './MapPersistence';
 
 /** Lightweight info about a template returned by queryMapTemplates */
 interface TemplateInfo {
@@ -101,6 +102,21 @@ export class TemplatePickerModal extends Modal {
       this.close();
       // Trigger the create-template command
       (this.app as any).commands.executeCommandById(`${this.plugin.manifest.id}:create-battlemap-template`);
+    });
+
+    // Refresh button – forces a rebuild of the template index
+    const refreshBtn = topBar.createEl('button', { text: '🔄' });
+    refreshBtn.title = 'Refresh template list';
+    refreshBtn.style.padding = '8px 10px';
+    refreshBtn.style.borderRadius = '6px';
+    refreshBtn.style.cursor = 'pointer';
+    refreshBtn.style.border = '1px solid var(--background-modifier-border)';
+    refreshBtn.addEventListener('click', async () => {
+      invalidateTemplateIndex();
+      await this.loadTemplates();
+      this.renderFilterBar();
+      this.renderTemplateGrid();
+      new Notice('Template list refreshed');
     });
 
     // Tag filter bar (populated after templates load)
