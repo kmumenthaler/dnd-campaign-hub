@@ -2804,6 +2804,16 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		let terrainCanvas: HTMLCanvasElement | null = null;
 		let annotationCanvas: HTMLCanvasElement | null = null;
 
+		// rAF-throttled annotation redraw during pan/zoom so we don't oversaturate
+		let _panRedrawRafId = 0;
+		const schedulePanRedraw = () => {
+			if (_panRedrawRafId) return;
+			_panRedrawRafId = requestAnimationFrame(() => {
+				_panRedrawRafId = 0;
+				redrawAnnotations();
+			});
+		};
+
 		// Function to update transform
 		const updateTransform = () => {
 			mapWrapper.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
@@ -7388,6 +7398,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				
 				updateTransform();
 				zoomReset.textContent = `${Math.round(scale * 100)}%`;
+				schedulePanRedraw();
 			});
 
       // Helper: get axis-aligned bounding box size of a rotated rect (image-space)
@@ -8476,6 +8487,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					translateX = e.clientX - startX;
 					translateY = e.clientY - startY;
 					updateTransform();
+					schedulePanRedraw();
 					return;
 				}
 				
@@ -8483,6 +8495,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					translateX = e.clientX - startX;
 					translateY = e.clientY - startY;
 					updateTransform();
+					schedulePanRedraw();
 				} else if (activeTool === 'move-grid' && isDragging) {
 					// Calculate delta in image-space pixels
 					const rect = viewport.getBoundingClientRect();
@@ -9071,6 +9084,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (activeTool === 'pan' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'grab';
+					redrawAnnotations();
 				} else if (activeTool === 'elevation-paint' && isPaintingElevation) {
 					// Finalize elevation painting drag
 					isPaintingElevation = false;
@@ -9339,6 +9353,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (activeTool === 'pan' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'grab';
+					redrawAnnotations();
 				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
 					draggingMarkerIndex = -1;
 					markerDragOrigin = null;
@@ -11317,12 +11332,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					translateY = (midY - rect.top) - pointY * scale;
 					updateTransform();
 					zoomReset.textContent = `${Math.round(scale * 100)}%`;
+					schedulePanRedraw();
 				} else if (!_touchIsPinch && e.touches.length === 1) {
 					// Single-finger pan
 					const t = e.touches[0]!;
 					translateX = _touchPanStartTX + (t.clientX - _touchPanStartX);
 					translateY = _touchPanStartTY + (t.clientY - _touchPanStartY);
 					updateTransform();
+					schedulePanRedraw();
 				}
 			}, { passive: false });
 
@@ -11347,12 +11364,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				scale = Math.min(scale * 1.25, 20);
 				updateTransform();
 				zoomReset.textContent = `${Math.round(scale * 100)}%`;
+				redrawAnnotations();
 			});
 			
 			zoomOut.addEventListener('click', () => {
 				scale = Math.max(scale * 0.8, 0.05);
 				updateTransform();
 				zoomReset.textContent = `${Math.round(scale * 100)}%`;
+				redrawAnnotations();
 			});
 			
 			zoomReset.addEventListener('click', () => {
@@ -11361,11 +11380,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				translateY = 0;
 				updateTransform();
 				zoomReset.textContent = '100%';
+				redrawAnnotations();
 			});
 
 			zoomFit.addEventListener('click', () => {
 				const s = fitToViewport();
 				zoomReset.textContent = `${Math.round(s * 100)}%`;
+				redrawAnnotations();
 			});
 
 			// Auto-fit on first render so the map is always fully visible
