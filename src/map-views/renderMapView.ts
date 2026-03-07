@@ -2075,6 +2075,123 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		});
 		playerViewBtn.innerHTML = '👁️ Player View';
 		
+		// Sync function installed at viewport scope so it persists across
+		// re-renders when the GM view moves to a new leaf / DOM element.
+		// (rAF-coalesced: many calls per frame → one actual sync at next paint)
+		let _pvSyncScheduled = false;
+		const _syncPlayerViewImmediate = () => {
+			_pvSyncScheduled = false;
+			if (plugin._playerMapViews && plugin._playerMapViews.size > 0) {
+				// Build drag ruler data if a marker is being dragged
+				let dragRuler: { origin: { x: number; y: number }; current: { x: number; y: number }; pathCells?: { col: number; row: number; dist: number }[]; totalDist?: number; climbDist?: number; markerId?: string; visibleToPlayers?: boolean } | null = null;
+				if (markerDragOrigin && draggingMarkerIndex >= 0 && config.markers[draggingMarkerIndex]) {
+					const draggedMarker = config.markers[draggingMarkerIndex];
+					const currentPos = draggedMarker.position;
+					const pathResult = computeGridMovePath(markerDragOrigin, currentPos);
+					dragRuler = {
+						origin: { x: markerDragOrigin.x, y: markerDragOrigin.y },
+						current: { x: currentPos.x, y: currentPos.y },
+						pathCells: pathResult.cells,
+						totalDist: pathResult.totalDist,
+						climbDist: pathResult.climbDist,
+						markerId: draggedMarker.markerId,
+						visibleToPlayers: !!draggedMarker.visibleToPlayers
+					};
+				}
+				// Build measure ruler data if ruler is active
+				let measureRuler: { start: { x: number; y: number }; end: { x: number; y: number } } | null = null;
+				if (rulerStart && rulerEnd && rulerComplete) {
+					measureRuler = {
+						start: { x: rulerStart.x, y: rulerStart.y },
+						end: { x: rulerEnd.x, y: rulerEnd.y }
+					};
+				}
+				// Build target distance ruler data if active
+				let targetDistRuler: { origin: { x: number; y: number; elevation: number }; target: { x: number; y: number; elevation: number } } | null = null;
+				if (targetDistOriginIdx >= 0 && targetDistTargetIdx >= 0 && config.markers[targetDistOriginIdx] && config.markers[targetDistTargetIdx]) {
+					const oMarker = config.markers[targetDistOriginIdx];
+					const tMarker = config.markers[targetDistTargetIdx];
+					const oElev = (oMarker.elevation?.height || 0) - (oMarker.elevation?.depth || 0);
+					const tElev = (tMarker.elevation?.height || 0) - (tMarker.elevation?.depth || 0);
+					targetDistRuler = {
+						origin: { x: oMarker.position.x, y: oMarker.position.y, elevation: oElev },
+						target: { x: tMarker.position.x, y: tMarker.position.y, elevation: tElev }
+					};
+				}
+				const payload: any = {
+					markers: config.markers,
+					drawings: config.drawings,
+					highlights: config.highlights,
+					aoeEffects: config.aoeEffects,
+					fogOfWar: config.fogOfWar,
+					walls: config.walls,
+					lightSources: config.lightSources,
+					tunnels: config.tunnels,
+					poiReferences: config.poiReferences,
+					gridType: config.gridType,
+					gridSize: config.gridSize,
+					gridSizeW: config.gridSizeW,
+					gridSizeH: config.gridSizeH,
+					gridVisible: config.gridVisible !== undefined ? config.gridVisible : true,
+					gridOffsetX: config.gridOffsetX || 0,
+					gridOffsetY: config.gridOffsetY || 0,
+					scale: config.scale,
+					name: config.name,
+					type: config.type,
+					dragRuler: dragRuler,
+					measureRuler: measureRuler,
+					targetDistRuler: targetDistRuler,
+					selectedVisionTokenId: (() => {
+						// Only pass vision selection to player view if the selected token
+						// is a player-type or has visibleToPlayers ("Show to Players").
+						// Creature/NPC tokens without visibleToPlayers are DM-only previews;
+						// the player view should fall back to "All Players" combined vision.
+						if (!selectedVisionTokenId) return null;
+						const selMarker = (config.markers || []).find((m: any) => m.id === selectedVisionTokenId);
+						if (!selMarker) return null;
+						const selDef = selMarker.markerId ? plugin.markerLibrary.getMarker(selMarker.markerId) : null;
+						if (selDef && selDef.type === 'player') return selectedVisionTokenId;
+						if (selMarker.visibleToPlayers) return selectedVisionTokenId;
+						return null; // creature/NPC without Show to Players → All Players for player view
+					})(),
+					hexTerrains: config.hexTerrains,
+					hexClimates: config.hexClimates,
+					tileElevations: config.tileElevations || {},
+					difficultTerrain: config.difficultTerrain || {},
+					envAssets: config.envAssets || [],
+					hexcrawlState: config.hexcrawlState,
+					hexcrawlRangeOverlay: (activeTool === 'hexcrawl-move' && config.hexcrawlState?.enabled && config.hexcrawlState?.partyPosition) ? {
+						active: true,
+						hoverHex: hexcrawlMoveHoverHex,
+					} : null,
+				};
+				// Attach pending hexcrawl travel animation data (set by hexcrawl-move handler)
+				if ((viewport as any)._pendingHexcrawlTravel) {
+					payload.hexcrawlTravel = (viewport as any)._pendingHexcrawlTravel;
+					(viewport as any)._pendingHexcrawlTravel = null;
+				}
+				const mapId = config.mapId || resourcePath;
+				plugin._playerMapViews.forEach(view => {
+					const viewMapId = (view as any).mapId;
+					if (viewMapId === mapId) {
+						try { 
+							view.updateMapData(payload); 
+						} catch (e) { 
+							console.error('Failed to update player view', e); 
+						}
+					}
+				});
+			}
+		};
+		// rAF-coalesced wrapper: no matter how many times _syncPlayerView is
+		// called within one frame (e.g. mousemove → redraw + sync), the actual
+		// payload build + PV redraw only happens once at the next paint.
+		(viewport as any)._syncPlayerView = () => {
+			if (_pvSyncScheduled) return;
+			_pvSyncScheduled = true;
+			requestAnimationFrame(() => _syncPlayerViewImmediate());
+		};
+		
 		playerViewBtn.addEventListener('click', async () => {
             // Allow multiple player views; do not close existing player view windows
 			
@@ -2139,122 +2256,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
           }
         }, 50);
       }
-			
-      // Store sync function that pushes updates to all open player views
-      // (rAF-coalesced: many calls per frame → one actual sync at next paint)
-      let _pvSyncScheduled = false;
-      const _syncPlayerViewImmediate = () => {
-        _pvSyncScheduled = false;
-        if (plugin._playerMapViews && plugin._playerMapViews.size > 0) {
-          // Build drag ruler data if a marker is being dragged
-          let dragRuler: { origin: { x: number; y: number }; current: { x: number; y: number }; pathCells?: { col: number; row: number; dist: number }[]; totalDist?: number; climbDist?: number; markerId?: string; visibleToPlayers?: boolean } | null = null;
-          if (markerDragOrigin && draggingMarkerIndex >= 0 && config.markers[draggingMarkerIndex]) {
-            const draggedMarker = config.markers[draggingMarkerIndex];
-            const currentPos = draggedMarker.position;
-            const pathResult = computeGridMovePath(markerDragOrigin, currentPos);
-            dragRuler = {
-              origin: { x: markerDragOrigin.x, y: markerDragOrigin.y },
-              current: { x: currentPos.x, y: currentPos.y },
-              pathCells: pathResult.cells,
-              totalDist: pathResult.totalDist,
-              climbDist: pathResult.climbDist,
-              markerId: draggedMarker.markerId,
-              visibleToPlayers: !!draggedMarker.visibleToPlayers
-            };
-          }
-          // Build measure ruler data if ruler is active
-          let measureRuler: { start: { x: number; y: number }; end: { x: number; y: number } } | null = null;
-          if (rulerStart && rulerEnd && rulerComplete) {
-            measureRuler = {
-              start: { x: rulerStart.x, y: rulerStart.y },
-              end: { x: rulerEnd.x, y: rulerEnd.y }
-            };
-          }
-          // Build target distance ruler data if active
-          let targetDistRuler: { origin: { x: number; y: number; elevation: number }; target: { x: number; y: number; elevation: number } } | null = null;
-          if (targetDistOriginIdx >= 0 && targetDistTargetIdx >= 0 && config.markers[targetDistOriginIdx] && config.markers[targetDistTargetIdx]) {
-            const oMarker = config.markers[targetDistOriginIdx];
-            const tMarker = config.markers[targetDistTargetIdx];
-            const oElev = (oMarker.elevation?.height || 0) - (oMarker.elevation?.depth || 0);
-            const tElev = (tMarker.elevation?.height || 0) - (tMarker.elevation?.depth || 0);
-            targetDistRuler = {
-              origin: { x: oMarker.position.x, y: oMarker.position.y, elevation: oElev },
-              target: { x: tMarker.position.x, y: tMarker.position.y, elevation: tElev }
-            };
-          }
-          const payload: any = {
-            markers: config.markers,
-            drawings: config.drawings,
-            highlights: config.highlights,
-            aoeEffects: config.aoeEffects,
-            fogOfWar: config.fogOfWar,
-            walls: config.walls,
-            lightSources: config.lightSources,
-            tunnels: config.tunnels,
-            poiReferences: config.poiReferences,
-            gridType: config.gridType,
-            gridSize: config.gridSize,
-            gridSizeW: config.gridSizeW,
-            gridSizeH: config.gridSizeH,
-            gridVisible: config.gridVisible !== undefined ? config.gridVisible : true,
-            gridOffsetX: config.gridOffsetX || 0,
-            gridOffsetY: config.gridOffsetY || 0,
-            scale: config.scale,
-            name: config.name,
-            type: config.type,
-            dragRuler: dragRuler,
-            measureRuler: measureRuler,
-            targetDistRuler: targetDistRuler,
-            selectedVisionTokenId: (() => {
-              // Only pass vision selection to player view if the selected token
-              // is a player-type or has visibleToPlayers ("Show to Players").
-              // Creature/NPC tokens without visibleToPlayers are DM-only previews;
-              // the player view should fall back to "All Players" combined vision.
-              if (!selectedVisionTokenId) return null;
-              const selMarker = (config.markers || []).find((m: any) => m.id === selectedVisionTokenId);
-              if (!selMarker) return null;
-              const selDef = selMarker.markerId ? plugin.markerLibrary.getMarker(selMarker.markerId) : null;
-              if (selDef && selDef.type === 'player') return selectedVisionTokenId;
-              if (selMarker.visibleToPlayers) return selectedVisionTokenId;
-              return null; // creature/NPC without Show to Players → All Players for player view
-            })(),
-            hexTerrains: config.hexTerrains,
-            hexClimates: config.hexClimates,
-            tileElevations: config.tileElevations || {},
-            difficultTerrain: config.difficultTerrain || {},
-            envAssets: config.envAssets || [],
-            hexcrawlState: config.hexcrawlState,
-            hexcrawlRangeOverlay: (activeTool === 'hexcrawl-move' && config.hexcrawlState?.enabled && config.hexcrawlState?.partyPosition) ? {
-              active: true,
-              hoverHex: hexcrawlMoveHoverHex,
-            } : null,
-          };
-          // Attach pending hexcrawl travel animation data (set by hexcrawl-move handler)
-          if ((viewport as any)._pendingHexcrawlTravel) {
-            payload.hexcrawlTravel = (viewport as any)._pendingHexcrawlTravel;
-            (viewport as any)._pendingHexcrawlTravel = null;
-          }
-          const mapId = config.mapId || resourcePath;
-          plugin._playerMapViews.forEach(view => {
-            const viewMapId = (view as any).mapId;
-            if (viewMapId === mapId) {
-              try { 
-                view.updateMapData(payload); 
-              } catch (e) { 
-                console.error('Failed to update player view', e); 
-              }
-            }
-          });
-        }
-      };
-      // rAF-coalesced wrapper: no matter how many times _syncPlayerView is
-      // called within one frame (e.g. mousemove → redraw + sync), the actual
-      // payload build + PV redraw only happens once at the next paint.
-      (viewport as any)._syncPlayerView = () => {
-        if (_pvSyncScheduled) return;
-        _pvSyncScheduled = true;
-        requestAnimationFrame(() => _syncPlayerViewImmediate());
-      };
 			
 			// Initial sync after a short delay to ensure player view is ready
 			setTimeout(() => {
