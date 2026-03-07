@@ -1031,7 +1031,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		const eraserBtn = createToolBtn(commonToolGroup, '🧹', 'Eraser', false, false, 'x');
 
 		// ── Draw sub-tool picker (Pen / Text / Annotation Eraser) ──
-		const drawPicker = commonToolGroup.createDiv({ cls: 'dnd-map-aoe-picker dnd-draw-picker hidden' });
+		const drawPicker = drawBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
 		const drawSubBtns = new Map<DrawSubTool, HTMLButtonElement>();
 		const drawSubDefs: { key: DrawSubTool; icon: string; label: string }[] = [
 			{ key: 'pen', icon: '🖊️', label: 'Pen' },
@@ -5747,7 +5747,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const fontParts: string[] = [];
 				if (ta.italic) fontParts.push('italic');
 				if (ta.bold) fontParts.push('bold');
-				fontParts.push(`${ta.fontSize || 16}px`);
+				fontParts.push(`${ta.fontSize || 48}px`);
 				fontParts.push(ta.fontFamily || 'sans-serif');
 				ctx.font = fontParts.join(' ');
 				ctx.fillStyle = ta.color || '#ffffff';
@@ -5756,7 +5756,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				// Word-wrap text into the bounding box
 				const lines = wrapText(ctx, ta.text, ta.width - 8);
-				const lineHeight = (ta.fontSize || 16) * 1.25;
+				const lineHeight = (ta.fontSize || 48) * 1.25;
 				const totalH = lines.length * lineHeight;
 				let startY = -hh + (ta.height - totalH) / 2;
 				const textX = ta.textAlign === 'left' ? -hw + 4 : ta.textAlign === 'right' ? hw - 4 : 0;
@@ -5927,11 +5927,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				menu.addSeparator();
 				// Font size
 				menu.addItem((item) => {
-					item.setTitle(`Font Size: ${ta.fontSize || 16}px`);
+					item.setTitle(`Font Size: ${ta.fontSize || 48}px`);
 					item.onClick(() => {
-						const size = prompt('Font size (px):', String(ta.fontSize || 16));
+						const size = prompt('Font size (px):', String(ta.fontSize || 48));
 						if (size) {
-							ta.fontSize = Math.max(8, Math.min(200, parseInt(size, 10) || 16));
+							ta.fontSize = Math.max(8, Math.min(200, parseInt(size, 10) || 48));
 							redrawAnnotations();
 							plugin.saveMapAnnotations(config, el);
 						}
@@ -8080,10 +8080,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								id: `text_${Date.now()}`,
 								text: 'Text',
 								position: { x: mapPos.x, y: mapPos.y },
-								width: 160,
-								height: 40,
+								width: 240,
+								height: 80,
 								rotation: 0,
-								fontSize: 16,
+								fontSize: 48,
 								fontFamily: 'sans-serif',
 								color: selectedColor,
 								bold: false,

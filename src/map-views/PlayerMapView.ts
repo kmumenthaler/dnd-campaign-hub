@@ -3436,7 +3436,7 @@ export class PlayerMapView extends ItemView {
       ctx.fillRect(-hw, -hh, ta.width, ta.height);
     }
     // Text
-    const fontSize = ta.fontSize || 16;
+    const fontSize = ta.fontSize || 48;
     const fontFamily = ta.fontFamily || 'sans-serif';
     const bold = ta.bold ? 'bold ' : '';
     const italic = ta.italic ? 'italic ' : '';
