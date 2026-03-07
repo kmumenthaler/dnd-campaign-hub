@@ -1545,16 +1545,18 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		});
 
 		// Door group submenu button (🚪▾ — expands to show all door variants)
-		const doorGroupBtn = wallsPicker.createEl('button', {
+		const doorGroupWrap = wallsPicker.createDiv();
+		doorGroupWrap.style.cssText = 'position: relative;';
+		const doorGroupBtn = doorGroupWrap.createEl('button', {
 			cls: 'dnd-map-aoe-shape-btn' + (doorGroupTypes.some(([t]) => t === selectedWallType) ? ' active' : ''),
 			attr: { title: 'Doors (click to expand)' }
 		});
 		doorGroupBtn.createEl('span', { text: '🚪▾' });
-		const doorSubPicker = wallsPicker.createDiv({ cls: 'dnd-door-sub-picker hidden' });
-		doorSubPicker.style.cssText = 'display: flex; flex-direction: row; gap: 4px; align-items: center;';
+		const doorSubPicker = doorGroupWrap.createDiv({ cls: 'dnd-door-sub-picker hidden' });
 		doorGroupBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			doorSubPicker.toggleClass('hidden', !doorSubPicker.hasClass('hidden'));
+			const isHidden = doorSubPicker.hasClass('hidden');
+			doorSubPicker.toggleClass('hidden', !isHidden);
 		});
 
 		doorGroupTypes.forEach(([type, wallDef]) => {
