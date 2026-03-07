@@ -734,6 +734,34 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		
 		// Get the resource path for the image
 		const resourcePath = plugin.app.vault.getResourcePath(imageFile);
+
+		// ── Auto-swap active projection to this map ──────────────────────
+		// If the GM opens/views a different map while a projection is running,
+		// seamlessly transition the projected player view to the new map.
+		if (plugin.projectionManager?.isProjectionAlive()) {
+			const currentMapId = config.mapId || resourcePath;
+			if (plugin.projectionManager.activeProjection?.mapId !== currentMapId) {
+				plugin.projectionManager.swapMap(currentMapId, {
+					markers: config.markers,
+					drawings: config.drawings,
+					highlights: config.highlights,
+					aoeEffects: config.aoeEffects,
+					fogOfWar: config.fogOfWar,
+					walls: config.walls,
+					lightSources: config.lightSources,
+					tunnels: config.tunnels,
+					poiReferences: config.poiReferences,
+					gridType: config.gridType,
+					gridSize: config.gridSize,
+					gridOffsetX: config.gridOffsetX || 0,
+					gridOffsetY: config.gridOffsetY || 0,
+					scale: config.scale,
+					name: config.name,
+					isVideo: config.isVideo,
+					type: config.type
+				}, resourcePath);
+			}
+		}
 		
 		// Create the map background element (image or video)
 		let img: MapMediaElement;
