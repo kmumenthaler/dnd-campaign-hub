@@ -125,7 +125,21 @@ export class PlayerMapView extends ItemView {
    * view stays on the correct monitor, stays fullscreen, and simply loads
    * a different map image + annotations.
    */
-  swapMap(newMapId: string, newMapConfig: any, newImageResourcePath: string) {
+  /**
+   * Swap the displayed map with a fade-to-black transition.
+   *
+   * @param onReady  Optional hook called after the swap but *before* the fade-in.
+   *                 Receives a `fadeIn` callback — the caller must invoke it when
+   *                 ready for the new content to become visible (e.g. after
+   *                 calibration / orientation is applied).  If omitted the
+   *                 fade-in starts automatically after a short delay.
+   */
+  swapMap(
+    newMapId: string,
+    newMapConfig: any,
+    newImageResourcePath: string,
+    onReady?: (fadeIn: () => void) => void,
+  ) {
     const container = this.containerEl.children[1] as HTMLElement;
 
     // ── Fade out ────────────────────────────────────────────────────
@@ -136,16 +150,25 @@ export class PlayerMapView extends ItemView {
     void fade.offsetWidth;
     fade.classList.add('active');
 
+    const fadeIn = () => {
+      fade.classList.remove('active');
+      // Remove the overlay once the transition finishes
+      setTimeout(() => fade.remove(), 500);
+    };
+
     // Give the fade 300ms to reach full opacity, then swap the content
     setTimeout(() => {
       this._doSwap(newMapId, newMapConfig, newImageResourcePath);
 
-      // Fade back in after the new content has rendered
-      setTimeout(() => {
-        fade.classList.remove('active');
-        // Remove the overlay once the transition finishes
-        setTimeout(() => fade.remove(), 350);
-      }, 100);
+      if (onReady) {
+        // Caller controls when fade-in happens (e.g. after calibration)
+        // Safety: fade in after 10 s regardless, so we never hang on black.
+        const safety = setTimeout(fadeIn, 10_000);
+        onReady(() => { clearTimeout(safety); fadeIn(); });
+      } else {
+        // No hook — fade in automatically after a short delay
+        setTimeout(fadeIn, 100);
+      }
     }, 300);
   }
 

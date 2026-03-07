@@ -59,20 +59,19 @@ export class ProjectionManager {
     if (this.activeProjection && this.isProjectionAlive()) {
       const pv = this.activeProjection.leaf.view as PlayerMapView | undefined;
       if (pv && typeof pv.swapMap === 'function') {
-        pv.swapMap(mapId, mapConfig, imageResourcePath);
         this.activeProjection.mapId = mapId;
         this.activeProjection.screen = screen;
 
         // Auto-calibrate from EDID if no calibration exists for the new screen
         await this.ensureCalibration(screen);
 
-        // Apply calibration for potentially different screen
-        const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
-
-        // Re-orient after the swap animation finishes
-        setTimeout(() => {
-          this.autoOrientAndFit(pv, screen, !hasCalibration);
-        }, 800);
+        // Use onReady hook so calibration + orient happens while still faded
+        pv.swapMap(mapId, mapConfig, imageResourcePath, (fadeIn) => {
+          const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
+          this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
+            fadeIn();
+          });
+        });
 
         new Notice(`Projection updated — ${mapConfig.name || mapId}`);
         return;
@@ -129,16 +128,17 @@ export class ProjectionManager {
     }
     const pv = this.activeProjection.leaf.view as PlayerMapView | undefined;
     if (pv && typeof pv.swapMap === 'function') {
-      pv.swapMap(mapId, mapConfig, imageResourcePath);
       this.activeProjection.mapId = mapId;
       const screen = this.activeProjection.screen;
 
-      // Apply calibration + orientation after the swap animation finishes
-      // swapMap does fade-out 300 ms → _doSwap → fade-in 100 ms + 350 ms
-      setTimeout(() => {
+      // Use the onReady hook: the fade stays opaque until we call fadeIn(),
+      // giving calibration + auto-orient time to finish without visible jumps.
+      pv.swapMap(mapId, mapConfig, imageResourcePath, (fadeIn) => {
         const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
-        this.autoOrientAndFit(pv, screen, !hasCalibration);
-      }, 800);
+        this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
+          fadeIn();
+        });
+      });
 
       new Notice(`Map transitioned — ${mapConfig.name || mapId}`);
     }
@@ -445,7 +445,10 @@ export class ProjectionManager {
    *
    * Waits for the player view image to load before making the decision.
    */
-  private autoOrientAndFit(pv: PlayerMapView, screen: ScreenInfo, applyFitScale: boolean): void {
+  private autoOrientAndFit(pv: PlayerMapView, screen: ScreenInfo, applyFitScale: boolean, onComplete?: () => void): void {
+    let completed = false;
+    const finish = () => { if (!completed) { completed = true; onComplete?.(); } };
+
     const tryOrient = (): boolean => {
       const img: HTMLImageElement | null = (pv as any).mapImage;
       if (!img || !(img as any).complete || !img.naturalWidth || !img.naturalHeight) return false;
@@ -476,7 +479,7 @@ export class ProjectionManager {
       }
 
       // Center the map in the viewport (poll until layout is ready)
-      this.centerMapInViewport(pv);
+      this.centerMapInViewport(pv, finish);
 
       return true;
     };
@@ -486,8 +489,11 @@ export class ProjectionManager {
       let attempts = 0;
       const interval = setInterval(() => {
         attempts++;
-        if (tryOrient() || attempts > 30) {
+        if (tryOrient()) {
           clearInterval(interval);
+        } else if (attempts > 30) {
+          clearInterval(interval);
+          finish();  // don't hang forever
         }
       }, 250);
     }
@@ -500,7 +506,10 @@ export class ProjectionManager {
    * the popout window opens, so this method polls up to ~3 s until the
    * container reports a non-zero size, then computes the correct pan.
    */
-  private centerMapInViewport(pv: PlayerMapView): void {
+  private centerMapInViewport(pv: PlayerMapView, onComplete?: () => void): void {
+    let completed = false;
+    const finish = () => { if (!completed) { completed = true; onComplete?.(); } };
+
     const tryCenter = (): boolean => {
       const img: HTMLImageElement | null = (pv as any).mapImage;
       const container: HTMLElement | null = (pv as any).mapContainer;
@@ -546,6 +555,7 @@ export class ProjectionManager {
         (pv as any).applyTabletopTransform();
       }
 
+      finish();
       return true;
     };
 
@@ -554,7 +564,8 @@ export class ProjectionManager {
       const delays = [100, 200, 400, 600, 1000, 1500, 2000, 3000];
       let i = 0;
       const retry = () => {
-        if (tryCenter() || i >= delays.length) return;
+        if (tryCenter()) return;  // finish() called inside tryCenter → applyTabletopTransform path
+        if (i >= delays.length) { finish(); return; }  // give up → still fade in
         setTimeout(retry, delays[i++]);
       };
       setTimeout(retry, delays[i++]);
