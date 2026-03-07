@@ -1707,11 +1707,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			new GridCalibrationModal(
 				plugin.app,
 				config,
-				async (gs, gw, gh) => {
+				async (gs, gw, gh, ox, oy) => {
 					saveToHistory();
 					config.gridSize = gs;
 					config.gridSizeW = gw;
 					config.gridSizeH = gh;
+					config.gridOffsetX = ox;
+					config.gridOffsetY = oy;
 					// Update slider flyout label/value
 					gridSlider.value = String(gs);
 					gridSliderLabel.textContent = `${Math.round(gs * 10) / 10}px`;

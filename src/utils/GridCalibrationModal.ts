@@ -6,13 +6,13 @@ import { App, Modal } from "obsidian";
  */
 export class GridCalibrationModal extends Modal {
   private config: any;
-  private onApply: (gridSize: number, gridSizeW: number, gridSizeH: number) => void;
+  private onApply: (gridSize: number, gridSizeW: number, gridSizeH: number, offsetX: number, offsetY: number) => void;
   private measuredDistance: number | null;
 
   constructor(
     app: App,
     config: any,
-    onApply: (gridSize: number, gridSizeW: number, gridSizeH: number) => void,
+    onApply: (gridSize: number, gridSizeW: number, gridSizeH: number, offsetX: number, offsetY: number) => void,
     measuredDistance?: number,
   ) {
     super(app);
@@ -123,6 +123,35 @@ export class GridCalibrationModal extends Modal {
       }
     });
 
+    // ── Grid Offset ────────────────────────────────────────────────
+    const offsetSection = contentEl.createDiv({ cls: 'dnd-grid-cal-section' });
+    offsetSection.createEl('h4', { text: 'Grid Offset' });
+    offsetSection.createEl('p', {
+      text: 'Shift the grid origin to align with the map image (pixels).',
+      cls: 'setting-item-description',
+    });
+
+    const currentOffX = this.config.gridOffsetX ?? 0;
+    const currentOffY = this.config.gridOffsetY ?? 0;
+
+    const offRow = offsetSection.createDiv({ cls: 'dnd-grid-cal-wh-row' });
+
+    const oxCol = offRow.createDiv({ cls: 'dnd-grid-cal-col' });
+    oxCol.createEl('label', { text: 'Offset X (px):' });
+    const oxInput = oxCol.createEl('input', {
+      type: 'number',
+      attr: { step: '0.5', value: String(Math.round(currentOffX * 10) / 10) },
+      cls: 'dnd-grid-cal-input',
+    });
+
+    const oyCol = offRow.createDiv({ cls: 'dnd-grid-cal-col' });
+    oyCol.createEl('label', { text: 'Offset Y (px):' });
+    const oyInput = oyCol.createEl('input', {
+      type: 'number',
+      attr: { step: '0.5', value: String(Math.round(currentOffY * 10) / 10) },
+      cls: 'dnd-grid-cal-input',
+    });
+
     const btnRow = contentEl.createDiv({ cls: 'modal-button-container' });
     btnRow.style.display = 'flex';
     btnRow.style.justifyContent = 'flex-end';
@@ -137,7 +166,9 @@ export class GridCalibrationModal extends Modal {
       const gs = parseFloat(sizeInput.value) || 70;
       const gw = parseFloat(wInput.value) || gs;
       const gh = parseFloat(hInput.value) || gs;
-      this.onApply(gs, gw, gh);
+      const ox = parseFloat(oxInput.value) || 0;
+      const oy = parseFloat(oyInput.value) || 0;
+      this.onApply(gs, gw, gh, ox, oy);
       this.close();
     });
   }
