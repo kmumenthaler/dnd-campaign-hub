@@ -3657,13 +3657,21 @@ export class PlayerMapView extends ItemView {
     const isDragging = !!config.draggingMarkerId;
     const _freezeFlicker = isDragging;
 
-    // ── Fast path: cell-change drag gating ──
-    // During drag, only recompute fog when the dragged token crosses a grid
-    // cell boundary.  With the spatial-index vis-poly the per-frame cost is
-    // now low enough for infrequent updates, and fog that tracks the token
-    // across cell boundaries looks far better than a completely frozen atlas.
+    // ── Fast path: drag fog handling ──
+    // Two modes selected by the user in plugin settings:
+    //   'on-drop'         – freeze fog during entire drag, recompute on drop
+    //   'while-dragging'  – recompute fog each time the token crosses a grid
+    //                        cell boundary (spatial-index makes this cheap)
+    const visionMode = this.plugin.settings.visionUpdateMode || 'on-drop';
     if (isDragging && this._fogAtlasCanvas &&
         this._fogAtlasW === w && this._fogAtlasH === h) {
+      if (visionMode === 'on-drop') {
+        // Freeze: reuse cached atlas for every drag frame
+        ctx.drawImage(this._fogAtlasCanvas, 0, 0);
+        this._wasDragging = true;
+        return;
+      }
+      // 'while-dragging' — cell-change gating
       const gridSize = config.gridSize || 70;
       const draggedMarker = (config.markers || []).find((m: any) => m.id === config.draggingMarkerId);
       if (draggedMarker) {
@@ -3679,7 +3687,7 @@ export class PlayerMapView extends ItemView {
         this._dragLastFogCol = col;
         this._dragLastFogRow = row;
       } else {
-        // Dragged marker not found (shouldn't happen) — freeze
+        // Dragged marker not found — freeze
         ctx.drawImage(this._fogAtlasCanvas, 0, 0);
         this._wasDragging = true;
         return;

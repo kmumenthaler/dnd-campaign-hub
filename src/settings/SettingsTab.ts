@@ -156,6 +156,27 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
           })
       );
 
+    // Battle Map Settings
+    containerEl.createEl("h3", { text: "🔦 Dynamic Lighting" });
+
+    new Setting(containerEl)
+      .setName("Vision update mode")
+      .setDesc(
+        "Controls when fog of war updates during token movement. " +
+        "'Update on drop' freezes the fog while dragging and recomputes when you release the token. " +
+        "'Update while dragging' recomputes the fog each time the token crosses a grid cell boundary."
+      )
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("on-drop", "Update on drop (fast)")
+          .addOption("while-dragging", "Update while dragging (live)")
+          .setValue(this.plugin.settings.visionUpdateMode)
+          .onChange(async (value) => {
+            this.plugin.settings.visionUpdateMode = value as 'on-drop' | 'while-dragging';
+            await this.plugin.saveSettings();
+          })
+      );
+
     // About Section
     containerEl.createEl("h3", { text: "ℹ️ About" });
     

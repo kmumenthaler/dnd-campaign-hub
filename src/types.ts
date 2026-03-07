@@ -31,6 +31,10 @@ export interface DndCampaignHubSettings {
   lastProjectionScreenKey: string;
   musicSettings: MusicSettings;
   musicPlaybackState: MusicPlaybackState;
+  /** Controls when dynamic lighting / vision updates during token movement.
+   *  'on-drop'        – freeze fog during drag, recompute on drop (default)
+   *  'while-dragging'  – update fog each time the token crosses a grid cell */
+  visionUpdateMode: 'on-drop' | 'while-dragging';
 }
 
 export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
@@ -41,4 +45,5 @@ export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   lastProjectionScreenKey: "",
   musicSettings: { ...DEFAULT_MUSIC_SETTINGS },
   musicPlaybackState: { ...DEFAULT_PLAYBACK_STATE },
+  visionUpdateMode: 'on-drop',
 };
