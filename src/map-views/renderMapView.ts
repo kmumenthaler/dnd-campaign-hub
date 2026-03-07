@@ -409,6 +409,120 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const gs = config.gridSize || 70;
 				return Math.max(WALL_SNAP_MIN_PX, Math.min(WALL_SNAP_MAX_PX, gs * WALL_SNAP_FRACTION));
 			};
+
+			/** True for wall types that use 2-click (start→end) drawing instead of multi-point chains. */
+			const isDoorLikeType = (t: WallType): boolean =>
+				t === 'door' || t === 'pivotDoor' || t === 'window' || t === 'secret';
+
+			/**
+			 * Find the closest point on any existing wall segment body to `pos`.
+			 * Unlike endpoint-only snapping this projects onto the wall line itself
+			 * so doors/windows can snap anywhere along a wall.
+			 * Returns `{ x, y, wallIndex, t }` where `t ∈ [0,1]` is the projection parameter,
+			 * or `null` if nothing is within `threshold`.
+			 */
+			const nearestPointOnWalls = (
+				pos: { x: number; y: number },
+				threshold: number,
+				excludeIndices?: Set<number>,
+			): { x: number; y: number; wallIndex: number; t: number } | null => {
+				let best: { x: number; y: number; wallIndex: number; t: number } | null = null;
+				let bestDist = threshold;
+				const walls: any[] = config.walls || [];
+				for (let i = 0; i < walls.length; i++) {
+					if (excludeIndices && excludeIndices.has(i)) continue;
+					const w = walls[i];
+					if (!w.start || !w.end) continue;
+					const dx = w.end.x - w.start.x;
+					const dy = w.end.y - w.start.y;
+					const lenSq = dx * dx + dy * dy;
+					if (lenSq < 1) continue; // degenerate segment
+					let t = ((pos.x - w.start.x) * dx + (pos.y - w.start.y) * dy) / lenSq;
+					t = Math.max(0, Math.min(1, t));
+					const px = w.start.x + t * dx;
+					const py = w.start.y + t * dy;
+					const d = Math.sqrt((pos.x - px) ** 2 + (pos.y - py) ** 2);
+					if (d < bestDist) {
+						bestDist = d;
+						best = { x: px, y: py, wallIndex: i, t };
+					}
+				}
+				return best;
+			};
+
+			/**
+			 * Commit a door/window/pivotDoor placement.  If both endpoints snap onto
+			 * the same existing wall, that wall is split: the middle portion is removed
+			 * and replaced by the new door segment, with wall remnants on both sides.
+			 */
+			const commitDoorSegment = (
+				p1: { x: number; y: number; wallIndex?: number; t?: number },
+				p2: { x: number; y: number; wallIndex?: number; t?: number },
+			) => {
+				saveToHistory();
+				const wallDef = WALL_TYPES[selectedWallType];
+				const newId = () => `wall_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+				// Both snapped to the same wall → split it
+				if (
+					p1.wallIndex !== undefined && p2.wallIndex !== undefined &&
+					p1.wallIndex === p2.wallIndex &&
+					p1.t !== undefined && p2.t !== undefined
+				) {
+					const idx = p1.wallIndex;
+					const src = config.walls[idx];
+					const tA = Math.min(p1.t, p2.t);
+					const tB = Math.max(p1.t, p2.t);
+					const pA = tA === p1.t ? p1 : p2;
+					const pB = tA === p1.t ? p2 : p1;
+
+					const remnants: any[] = [];
+					// Left remnant (start → pA)
+					if (tA > 0.01) {
+						remnants.push({
+							id: newId(), type: src.type || 'wall', name: src.name || 'Wall',
+							start: { x: src.start.x, y: src.start.y },
+							end: { x: pA.x, y: pA.y },
+							open: false, height: src.height,
+						});
+					}
+					// Right remnant (pB → end)
+					if (tB < 0.99) {
+						remnants.push({
+							id: newId(), type: src.type || 'wall', name: src.name || 'Wall',
+							start: { x: pB.x, y: pB.y },
+							end: { x: src.end.x, y: src.end.y },
+							open: false, height: src.height,
+						});
+					}
+
+					// Replace the original wall with remnants
+					config.walls.splice(idx, 1, ...remnants);
+
+					// Insert the door/window segment
+					config.walls.push({
+						id: newId(), type: selectedWallType, name: wallDef.name,
+						start: { x: pA.x, y: pA.y },
+						end: { x: pB.x, y: pB.y },
+						open: false,
+					});
+				} else {
+					// Not on the same wall — just add the new segment
+					config.walls.push({
+						id: newId(), type: selectedWallType, name: wallDef.name,
+						start: { x: p1.x, y: p1.y },
+						end: { x: p2.x, y: p2.y },
+						open: false,
+					});
+				}
+
+				wallPoints = [];
+				wallPreviewPos = null;
+				redrawAnnotations();
+				plugin.saveMapAnnotations(config, el);
+				if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+				new Notice(`${wallDef.name} placed`);
+			};
 			
 			// Find all walls connected to a starting wall via shared endpoints
 			const findConnectedWalls = (startIdx: number, walls: any[]): number[] => {
@@ -7736,31 +7850,77 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						fogDragEnd = { x: mapPos.x, y: mapPos.y };
 					}
 	            } else if (activeTool === 'walls') {
-					// Add point to wall chain — snap to existing wall endpoints
-					let snapX = mapPos.x;
-					let snapY = mapPos.y;
 					const wallSnapThreshold = getWallSnapThreshold();
-					let bestSnapDist = wallSnapThreshold;
-					if (config.walls && config.walls.length > 0) {
-						for (const w of config.walls) {
-							if (w.start) {
-								const d = Math.sqrt((w.start.x - mapPos.x) ** 2 + (w.start.y - mapPos.y) ** 2);
-								if (d < bestSnapDist) { bestSnapDist = d; snapX = w.start.x; snapY = w.start.y; }
-							}
-							if (w.end) {
-								const d = Math.sqrt((w.end.x - mapPos.x) ** 2 + (w.end.y - mapPos.y) ** 2);
-								if (d < bestSnapDist) { bestSnapDist = d; snapX = w.end.x; snapY = w.end.y; }
+
+					if (isDoorLikeType(selectedWallType)) {
+						// ── Door / window / pivot-door: 2-click mode with wall-body snap ──
+						let snapX = mapPos.x;
+						let snapY = mapPos.y;
+						let wallIndex: number | undefined;
+						let wallT: number | undefined;
+
+						// 1) Try snap to wall body first (closest point on any segment)
+						const bodySnap = nearestPointOnWalls(mapPos, wallSnapThreshold);
+						if (bodySnap) {
+							snapX = bodySnap.x;
+							snapY = bodySnap.y;
+							wallIndex = bodySnap.wallIndex;
+							wallT = bodySnap.t;
+						} else {
+							// 2) Fall back to endpoint snap
+							let bestDist = wallSnapThreshold;
+							if (config.walls && config.walls.length > 0) {
+								for (let wi = 0; wi < config.walls.length; wi++) {
+									const w = config.walls[wi];
+									if (w.start) {
+										const d = Math.sqrt((w.start.x - mapPos.x) ** 2 + (w.start.y - mapPos.y) ** 2);
+										if (d < bestDist) { bestDist = d; snapX = w.start.x; snapY = w.start.y; wallIndex = wi; wallT = 0; }
+									}
+									if (w.end) {
+										const d = Math.sqrt((w.end.x - mapPos.x) ** 2 + (w.end.y - mapPos.y) ** 2);
+										if (d < bestDist) { bestDist = d; snapX = w.end.x; snapY = w.end.y; wallIndex = wi; wallT = 1; }
+									}
+								}
 							}
 						}
+
+						const pt = { x: snapX, y: snapY, wallIndex, t: wallT } as any;
+
+						if (wallPoints.length === 0) {
+							// First click — store start point
+							wallPoints.push(pt);
+							wallPreviewPos = pt;
+							redrawAnnotations();
+						} else {
+							// Second click — commit the door segment
+							commitDoorSegment(wallPoints[0] as any, pt);
+						}
+					} else {
+						// ── Normal wall / terrain / invisible: multi-point chain ──
+						let snapX = mapPos.x;
+						let snapY = mapPos.y;
+						let bestSnapDist = wallSnapThreshold;
+						if (config.walls && config.walls.length > 0) {
+							for (const w of config.walls) {
+								if (w.start) {
+									const d = Math.sqrt((w.start.x - mapPos.x) ** 2 + (w.start.y - mapPos.y) ** 2);
+									if (d < bestSnapDist) { bestSnapDist = d; snapX = w.start.x; snapY = w.start.y; }
+								}
+								if (w.end) {
+									const d = Math.sqrt((w.end.x - mapPos.x) ** 2 + (w.end.y - mapPos.y) ** 2);
+									if (d < bestSnapDist) { bestSnapDist = d; snapX = w.end.x; snapY = w.end.y; }
+								}
+							}
+						}
+						// Also snap to existing points in the current chain
+						for (const wp of wallPoints) {
+							const d = Math.sqrt((wp.x - mapPos.x) ** 2 + (wp.y - mapPos.y) ** 2);
+							if (d < bestSnapDist) { bestSnapDist = d; snapX = wp.x; snapY = wp.y; }
+						}
+						wallPoints.push({ x: snapX, y: snapY });
+						wallPreviewPos = { x: snapX, y: snapY };
+						redrawAnnotations();
 					}
-					// Also snap to existing points in the current chain
-					for (const wp of wallPoints) {
-						const d = Math.sqrt((wp.x - mapPos.x) ** 2 + (wp.y - mapPos.y) ** 2);
-						if (d < bestSnapDist) { bestSnapDist = d; snapX = wp.x; snapY = wp.y; }
-					}
-					wallPoints.push({ x: snapX, y: snapY });
-					wallPreviewPos = { x: snapX, y: snapY };
-					redrawAnnotations();
 				} else if (activeTool === 'magic-wand') {
 					// Magic Wand: flood-fill from click, trace boundary, generate walls
 					try {
@@ -8529,29 +8689,61 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						}
 					}
 				} else if (activeTool === 'walls' && wallPoints.length > 0) {
-					// Update wall preview position — snap to existing wall endpoints
-					let wpSnapX = mapPos.x;
-					let wpSnapY = mapPos.y;
+					// Update wall preview position — snap depends on wall type
 					const wpSnapThreshold = getWallSnapThreshold();
-					let wpBestDist = wpSnapThreshold;
-					if (config.walls && config.walls.length > 0) {
-						for (const w of config.walls) {
-							if (w.start) {
-								const d = Math.sqrt((w.start.x - mapPos.x) ** 2 + (w.start.y - mapPos.y) ** 2);
-								if (d < wpBestDist) { wpBestDist = d; wpSnapX = w.start.x; wpSnapY = w.start.y; }
-							}
-							if (w.end) {
-								const d = Math.sqrt((w.end.x - mapPos.x) ** 2 + (w.end.y - mapPos.y) ** 2);
-								if (d < wpBestDist) { wpBestDist = d; wpSnapX = w.end.x; wpSnapY = w.end.y; }
+
+					if (isDoorLikeType(selectedWallType)) {
+						// Door-like: snap to wall body first, then endpoints
+						let wpSnapX = mapPos.x;
+						let wpSnapY = mapPos.y;
+						let snapped = false;
+						const bodySnap = nearestPointOnWalls(mapPos, wpSnapThreshold);
+						if (bodySnap) {
+							wpSnapX = bodySnap.x;
+							wpSnapY = bodySnap.y;
+							snapped = true;
+						} else {
+							// Endpoint fallback
+							let bestDist = wpSnapThreshold;
+							if (config.walls && config.walls.length > 0) {
+								for (const w of config.walls) {
+									if (w.start) {
+										const d = Math.sqrt((w.start.x - mapPos.x) ** 2 + (w.start.y - mapPos.y) ** 2);
+										if (d < bestDist) { bestDist = d; wpSnapX = w.start.x; wpSnapY = w.start.y; snapped = true; }
+									}
+									if (w.end) {
+										const d = Math.sqrt((w.end.x - mapPos.x) ** 2 + (w.end.y - mapPos.y) ** 2);
+										if (d < bestDist) { bestDist = d; wpSnapX = w.end.x; wpSnapY = w.end.y; snapped = true; }
+									}
+								}
 							}
 						}
+						wallPreviewPos = { x: wpSnapX, y: wpSnapY };
+						(wallPreviewPos as any)._snapped = snapped;
+					} else {
+						// Normal wall chain: snap to endpoints only
+						let wpSnapX = mapPos.x;
+						let wpSnapY = mapPos.y;
+						let wpBestDist = wpSnapThreshold;
+						if (config.walls && config.walls.length > 0) {
+							for (const w of config.walls) {
+								if (w.start) {
+									const d = Math.sqrt((w.start.x - mapPos.x) ** 2 + (w.start.y - mapPos.y) ** 2);
+									if (d < wpBestDist) { wpBestDist = d; wpSnapX = w.start.x; wpSnapY = w.start.y; }
+								}
+								if (w.end) {
+									const d = Math.sqrt((w.end.x - mapPos.x) ** 2 + (w.end.y - mapPos.y) ** 2);
+									if (d < wpBestDist) { wpBestDist = d; wpSnapX = w.end.x; wpSnapY = w.end.y; }
+								}
+							}
+						}
+						for (const wp of wallPoints) {
+							const d = Math.sqrt((wp.x - mapPos.x) ** 2 + (wp.y - mapPos.y) ** 2);
+							if (d < wpBestDist) { wpBestDist = d; wpSnapX = wp.x; wpSnapY = wp.y; }
+						}
+						wallPreviewPos = { x: wpSnapX, y: wpSnapY };
+						(wallPreviewPos as any)._snapped = (wpBestDist < wpSnapThreshold);
 					}
-					for (const wp of wallPoints) {
-						const d = Math.sqrt((wp.x - mapPos.x) ** 2 + (wp.y - mapPos.y) ** 2);
-						if (d < wpBestDist) { wpBestDist = d; wpSnapX = wp.x; wpSnapY = wp.y; }
-					}
-					wallPreviewPos = { x: wpSnapX, y: wpSnapY };
-					(wallPreviewPos as any)._snapped = (wpBestDist < wpSnapThreshold);
 					redrawAnnotations();
 				} else if (activeTool === 'walllight-draw' && wallLightPoints.length > 0) {
 					// Update wall light preview position
