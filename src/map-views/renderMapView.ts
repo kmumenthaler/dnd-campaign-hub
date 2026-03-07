@@ -9426,6 +9426,22 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const tag = (e.target as HTMLElement)?.tagName;
 				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
+				// ── Undo / Redo (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z) ──
+				if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+					if (e.key === 'z' && !e.shiftKey) {
+						e.preventDefault();
+						e.stopPropagation();
+						undo();
+						return;
+					}
+					if (e.key === 'y' || (e.key === 'z' && e.shiftKey) || (e.key === 'Z' && e.shiftKey)) {
+						e.preventDefault();
+						e.stopPropagation();
+						redo();
+						return;
+					}
+				}
+
 				// ── Tool-switching shortcuts (single letter, no modifiers) ──
 				if (!e.ctrlKey && !e.metaKey && !e.altKey && activeTool !== 'player-view') {
 					const toolMap: Record<string, typeof activeTool> = {
