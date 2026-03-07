@@ -1293,10 +1293,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		const calibrateBtn = createToolBtn(setupContent, '⚙', 'Calibrate');
 		const measureBtn = createToolBtn(setupContent, '📏', 'Measure');
 		
-		// === PLAYER VIEW (full-width, prominent) ===
-		const viewGroup = toolbarContent.createDiv({ cls: 'dnd-map-tool-group' });
-		const viewBtn = createToolBtn(viewGroup, '📺', 'Player View', false, true);
-
 		// Fog of War shape picker sub-menu (shown when fog tool is active)
 		const fogPicker = fogBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
 		// Fog mode toggle (reveal/hide)
@@ -1592,183 +1588,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			dtEraseBtn.addClass('active');
 			dtPaintBtn.removeClass('active');
 			new Notice('Difficult terrain eraser active');
-		});
-
-		// Player View controls picker sub-menu (shown when player-view tool is active)
-		const pvPicker = viewBtn.createDiv({ cls: 'dnd-map-aoe-picker hidden' });
-		const pvFullscreenBtn = pvPicker.createEl('button', {
-			cls: 'dnd-map-aoe-shape-btn',
-			attr: { title: 'Toggle Fullscreen on Player View' }
-		});
-		pvFullscreenBtn.createEl('span', { text: '🖵' });
-		pvFullscreenBtn.addEventListener('click', (e) => {
-			e.stopPropagation();
-			pvPicker.addClass('hidden');
-			if ((plugin as any)._playerMapViews) {
-				const mapId = config.mapId || resourcePath;
-				(plugin as any)._playerMapViews.forEach((pv: any) => {
-					if ((pv as any).mapId !== mapId) return;
-					try { if (typeof pv.toggleFullscreen === 'function') pv.toggleFullscreen(); else (pv as any).toggleFullscreen?.(); } catch (e) {}
-				});
-			}
-		});
-		
-		const pvCalibrateBtn = pvPicker.createEl('button', {
-			cls: 'dnd-map-aoe-shape-btn',
-			attr: { title: 'Calibrate Player View for Physical Miniatures' }
-		});
-		pvCalibrateBtn.createEl('span', { text: '🎯' });
-		pvCalibrateBtn.addEventListener('click', (e) => {
-			e.stopPropagation();
-			pvPicker.addClass('hidden');
-			const popoutWin = window;
-			new TabletopCalibrationModal(plugin.app, plugin, popoutWin, () => {
-				// After calibration, compute and send scale to player views based on current gm rect
-				try {
-					const rect = (viewport as any)._gmViewRect || (plugin as any)._gmViewRect || null;
-				if (!rect) return;
-					if ((plugin as any)._playerMapViews) {
-						const mapId = config.mapId || resourcePath;
-						(plugin as any)._playerMapViews.forEach((pv: any) => {
-							if ((pv as any).mapId !== mapId) return;
-							try {
-								// Prefer calibration-derived scale so each grid cell maps to the
-								// configured physical miniature base size on the player's screen.
-								const cal = plugin.settings.tabletopCalibration;
-								const gridSize = config?.gridSize || 0;
-								if (cal && gridSize > 0) {
-									// scale such that (gridSize * scale) CSS px == (miniBaseMm * pixelsPerMm)
-									const calibratedScale = (cal.pixelsPerMm * cal.miniBaseMm) / gridSize;
-									const safeScale = Math.max(0.001, Math.min(100, calibratedScale));
-									if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(safeScale as number);
-									else pv.tabletopScale = safeScale;
-									if (typeof pv.syncCanvasToImage === 'function') pv.syncCanvasToImage();
-								} else {
-									// Fallback: preserve previous behavior (fit GM view rect into PV viewport)
-									const bounds = getRotatedRectBoundingSize(rect);
-									const wrap = pv?.mapContainer as HTMLElement | undefined;
-									if (wrap && bounds.w > 0 && bounds.h > 0) {
-										const r = wrap.getBoundingClientRect();
-										const desiredScale = Math.max(0.001, Math.min(100, Math.min(r.width / bounds.w, r.height / bounds.h)));
-										if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(desiredScale as number);
-										else pv.tabletopScale = desiredScale;
-										if (typeof pv.syncCanvasToImage === 'function') pv.syncCanvasToImage();
-									}
-								}
-							} catch (e) {}
-						});
-					}
-				} catch (e) { console.warn('pvCalibrate callback error', e); }
-			}).open();
-		});
-
-		// ── "Project to..." button in PV picker ──
-		const pvProjectBtn = pvPicker.createEl('button', {
-			cls: 'dnd-map-aoe-shape-btn',
-			attr: { title: 'Project to Monitor' }
-		});
-		pvProjectBtn.createEl('span', { text: '📺' });
-		pvProjectBtn.addEventListener('click', async (e) => {
-			e.stopPropagation();
-			pvPicker.addClass('hidden');
-
-			const pm = plugin.projectionManager;
-			if (!pm) {
-				new Notice('Projection manager not available');
-				return;
-			}
-
-			// Enumerate screens
-			const screens = await pm.getScreens();
-
-			if (screens.length <= 1 && !isMultiScreenSupported()) {
-				// Single monitor or API unavailable — project to the only screen
-				const screen = screens[0];
-				if (!screen) { new Notice('No screens detected'); return; }
-				const mapId = config.mapId || resourcePath;
-				await pm.project(mapId, {
-					markers: config.markers,
-					drawings: config.drawings,
-					highlights: config.highlights,
-					aoeEffects: config.aoeEffects,
-					fogOfWar: config.fogOfWar,
-					walls: config.walls,
-					lightSources: config.lightSources,
-					tunnels: config.tunnels,
-					poiReferences: config.poiReferences,
-					gridType: config.gridType,
-					gridSize: config.gridSize,
-					gridOffsetX: config.gridOffsetX || 0,
-					gridOffsetY: config.gridOffsetY || 0,
-					scale: config.scale,
-					name: config.name,
-					isVideo: config.isVideo,
-					type: config.type
-				}, resourcePath, screen);
-				return;
-			}
-
-			// Multi-monitor — show a context menu of available screens
-			const menu = new Menu();
-
-			// If there's an active projection, only show Stop — no monitor list
-			if (pm.isProjectionAlive()) {
-				const activeScreen = pm.activeProjection?.screen;
-				const activeLabel = activeScreen ? `${activeScreen.label} (${activeScreen.width}×${activeScreen.height})` : '';
-				menu.addItem((item) => {
-					item.setTitle(`⏹ Stop Projection${activeLabel ? ' — ' + activeLabel : ''}`);
-					item.onClick(() => pm.stopProjection());
-				});
-				menu.showAtMouseEvent(e as MouseEvent);
-				return;
-			}
-
-			for (const screen of screens) {
-				const key = screenKey(screen);
-				const cal = pm.getCalibrationForScreen(screen);
-				const label = `${screen.isPrimary ? '🖥️' : '🖵'} ${screen.label} (${screen.width}×${screen.height})${cal ? ' ✓' : ''}`;
-
-				menu.addItem((item) => {
-					item.setTitle(label);
-					item.onClick(async () => {
-						const mapId = config.mapId || resourcePath;
-						await pm.project(mapId, {
-							markers: config.markers,
-							drawings: config.drawings,
-							highlights: config.highlights,
-							aoeEffects: config.aoeEffects,
-							fogOfWar: config.fogOfWar,
-							walls: config.walls,
-							lightSources: config.lightSources,
-							tunnels: config.tunnels,
-							poiReferences: config.poiReferences,
-							gridType: config.gridType,
-							gridSize: config.gridSize,
-							gridOffsetX: config.gridOffsetX || 0,
-							gridOffsetY: config.gridOffsetY || 0,
-							scale: config.scale,
-							name: config.name,
-							isVideo: config.isVideo,
-							type: config.type
-						}, resourcePath, screen);
-					});
-				});
-			}
-
-			// Add calibration option
-			menu.addSeparator();
-			menu.addItem((item) => {
-				item.setTitle('⚙️ Manage Calibrations...');
-				item.onClick(() => {
-					// Open the existing calibration modal
-					const popoutWin = window;
-					new TabletopCalibrationModal(plugin.app, plugin, popoutWin, () => {
-						new Notice('Calibration saved');
-					}).open();
-				});
-			});
-
-			menu.showAtMouseEvent(e as MouseEvent);
 		});
 
 		// AoE shape picker sub-menu (shown when AoE tool is active, positioned right of button)
@@ -2232,6 +2051,16 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					if ((pv as any).mapId !== mapId) return;
 					try { if (typeof pv.toggleFullscreen === 'function') pv.toggleFullscreen(); } catch (e) {}
 				});
+			}
+		});
+
+		// -- View Mode (GM rect drag) --
+		const pvViewModeBtn = pvDropdown.createEl('button', { cls: 'dnd-map-pv-dropdown-item' });
+		pvViewModeBtn.innerHTML = '🔲 View Mode';
+		pvViewModeBtn.addEventListener('click', () => {
+			pvDropdown.addClass('hidden');
+			if (typeof setActiveTool === 'function') {
+				setActiveTool('player-view');
 			}
 		});
 
@@ -6570,7 +6399,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					setBackgroundEditView(bgToolViewMap[tool]);
 				}
 
-			[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, viewBtn, fogBtn, wallsBtn, lightsBtn, elevationPaintBtn, moveGridBtn, terrainPaintBtn, climatePaintBtn, setStartHexBtn, hexDescBtn, envAssetBtn].forEach(btn => btn.removeClass('active'));
+			[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, fogBtn, wallsBtn, lightsBtn, elevationPaintBtn, moveGridBtn, terrainPaintBtn, climatePaintBtn, setStartHexBtn, hexDescBtn, envAssetBtn].forEach(btn => btn.removeClass('active'));
 
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
@@ -6646,8 +6475,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				togglePicker(elevationPicker, tool === 'elevation-paint');
 				// Show/hide Difficult Terrain picker
 				togglePicker(difficultTerrainPicker, tool === 'difficult-terrain');
-				// Show/hide Player View controls picker
-				togglePicker(pvPicker, tool === 'player-view');
 				// Show/hide Terrain picker
 				togglePicker(terrainPicker, tool === 'terrain-paint');
 				// Show/hide Climate picker
@@ -6681,7 +6508,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					aoeBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
         } else if (tool === 'player-view') {
-          viewBtn.addClass('active');
           viewport.style.cursor = 'crosshair';
           viewport.focus(); // Focus viewport so keyboard events work
           new Notice('Player View Mode: Drag to position, Q/E or [/] to rotate 90°', 4000);
@@ -6897,13 +6723,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				setActiveTool('hex-desc');
 			});
 
-		viewBtn.addEventListener('click', () => {
-			if (activeTool === 'player-view') {
-				togglePicker(pvPicker, pvPicker.hasClass('hidden'));
-			} else {
-				setActiveTool('player-view');
-			}
-		});
+
 			// Hide move-grid if no grid
 			if (!hasGrid) moveGridBtn.addClass('hidden');
 
