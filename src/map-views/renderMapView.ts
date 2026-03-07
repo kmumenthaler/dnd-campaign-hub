@@ -6960,6 +6960,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			const setActiveTool = (tool: typeof activeTool) => {
 				activeTool = tool;
 
+				// Keep viewport focused so keyboard shortcuts keep working
+				viewport.focus();
+
 				// Auto-switch background edit view when picking a background tool
 				const bgToolViewMap: Record<string, BackgroundEditView> = {
 					'walls': 'walls', 'magic-wand': 'walls',
@@ -7406,6 +7409,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
       // Used to compute scale that fits the rotated rectangle into the player viewport
 			// Tool-aware mouse handlers
 			viewport.addEventListener('mousedown', (e: MouseEvent) => {
+				// Ensure viewport has focus so keyboard shortcuts work
+				viewport.focus();
 				// Ignore clicks on UI panels (toolbar, layer menu, player view button, controls)
 				const target = e.target as Node;
 				if (toolbarWrapper.contains(target) || playerViewBtn.contains(target) || controls.contains(target)) {
