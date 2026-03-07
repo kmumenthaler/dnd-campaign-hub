@@ -4308,6 +4308,85 @@
   display: none;
 }
 
+/* ── Draw sub-tool picker ── */
+.dnd-draw-picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 10000;
+  min-width: 120px;
+}
+
+.dnd-draw-picker.hidden {
+  display: none;
+}
+
+.dnd-draw-sub-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.dnd-draw-sub-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 165, 0, 0.5);
+}
+
+.dnd-draw-sub-btn.active {
+  background: rgba(255, 165, 0, 0.3);
+  border-color: rgba(255, 165, 0, 0.7);
+  color: #ffffff;
+}
+
+.dnd-draw-pen-width-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+}
+
+.dnd-draw-pen-width-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+}
+
+.dnd-draw-pen-width-slider {
+  flex: 1;
+  min-width: 60px;
+  height: 4px;
+  accent-color: #ff9900;
+}
+
+.dnd-draw-pen-width-input {
+  width: 38px;
+  padding: 1px 3px;
+  font-size: 11px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
 .dnd-map-aoe-shape-btn {
   width: 32px;
   height: 32px;

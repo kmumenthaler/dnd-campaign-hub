@@ -102,6 +102,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			config.highlights = savedData.highlights || [];
 			config.markers = savedData.markers || [];
 			config.drawings = savedData.drawings || [];
+			config.textAnnotations = savedData.textAnnotations || [];
 			config.aoeEffects = []; // AoE effects are session-only, never persisted
 			config.tunnels = savedData.tunnels || [];
 			// Regenerate wall geometry for any tunnels loaded without cached walls (#38)
@@ -256,6 +257,21 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			let targetDistState: 'selecting-origin' | 'selecting-target' | 'showing' = 'selecting-origin';
 			let isDrawing = false;
 			let currentPath: { x: number; y: number }[] = [];
+			// Draw sub-tool state
+			type DrawSubTool = 'pen' | 'text' | 'annotation-eraser';
+			let activeDrawSubTool: DrawSubTool = 'pen';
+			let penLineWidth = 3;
+			// Text annotation state
+			let selectedTextAnnotationId: string | null = null;
+			let textAnnotDragOffset: { x: number; y: number } | null = null;
+			let textAnnotDragOrigin: { x: number; y: number } | null = null;
+			let textAnnotTransformHandle: TransformHandle | 'rotate' | null = null;
+			let textAnnotTransformStart: { x: number; y: number; w: number; h: number; rot: number } | null = null;
+			let textAnnotRotateStart: number | null = null;
+			// Annotation eraser state (pen + text only)
+			let isAnnotErasing = false;
+			let annotEraserCursorPos: { x: number; y: number } | null = null;
+			let annotEraserHadRemoval = false;
 			// Eraser brush state
 			let isErasing = false;
 			let eraserCursorPos: { x: number; y: number } | null = null;
@@ -1013,6 +1029,61 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		const targetDistBtn = createToolBtn(commonToolGroup, '📐', 'Token Distance', false, false, 't');
 		const aoeBtn = createToolBtn(commonToolGroup, '💥', 'AoE', false, false, 'a');
 		const eraserBtn = createToolBtn(commonToolGroup, '🧹', 'Eraser', false, false, 'x');
+
+		// ── Draw sub-tool picker (Pen / Text / Annotation Eraser) ──
+		const drawPicker = commonToolGroup.createDiv({ cls: 'dnd-map-aoe-picker dnd-draw-picker hidden' });
+		const drawSubBtns = new Map<DrawSubTool, HTMLButtonElement>();
+		const drawSubDefs: { key: DrawSubTool; icon: string; label: string }[] = [
+			{ key: 'pen', icon: '🖊️', label: 'Pen' },
+			{ key: 'text', icon: '🔤', label: 'Text' },
+			{ key: 'annotation-eraser', icon: '🧹', label: 'Annotation Eraser' },
+		];
+		drawSubDefs.forEach(({ key, icon, label }) => {
+			const btn = drawPicker.createEl('button', {
+				cls: 'dnd-map-aoe-shape-btn' + (key === activeDrawSubTool ? ' active' : ''),
+				attr: { title: label }
+			});
+			btn.createEl('span', { text: icon });
+			drawSubBtns.set(key, btn);
+			btn.addEventListener('click', (ev) => {
+				ev.stopPropagation();
+				activeDrawSubTool = key;
+				drawSubBtns.forEach((b) => b.removeClass('active'));
+				btn.addClass('active');
+				// Update draw button icon to reflect sub-tool
+				const iconSpan = drawBtn.querySelector('.dnd-map-tool-btn-icon');
+				if (iconSpan) iconSpan.textContent = icon;
+				drawPicker.addClass('hidden');
+				if (activeTool !== 'draw') setActiveTool('draw');
+				else {
+					// Refresh cursor for new sub-tool
+					viewport.style.cursor = key === 'text' ? 'text' : 'crosshair';
+				}
+			});
+		});
+		// Pen line width slider (inside draw picker, below sub-tool buttons)
+		drawPicker.createDiv({ cls: 'dnd-fog-picker-sep' });
+		const penWidthRow = drawPicker.createDiv({ cls: 'dnd-draw-pen-width-row' });
+		penWidthRow.createEl('span', { text: 'Width', cls: 'dnd-draw-pen-width-label' });
+		const penWidthSlider = penWidthRow.createEl('input', {
+			type: 'range',
+			cls: 'dnd-draw-pen-width-slider',
+			attr: { min: '1', max: '20', step: '1', value: String(penLineWidth) }
+		}) as HTMLInputElement;
+		const penWidthInput = penWidthRow.createEl('input', {
+			type: 'number',
+			cls: 'dnd-draw-pen-width-input',
+			attr: { min: '1', max: '40', step: '1', value: String(penLineWidth) }
+		}) as HTMLInputElement;
+		penWidthSlider.addEventListener('input', () => {
+			penLineWidth = parseInt(penWidthSlider.value, 10);
+			penWidthInput.value = String(penLineWidth);
+		});
+		penWidthInput.addEventListener('change', () => {
+			penLineWidth = Math.max(1, Math.min(40, parseInt(penWidthInput.value, 10) || 3));
+			penWidthSlider.value = String(Math.min(penLineWidth, 20));
+			penWidthInput.value = String(penLineWidth);
+		});
 		
 		// === HEXCRAWL SECTION (expandable, hex maps on world/regional maps only) ===
 		const isHexcrawlMap = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && (config.type === 'world' || config.type === 'regional');
@@ -1808,7 +1879,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		
 		// Helper: show/hide grid tools (calibrate, move-grid) based on whether annotations exist
 		const updateGridToolsVisibility = () => {
-			const hasAnnotations = (config.highlights?.length > 0) || (config.markers?.length > 0) || (config.drawings?.length > 0) || (config.aoeEffects?.length > 0);
+			const hasAnnotations = (config.highlights?.length > 0) || (config.markers?.length > 0) || (config.drawings?.length > 0) || (config.aoeEffects?.length > 0) || (config.textAnnotations?.length > 0);
 			const isHexcrawl = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical');
 			
 			// For hexcrawl maps, highlights are stored as col/row so grid can still be moved
@@ -3906,6 +3977,99 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					});
 				}
 
+				// Draw live pen preview while drawing
+				if (activeTool === 'draw' && activeDrawSubTool === 'pen' && isDrawing && currentPath.length > 1) {
+					ctx.save();
+					ctx.strokeStyle = selectedColor;
+					ctx.lineWidth = penLineWidth;
+					ctx.lineCap = 'round';
+					ctx.lineJoin = 'round';
+					ctx.beginPath();
+					ctx.moveTo(currentPath[0].x, currentPath[0].y);
+					for (let i = 1; i < currentPath.length; i++) {
+						ctx.lineTo(currentPath[i].x, currentPath[i].y);
+					}
+					ctx.stroke();
+					ctx.restore();
+				}
+
+				// Draw text annotations
+				if (config.textAnnotations && config.textAnnotations.length > 0) {
+					config.textAnnotations.forEach((ta: any) => {
+						drawTextAnnotation(ctx, ta);
+					});
+					// Selection frame & transform handles for selected text annotation
+					if (selectedTextAnnotationId && activeTool === 'draw' && activeDrawSubTool === 'text') {
+						const selTa = config.textAnnotations.find((t: any) => t.id === selectedTextAnnotationId);
+						if (selTa) {
+							ctx.save();
+							ctx.translate(selTa.position.x, selTa.position.y);
+							ctx.rotate((selTa.rotation || 0) * Math.PI / 180);
+							const hw = selTa.width / 2;
+							const hh = selTa.height / 2;
+							// Dashed selection frame
+							ctx.strokeStyle = '#00aaff';
+							ctx.lineWidth = 2;
+							ctx.setLineDash([6, 4]);
+							ctx.strokeRect(-hw, -hh, selTa.width, selTa.height);
+							ctx.setLineDash([]);
+							// Resize handles
+							const hs = TRANSFORM_HANDLE_SIZE;
+							const handles = [
+								{ x: -hw, y: -hh }, { x: 0, y: -hh }, { x: hw, y: -hh },
+								{ x: hw, y: 0 }, { x: hw, y: hh }, { x: 0, y: hh },
+								{ x: -hw, y: hh }, { x: -hw, y: 0 },
+							];
+							handles.forEach(({ x, y }) => {
+								ctx.fillStyle = '#ffffff';
+								ctx.strokeStyle = '#00aaff';
+								ctx.lineWidth = 2;
+								ctx.fillRect(x - hs / 2, y - hs / 2, hs, hs);
+								ctx.strokeRect(x - hs / 2, y - hs / 2, hs, hs);
+							});
+							// Rotation handle
+							const rotY = -hh - ROTATION_HANDLE_OFFSET;
+							ctx.strokeStyle = '#00aaff';
+							ctx.lineWidth = 1;
+							ctx.beginPath();
+							ctx.moveTo(0, -hh);
+							ctx.lineTo(0, rotY);
+							ctx.stroke();
+							ctx.beginPath();
+							ctx.arc(0, rotY, hs / 2 + 2, 0, Math.PI * 2);
+							ctx.fillStyle = '#ffffff';
+							ctx.fill();
+							ctx.strokeStyle = '#00aaff';
+							ctx.lineWidth = 2;
+							ctx.stroke();
+							ctx.fillStyle = '#00aaff';
+							ctx.font = 'bold 10px sans-serif';
+							ctx.textAlign = 'center';
+							ctx.textBaseline = 'middle';
+							ctx.fillText('↻', 0, rotY);
+							ctx.restore();
+						}
+					}
+				}
+
+				// Draw Annotation Eraser cursor
+				if (activeTool === 'draw' && activeDrawSubTool === 'annotation-eraser' && annotEraserCursorPos) {
+					const er = 20;
+					ctx.save();
+					ctx.strokeStyle = isAnnotErasing ? 'rgba(255, 80, 80, 0.9)' : 'rgba(255, 255, 255, 0.7)';
+					ctx.lineWidth = 2;
+					ctx.setLineDash([4, 4]);
+					ctx.beginPath();
+					ctx.arc(annotEraserCursorPos.x, annotEraserCursorPos.y, er, 0, Math.PI * 2);
+					ctx.stroke();
+					if (isAnnotErasing) {
+						ctx.fillStyle = 'rgba(255, 80, 80, 0.15)';
+						ctx.fill();
+					}
+					ctx.setLineDash([]);
+					ctx.restore();
+				}
+
 				// Draw AoE preview (before sync so it doesn't show in player view until placed)
 				if (activeTool === 'aoe' && aoeOrigin && aoePreviewEnd) {
 					drawAoeShape(ctx, aoeOrigin, aoePreviewEnd, selectedAoeShape, selectedColor, true, !!pendingAoeAnchorMarkerId);
@@ -5546,6 +5710,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				
 				ctx.strokeStyle = drawing.color;
 				ctx.lineWidth = drawing.strokeWidth || 2;
+				ctx.lineCap = 'round';
+				ctx.lineJoin = 'round';
 				
 				if (drawing.type === 'freehand') {
 					ctx.beginPath();
@@ -5558,6 +5724,339 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				
 				// Reset globalAlpha
 				ctx.globalAlpha = 1.0;
+			};
+
+			// ── Text annotation helpers ──
+			const drawTextAnnotation = (ctx: CanvasRenderingContext2D, ta: any) => {
+				const itemLayer = ta.layer || 'Player';
+				const isActiveLayer = itemLayer === config.activeLayer;
+				ctx.save();
+				ctx.globalAlpha = isActiveLayer ? 1.0 : 0.3;
+				ctx.translate(ta.position.x, ta.position.y);
+				ctx.rotate((ta.rotation || 0) * Math.PI / 180);
+				const hw = ta.width / 2;
+				const hh = ta.height / 2;
+
+				// Background
+				if (ta.backgroundColor && ta.backgroundColor !== 'transparent') {
+					ctx.fillStyle = ta.backgroundColor;
+					ctx.fillRect(-hw, -hh, ta.width, ta.height);
+				}
+
+				// Text
+				const fontParts: string[] = [];
+				if (ta.italic) fontParts.push('italic');
+				if (ta.bold) fontParts.push('bold');
+				fontParts.push(`${ta.fontSize || 16}px`);
+				fontParts.push(ta.fontFamily || 'sans-serif');
+				ctx.font = fontParts.join(' ');
+				ctx.fillStyle = ta.color || '#ffffff';
+				ctx.textAlign = (ta.textAlign as CanvasTextAlign) || 'center';
+				ctx.textBaseline = 'top';
+
+				// Word-wrap text into the bounding box
+				const lines = wrapText(ctx, ta.text, ta.width - 8);
+				const lineHeight = (ta.fontSize || 16) * 1.25;
+				const totalH = lines.length * lineHeight;
+				let startY = -hh + (ta.height - totalH) / 2;
+				const textX = ta.textAlign === 'left' ? -hw + 4 : ta.textAlign === 'right' ? hw - 4 : 0;
+				for (const line of lines) {
+					ctx.fillText(line, textX, startY);
+					if (ta.underline) {
+						const m = ctx.measureText(line);
+						let ulX = textX;
+						if (ta.textAlign === 'center') ulX -= m.width / 2;
+						else if (ta.textAlign === 'right') ulX -= m.width;
+						ctx.fillRect(ulX, startY + lineHeight - 2, m.width, 1.5);
+					}
+					startY += lineHeight;
+				}
+				ctx.restore();
+			};
+
+			const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] => {
+				if (maxWidth <= 0) return [text];
+				const words = text.split(' ');
+				const lines: string[] = [];
+				let cur = '';
+				for (const w of words) {
+					const test = cur ? `${cur} ${w}` : w;
+					if (ctx.measureText(test).width > maxWidth && cur) {
+						lines.push(cur);
+						cur = w;
+					} else {
+						cur = test;
+					}
+				}
+				if (cur) lines.push(cur);
+				return lines.length > 0 ? lines : [''];
+			};
+
+			const findTextAnnotationAtPoint = (px: number, py: number): any | null => {
+				if (!config.textAnnotations) return null;
+				for (let i = config.textAnnotations.length - 1; i >= 0; i--) {
+					const ta = config.textAnnotations[i];
+					// Rotate point into local space
+					const dx = px - ta.position.x;
+					const dy = py - ta.position.y;
+					const rad = -(ta.rotation || 0) * Math.PI / 180;
+					const lx = dx * Math.cos(rad) - dy * Math.sin(rad);
+					const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
+					const hw = ta.width / 2;
+					const hh = ta.height / 2;
+					if (lx >= -hw && lx <= hw && ly >= -hh && ly <= hh) return ta;
+				}
+				return null;
+			};
+
+			const hitTestTextTransformHandle = (px: number, py: number, ta: any): TransformHandle | 'rotate' | null => {
+				const dx = px - ta.position.x;
+				const dy = py - ta.position.y;
+				const rad = -(ta.rotation || 0) * Math.PI / 180;
+				const lx = dx * Math.cos(rad) - dy * Math.sin(rad);
+				const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
+				const hw = ta.width / 2;
+				const hh = ta.height / 2;
+				const hs = TRANSFORM_HANDLE_SIZE;
+				// Rotation handle
+				const rotY = -hh - ROTATION_HANDLE_OFFSET;
+				if (Math.abs(lx) < hs && Math.abs(ly - rotY) < hs) return 'rotate';
+				// Corner / edge handles
+				const handles: { handle: TransformHandle; x: number; y: number }[] = [
+					{ handle: 'top-left',     x: -hw,  y: -hh },
+					{ handle: 'top',          x: 0,    y: -hh },
+					{ handle: 'top-right',    x: hw,   y: -hh },
+					{ handle: 'right',        x: hw,   y: 0 },
+					{ handle: 'bottom-right', x: hw,   y: hh },
+					{ handle: 'bottom',       x: 0,    y: hh },
+					{ handle: 'bottom-left',  x: -hw,  y: hh },
+					{ handle: 'left',         x: -hw,  y: 0 },
+				];
+				for (const { handle, x, y } of handles) {
+					if (Math.abs(lx - x) < hs && Math.abs(ly - y) < hs) return handle;
+				}
+				return null;
+			};
+
+			// Annotation-only eraser: removes only pen drawings and text annotations
+			const annotationEraseAtPoint = (px: number, py: number): boolean => {
+				const eraserRadius = 20;
+				let removed = false;
+				// Erase pen drawings near the point
+				if (config.drawings && config.drawings.length > 0) {
+					for (let i = config.drawings.length - 1; i >= 0; i--) {
+						const drawing = config.drawings[i];
+						for (const point of drawing.points) {
+							const dist = Math.sqrt(Math.pow(point.x - px, 2) + Math.pow(point.y - py, 2));
+							if (dist < eraserRadius) {
+								config.drawings.splice(i, 1);
+								removed = true;
+								break;
+							}
+						}
+					}
+				}
+				// Erase text annotations near the point
+				if (config.textAnnotations && config.textAnnotations.length > 0) {
+					const hit = findTextAnnotationAtPoint(px, py);
+					if (hit) {
+						const idx = config.textAnnotations.indexOf(hit);
+						if (idx >= 0) {
+							config.textAnnotations.splice(idx, 1);
+							removed = true;
+						}
+					}
+				}
+				return removed;
+			};
+
+			// Show text annotation context menu
+			const showTextAnnotationContextMenu = (ta: any, e: MouseEvent, editOnly?: boolean) => {
+				if (editOnly) {
+					// Directly open the edit modal for newly-created annotations
+					const input = document.createElement('textarea');
+					input.value = ta.text === 'Text' ? '' : ta.text;
+					input.style.cssText = 'width:300px;height:80px;resize:both;';
+					const modal = new (class extends (plugin.app as any).constructor.Modal {
+						onOpen() {
+							this.contentEl.createEl('h3', { text: 'Edit Text Annotation' });
+							this.contentEl.appendChild(input);
+							const saveBtn = this.contentEl.createEl('button', { text: 'Save', cls: 'mod-cta' });
+							saveBtn.style.marginTop = '10px';
+							saveBtn.addEventListener('click', () => {
+								const val = input.value.trim();
+								if (val) {
+									ta.text = val;
+								}
+								this.close();
+								redrawAnnotations();
+								plugin.saveMapAnnotations(config, el);
+							});
+							setTimeout(() => input.focus(), 50);
+						}
+					})(plugin.app);
+					modal.open();
+					return;
+				}
+				const menu = new Menu();
+				// Edit text
+				menu.addItem((item) => {
+					item.setTitle('✏️ Edit Text');
+					item.onClick(() => {
+						const input = document.createElement('textarea');
+						input.value = ta.text;
+						input.style.cssText = 'width:300px;height:80px;resize:both;';
+						const modal = new (class extends (plugin.app as any).constructor.Modal {
+							onOpen() {
+								this.contentEl.createEl('h3', { text: 'Edit Text Annotation' });
+								this.contentEl.appendChild(input);
+								const saveBtn = this.contentEl.createEl('button', { text: 'Save', cls: 'mod-cta' });
+								saveBtn.style.marginTop = '10px';
+								saveBtn.addEventListener('click', () => {
+									ta.text = input.value;
+									this.close();
+									redrawAnnotations();
+									plugin.saveMapAnnotations(config, el);
+								});
+								setTimeout(() => input.focus(), 50);
+							}
+						})(plugin.app);
+						modal.open();
+					});
+				});
+				menu.addSeparator();
+				// Font size
+				menu.addItem((item) => {
+					item.setTitle(`Font Size: ${ta.fontSize || 16}px`);
+					item.onClick(() => {
+						const size = prompt('Font size (px):', String(ta.fontSize || 16));
+						if (size) {
+							ta.fontSize = Math.max(8, Math.min(200, parseInt(size, 10) || 16));
+							redrawAnnotations();
+							plugin.saveMapAnnotations(config, el);
+						}
+					});
+				});
+				// Bold
+				menu.addItem((item) => {
+					item.setTitle(ta.bold ? '𝗕 Bold ✓' : '𝗕 Bold');
+					item.onClick(() => {
+						ta.bold = !ta.bold;
+						redrawAnnotations();
+						plugin.saveMapAnnotations(config, el);
+					});
+				});
+				// Italic
+				menu.addItem((item) => {
+					item.setTitle(ta.italic ? '𝘐 Italic ✓' : '𝘐 Italic');
+					item.onClick(() => {
+						ta.italic = !ta.italic;
+						redrawAnnotations();
+						plugin.saveMapAnnotations(config, el);
+					});
+				});
+				// Underline
+				menu.addItem((item) => {
+					item.setTitle(ta.underline ? 'U̲ Underline ✓' : 'U̲ Underline');
+					item.onClick(() => {
+						ta.underline = !ta.underline;
+						redrawAnnotations();
+						plugin.saveMapAnnotations(config, el);
+					});
+				});
+				menu.addSeparator();
+				// Text align
+				const aligns = ['left', 'center', 'right'] as const;
+				aligns.forEach((a) => {
+					const icon = a === 'left' ? '⬅' : a === 'right' ? '➡' : '↔';
+					menu.addItem((item) => {
+						item.setTitle(`${icon} Align ${a.charAt(0).toUpperCase() + a.slice(1)}${(ta.textAlign || 'center') === a ? ' ✓' : ''}`);
+						item.onClick(() => {
+							ta.textAlign = a;
+							redrawAnnotations();
+							plugin.saveMapAnnotations(config, el);
+						});
+					});
+				});
+				menu.addSeparator();
+				// Color
+				menu.addItem((item) => {
+					item.setTitle('🎨 Text Color...');
+					item.onClick(() => {
+						const input = document.createElement('input');
+						input.type = 'color';
+						input.value = ta.color || '#ffffff';
+						input.style.position = 'fixed';
+						input.style.left = '-9999px';
+						document.body.appendChild(input);
+						input.addEventListener('input', () => {
+							ta.color = input.value;
+							redrawAnnotations();
+						});
+						input.addEventListener('change', () => {
+							plugin.saveMapAnnotations(config, el);
+							input.remove();
+						});
+						input.click();
+					});
+				});
+				// Background color
+				menu.addItem((item) => {
+					item.setTitle('🖌️ Background Color...');
+					item.onClick(() => {
+						const input = document.createElement('input');
+						input.type = 'color';
+						input.value = ta.backgroundColor || '#000000';
+						input.style.position = 'fixed';
+						input.style.left = '-9999px';
+						document.body.appendChild(input);
+						input.addEventListener('input', () => {
+							ta.backgroundColor = input.value;
+							redrawAnnotations();
+						});
+						input.addEventListener('change', () => {
+							plugin.saveMapAnnotations(config, el);
+							input.remove();
+						});
+						input.click();
+					});
+				});
+				menu.addItem((item) => {
+					item.setTitle('🚫 Clear Background');
+					item.onClick(() => {
+						ta.backgroundColor = 'transparent';
+						redrawAnnotations();
+						plugin.saveMapAnnotations(config, el);
+					});
+				});
+				menu.addSeparator();
+				// Move to layer
+				const layers = ['Player', 'DM', 'Background', 'Subterranean'];
+				layers.forEach((layer) => {
+					menu.addItem((item) => {
+						item.setTitle(`📄 Move to ${layer}${(ta.layer || 'Player') === layer ? ' ✓' : ''}`);
+						item.onClick(() => {
+							saveToHistory();
+							ta.layer = layer;
+							redrawAnnotations();
+							plugin.saveMapAnnotations(config, el);
+						});
+					});
+				});
+				menu.addSeparator();
+				// Delete
+				menu.addItem((item) => {
+					item.setTitle('🗑️ Delete');
+					item.onClick(() => {
+						saveToHistory();
+						const idx = config.textAnnotations.indexOf(ta);
+						if (idx >= 0) config.textAnnotations.splice(idx, 1);
+						selectedTextAnnotationId = null;
+						redrawAnnotations();
+						plugin.saveMapAnnotations(config, el);
+					});
+				});
+				menu.showAtMouseEvent(e);
 			};
 
 			// Helper: snap a point to the nearest grid intersection
@@ -6793,6 +7292,18 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					eraserCursorPos = null;
 					eraserHadRemoval = false;
 				}
+
+				// Cancel draw sub-tool state when switching away
+				if (tool !== 'draw') {
+					isDrawing = false;
+					currentPath = [];
+					isAnnotErasing = false;
+					annotEraserCursorPos = null;
+					annotEraserHadRemoval = false;
+					selectedTextAnnotationId = null;
+					textAnnotDragOffset = null;
+					textAnnotTransformHandle = null;
+				}
 				
 				// Cancel wall drawing when switching away
 				if (tool !== 'walls' && tool !== 'magic-wand') {
@@ -6817,6 +7328,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				colorPicker.toggleClass('hidden', !showColorPicker);
 				colorSeparator.toggleClass('hidden', !showColorPicker);
 
+				// Show/hide Draw sub-tool picker
+				togglePicker(drawPicker, tool === 'draw');
 				// Show/hide AoE shape picker
 				togglePicker(aoePicker, tool === 'aoe');
 				// Show/hide Fog shape picker
@@ -6850,6 +7363,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			} else if (tool === 'marker') {
 				markerBtn.addClass('active');
 				viewport.style.cursor = 'crosshair';
+				} else if (tool === 'draw') {
+					drawBtn.addClass('active');
+					viewport.style.cursor = activeDrawSubTool === 'text' ? 'text' : 'crosshair';
 				} else if (tool === 'ruler') {
 					rulerBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
@@ -7000,7 +7516,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				}).open();
 			});
 			drawBtn.addEventListener('click', () => {
-				setActiveTool('draw');
+				if (activeTool === 'draw') {
+					togglePicker(drawPicker, drawPicker.hasClass('hidden'));
+				} else {
+					setActiveTool('draw');
+				}
 			});
 			rulerBtn.addEventListener('click', () => {
 				setActiveTool('ruler');
@@ -7523,8 +8043,74 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					});
 					
 				} else if (activeTool === 'draw') {
-					isDrawing = true;
-					currentPath = [{ x: mapPos.x, y: mapPos.y }];
+					if (activeDrawSubTool === 'pen') {
+						isDrawing = true;
+						currentPath = [{ x: mapPos.x, y: mapPos.y }];
+					} else if (activeDrawSubTool === 'text') {
+						// Check if clicking on an existing text annotation
+						const hitTa = findTextAnnotationAtPoint(mapPos.x, mapPos.y);
+						if (hitTa) {
+							// Check for transform handle hit if already selected
+							if (selectedTextAnnotationId === hitTa.id) {
+								const handle = hitTestTextTransformHandle(hitTa, mapPos.x, mapPos.y);
+								if (handle === 'rotate') {
+									textAnnotTransformHandle = 'rotate';
+									textAnnotRotateStart = (hitTa.rotation || 0);
+									textAnnotDragOrigin = { x: mapPos.x, y: mapPos.y };
+								} else if (handle) {
+									textAnnotTransformHandle = handle;
+									textAnnotTransformStart = { w: hitTa.width, h: hitTa.height };
+									textAnnotDragOrigin = { x: mapPos.x, y: mapPos.y };
+								} else {
+									// Start dragging
+									textAnnotDragOffset = {
+										x: mapPos.x - hitTa.position.x,
+										y: mapPos.y - hitTa.position.y,
+									};
+									textAnnotDragOrigin = { x: hitTa.position.x, y: hitTa.position.y };
+								}
+							} else {
+								selectedTextAnnotationId = hitTa.id;
+								redrawAnnotations();
+							}
+						} else {
+							// Click on empty space → create new text annotation
+							selectedTextAnnotationId = null;
+							const newTa: any = {
+								id: `text_${Date.now()}`,
+								text: 'Text',
+								position: { x: mapPos.x, y: mapPos.y },
+								width: 160,
+								height: 40,
+								rotation: 0,
+								fontSize: 16,
+								fontFamily: 'sans-serif',
+								color: selectedColor,
+								bold: false,
+								italic: false,
+								underline: false,
+								textAlign: 'center',
+								backgroundColor: '',
+								layer: config.activeLayer || 'Player',
+							};
+							saveToHistory();
+							if (!config.textAnnotations) config.textAnnotations = [];
+							config.textAnnotations.push(newTa);
+							selectedTextAnnotationId = newTa.id;
+							plugin.saveMapAnnotations(config, el);
+							updateGridToolsVisibility();
+							redrawAnnotations();
+							// Immediately open edit prompt
+							showTextAnnotationContextMenu(newTa, { clientX: e.clientX, clientY: e.clientY } as MouseEvent, true);
+						}
+					} else if (activeDrawSubTool === 'annotation-eraser') {
+						isAnnotErasing = true;
+						annotEraserHadRemoval = false;
+						annotEraserCursorPos = { x: mapPos.x, y: mapPos.y };
+						const removed = annotationEraseAtPoint(mapPos.x, mapPos.y);
+						if (removed) annotEraserHadRemoval = true;
+						redrawAnnotations();
+					}
 				} else if (activeTool === 'ruler') {
 					if (!rulerStart) {
 						rulerStart = { x: mapPos.x, y: mapPos.y };
@@ -8530,26 +9116,50 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					wallSelectionRect.endX = mapPos.x;
 					wallSelectionRect.endY = mapPos.y;
 					_requestDragRedraw();
-				} else if (activeTool === 'draw' && isDrawing) {
+				} else if (activeTool === 'draw' && activeDrawSubTool === 'pen' && isDrawing) {
 					currentPath.push({ x: mapPos.x, y: mapPos.y });
 					redrawAnnotations();
-					
-					// Draw temporary path
-					if (annotationCanvas && currentPath.length > 1) {
-						const ctx = annotationCanvas.getContext('2d');
-						if (ctx) {
-							const last = currentPath[currentPath.length - 1];
-							const prev = currentPath[currentPath.length - 2];
-							if (last && prev) {
-								ctx.strokeStyle = selectedColor;
-								ctx.lineWidth = 3;
-								ctx.beginPath();
-								ctx.moveTo(prev.x, prev.y);
-								ctx.lineTo(last.x, last.y);
-								ctx.stroke();
-							}
+				} else if (activeTool === 'draw' && activeDrawSubTool === 'text') {
+					// Drag or transform text annotation
+					if (selectedTextAnnotationId) {
+						const selTa = (config.textAnnotations || []).find((t: any) => t.id === selectedTextAnnotationId);
+						if (selTa && textAnnotTransformHandle === 'rotate' && textAnnotDragOrigin) {
+							// Rotation
+							const cx = selTa.position.x;
+							const cy = selTa.position.y;
+							const startAngle = Math.atan2(textAnnotDragOrigin.y - cy, textAnnotDragOrigin.x - cx);
+							const curAngle = Math.atan2(mapPos.y - cy, mapPos.x - cx);
+							const delta = (curAngle - startAngle) * (180 / Math.PI);
+							selTa.rotation = ((textAnnotRotateStart || 0) + delta) % 360;
+							redrawAnnotations();
+						} else if (selTa && textAnnotTransformHandle && textAnnotTransformStart && textAnnotDragOrigin) {
+							// Resize
+							const dx = mapPos.x - textAnnotDragOrigin.x;
+							const dy = mapPos.y - textAnnotDragOrigin.y;
+							const h = textAnnotTransformHandle;
+							let nw = textAnnotTransformStart.w;
+							let nh = textAnnotTransformStart.h;
+							if (h === 'e' || h === 'ne' || h === 'se') nw = Math.max(40, textAnnotTransformStart.w + dx);
+							if (h === 'w' || h === 'nw' || h === 'sw') nw = Math.max(40, textAnnotTransformStart.w - dx);
+							if (h === 's' || h === 'se' || h === 'sw') nh = Math.max(20, textAnnotTransformStart.h + dy);
+							if (h === 'n' || h === 'ne' || h === 'nw') nh = Math.max(20, textAnnotTransformStart.h - dy);
+							selTa.width = nw;
+							selTa.height = nh;
+							redrawAnnotations();
+						} else if (selTa && textAnnotDragOffset) {
+							// Drag move
+							selTa.position.x = mapPos.x - textAnnotDragOffset.x;
+							selTa.position.y = mapPos.y - textAnnotDragOffset.y;
+							redrawAnnotations();
 						}
 					}
+				} else if (activeTool === 'draw' && activeDrawSubTool === 'annotation-eraser') {
+					annotEraserCursorPos = { x: mapPos.x, y: mapPos.y };
+					if (isAnnotErasing) {
+						const removed = annotationEraseAtPoint(mapPos.x, mapPos.y);
+						if (removed) annotEraserHadRemoval = true;
+					}
+					redrawAnnotations();
 				} else if (activeTool === 'eraser' && isErasing) {
 					// Brush-style eraser: continuously delete annotations under cursor while dragging
 					eraserCursorPos = { x: mapPos.x, y: mapPos.y };
@@ -9078,7 +9688,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							type: 'freehand',
 							points: currentPath,
 							color: selectedColor,
-							strokeWidth: 3,
+							strokeWidth: penLineWidth,
 							layer: config.activeLayer || 'Player'
 						});
 						plugin.saveMapAnnotations(config, el);
@@ -9086,6 +9696,30 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 					currentPath = [];
 					redrawAnnotations();
+				} else if (activeTool === 'draw' && activeDrawSubTool === 'text') {
+					// Finalize text annotation drag/transform
+					if (selectedTextAnnotationId) {
+						const selTa = (config.textAnnotations || []).find((t: any) => t.id === selectedTextAnnotationId);
+						if (selTa && (textAnnotDragOffset || textAnnotTransformHandle)) {
+							saveToHistory();
+							plugin.saveMapAnnotations(config, el);
+							if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+						}
+					}
+					textAnnotDragOffset = null;
+					textAnnotDragOrigin = null;
+					textAnnotTransformHandle = null;
+					textAnnotTransformStart = null;
+					textAnnotRotateStart = 0;
+				} else if (activeTool === 'draw' && activeDrawSubTool === 'annotation-eraser' && isAnnotErasing) {
+					isAnnotErasing = false;
+					if (annotEraserHadRemoval) {
+						plugin.saveMapAnnotations(config, el);
+						updateGridToolsVisibility();
+						new Notice('Annotations erased');
+						if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					}
+					annotEraserHadRemoval = false;
 				} else if (activeTool === 'eraser' && isErasing) {
 					// Finalize brush eraser drag
 					isErasing = false;
@@ -9138,6 +9772,27 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				} else if (activeTool === 'draw' && isDrawing) {
 					isDrawing = false;
 					currentPath = [];
+					redrawAnnotations();
+				} else if (activeTool === 'draw' && activeDrawSubTool === 'text') {
+					// Clean up text drag/transform on mouseleave
+					if (selectedTextAnnotationId && (textAnnotDragOffset || textAnnotTransformHandle)) {
+						plugin.saveMapAnnotations(config, el);
+					}
+					textAnnotDragOffset = null;
+					textAnnotDragOrigin = null;
+					textAnnotTransformHandle = null;
+					textAnnotTransformStart = null;
+					textAnnotRotateStart = 0;
+				} else if (activeTool === 'draw' && activeDrawSubTool === 'annotation-eraser') {
+					if (isAnnotErasing) {
+						isAnnotErasing = false;
+						if (annotEraserHadRemoval) {
+							plugin.saveMapAnnotations(config, el);
+							updateGridToolsVisibility();
+						}
+						annotEraserHadRemoval = false;
+					}
+					annotEraserCursorPos = null;
 					redrawAnnotations();
 				} else if (activeTool === 'eraser' && isErasing) {
 					// Finalize eraser on mouseleave
@@ -9526,6 +10181,18 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					return;
 				}
 				const mapPos = screenToMap(e.clientX, e.clientY);
+
+				// ── Text annotation context menu ──
+				if (activeTool === 'draw' && activeDrawSubTool === 'text') {
+					const hitTa = findTextAnnotationAtPoint(mapPos.x, mapPos.y);
+					if (hitTa) {
+						e.preventDefault();
+						selectedTextAnnotationId = hitTa.id;
+						redrawAnnotations();
+						showTextAnnotationContextMenu(hitTa, e, false);
+						return;
+					}
+				}
 				
 				// ── Env Asset context menu (check before markers) ──
 				// Only available on Background layer with matching view

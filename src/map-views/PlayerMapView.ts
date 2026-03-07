@@ -1674,6 +1674,10 @@ export class PlayerMapView extends ItemView {
     // Draw drawings
     playerDrawings.forEach((d: any) => this.drawDrawing(ctx, d));
 
+    // Draw text annotations
+    const playerTextAnnotations = (config.textAnnotations || []).filter((t: any) => visibleLayers.includes(t.layer || 'Player'));
+    playerTextAnnotations.forEach((t: any) => this.drawTextAnnotation(ctx, t));
+
     // Draw environmental assets (above map image, below fog-of-war)
     // These are rendered as part of the map — fog will cover them naturally
     this.drawEnvAssets(ctx, config);
@@ -3409,12 +3413,70 @@ export class PlayerMapView extends ItemView {
     if (!drawing.points || drawing.points.length === 0) return;
     ctx.strokeStyle = drawing.color;
     ctx.lineWidth = drawing.strokeWidth || 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.beginPath();
     ctx.moveTo(drawing.points[0].x, drawing.points[0].y);
     for (let i = 1; i < drawing.points.length; i++) {
       ctx.lineTo(drawing.points[i].x, drawing.points[i].y);
     }
     ctx.stroke();
+  }
+
+  private drawTextAnnotation(ctx: CanvasRenderingContext2D, ta: any) {
+    if (!ta.text || !ta.position) return;
+    ctx.save();
+    ctx.translate(ta.position.x, ta.position.y);
+    if (ta.rotation) ctx.rotate(ta.rotation * Math.PI / 180);
+    const hw = ta.width / 2;
+    const hh = ta.height / 2;
+    // Background
+    if (ta.backgroundColor && ta.backgroundColor !== 'transparent') {
+      ctx.fillStyle = ta.backgroundColor;
+      ctx.fillRect(-hw, -hh, ta.width, ta.height);
+    }
+    // Text
+    const fontSize = ta.fontSize || 16;
+    const fontFamily = ta.fontFamily || 'sans-serif';
+    const bold = ta.bold ? 'bold ' : '';
+    const italic = ta.italic ? 'italic ' : '';
+    ctx.font = `${italic}${bold}${fontSize}px ${fontFamily}`;
+    ctx.fillStyle = ta.color || '#ffffff';
+    ctx.textAlign = ta.textAlign || 'center';
+    ctx.textBaseline = 'top';
+    // Word wrap
+    const lines: string[] = [];
+    const words = ta.text.split(' ');
+    let line = '';
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width > ta.width - 8 && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    const lh = fontSize * 1.25;
+    const totalH = lines.length * lh;
+    let startY = -hh + (ta.height - totalH) / 2;
+    const textX = (ta.textAlign || 'center') === 'left' ? -hw + 4 : (ta.textAlign === 'right' ? hw - 4 : 0);
+    lines.forEach((ln) => {
+      ctx.fillText(ln, textX, startY);
+      if (ta.underline) {
+        const w = ctx.measureText(ln).width;
+        const ux = (ta.textAlign || 'center') === 'left' ? textX : (ta.textAlign === 'right' ? textX - w : textX - w / 2);
+        ctx.strokeStyle = ta.color || '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(ux, startY + fontSize + 1);
+        ctx.lineTo(ux + w, startY + fontSize + 1);
+        ctx.stroke();
+      }
+      startY += lh;
+    });
+    ctx.restore();
   }
 
   private drawMarker(ctx: CanvasRenderingContext2D, marker: any) {

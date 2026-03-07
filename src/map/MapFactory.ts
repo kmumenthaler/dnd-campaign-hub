@@ -41,6 +41,7 @@ export function getMapAnnotationDefaults(): Record<string, any> {
     highlights: [],
     markers: [],
     drawings: [],
+    textAnnotations: [],
     tunnels: [],
     poiReferences: [],
     hexTerrains: [],
