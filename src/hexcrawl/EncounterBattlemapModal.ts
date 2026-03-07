@@ -14,6 +14,7 @@ import type { EncounterTableEntry, EncounterMonsterGroup } from '../encounter/En
 import type { SRDMonster } from '../encounter/SRDApiClient';
 import { SRDApiClient } from '../encounter/SRDApiClient';
 import { MapManager } from '../map/MapManager';
+import { cloneTemplateToMap } from '../map/MapFactory';
 import { MAP_MEDIA_EXTENSIONS, MAP_IMAGE_EXTENSIONS, MAP_VIDEO_EXTENSIONS, isVideoExtension, MAP_PRESETS } from '../map/types';
 import type { MapTemplateTags } from '../map/types';
 import type { CreatureSize, MarkerDefinition, MarkerReference } from '../marker/MarkerTypes';
@@ -453,46 +454,12 @@ export class EncounterBattlemapModal extends Modal {
       const mapManager = this.plugin.mapManager;
       const newId = mapManager.generateMapId();
 
-      // Deep-copy ALL annotation data from the template
-      fullConfig = {
-        mapId: newId,
-        name: this.mapName,
-        imageFile: templateData.imageFile,
-        isVideo: templateData.isVideo || false,
-        type: 'battlemap',
-        dimensions: templateData.dimensions,
+      // Deep-clone template into a new active battlemap
+      fullConfig = cloneTemplateToMap(templateData, newId, this.mapName, {
         gridType: templateData.gridType || this.gridType,
         gridSize: templateData.gridSize || this.gridSize,
-        gridOffsetX: templateData.gridOffsetX || 0,
-        gridOffsetY: templateData.gridOffsetY || 0,
-        gridSizeW: templateData.gridSizeW || undefined,
-        gridSizeH: templateData.gridSizeH || undefined,
-        gridVisible: templateData.gridVisible !== undefined ? templateData.gridVisible : true,
         scale: templateData.scale || { value: this.scaleValue, unit: this.scaleUnit },
-        // Structural annotations – FULLY COPIED from template
-        walls: JSON.parse(JSON.stringify(templateData.walls || [])),
-        lightSources: JSON.parse(JSON.stringify(templateData.lightSources || [])),
-        fogOfWar: JSON.parse(JSON.stringify(templateData.fogOfWar || { enabled: false, regions: [] })),
-        drawings: JSON.parse(JSON.stringify(templateData.drawings || [])),
-        tileElevations: JSON.parse(JSON.stringify(templateData.tileElevations || {})),
-        tunnels: JSON.parse(JSON.stringify(templateData.tunnels || [])),
-        difficultTerrain: JSON.parse(JSON.stringify(templateData.difficultTerrain || {})),
-        // Environment assets (doors, windows, etc.) – FULLY COPIED from template
-        envAssets: JSON.parse(JSON.stringify(templateData.envAssets || [])),
-        // Markers (furniture, traps, etc.) – FULLY COPIED from template
-        markers: JSON.parse(JSON.stringify(templateData.markers || [])),
-        highlights: [],
-        // NOT a template — it's an active encounter map
-        isTemplate: false,
-        templateTags: undefined,
-        linkedEncounter: '',
-        activeLayer: 'Player',
-      };
-
-      // Re-generate marker instance IDs so they're unique
-      for (const marker of fullConfig.markers) {
-        marker.id = `marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      }
+      });
 
       // 2. Create marker definitions & references for creatures
       const markerRefs = await this.buildCreatureMarkers(fullConfig.dimensions);

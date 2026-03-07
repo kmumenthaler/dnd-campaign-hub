@@ -13,6 +13,7 @@
 import { App, Modal, Notice, TFile, Setting } from 'obsidian';
 import type DndCampaignHubPlugin from '../main';
 import { MapManager } from './MapManager';
+import { cloneTemplateToMap } from './MapFactory';
 import type { MapTemplateTags } from './types';
 
 /** Lightweight info about a template returned by queryMapTemplates */
@@ -310,60 +311,8 @@ export class TemplatePickerModal extends Modal {
 
       const newId = this.mapManager.generateMapId();
 
-      // Deep-copy ALL annotation data from the template
-      const fullConfig: any = {
-        // Map identity – new
-        mapId: newId,
-        name: this.mapName.trim(),
-
-        // Map settings – from template
-        imageFile: templateData.imageFile,
-        isVideo: templateData.isVideo || false,
-        type: 'battlemap',
-        dimensions: templateData.dimensions || {},
-        gridType: templateData.gridType || 'square',
-        gridSize: templateData.gridSize || 70,
-        gridOffsetX: templateData.gridOffsetX || 0,
-        gridOffsetY: templateData.gridOffsetY || 0,
-        gridSizeW: templateData.gridSizeW || undefined,
-        gridSizeH: templateData.gridSizeH || undefined,
-        gridVisible: templateData.gridVisible !== undefined ? templateData.gridVisible : true,
-        scale: templateData.scale || { value: 5, unit: 'feet' },
-
-        // Structural annotations – FULLY COPIED from template
-        walls: JSON.parse(JSON.stringify(templateData.walls || [])),
-        lightSources: JSON.parse(JSON.stringify(templateData.lightSources || [])),
-        fogOfWar: JSON.parse(JSON.stringify(templateData.fogOfWar || { enabled: false, regions: [] })),
-        drawings: JSON.parse(JSON.stringify(templateData.drawings || [])),
-        tileElevations: JSON.parse(JSON.stringify(templateData.tileElevations || {})),
-        difficultTerrain: JSON.parse(JSON.stringify(templateData.difficultTerrain || {})),
-        tunnels: JSON.parse(JSON.stringify(templateData.tunnels || [])),
-
-        // Environment assets (doors, windows, etc.) – FULLY COPIED from template
-        envAssets: JSON.parse(JSON.stringify(templateData.envAssets || [])),
-
-        // Markers (furniture, traps, etc.) – FULLY COPIED from template
-        markers: JSON.parse(JSON.stringify(templateData.markers || [])),
-
-        // Highlights – fresh (template highlights are for template use)
-        highlights: [],
-
-        // Not a template
-        isTemplate: false,
-        templateTags: undefined,
-
-        // Empty for new map
-        linkedEncounter: '',
-        linkedScene: '',
-        activeLayer: 'Player',
-
-        lastModified: new Date().toISOString(),
-      };
-
-      // Re-generate marker instance IDs so they're unique
-      for (const marker of fullConfig.markers) {
-        marker.id = `marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      }
+      // Deep-clone template into a new active battlemap
+      const fullConfig = cloneTemplateToMap(templateData, newId, this.mapName.trim());
 
       // Save the new map
       await this.plugin.saveMapAnnotations(fullConfig, document.createElement('div'));
