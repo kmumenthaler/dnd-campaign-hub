@@ -37,7 +37,6 @@ export function saveMapAnnotations(plugin: DndCampaignHubPlugin, config: any, el
 export async function _flushMapSave(plugin: DndCampaignHubPlugin, mapId: string) {
 	const entry = plugin._pendingSaves.get(mapId);
 	if (!entry) return;
-	plugin._pendingSaves.delete(mapId);
 	clearTimeout(entry.timer);
 
 	const config = entry.config;
@@ -58,8 +57,16 @@ export async function _flushMapSave(plugin: DndCampaignHubPlugin, mapId: string)
 		const annotationJson = JSON.stringify(mapData, null, 2);
 
 		await plugin.app.vault.adapter.write(annotationPath, annotationJson);
+
+		// Only remove from pending saves AFTER successful write
+		plugin._pendingSaves.delete(mapId);
 	} catch (error) {
 		console.error('Error saving map annotations:', error);
+		// Re-arm the debounce so the save is retried automatically
+		entry.timer = setTimeout(() => {
+			_flushMapSave(plugin, mapId);
+		}, SAVE_DEBOUNCE_MS * 2);
+		new Notice('⚠️ Map save failed — will retry automatically');
 	}
 }
 
