@@ -119,7 +119,8 @@ export function matchScreenToPhysical(
   monitors: PhysicalMonitorInfo[],
 ): PhysicalMonitorInfo | null {
   if (!monitors.length) return null;
-  if (!screenLabel) return monitors.length === 1 ? monitors[0] : null;
+  if (!screenLabel) return monitors.length === 1 ? monitors[0]! : null;
+
 
   const label = screenLabel.toLowerCase();
 
@@ -140,7 +141,7 @@ export function matchScreenToPhysical(
   }
 
   // 3. If only one physical monitor, use it regardless of name
-  if (monitors.length === 1) return monitors[0];
+  if (monitors.length === 1) return monitors[0]!;
 
   return null;
 }
