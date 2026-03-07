@@ -208,12 +208,14 @@ export class ProjectionManager {
   /**
    * Position the popout window on the target screen and request fullscreen.
    *
-   * Strategy 1 (preferred): Use the Multi-Screen Window Placement API's
-   * `requestFullscreen({ screen })` which atomically moves the window to
-   * the chosen monitor AND enters fullscreen — no `moveTo` race.
+   * Strategy 1 (preferred): Use Electron's BrowserWindow.setBounds() +
+   * setFullScreen() — this is the only reliable way to move an Electron
+   * window to a specific monitor.
    *
-   * Strategy 2 (fallback): `moveTo` + `resizeTo` with retries, then
-   * manual fullscreen via PlayerMapView.toggleFullscreen().
+   * Strategy 2: requestFullscreen({ screen }) from the Multi-Screen
+   * Window Placement API (Chromium spec, may not work in Electron).
+   *
+   * Strategy 3: moveTo/resizeTo with retries + manual fullscreen.
    */
   private async positionAndFullscreen(leaf: WorkspaceLeaf, screen: ScreenInfo): Promise<void> {
     try {
@@ -221,39 +223,64 @@ export class ProjectionManager {
         ?? leaf.view?.containerEl?.ownerDocument?.defaultView
         ?? null;
 
-      if (!win || win === window) return; // only works on actual popout windows
+      if (!win || win === window) {
+        console.warn('ProjectionManager: no popout window reference');
+        return;
+      }
 
       const pv = leaf.view as PlayerMapView | undefined;
+      const targetBounds = {
+        x: Math.round(screen.left),
+        y: Math.round(screen.top),
+        width: Math.round(screen.width),
+        height: Math.round(screen.height),
+      };
 
-      // ── Strategy 1: requestFullscreen({ screen }) ───────────────
+      // ── Strategy 1: Electron BrowserWindow API ──────────────────
+      const bw = this.getElectronBrowserWindow(win);
+      if (bw) {
+        console.log('ProjectionManager: setBounds', targetBounds);
+        bw.setBounds(targetBounds);
+        await new Promise(r => setTimeout(r, 200));
+        bw.setFullScreen(true);
+
+        if (pv) {
+          (pv as any).isFullscreen = true;
+          if (typeof (pv as any).hideObsidianChrome === 'function') {
+            (pv as any).hideObsidianChrome();
+          }
+        }
+        return;
+      }
+
+      // ── Strategy 2: requestFullscreen({ screen }) ───────────────
       if (screen._native) {
         try {
           await win.document.documentElement.requestFullscreen({
             screen: screen._native,
           } as any);
-          // Keep PlayerMapView state in sync
           if (pv) {
             (pv as any).isFullscreen = true;
             if (typeof (pv as any).hideObsidianChrome === 'function') {
               (pv as any).hideObsidianChrome();
             }
           }
-          return; // done!
+          return;
         } catch (e) {
-          console.warn('ProjectionManager: requestFullscreen({ screen }) failed, using fallback', e);
+          console.warn('ProjectionManager: requestFullscreen({ screen }) failed', e);
         }
       }
 
-      // ── Strategy 2: moveTo / resizeTo with retries + manual fullscreen ──
+      // ── Strategy 3: moveTo / resizeTo with retries ──────────────
       const place = () => {
-        win.moveTo(Math.round(screen.left), Math.round(screen.top));
-        win.resizeTo(Math.round(screen.width), Math.round(screen.height));
+        win.moveTo(targetBounds.x, targetBounds.y);
+        win.resizeTo(targetBounds.width, targetBounds.height);
       };
       place();
-      setTimeout(place, 150);   // second attempt to beat OS animations
-      setTimeout(place, 400);   // third attempt
+      setTimeout(place, 150);
+      setTimeout(place, 400);
+      setTimeout(place, 800);
 
-      // Request fullscreen after positioning settles
       setTimeout(() => {
         try {
           if (pv && typeof pv.toggleFullscreen === 'function') {
@@ -264,10 +291,62 @@ export class ProjectionManager {
             win.document.documentElement.requestFullscreen().catch(() => {});
           }
         } catch { /* fullscreen may be blocked by policy */ }
-      }, 600);
+      }, 1000);
     } catch (e) {
       console.warn('ProjectionManager: positionAndFullscreen failed', e);
     }
+  }
+
+  /**
+   * Attempt to obtain the Electron `BrowserWindow` handle for a popout
+   * window.  Uses dynamic require to avoid esbuild bundling issues.
+   */
+  private getElectronBrowserWindow(popoutWin: Window): any {
+    // Dynamic require so esbuild doesn't try to resolve Electron modules.
+    const _require: NodeRequire | undefined =
+      (popoutWin as any).require ?? (globalThis as any).require;
+
+    if (!_require) return null;
+
+    // Method 1: @electron/remote from the popout window's renderer context.
+    try {
+      const remote = _require('@electron/remote');
+      if (remote?.getCurrentWindow) {
+        const bw = remote.getCurrentWindow();
+        if (bw && typeof bw.setBounds === 'function') {
+          return bw;
+        }
+      }
+    } catch { /* module not available */ }
+
+    // Method 2: Look up via the main window's @electron/remote.
+    try {
+      const mainReq: NodeRequire | undefined = (window as any).require;
+      if (mainReq) {
+        const remote = mainReq('@electron/remote');
+        if (remote?.BrowserWindow && remote?.getCurrentWindow) {
+          const mainBW = remote.getCurrentWindow();
+          const all: any[] = remote.BrowserWindow.getAllWindows();
+          // Filter to non-main, non-destroyed windows; pick most recent.
+          const others = all
+            .filter((w: any) => w.id !== mainBW?.id && !w.isDestroyed())
+            .sort((a: any, b: any) => b.id - a.id);
+          if (others.length > 0) return others[0];
+        }
+      }
+    } catch { /* module not available */ }
+
+    // Method 3: Legacy electron.remote (pre-Electron 14).
+    try {
+      const electron = _require('electron');
+      if (electron?.remote?.getCurrentWindow) {
+        const bw = electron.remote.getCurrentWindow();
+        if (bw && typeof bw.setBounds === 'function') return bw;
+      }
+    } catch { /* not available */ }
+
+    console.warn('ProjectionManager: could not obtain Electron BrowserWindow');
+    return null;
   }
 
   /**
