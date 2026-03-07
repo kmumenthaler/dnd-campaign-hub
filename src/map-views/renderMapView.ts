@@ -2428,10 +2428,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			new Notice('Player view opened');
 		});
 
-		// Add "Open in Side Panel" button (top right, left of Player View)
+		// Add "Open in New Window" button (top right, left of Player View)
 		const sidePanelBtn = viewport.createEl('button', {
 			cls: 'dnd-map-side-panel-btn',
-			attr: { title: 'Open Map in Side Panel' }
+			attr: { title: 'Open Map in New Window' }
 		});
 		sidePanelBtn.innerHTML = '📌';
 
@@ -2439,7 +2439,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			const mapId = config.mapId || resourcePath;
 			const sourceConfig = JSON.stringify({ mapId: config.mapId });
 
-			// Check if already open in a side panel
+			// Check if already open in another window/leaf
 			const existingLeaves = plugin.app.workspace.getLeavesOfType(GM_MAP_VIEW_TYPE);
 			const existingGmLeaf = existingLeaves.find((leaf: any) => {
 				const view = leaf.view as GmMapView;
@@ -2449,14 +2449,16 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			if (existingGmLeaf) {
 				// Already open — focus it
 				plugin.app.workspace.setActiveLeaf(existingGmLeaf);
-				new Notice('Map already open in side panel');
+				new Notice('Map already open in another window');
 				return;
 			}
 
-			// Open in a right split leaf
-			const rightLeaf = plugin.app.workspace.getLeaf('split', 'vertical');
+			// Open in a popout window
+			const popoutLeaf = plugin.app.workspace.openPopoutLeaf({
+				size: { width: 1920, height: 1080 }
+			});
 
-			await rightLeaf.setViewState({
+			await popoutLeaf.setViewState({
 				type: GM_MAP_VIEW_TYPE,
 				active: true,
 				state: {
@@ -2480,11 +2482,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const placeholder = viewer.createDiv({ cls: 'dnd-map-inline-placeholder' });
 				const content = placeholder.createDiv({ cls: 'dnd-map-placeholder-content' });
 				content.createSpan({ cls: 'dnd-map-placeholder-icon', text: '📌' });
-				content.createSpan({ cls: 'dnd-map-placeholder-text', text: `"${config.name || 'Map'}" is open in side panel` });
+				content.createSpan({ cls: 'dnd-map-placeholder-text', text: `"${config.name || 'Map'}" is open in a separate window` });
 
 				const focusBtn = content.createEl('button', {
 					cls: 'dnd-map-placeholder-focus-btn',
-					text: 'Focus Map'
+					text: 'Focus Window'
 				});
 				focusBtn.addEventListener('click', () => {
 					const leaves = plugin.app.workspace.getLeavesOfType(GM_MAP_VIEW_TYPE);
@@ -2497,7 +2499,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					text: 'Restore Inline'
 				});
 				restoreBtn.addEventListener('click', () => {
-					// Close the side leaf
+					// Close the popout leaf
 					const leaves = plugin.app.workspace.getLeavesOfType(GM_MAP_VIEW_TYPE);
 					const targetLeaf = leaves.find((l: any) => (l.view as GmMapView).getMapId() === mapId);
 					if (targetLeaf) targetLeaf.detach();
@@ -2508,7 +2510,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				});
 			}
 
-			new Notice('Map opened in side panel');
+			new Notice('Map opened in new window');
 		});
 
 		// State for zoom and pan
