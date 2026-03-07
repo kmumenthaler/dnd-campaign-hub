@@ -324,18 +324,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					lastFlickerRedraw = timestamp;
 					redrawAnnotations();
 				}
-				flickerAnimFrameId = requestAnimationFrame(flickerAnimLoop);
+				flickerAnimFrameId = (viewport.ownerDocument?.defaultView ?? window).requestAnimationFrame(flickerAnimLoop);
 			};
 			
 			// Start/stop flicker animation based on whether flickering lights exist
 			const updateFlickerAnimation = () => {
+				const ownerWin = viewport.ownerDocument?.defaultView ?? window;
 				if (hasFlickeringLights()) {
 					if (flickerAnimFrameId === null) {
-						flickerAnimFrameId = requestAnimationFrame(flickerAnimLoop);
+						flickerAnimFrameId = ownerWin.requestAnimationFrame(flickerAnimLoop);
 					}
 				} else {
 					if (flickerAnimFrameId !== null) {
-						cancelAnimationFrame(flickerAnimFrameId);
+						ownerWin.cancelAnimationFrame(flickerAnimFrameId);
 						flickerAnimFrameId = null;
 					}
 				}
@@ -2311,10 +2312,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		// rAF-coalesced wrapper: no matter how many times _syncPlayerView is
 		// called within one frame (e.g. mousemove → redraw + sync), the actual
 		// payload build + PV redraw only happens once at the next paint.
+		// Use the viewport's own window rAF so this works correctly in popout
+		// windows (the main window's rAF may be throttled when backgrounded).
 		(viewport as any)._syncPlayerView = () => {
 			if (_pvSyncScheduled) return;
 			_pvSyncScheduled = true;
-			requestAnimationFrame(() => _syncPlayerViewImmediate());
+			const ownerWin = viewport.ownerDocument?.defaultView ?? window;
+			ownerWin.requestAnimationFrame(() => _syncPlayerViewImmediate());
 		};
 
 		// ── Projection status indicator ──────────────────────────────────
@@ -10492,7 +10496,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			});
 
 			// Auto-fit on first render so the map is always fully visible
-			requestAnimationFrame(() => {
+			(viewport.ownerDocument?.defaultView ?? window).requestAnimationFrame(() => {
 				const s = fitToViewport();
 				zoomReset.textContent = `${Math.round(s * 100)}%`;
 			});
