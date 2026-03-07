@@ -2178,6 +2178,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		const updatePvDropdownState = () => {
 			const alive = plugin.projectionManager?.isProjectionAlive();
 			pvStopBtn.toggleClass('hidden', !alive);
+			pvOpenBtn.toggleClass('hidden', !!alive);
 			if (alive) {
 				const label = plugin.projectionManager?.activeProjection?.screen?.label || 'screen';
 				pvStopBtn.innerHTML = `⏹ Stop Projection — ${label}`;
