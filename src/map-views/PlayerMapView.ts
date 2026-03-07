@@ -1,4 +1,4 @@
-import { App, ItemView, Notice, WorkspaceLeaf } from "obsidian";
+﻿import { App, ItemView, Notice, WorkspaceLeaf } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { PLAYER_MAP_VIEW_TYPE } from "../constants";
 import type { MapMediaElement } from "../constants";
@@ -11,6 +11,7 @@ import { CREATURE_SIZE_SQUARES } from "../marker/MarkerTypes";
 import type { CreatureSize, Layer } from "../marker/MarkerTypes";
 import type { EnvAssetInstance } from '../envasset/EnvAssetTypes';
 import { HexcrawlTracker } from '../hexcrawl';
+import { getTunnelWidth, getTunnelPortalRadius, drawTunnelPortal } from './tunnelUtils';
 
 export class PlayerMapView extends ItemView {
   plugin: DndCampaignHubPlugin;
@@ -1348,81 +1349,16 @@ export class PlayerMapView extends ItemView {
 
     // Draw tunnel entrances and exits (always visible on surface - these are physical holes)
     if (config.tunnels && config.tunnels.length > 0) {
-      
       config.tunnels.forEach((tunnel: any) => {
         if (!tunnel.visible) return;
-        
-        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize as CreatureSize] || 1;
-        const radius = (squares * config.gridSize) / 2.5;
-        
-        // Draw entrance (always visible - it's a physical hole on the surface)
-        const entrance = tunnel.entrancePosition;
-        ctx.save();
-        ctx.globalAlpha = 0.7;
-        
-        // Draw dark circle for tunnel entrance
-        ctx.fillStyle = '#1a1a1a';
-        ctx.beginPath();
-        ctx.arc(entrance.x, entrance.y, radius, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Draw rocky border
-        ctx.strokeStyle = '#654321';
-        ctx.lineWidth = Math.max(3, radius * 0.15);
-        ctx.stroke();
-        
-        // Add inner shadow effect
-        const gradient = ctx.createRadialGradient(entrance.x, entrance.y, radius * 0.3, entrance.x, entrance.y, radius);
-        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        ctx.fillStyle = gradient;
-        ctx.fill();
-        
-        // Add tunnel entrance icon
-        ctx.globalAlpha = 0.8;
-        ctx.fillStyle = '#8B4513';
-        ctx.font = `${Math.max(12, radius * 0.8)}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('🕳️', entrance.x, entrance.y);
-        
-        ctx.restore();
-        
-        // Draw exit if tunnel is inactive (completed) and has a different exit position
+        const portalRadius = getTunnelPortalRadius(tunnel, config.gridSize);
+        // Draw entrance portal
+        drawTunnelPortal(ctx, tunnel.entrancePosition.x, tunnel.entrancePosition.y, portalRadius);
+        // Draw exit portal if tunnel is completed and exit differs from entrance
         if (!tunnel.active && tunnel.path && tunnel.path.length > 1) {
           const exit = tunnel.path[tunnel.path.length - 1];
-          // Only draw exit if it's different from entrance
           if (Math.abs(exit.x - tunnel.entrancePosition.x) > 5 || Math.abs(exit.y - tunnel.entrancePosition.y) > 5) {
-            ctx.save();
-            ctx.globalAlpha = 0.7;
-            
-            // Draw dark circle for tunnel exit
-            ctx.fillStyle = '#1a1a1a';
-            ctx.beginPath();
-            ctx.arc(exit.x, exit.y, radius, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Draw rocky border
-            ctx.strokeStyle = '#654321';
-            ctx.lineWidth = Math.max(3, radius * 0.15);
-            ctx.stroke();
-            
-            // Add inner shadow effect
-            const exitGradient = ctx.createRadialGradient(exit.x, exit.y, radius * 0.3, exit.x, exit.y, radius);
-            exitGradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
-            exitGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            ctx.fillStyle = exitGradient;
-            ctx.fill();
-            
-            // Add tunnel exit icon
-            ctx.globalAlpha = 0.8;
-            ctx.fillStyle = '#8B4513';
-            ctx.font = `${Math.max(12, radius * 0.8)}px sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('🕳️', exit.x, exit.y);
-            
-            ctx.restore();
+            drawTunnelPortal(ctx, exit.x, exit.y, portalRadius);
           }
         }
       });
@@ -1881,9 +1817,7 @@ export class PlayerMapView extends ItemView {
         
         if (playersInThisTunnel.length === 0) continue;
         
-        // Use stored tunnel width or calculate based on creature size
-        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize as CreatureSize] || 1;
-        const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
+        const tunnelWidth = getTunnelWidth(tunnel, config.gridSize);
         
         for (const playerMarker of playersInThisTunnel) {
           const pathIdx = playerMarker.tunnelState?.pathIndex || 0;
@@ -3354,8 +3288,7 @@ export class PlayerMapView extends ItemView {
         ctx.save();
         ctx.globalAlpha = 0.25; // More transparent
         
-        const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize as CreatureSize] || 1;
-        const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
+        const tunnelWidth = getTunnelWidth(tunnel, config.gridSize);
         
         // Draw path up to current position in subtle earth tone color
         ctx.strokeStyle = '#8B7355';  // Muted brown/tan
@@ -4510,89 +4443,7 @@ export class PlayerMapView extends ItemView {
     return true;
   }
 
-  /**
-   * Generate wall segments for a tunnel from its path
-   * Creates parallel walls on both sides of the path
-   */
-  private generateTunnelWalls(
-    path: Array<{x: number, y: number}>,
-    tunnelWidth: number
-  ): Array<{start: {x: number, y: number}, end: {x: number, y: number}}> {
-    if (!path || path.length < 2) return [];
-    
-    const walls: Array<{start: {x: number, y: number}, end: {x: number, y: number}}> = [];
-    const halfWidth = tunnelWidth / 2;
-    
-    // Generate parallel walls along each segment of the path
-    for (let i = 0; i < path.length - 1; i++) {
-      const p1 = path[i];
-      const p2 = path[i + 1];
-      if (!p1 || !p2) continue;
-      
-      // Calculate perpendicular vector for this segment
-      const dx = p2.x - p1.x;
-      const dy = p2.y - p1.y;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      
-      if (len === 0) continue;
-      
-      // Normalized perpendicular vector (rotated 90 degrees)
-      const perpX = -dy / len;
-      const perpY = dx / len;
-      
-      // Calculate wall endpoints for this segment
-      const leftStart = { x: p1.x + perpX * halfWidth, y: p1.y + perpY * halfWidth };
-      const leftEnd = { x: p2.x + perpX * halfWidth, y: p2.y + perpY * halfWidth };
-      const rightStart = { x: p1.x - perpX * halfWidth, y: p1.y - perpY * halfWidth };
-      const rightEnd = { x: p2.x - perpX * halfWidth, y: p2.y - perpY * halfWidth };
-      
-      // Add left wall segment
-      walls.push({ start: leftStart, end: leftEnd });
-      
-      // Add right wall segment
-      walls.push({ start: rightStart, end: rightEnd });
-    }
-    
-    // Add end caps to close the tunnel at entrance and exit
-    if (path.length >= 2) {
-      // Entrance cap
-      const firstSegment = path[1];
-      const firstPoint = path[0];
-      if (firstSegment && firstPoint) {
-        const dx = firstSegment.x - firstPoint.x;
-        const dy = firstSegment.y - firstPoint.y;
-        const len = Math.sqrt(dx * dx + dy * dy);
-        if (len > 0) {
-          const perpX = -dy / len;
-          const perpY = dx / len;
-          walls.push({
-            start: { x: firstPoint.x + perpX * halfWidth, y: firstPoint.y + perpY * halfWidth },
-            end: { x: firstPoint.x - perpX * halfWidth, y: firstPoint.y - perpY * halfWidth }
-          });
-        }
-      }
-      
-      // Exit cap
-      const lastIdx = path.length - 1;
-      const lastPoint = path[lastIdx];
-      const secondLastPoint = path[lastIdx - 1];
-      if (lastPoint && secondLastPoint) {
-        const dx = lastPoint.x - secondLastPoint.x;
-        const dy = lastPoint.y - secondLastPoint.y;
-        const len = Math.sqrt(dx * dx + dy * dy);
-        if (len > 0) {
-          const perpX = -dy / len;
-          const perpY = dx / len;
-          walls.push({
-            start: { x: lastPoint.x + perpX * halfWidth, y: lastPoint.y + perpY * halfWidth },
-            end: { x: lastPoint.x - perpX * halfWidth, y: lastPoint.y - perpY * halfWidth }
-          });
-        }
-      }
-    }
-    
-    return walls;
-  }
+  // Tunnel wall generation is now handled by tunnelUtils.generateTunnelWalls()
 
   private computeVisibilityPolygon(
     originX: number,

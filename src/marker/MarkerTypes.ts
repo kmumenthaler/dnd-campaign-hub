@@ -119,4 +119,12 @@ export interface TunnelSegment {
 	createdAt: number;                 // Timestamp
 	visible: boolean;                  // Whether entrance is visible to players
 	active: boolean;                   // Whether tunnel is currently being extended
+	tunnelWidth?: number;              // Cached pixel width (gridSize-relative)
+	walls?: TunnelWall[];              // Generated side-walls + end-caps for vision checks
+}
+
+/** A single wall segment (used in tunnel walls and regular map walls). */
+export interface TunnelWall {
+	start: { x: number; y: number };
+	end:   { x: number; y: number };
 }

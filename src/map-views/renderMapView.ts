@@ -9,8 +9,9 @@ import { MapManagerModal } from "../map/MapManagerModal";
 import { TemplatePickerModal } from "../map/TemplatePickerModal";
 import { magicWandDetect } from "../map/MagicWandWallModal";
 import { MarkerLibrary } from "../marker/MarkerLibrary";
-import { MarkerReference, MarkerDefinition, MarkerType, CREATURE_SIZE_SQUARES, CreatureSize, Layer } from "../marker/MarkerTypes";
+import { MarkerReference, MarkerDefinition, MarkerType, CREATURE_SIZE_SQUARES, CreatureSize, Layer, type TunnelSegment } from "../marker/MarkerTypes";
 import { MarkerPickerModal } from "../marker/MarkerPickerModal";
+import { getTunnelWidth, computeTunnelWidth, generateTunnelWalls, drawTunnelPortal, getTunnelPortalRadius, isZigZag, createTunnelSegment, findNearTunnelEntrance, findNearTunnelExit, ejectTokensFromTunnels, deactivateTunnelsForMarker, ensureTunnelWalls, TUNNEL_MIN_PATH_SPACING, TUNNEL_CORNER_BLOCK_ANGLE } from "./tunnelUtils";
 import { GridCalibrationModal } from "../utils/GridCalibrationModal";
 import { CreatureSelectorModal, MultiCreatureSelectorModal, RenameCreatureModal } from "../utils/CreatureModals";
 import { ClearDrawingsConfirmModal, ClearTokensConfirmModal } from "../utils/ConfirmModal";
@@ -103,6 +104,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			config.drawings = savedData.drawings || [];
 			config.aoeEffects = []; // AoE effects are session-only, never persisted
 			config.tunnels = savedData.tunnels || [];
+			// Regenerate wall geometry for any tunnels loaded without cached walls (#38)
+			ensureTunnelWalls(config.tunnels, config.gridSize);
 			config.poiReferences = savedData.poiReferences || [];
 			
 			// Load hexcrawl terrain, climate, and state data
@@ -1696,11 +1699,17 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			
 			const tunnelCount = config.tunnels.length;
 			saveToHistory();
+			
+			// Eject all tokens that are currently inside any tunnel (#10)
+			const tunnelIds = new Set<string>(config.tunnels.map((t: any) => t.id as string));
+			const ejected = ejectTokensFromTunnels(config.markers, tunnelIds);
+			
 			config.tunnels = [];
 			plugin.saveMapAnnotations(config, el);
 			redrawAnnotations();
 			if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-			new Notice(`Cleared ${tunnelCount} tunnel${tunnelCount === 1 ? '' : 's'}`);
+			const msg = `Cleared ${tunnelCount} tunnel${tunnelCount === 1 ? '' : 's'}`;
+			new Notice(ejected > 0 ? `${msg} (${ejected} token${ejected === 1 ? '' : 's'} ejected)` : msg);
 		});
 
 		// Grid size slider (flyout on move-grid button, visible when grid is enabled)
@@ -2629,86 +2638,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			return { x, y };
 		};
 
-		// Helper function to generate tunnel walls from path
-		const generateTunnelWalls = (
-			path: Array<{x: number, y: number}>,
-			tunnelWidth: number
-		): Array<{start: {x: number, y: number}, end: {x: number, y: number}}> => {
-			if (!path || path.length < 2) return [];
-			
-			const walls: Array<{start: {x: number, y: number}, end: {x: number, y: number}}> = [];
-			const halfWidth = tunnelWidth / 2;
-			
-			// Generate parallel walls along each segment of the path
-			for (let i = 0; i < path.length - 1; i++) {
-				const p1 = path[i];
-				const p2 = path[i + 1];
-				if (!p1 || !p2) continue;
-				
-				// Calculate perpendicular vector for this segment
-				const dx = p2.x - p1.x;
-				const dy = p2.y - p1.y;
-				const len = Math.sqrt(dx * dx + dy * dy);
-				
-				if (len === 0) continue;
-				
-				// Normalized perpendicular vector (rotated 90 degrees)
-				const perpX = -dy / len;
-				const perpY = dx / len;
-				
-				// Calculate wall endpoints for this segment
-				const leftStart = { x: p1.x + perpX * halfWidth, y: p1.y + perpY * halfWidth };
-				const leftEnd = { x: p2.x + perpX * halfWidth, y: p2.y + perpY * halfWidth };
-				const rightStart = { x: p1.x - perpX * halfWidth, y: p1.y - perpY * halfWidth };
-				const rightEnd = { x: p2.x - perpX * halfWidth, y: p2.y - perpY * halfWidth };
-				
-				// Add left wall segment
-				walls.push({ start: leftStart, end: leftEnd });
-				
-				// Add right wall segment
-				walls.push({ start: rightStart, end: rightEnd });
-			}
-			
-			// Add end caps to close the tunnel at entrance and exit
-			if (path.length >= 2) {
-				// Entrance cap
-				const firstSegment = path[1];
-				const firstPoint = path[0];
-				if (firstSegment && firstPoint) {
-					const dx = firstSegment.x - firstPoint.x;
-					const dy = firstSegment.y - firstPoint.y;
-					const len = Math.sqrt(dx * dx + dy * dy);
-					if (len > 0) {
-						const perpX = -dy / len;
-						const perpY = dx / len;
-						walls.push({
-							start: { x: firstPoint.x + perpX * halfWidth, y: firstPoint.y + perpY * halfWidth },
-							end: { x: firstPoint.x - perpX * halfWidth, y: firstPoint.y - perpY * halfWidth }
-						});
-					}
-				}
-				
-				// Exit cap
-				const lastIdx = path.length - 1;
-				const lastPoint = path[lastIdx];
-				const secondLastPoint = path[lastIdx - 1];
-				if (lastPoint && secondLastPoint) {
-					const dx = lastPoint.x - secondLastPoint.x;
-					const dy = lastPoint.y - secondLastPoint.y;
-					const len = Math.sqrt(dx * dx + dy * dy);
-					if (len > 0) {
-						const perpX = -dy / len;
-						const perpY = dx / len;
-						walls.push({
-							start: { x: lastPoint.x + perpX * halfWidth, y: lastPoint.y + perpY * halfWidth },
-							end: { x: lastPoint.x - perpX * halfWidth, y: lastPoint.y - perpY * halfWidth }
-						});
-					}
-				}
-			}
-			
-			return walls;
-		};
+		// generateTunnelWalls is now imported from tunnelUtils.ts
 
 		// Helper function to calculate distance from point to line segment
 		const distanceToLineSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
@@ -2848,6 +2778,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						Math.pow(marker.position.y - py, 2)
 					);
 					if (dist < mRadius) {
+						deactivateTunnelsForMarker(config.tunnels, config.markers, marker.id);
 						config.markers.splice(i, 1);
 						removed = true;
 						refreshVisionSelector();
@@ -3381,8 +3312,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					config.tunnels.forEach((tunnel: any) => {
 						if (!tunnel.visible) return;
 						
-						const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize as CreatureSize] || 1;
-						const radius = (squares * config.gridSize) / 2.5;
+						const radius = getTunnelPortalRadius(tunnel.creatureSize as CreatureSize, config.gridSize);
 						
 						// Viewport cull: skip tunnel if both entrance & exit are off-screen
 						const entrance = tunnel.entrancePosition;
@@ -3390,72 +3320,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						if (!_inViewCircle(entrance.x, entrance.y, radius) && !_inViewCircle(_tunExit.x, _tunExit.y, radius)) return;
 
 						// Draw entrance
-						ctx.save();
-						ctx.globalAlpha = 0.7;
-						
-						// Draw dark circle for tunnel entrance
-						ctx.fillStyle = '#1a1a1a';
-						ctx.beginPath();
-						ctx.arc(entrance.x, entrance.y, radius, 0, Math.PI * 2);
-						ctx.fill();
-						
-						// Draw rocky border
-						ctx.strokeStyle = '#654321';
-						ctx.lineWidth = Math.max(3, radius * 0.15);
-						ctx.stroke();
-						
-						// Add inner shadow effect
-						const gradient = ctx.createRadialGradient(entrance.x, entrance.y, radius * 0.3, entrance.x, entrance.y, radius);
-						gradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
-						gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-						ctx.fillStyle = gradient;
-						ctx.fill();
-						
-						// Add tunnel entrance icon
-						ctx.globalAlpha = 0.8;
-						ctx.fillStyle = '#8B4513';
-						ctx.font = `${Math.max(12, radius * 0.8)}px sans-serif`;
-						ctx.textAlign = 'center';
-						ctx.textBaseline = 'middle';
-						ctx.fillText('🕳️', entrance.x, entrance.y);
-						
-						ctx.restore();
+						drawTunnelPortal(ctx, entrance.x, entrance.y, radius);
 						
 						// Draw exit if tunnel is inactive (completed) and has a different exit position
 						if (!tunnel.active && tunnel.path && tunnel.path.length > 1) {
 							const exit = tunnel.path[tunnel.path.length - 1];
 							// Only draw exit if it's different from entrance
 							if (Math.abs(exit.x - entrance.x) > 5 || Math.abs(exit.y - entrance.y) > 5) {
-								ctx.save();
-								ctx.globalAlpha = 0.7;
-								
-								// Draw dark circle for tunnel exit
-								ctx.fillStyle = '#1a1a1a';
-								ctx.beginPath();
-								ctx.arc(exit.x, exit.y, radius, 0, Math.PI * 2);
-								ctx.fill();
-								
-								// Draw rocky border
-								ctx.strokeStyle = '#654321';
-								ctx.lineWidth = Math.max(3, radius * 0.15);
-								ctx.stroke();
-								
-								// Add inner shadow effect
-								const exitGradient = ctx.createRadialGradient(exit.x, exit.y, radius * 0.3, exit.x, exit.y, radius);
-								exitGradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
-								exitGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-								ctx.fillStyle = exitGradient;
-								ctx.fill();
-								
-								// Add tunnel exit icon
-								ctx.globalAlpha = 0.8;
-								ctx.fillStyle = '#8B4513';
-								ctx.font = `${Math.max(12, radius * 0.8)}px sans-serif`;
-								ctx.textAlign = 'center';
-								ctx.textBaseline = 'middle';
-								ctx.fillText('🕳️', exit.x, exit.y);
-								
-								ctx.restore();
+								drawTunnelPortal(ctx, exit.x, exit.y, radius);
 							}
 						}
 					});
@@ -3697,9 +3569,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					config.tunnels.forEach((tunnel: any) => {
 						if (!tunnel.path || tunnel.path.length < 2) return;
 						
-					// Use stored tunnel width, or calculate as (size + 0.5) * gridSize
-					const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize as CreatureSize] || 1;
-					const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
+					const tunnelWidth = getTunnelWidth(tunnel, config.gridSize);
 					ctx.save();
 						ctx.strokeStyle = '#2a2a2a';
 						ctx.lineWidth = tunnelWidth;
@@ -4600,9 +4470,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							t.creatorMarkerId === draggedMarker.id && t.active
 						);
 						if (activeTunnel && activeTunnel.path.length > 0) {
-							const mDef = draggedMarker.markerId ? plugin.markerLibrary.getMarker(draggedMarker.markerId) : null;
-							const squares = mDef?.creatureSize ? CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1 : 1;
-							const tunnelWidth = activeTunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
+							const tunnelWidth = getTunnelWidth(activeTunnel, config.gridSize);
 							
 							ctx.save();
 							ctx.globalAlpha = 0.6;
@@ -5185,8 +5053,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						ctx.save();
 						ctx.globalAlpha = 0.8;
 						
-						const squares = CREATURE_SIZE_SQUARES[tunnel.creatureSize as CreatureSize] || 1;
-						const tunnelWidth = tunnel.tunnelWidth || (squares + 0.5) * config.gridSize;
+						const tunnelWidth = getTunnelWidth(tunnel, config.gridSize);
 						
 						// Draw path up to current position in bright color
 						ctx.strokeStyle = '#FFD700';  // Gold
@@ -8014,68 +7881,55 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							
 							const lastPoint = activeTunnel.path[activeTunnel.path.length - 1];
 							
-							// Only add if we moved to a different grid cell
-							if (snappedX !== lastPoint.x || snappedY !== lastPoint.y) {
+							// Only add if we moved to a different grid cell and meet min spacing
+							const ptDx = snappedX - lastPoint.x;
+							const ptDy = snappedY - lastPoint.y;
+							const ptDist = Math.sqrt(ptDx * ptDx + ptDy * ptDy);
+							if ((snappedX !== lastPoint.x || snappedY !== lastPoint.y) && ptDist >= TUNNEL_MIN_PATH_SPACING) {
 								let shouldAdd = true;
 								
 								// Check for zig-zag (direction reversal)
-								if (activeTunnel.path.length >= 2) {
-									const prevPoint = activeTunnel.path[activeTunnel.path.length - 2];
-									const prevDx = lastPoint.x - prevPoint.x;
-									const prevDy = lastPoint.y - prevPoint.y;
-									const newDx = snappedX - lastPoint.x;
-									const newDy = snappedY - lastPoint.y;
-									
-									// Dot product < 0 means moving backwards (angle > 90°)
-									const dotProduct = prevDx * newDx + prevDy * newDy;
-									if (dotProduct < 0) {
-										// Moving backwards - update last point instead
-										lastPoint.x = snappedX;
-										lastPoint.y = snappedY;
-										lastPoint.elevation = draggedMarker.elevation?.depth;
-										shouldAdd = false;
-										
-										// Regenerate tunnel walls after updating last point
-										if (activeTunnel.path.length >= 2) {
-										const tunnelWidth = activeTunnel.tunnelWidth || (sizeInSquares + 0.5) * config.gridSize;
-										activeTunnel.walls = generateTunnelWalls(activeTunnel.path, tunnelWidth);
-									}
+								if (isZigZag(activeTunnel.path, snappedX, snappedY)) {
+									// Moving backwards - update last point instead
+									lastPoint.x = snappedX;
+									lastPoint.y = snappedY;
+									lastPoint.elevation = draggedMarker.elevation?.depth;
+									shouldAdd = false;
 								}
-							}
 							
-							if (shouldAdd) {
-								activeTunnel.path.push({ 
-									x: snappedX, 
-									y: snappedY,
-									elevation: draggedMarker.elevation?.depth
-								});
-							}
+								if (shouldAdd) {
+									activeTunnel.path.push({ 
+										x: snappedX, 
+										y: snappedY,
+										elevation: draggedMarker.elevation?.depth
+									});
+								}
 							
-							// Regenerate tunnel walls after path update
-							if (activeTunnel.path.length >= 2) {
-								const tunnelWidth = activeTunnel.tunnelWidth || (sizeInSquares + 0.5) * config.gridSize;
-								activeTunnel.walls = generateTunnelWalls(activeTunnel.path, tunnelWidth);
+								// Regenerate tunnel walls after path update
+								if (activeTunnel.path.length >= 2) {
+									const tunnelWidth = getTunnelWidth(activeTunnel, config.gridSize);
+									activeTunnel.walls = generateTunnelWalls(activeTunnel.path, tunnelWidth);
+								}
 							}
 						}
 					}
-				}
 				
 				// Move anchored AoE effects with the marker
 				const dxAoe = draggedMarker.position.x - prevX;
 				const dyAoe = draggedMarker.position.y - prevY;
-					if (dxAoe !== 0 || dyAoe !== 0) {
-						config.aoeEffects.forEach((aoe: any) => {
-							if (aoe.anchorMarkerId === draggedMarker.id) {
-								aoe.origin.x += dxAoe;
-								aoe.origin.y += dyAoe;
-								aoe.end.x += dxAoe;
-								aoe.end.y += dyAoe;
-							}
-						});
-					}
-					redrawAnnotations();
-					// Sync marker position + drag ruler to player view in real-time
-					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+				if (dxAoe !== 0 || dyAoe !== 0) {
+					config.aoeEffects.forEach((aoe: any) => {
+						if (aoe.anchorMarkerId === draggedMarker.id) {
+							aoe.origin.x += dxAoe;
+							aoe.origin.y += dyAoe;
+							aoe.end.x += dxAoe;
+							aoe.end.y += dyAoe;
+						}
+					});
+				}
+				redrawAnnotations();
+				// Sync marker position + drag ruler to player view in real-time
+				if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
 					// Dragging a light
 					const draggedLight = config.lightSources[draggingLightIndex];
@@ -8543,30 +8397,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							
 							// Check if adding this point would create a zig-zag (direction reversal)
 							if (snappedX !== lastPoint.x || snappedY !== lastPoint.y) {
-								let shouldAdd = true;
-								
-								if (activeTunnel.path.length >= 2) {
-									const prevPoint = activeTunnel.path[activeTunnel.path.length - 2];
-									// Calculate previous direction
-									const prevDx = lastPoint.x - prevPoint.x;
-									const prevDy = lastPoint.y - prevPoint.y;
-									// Calculate new direction
-									const newDx = snappedX - lastPoint.x;
-									const newDy = snappedY - lastPoint.y;
-									
-									// Check for direction reversal (moving backwards)
-									// Dot product < 0 means angle > 90°, which is moving backwards
-									const dotProduct = prevDx * newDx + prevDy * newDy;
-									if (dotProduct < 0) {
-										// This would create a zig-zag - update last point instead of adding
-										lastPoint.x = snappedX;
-										lastPoint.y = snappedY;
-										lastPoint.elevation = m.elevation?.depth;
-										shouldAdd = false;
-									}
-								}
-								
-								if (shouldAdd) {
+								if (isZigZag(activeTunnel.path, snappedX, snappedY)) {
+									// Update last point instead of adding
+									lastPoint.x = snappedX;
+									lastPoint.y = snappedY;
+									lastPoint.elevation = m.elevation?.depth;
+								} else {
 									activeTunnel.path.push({ x: snappedX, y: snappedY, elevation: m.elevation?.depth });
 								}
 							}
@@ -8979,45 +8815,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					return;
 				}
 				const mapPos = screenToMap(e.clientX, e.clientY);
-				
-				// Helper functions for tunnel detection
-				const isNearTunnelEntrance = (position: { x: number; y: number }, gridSize: number): { tunnel: any; distance: number } | null => {
-					if (!config.tunnels || config.tunnels.length === 0) return null;
-					
-					const threshold = gridSize * 1.5; // Proximity threshold
-					let nearest: { tunnel: any; distance: number } | null = null;
-					
-					for (const tunnel of config.tunnels) {
-						const entrance = tunnel.entrancePosition;
-						const dist = Math.sqrt(Math.pow(position.x - entrance.x, 2) + Math.pow(position.y - entrance.y, 2));
-						if (dist <= threshold) {
-							if (!nearest || dist < nearest.distance) {
-								nearest = { tunnel, distance: dist };
-							}
-						}
-					}
-					return nearest;
-				};
-				
-				const isNearTunnelExit = (position: { x: number; y: number }, gridSize: number): { tunnel: any; distance: number } | null => {
-					if (!config.tunnels || config.tunnels.length === 0) return null;
-					
-					const threshold = gridSize * 1.5; // Proximity threshold
-					let nearest: { tunnel: any; distance: number } | null = null;
-					
-					for (const tunnel of config.tunnels) {
-						if (tunnel.path.length > 0) {
-							const exit = tunnel.path[tunnel.path.length - 1];
-							const dist = Math.sqrt(Math.pow(position.x - exit.x, 2) + Math.pow(position.y - exit.y, 2));
-							if (dist <= threshold) {
-								if (!nearest || dist < nearest.distance) {
-									nearest = { tunnel, distance: dist };
-								}
-							}
-						}
-					}
-					return nearest;
-				};
 				
 				// ── Env Asset context menu (check before markers) ──
 				// Only available on Background layer with matching view
@@ -9555,24 +9352,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									if (!config.tunnels) config.tunnels = [];
 									let tunnel = config.tunnels.find((t: any) => t.creatorMarkerId === m.id && t.active);
 									if (!tunnel) {
-										const gridSize = config.gridSize || 70;
 										const creatureSize = mDef.creatureSize || 'medium';
 										const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
-										const tunnelWidth = (sizeInSquares + 0.5) * gridSize;
 										const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
-										tunnel = {
-											id: `tunnel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-											creatorMarkerId: m.id,
-											entrancePosition: { x: snapped.x, y: snapped.y },
-											path: [{ x: snapped.x, y: snapped.y, elevation: value }],
-											creatureSize: creatureSize,
-											depth: value,
-											createdAt: Date.now(),
-											visible: true,
-											active: true,
-											tunnelWidth: tunnelWidth,
-											walls: []
-										};
+										tunnel = createTunnelSegment(m.id, snapped, creatureSize, value, config.gridSize || 70);
 										config.tunnels.push(tunnel);
 									}
 								}
@@ -9646,24 +9429,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									if (!config.tunnels) config.tunnels = [];
 									let tunnel = config.tunnels.find((t: any) => t.creatorMarkerId === m.id && t.active);
 									if (!tunnel) {
-										const gridSize = config.gridSize || 70;
 										const creatureSize = mDef.creatureSize || 'medium';
 										const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
-										const tunnelWidth = (sizeInSquares + 0.5) * gridSize;
 										const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
-										tunnel = {
-											id: `tunnel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-											creatorMarkerId: m.id,
-											entrancePosition: { x: snapped.x, y: snapped.y },
-											path: [{ x: snapped.x, y: snapped.y, elevation: depthValue }],
-											creatureSize: creatureSize,
-											depth: depthValue,
-											createdAt: Date.now(),
-											visible: true,
-											active: true,
-											tunnelWidth: tunnelWidth,
-											walls: []
-										};
+										tunnel = createTunnelSegment(m.id, snapped, creatureSize, depthValue, config.gridSize || 70);
 										config.tunnels.push(tunnel);
 									}
 									
@@ -9707,8 +9476,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							burrowCheckbox.addEventListener('click', (e) => e.stopPropagation());
 							
 							// Tunnel Traversal section (for following existing tunnels)
-							const nearEntrance = isNearTunnelEntrance(m.position, config.gridSize);
-							const nearExit = isNearTunnelExit(m.position, config.gridSize);
+							const nearEntrance = findNearTunnelEntrance(config.tunnels, m.position, config.gridSize);
+							const nearExit = findNearTunnelExit(config.tunnels, m.position, config.gridSize);
 							const isInTunnel = m.tunnelState !== undefined;
 							const isNearTunnelAccess = nearEntrance || nearExit;
 							
@@ -9743,6 +9512,20 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 												return;
 											}
 											
+											// Block flying tokens from entering tunnels
+											if (m.elevation?.height && m.elevation.height > 0) {
+												new Notice('Cannot enter tunnel while flying — land first');
+												document.body.removeChild(contextMenu);
+												return;
+											}
+											
+											// Guard against empty tunnel paths
+											if (!nearestTunnel.tunnel.path || nearestTunnel.tunnel.path.length === 0) {
+												new Notice('This tunnel has no path yet');
+												document.body.removeChild(contextMenu);
+												return;
+											}
+											
 											// Set tunnel state
 											m.tunnelState = {
 												tunnelId: nearestTunnel.tunnel.id,
@@ -9754,11 +9537,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 											const snapPoint = nearEntrance 
 												? nearestTunnel.tunnel.entrancePosition 
 												: nearestTunnel.tunnel.path[nearestTunnel.tunnel.path.length - 1];
-											m.position.x = snapPoint.x;
-											m.position.y = snapPoint.y;
-											
-											// Set depth to match tunnel depth (inherit from tunnel creator)
-											if (!m.elevation) m.elevation = {};
+									if (snapPoint) {
+										m.position.x = snapPoint.x;
+										m.position.y = snapPoint.y;
+									}
 											// Mark that this depth was set by tunnel (so we can clear it on exit)
 											m.elevation._tunnelDepth = nearestTunnel.tunnel.depth || 10; // Default 10ft if not specified
 											m.elevation.depth = m.elevation._tunnelDepth;
@@ -9912,6 +9694,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						deleteOption.innerHTML = `<span>🗑️</span> Delete`;
 						deleteOption.addEventListener('click', () => {
 							saveToHistory();
+							deactivateTunnelsForMarker(config.tunnels, config.markers, m.id);
 							config.markers.splice(i, 1);
 							redrawAnnotations();
 							plugin.saveMapAnnotations(config, el);
