@@ -4473,6 +4473,55 @@
   margin-left: 6px;
 }
 
+/* ── Projection system ─────────────────────────────────────────────── */
+
+/* Projection status badge on the GM viewport — pulsing green dot */
+.dnd-map-projection-status {
+  position: absolute;
+  top: 10px;
+  right: 200px;
+  z-index: 1003;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.15);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(16, 185, 129, 0.9);
+  pointer-events: none;
+  user-select: none;
+}
+.dnd-map-projection-status::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgb(16, 185, 129);
+  animation: dnd-projection-pulse 2s ease-in-out infinite;
+}
+@keyframes dnd-projection-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Fade overlay for map swap transitions on the player view */
+.dnd-player-map-swap-fade {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.dnd-player-map-swap-fade.active {
+  opacity: 1;
+}
+
 /* Player Map View (Popout Window) */
 .dnd-player-map-container {
   background: #000;

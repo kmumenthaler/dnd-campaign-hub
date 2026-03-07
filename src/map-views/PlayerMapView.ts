@@ -126,6 +126,33 @@ export class PlayerMapView extends ItemView {
    * a different map image + annotations.
    */
   swapMap(newMapId: string, newMapConfig: any, newImageResourcePath: string) {
+    const container = this.containerEl.children[1] as HTMLElement;
+
+    // ── Fade out ────────────────────────────────────────────────────
+    const fade = document.createElement('div');
+    fade.className = 'dnd-player-map-swap-fade';
+    container.appendChild(fade);
+    // Force layout then trigger CSS transition
+    void fade.offsetWidth;
+    fade.classList.add('active');
+
+    // Give the fade 300ms to reach full opacity, then swap the content
+    setTimeout(() => {
+      this._doSwap(newMapId, newMapConfig, newImageResourcePath);
+
+      // Fade back in after the new content has rendered
+      setTimeout(() => {
+        fade.classList.remove('active');
+        // Remove the overlay once the transition finishes
+        setTimeout(() => fade.remove(), 350);
+      }, 100);
+    }, 300);
+  }
+
+  /**
+   * Internal: perform the actual map swap (called after fade-out).
+   */
+  private _doSwap(newMapId: string, newMapConfig: any, newImageResourcePath: string) {
     // Cancel flicker loop before tearing down DOM
     if (this._pvFlickerFrameId !== null) {
       (this._pvFlickerWin || window).cancelAnimationFrame(this._pvFlickerFrameId);

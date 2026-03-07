@@ -1684,6 +1684,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			if (screens.length <= 1 && !isMultiScreenSupported()) {
 				// Single monitor or API unavailable — project to the only screen
 				const screen = screens[0];
+				if (!screen) { new Notice('No screens detected'); return; }
 				const mapId = config.mapId || resourcePath;
 				await pm.project(mapId, {
 					markers: config.markers,
@@ -2327,6 +2328,41 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			_pvSyncScheduled = true;
 			requestAnimationFrame(() => _syncPlayerViewImmediate());
 		};
+
+		// ── Projection status indicator ──────────────────────────────────
+		// Shows a pulsing green badge on the GM viewport when a projection is
+		// actively running.  Updated periodically and on projection changes.
+		let projStatusEl: HTMLElement | null = null;
+		const updateProjectionStatus = () => {
+			const alive = plugin.projectionManager?.isProjectionAlive();
+			if (alive && !projStatusEl) {
+				projStatusEl = viewport.createEl('div', {
+					cls: 'dnd-map-projection-status',
+					text: `PROJECTING — ${plugin.projectionManager?.activeProjection?.screen?.label || 'screen'}`,
+				});
+			} else if (!alive && projStatusEl) {
+				projStatusEl.remove();
+				projStatusEl = null;
+			} else if (alive && projStatusEl) {
+				const label = plugin.projectionManager?.activeProjection?.screen?.label || 'screen';
+				projStatusEl.textContent = `PROJECTING — ${label}`;
+			}
+		};
+		updateProjectionStatus();
+		// Poll every 2s (lightweight — just checks a boolean)
+		const projStatusTimer = setInterval(updateProjectionStatus, 2000);
+		// Store for cleanup
+		(viewport as any)._projStatusTimer = projStatusTimer;
+		// Clean up the timer when the viewport is removed from the DOM
+		const projStatusObserver = new MutationObserver(() => {
+			if (!viewport.isConnected) {
+				clearInterval(projStatusTimer);
+				projStatusObserver.disconnect();
+			}
+		});
+		if (viewport.parentElement) {
+			projStatusObserver.observe(viewport.parentElement, { childList: true });
+		}
 		
 		playerViewBtn.addEventListener('click', async () => {
             // Allow multiple player views; do not close existing player view windows
