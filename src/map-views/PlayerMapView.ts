@@ -3642,9 +3642,21 @@ export class PlayerMapView extends ItemView {
     const isDragging = !!config.draggingMarkerId;
     const _freezeFlicker = isDragging;
 
-    // ── Fog atlas cache: skip the entire O(n²) pipeline when inputs are unchanged ──
-    // During drag the moving token's position is quantised to 4 px so the
-    // digest only changes every ~4 px → halves fog recomputes on fast drags.
+    // ── Fast path: freeze fog entirely during drag ──
+    // Visibility polygons are O(n²) and take 350-550 ms per frame.
+    // During a drag the only thing changing is the dragged token's position,
+    // which moves the vision cone slightly — visually insignificant while
+    // the user is focused on token placement.  Reuse the cached fog atlas
+    // from the last non-drag frame and skip all vis-polygon work.
+    // The accurate fog is recomputed on drop (see drag-end deferral below).
+    if (isDragging && this._fogAtlasCanvas &&
+        this._fogAtlasW === w && this._fogAtlasH === h) {
+      ctx.drawImage(this._fogAtlasCanvas, 0, 0);
+      this._wasDragging = true;
+      return;
+    }
+
+    // ── Fog atlas cache: skip when the digest is unchanged ──
     const _fogDigest = this._computeFogDigest(config, w, h, _freezeFlicker);
     if (_fogDigest === this._fogAtlasKey && this._fogAtlasCanvas &&
         this._fogAtlasW === w && this._fogAtlasH === h) {
