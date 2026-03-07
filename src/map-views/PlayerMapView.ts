@@ -312,9 +312,22 @@ export class PlayerMapView extends ItemView {
     n(c.drawings?.length || 0);
     n(c.highlights?.length || 0);
     n(c.aoeEffects?.length || 0);
-    n(c.envAssets?.length || 0);
     n(c.tunnels?.length || 0);
     n(c.poiReferences?.length || 0);
+
+    // Env assets — include door open/close/angle/slide state so the digest
+    // changes when a door is toggled (otherwise fog + vision won't update).
+    const envAssets: any[] = c.envAssets || [];
+    n(envAssets.length);
+    for (let i = 0; i < envAssets.length; i++) {
+      const ea = envAssets[i];
+      if (ea.doorConfig) {
+        n(ea.doorConfig.isOpen ? 1 : 0);
+        n(ea.doorConfig.openAngle || 0);
+        n(ea.doorConfig.slidePosition || 0);
+      }
+      if (ea.scatterConfig?.blocksVision) n(1);
+    }
 
     // Fog-of-war
     n(c.fogOfWar?.enabled ? 1 : 0);
