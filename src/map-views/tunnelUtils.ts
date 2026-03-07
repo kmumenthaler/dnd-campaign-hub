@@ -56,11 +56,15 @@ export function getPathPerpendicular(
 ): { x: number; y: number } {
 	let dx: number, dy: number;
 	if (index < path.length - 1) {
-		dx = path[index + 1].x - path[index].x;
-		dy = path[index + 1].y - path[index].y;
+		const cur = path[index]!;
+		const next = path[index + 1]!;
+		dx = next.x - cur.x;
+		dy = next.y - cur.y;
 	} else if (index > 0) {
-		dx = path[index].x - path[index - 1].x;
-		dy = path[index].y - path[index - 1].y;
+		const cur = path[index]!;
+		const prev = path[index - 1]!;
+		dx = cur.x - prev.x;
+		dy = cur.y - prev.y;
 	} else {
 		return { x: 0, y: 0 };
 	}
