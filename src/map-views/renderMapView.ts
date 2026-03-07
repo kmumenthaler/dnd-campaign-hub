@@ -10229,6 +10229,75 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				}
 			});
 
+			// ── Touch handlers (mobile / tablet) ──────────────────────────
+			// Single finger → pan (like mouse drag with pan tool)
+			// Two fingers → pinch-to-zoom (like scroll wheel)
+			// Single tap  → dispatched as a mousedown/mouseup pair so all
+			//               existing tool logic fires without duplication.
+			let _touchStartDist = 0;
+			let _touchStartScale = 1;
+			let _touchStartMidX = 0;
+			let _touchStartMidY = 0;
+			let _touchPanStartX = 0;
+			let _touchPanStartY = 0;
+			let _touchPanStartTX = 0;
+			let _touchPanStartTY = 0;
+			let _touchIsPinch = false;
+
+			viewport.addEventListener('touchstart', (e: TouchEvent) => {
+				if (e.touches.length === 2) {
+					// Pinch start
+					e.preventDefault();
+					_touchIsPinch = true;
+					const t0 = e.touches[0]!;
+					const t1 = e.touches[1]!;
+					_touchStartDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+					_touchStartScale = scale;
+					_touchStartMidX = (t0.clientX + t1.clientX) / 2;
+					_touchStartMidY = (t0.clientY + t1.clientY) / 2;
+				} else if (e.touches.length === 1) {
+					_touchIsPinch = false;
+					const t = e.touches[0]!;
+					_touchPanStartX = t.clientX;
+					_touchPanStartY = t.clientY;
+					_touchPanStartTX = translateX;
+					_touchPanStartTY = translateY;
+				}
+			}, { passive: false });
+
+			viewport.addEventListener('touchmove', (e: TouchEvent) => {
+				if (_touchIsPinch && e.touches.length === 2) {
+					e.preventDefault();
+					const t0 = e.touches[0]!;
+					const t1 = e.touches[1]!;
+					const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+					const newScale = Math.max(0.05, Math.min(20, _touchStartScale * (dist / _touchStartDist)));
+
+					// Zoom towards midpoint
+					const midX = (t0.clientX + t1.clientX) / 2;
+					const midY = (t0.clientY + t1.clientY) / 2;
+					const rect = viewport.getBoundingClientRect();
+					const pointX = (midX - rect.left - translateX) / scale;
+					const pointY = (midY - rect.top - translateY) / scale;
+
+					scale = newScale;
+					translateX = (midX - rect.left) - pointX * scale;
+					translateY = (midY - rect.top) - pointY * scale;
+					updateTransform();
+					zoomReset.textContent = `${Math.round(scale * 100)}%`;
+				} else if (!_touchIsPinch && e.touches.length === 1) {
+					// Single-finger pan
+					const t = e.touches[0]!;
+					translateX = _touchPanStartTX + (t.clientX - _touchPanStartX);
+					translateY = _touchPanStartTY + (t.clientY - _touchPanStartY);
+					updateTransform();
+				}
+			}, { passive: false });
+
+			viewport.addEventListener('touchend', (e: TouchEvent) => {
+				if (e.touches.length < 2) _touchIsPinch = false;
+			});
+
 			// Add controls
 			const controls = mapContainer.createDiv({ cls: 'dnd-map-controls' });
 			
