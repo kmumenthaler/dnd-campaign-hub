@@ -2,8 +2,8 @@
  * SRD API Client for fetching D&D 5e monster data
  * 
  * Uses the free D&D 5e SRD API (https://www.dnd5eapi.co/) to retrieve monster
- * stats. Results are cached in memory so repeated calls are instant and the
- * plugin works offline after the first fetch.
+ * stats. Results are cached in memory AND persisted to localStorage so the
+ * plugin works offline across sessions after the first successful fetch.
  * 
  * Uses Obsidian's `requestUrl` to avoid CORS issues.
  */
@@ -11,6 +11,11 @@
 import { requestUrl } from "obsidian";
 
 const BASE_URL = "https://www.dnd5eapi.co/api";
+
+// ─── Persistent cache keys ────────────────────────────────────────────────
+
+const LS_LIST_KEY = "dnd-srd-monster-list";
+const LS_MONSTER_PREFIX = "dnd-srd-monster:";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -54,21 +59,43 @@ export class SRDApiClient {
 
   /**
    * Fetch the complete list of SRD monsters (index + name only).
-   * Cached after the first call.
+   * Cached in memory after the first call and persisted to localStorage.
+   * Falls back to the localStorage cache when the API is unreachable.
    */
   async getMonsterList(): Promise<SRDMonsterListItem[]> {
     if (this.listCache) return this.listCache;
 
-    const response = await requestUrl({ url: `${BASE_URL}/monsters` });
-    this.listCache = response.json.results as SRDMonsterListItem[];
-    return this.listCache;
+    try {
+      const response = await requestUrl({ url: `${BASE_URL}/monsters` });
+      this.listCache = response.json.results as SRDMonsterListItem[];
+
+      // Persist to localStorage for offline use
+      try { localStorage.setItem(LS_LIST_KEY, JSON.stringify(this.listCache)); } catch { /* quota exceeded – non-fatal */ }
+
+      return this.listCache;
+    } catch (error) {
+      console.warn("[SRDApiClient] API unreachable, falling back to localStorage cache", error);
+
+      // Try localStorage fallback
+      try {
+        const cached = localStorage.getItem(LS_LIST_KEY);
+        if (cached) {
+          this.listCache = JSON.parse(cached) as SRDMonsterListItem[];
+          return this.listCache;
+        }
+      } catch { /* corrupt cache – fall through */ }
+
+      // Nothing cached – rethrow original error so callers know there's no data
+      throw error;
+    }
   }
 
   // ── Detail endpoints ────────────────────────────────────────────────
 
   /**
    * Fetch full details for a single monster by index.
-   * Returns null if the monster doesn't exist or the request fails.
+   * Falls back to localStorage if the API request fails.
+   * Returns null only when neither API nor cache has the data.
    */
   async getMonster(index: string): Promise<SRDMonster | null> {
     if (this.monsterCache.has(index)) return this.monsterCache.get(index)!;
@@ -77,8 +104,22 @@ export class SRDApiClient {
       const response = await requestUrl({ url: `${BASE_URL}/monsters/${index}` });
       const monster = response.json as SRDMonster;
       this.monsterCache.set(index, monster);
+
+      // Persist to localStorage
+      try { localStorage.setItem(LS_MONSTER_PREFIX + index, JSON.stringify(monster)); } catch { /* quota exceeded */ }
+
       return monster;
     } catch (error) {
+      // Try localStorage fallback before giving up
+      try {
+        const cached = localStorage.getItem(LS_MONSTER_PREFIX + index);
+        if (cached) {
+          const monster = JSON.parse(cached) as SRDMonster;
+          this.monsterCache.set(index, monster);
+          return monster;
+        }
+      } catch { /* corrupt cache */ }
+
       console.error(`[SRDApiClient] Failed to fetch monster "${index}":`, error);
       return null;
     }
@@ -160,10 +201,24 @@ export class SRDApiClient {
   }
 
   /**
-   * Clear the in-memory cache (useful for testing or forced refresh).
+   * Clear the in-memory cache.
+   * If `clearPersistent` is true, also wipes the localStorage fallback data.
    */
-  clearCache(): void {
+  clearCache(clearPersistent = false): void {
     this.monsterCache.clear();
     this.listCache = null;
+
+    if (clearPersistent) {
+      try {
+        localStorage.removeItem(LS_LIST_KEY);
+        // Remove all individual monster entries
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key?.startsWith(LS_MONSTER_PREFIX)) keysToRemove.push(key);
+        }
+        for (const key of keysToRemove) localStorage.removeItem(key);
+      } catch { /* non-fatal */ }
+    }
   }
 }
