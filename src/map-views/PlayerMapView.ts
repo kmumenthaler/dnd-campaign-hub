@@ -50,6 +50,10 @@ export class PlayerMapView extends ItemView {
   private _fogAtlasKey: string = '';          // digest of ALL fog inputs
   private _fogAtlasW: number = 0;
   private _fogAtlasH: number = 0;
+  // Track drag→drop transition so the first post-drop frame reuses the
+  // cached fog atlas instead of blocking the rAF with a full recompute.
+  private _wasDragging: boolean = false;
+  private _deferredFogInvalidation: number = 0; // rAF id
   // Cached filtered walls array – avoids re-filtering + door wall rebuild per frame
   private _cachedFogWalls: any[] | null = null;
   private _cachedFogWallsKey: string = '';    // wallsHash + envAsset door digest
@@ -3635,7 +3639,8 @@ export class PlayerMapView extends ItemView {
   }
 
   private drawFogOfWar(ctx: CanvasRenderingContext2D, w: number, h: number, config: any) {
-    const _freezeFlicker = !!config.draggingMarkerId;
+    const isDragging = !!config.draggingMarkerId;
+    const _freezeFlicker = isDragging;
 
     // ── Fog atlas cache: skip the entire O(n²) pipeline when inputs are unchanged ──
     // During drag the moving token's position is quantised to 4 px so the
@@ -3644,8 +3649,31 @@ export class PlayerMapView extends ItemView {
     if (_fogDigest === this._fogAtlasKey && this._fogAtlasCanvas &&
         this._fogAtlasW === w && this._fogAtlasH === h) {
       ctx.drawImage(this._fogAtlasCanvas, 0, 0);
+      this._wasDragging = isDragging;
       return;
     }
+
+    // ── Drag-end deferral: reuse the stale fog atlas for ONE frame ──
+    // When a drag ends the digest changes (no quantisation, flicker unfreezes,
+    // ruler vanishes) which forces a full O(n²) vis-polygon recompute.
+    // That 400-500 ms blocks the rAF handler and triggers Chrome violations.
+    // Instead, paint the previous fog atlas this frame and schedule a
+    // deferred invalidation so the accurate fog is computed in a later rAF.
+    if (this._wasDragging && !isDragging && this._fogAtlasCanvas &&
+        this._fogAtlasW === w && this._fogAtlasH === h) {
+      ctx.drawImage(this._fogAtlasCanvas, 0, 0);
+      this._wasDragging = false;
+      // Schedule deferred fog recompute
+      if (!this._deferredFogInvalidation) {
+        this._deferredFogInvalidation = requestAnimationFrame(() => {
+          this._deferredFogInvalidation = 0;
+          this._fogAtlasKey = ''; // force cache miss on next redraw
+          this.redrawAnnotations();
+        });
+      }
+      return;
+    }
+    this._wasDragging = isDragging;
 
     // Composite canvas: fog, colour overlay and grayscale tint are drawn
     // here first so we can cache the result for future frames.

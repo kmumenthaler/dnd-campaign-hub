@@ -9153,7 +9153,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								m.layer = layer;
 								redrawAnnotations();
 								plugin.saveMapAnnotations(config, el);
-								document.body.removeChild(contextMenu);
+								if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 								new Notice(`Marker moved to ${layer} layer`);
 							});
 						});
@@ -9222,7 +9222,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 											redrawAnnotations();
 											plugin.saveMapAnnotations(config, el);
 											updateGridToolsVisibility();
-											document.body.removeChild(contextMenu);
+											if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 											new Notice('AoE effect removed');
 											return;
 										}
@@ -9236,7 +9236,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									aoePreviewEnd = aoeOrigin;
 									pendingAoeAnchorMarkerId = m.id;
 									setActiveTool('aoe');
-									document.body.removeChild(contextMenu);
+									if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 									new Notice(`Place ${label}: move mouse to set size, click to confirm`);
 								});
 							});
@@ -9273,7 +9273,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								plugin.saveMapAnnotations(config, el);
 								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 								refreshVisionSelector();
-								document.body.removeChild(contextMenu);
+								if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 								new Notice('Light removed from token');
 							});
 							
@@ -9298,7 +9298,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									plugin.saveMapAnnotations(config, el);
 									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 									refreshVisionSelector();
-									document.body.removeChild(contextMenu);
+									if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 									new Notice(`${lightDef.name} attached to token`);
 								});
 							});
@@ -9696,21 +9696,21 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 											// Token must be <= tunnel creator size to enter
 											if (tokenSize > tunnelSize) {
 												new Notice(`This tunnel is too small! Created by ${tunnelCreatureSize} creature, token is ${mDef.creatureSize || 'medium'}`);
-												document.body.removeChild(contextMenu);
+												if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 												return;
 											}
 											
 											// Block flying tokens from entering tunnels
 											if (m.elevation?.height && m.elevation.height > 0) {
 												new Notice('Cannot enter tunnel while flying — land first');
-												document.body.removeChild(contextMenu);
+												if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 												return;
 											}
 											
 											// Guard against empty tunnel paths
 											if (!nearestTunnel.tunnel.path || nearestTunnel.tunnel.path.length === 0) {
 												new Notice('This tunnel has no path yet');
-												document.body.removeChild(contextMenu);
+												if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 												return;
 											}
 											
@@ -9741,7 +9741,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 											redrawAnnotations();
 											plugin.saveMapAnnotations(config, el);
 											if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-											document.body.removeChild(contextMenu);
+											if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 											new Notice('Entered tunnel - use arrow keys to navigate');
 										}
 									});
@@ -9788,7 +9788,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 											redrawAnnotations();
 											plugin.saveMapAnnotations(config, el);
 											if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-											document.body.removeChild(contextMenu);
+											if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 											new Notice('Exited tunnel');
 										});
 									} else {
@@ -9897,7 +9897,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							plugin.saveMapAnnotations(config, el);
 							updateGridToolsVisibility();
 							refreshVisionSelector();
-							document.body.removeChild(contextMenu);
+							if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 							new Notice('Marker removed');
 						});
 						
@@ -9915,7 +9915,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 						const removeMenu = (event: MouseEvent) => {
 							if (!contextMenu.contains(event.target as Node)) {
-								document.body.removeChild(contextMenu);
+								if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 								document.removeEventListener('click', removeMenu);
 							}
 						};
@@ -9975,7 +9975,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								redrawAnnotations();
 								plugin.saveMapAnnotations(config, el);
 								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-								document.body.removeChild(contextMenu);
+								if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 								new Notice(light.active ? `${light.name || 'Light'} lit` : `${light.name || 'Light'} extinguished`);
 							});
 							
@@ -10055,7 +10055,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									redrawAnnotations();
 									plugin.saveMapAnnotations(config, el);
 									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-									document.body.removeChild(contextMenu);
+									if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 									new Notice(`Changed to ${lightDef.name}`);
 								});
 							});
@@ -10200,7 +10200,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								redrawAnnotations();
 								plugin.saveMapAnnotations(config, el);
 								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-								document.body.removeChild(contextMenu);
+								if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 								new Notice('Light removed');
 							});
 							
@@ -10218,7 +10218,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 							const removeMenu = (event: MouseEvent) => {
 								if (!contextMenu.contains(event.target as Node)) {
-									document.body.removeChild(contextMenu);
+									if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 									document.removeEventListener('click', removeMenu);
 								}
 							};
@@ -10280,7 +10280,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									redrawAnnotations();
 									plugin.saveMapAnnotations(config, el);
 									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-									document.body.removeChild(contextMenu);
+									if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 									new Notice(wall.open ? 'Door opened' : 'Door closed');
 								});
 								
@@ -10367,7 +10367,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									redrawAnnotations();
 									plugin.saveMapAnnotations(config, el);
 									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-									document.body.removeChild(contextMenu);
+									if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 									new Notice(`Changed to ${def.name}`);
 								});
 							});
@@ -10384,7 +10384,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								redrawAnnotations();
 								plugin.saveMapAnnotations(config, el);
 								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-								document.body.removeChild(contextMenu);
+								if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 								new Notice('Wall removed');
 							});
 							
@@ -10402,7 +10402,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 							const removeMenu = (event: MouseEvent) => {
 								if (!contextMenu.contains(event.target as Node)) {
-									document.body.removeChild(contextMenu);
+									if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 									document.removeEventListener('click', removeMenu);
 								}
 							};
