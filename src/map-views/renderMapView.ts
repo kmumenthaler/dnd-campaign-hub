@@ -20,7 +20,7 @@ import { TabletopCalibrationModal } from "../map-views/TabletopCalibrationModal"
 import { enumerateScreens, screenKey, isMultiScreenSupported } from "../utils/ScreenEnumeration";
 import type { ScreenInfo } from "../utils/ScreenEnumeration";
 import { canvasPool as _canvasPool } from "../utils/CanvasPool";
-import { getWallsHash as _getWallsHash, visCacheKey as _visCacheKey, visCacheMap as _visCacheMap, VIS_CACHE_MAX as _VIS_CACHE_MAX } from "../utils/VisibilityCache";
+import { getWallsHash as _getWallsHash, visCacheKey as _visCacheKey, visCacheMap as _visCacheMap, VIS_CACHE_MAX as _VIS_CACHE_MAX, visCacheEvict as _visCacheEvict } from "../utils/VisibilityCache";
 import { computeLightFlicker, computeNeonBuzz, hexToRgb, getFlickerSeedForKey, FLICKER_LIGHT_TYPES_SET, BUZZ_LIGHT_TYPES_SET } from "../utils/LightFlicker";
 import { LIGHT_SOURCES, PLACEABLE_LIGHT_TYPES, getDefaultLightColor } from "../map/LightTypes";
 import type { LightSourceType } from "../map/LightTypes";
@@ -2357,6 +2357,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						active: true,
 						hoverHex: hexcrawlMoveHoverHex,
 					} : null,
+					// Perf: tell the player view which marker is being dragged so it
+					// can freeze flicker and prebake static fog layers.
+					draggingMarkerId: draggingMarkerIndex >= 0 && config.markers[draggingMarkerIndex]
+						? config.markers[draggingMarkerIndex].id
+						: null,
 				};
 				// Attach pending hexcrawl travel animation data (set by hexcrawl-move handler)
 				if ((viewport as any)._pendingHexcrawlTravel) {
@@ -5720,7 +5725,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (_cached) return _cached;
 
 				const segments: { p1: { x: number; y: number }; p2: { x: number; y: number } }[] = [];
-				const circleSegments = 64;
+				const circleSegments = 36; // 10° per segment – visually identical, ~40% fewer raycasts
 				for (let i = 0; i < circleSegments; i++) {
 					const a1 = (i / circleSegments) * Math.PI * 2;
 					const a2 = ((i + 1) / circleSegments) * Math.PI * 2;
@@ -5802,7 +5807,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 				}
 
-				if (_visCacheMap.size >= _VIS_CACHE_MAX) _visCacheMap.clear();
+				if (_visCacheMap.size >= _VIS_CACHE_MAX) _visCacheEvict();
 				_visCacheMap.set(_cKey, uniquePoints);
 				return uniquePoints;
 			};

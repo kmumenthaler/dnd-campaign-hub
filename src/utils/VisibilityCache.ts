@@ -3,6 +3,9 @@
  * computeVisibilityPolygon is O(segments²) and called 10-20+ times per frame.
  * This cache deduplicates within-frame AND preserves results across frames
  * when walls haven't changed.
+ *
+ * Key perf fix: uses LRU-style partial eviction instead of `.clear()` so
+ * static-light entries survive while the dragged token generates new keys.
  */
 
 /**
@@ -53,4 +56,25 @@ export function visCacheKey(
 }
 
 export const visCacheMap = new Map<string, { x: number; y: number }[]>();
-export const VIS_CACHE_MAX = 1024;
+
+/**
+ * Enlarged from 1024 to 8192 so dragging a token (which generates many
+ * unique position keys) doesn't evict cached static-light polygons.
+ */
+export const VIS_CACHE_MAX = 8192;
+
+/**
+ * LRU-style partial eviction.  Deletes the oldest 50 % of entries (by
+ * insertion order — Map iterates in insertion order) instead of nuking
+ * the entire cache.  This keeps recently-used static entries alive while
+ * making room for new dynamic ones.
+ */
+export function visCacheEvict(): void {
+  const half = visCacheMap.size >> 1;
+  let removed = 0;
+  for (const key of visCacheMap.keys()) {
+    if (removed >= half) break;
+    visCacheMap.delete(key);
+    removed++;
+  }
+}

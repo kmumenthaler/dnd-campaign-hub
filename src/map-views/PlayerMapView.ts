@@ -1,10 +1,10 @@
-﻿import { App, ItemView, Notice, WorkspaceLeaf } from "obsidian";
+import { App, ItemView, Notice, WorkspaceLeaf } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { PLAYER_MAP_VIEW_TYPE } from "../constants";
 import type { MapMediaElement } from "../constants";
 import { computeLightFlicker, computeNeonBuzz, hexToRgb, getFlickerSeedForKey, FLICKER_LIGHT_TYPES_SET, BUZZ_LIGHT_TYPES_SET } from "../utils/LightFlicker";
 import { getDefaultLightColor } from "../map/LightTypes";
-import { getWallsHash as _getWallsHash, visCacheKey as _visCacheKey, visCacheMap as _visCacheMap, VIS_CACHE_MAX as _VIS_CACHE_MAX } from "../utils/VisibilityCache";
+import { getWallsHash as _getWallsHash, visCacheKey as _visCacheKey, visCacheMap as _visCacheMap, VIS_CACHE_MAX as _VIS_CACHE_MAX, visCacheEvict as _visCacheEvict } from "../utils/VisibilityCache";
 import { canvasPool as _canvasPool } from "../utils/CanvasPool";
 import type { MarkerReference, MarkerDefinition } from "../marker/MarkerTypes";
 import { CREATURE_SIZE_SQUARES } from "../marker/MarkerTypes";
@@ -39,6 +39,20 @@ export class PlayerMapView extends ItemView {
   private _pvFlickerRetryTimer: ReturnType<typeof setTimeout> | null = null; // Self-healing retry timer
   private _pvRendered: boolean = false; // Guard against double renderPlayerView (setState + onOpen race)
   private _lastConfigDigest: number = 0; // Fast hash of last synced config — skip redundant redraws
+
+  // ── Perf: pre-baked fog atlas ─────────────────────────────────────────
+  // Stores the complete fog/grayscale/color result so that during a drag
+  // the expensive drawFogOfWar() path can be skipped when only the
+  // dragging token moved and all other inputs are unchanged.
+  private _fogAtlasCanvas: HTMLCanvasElement | null = null;
+  private _fogAtlasGrayCanvas: HTMLCanvasElement | null = null;
+  private _fogAtlasColorCanvas: HTMLCanvasElement | null = null;
+  private _fogAtlasKey: string = '';          // digest of ALL fog inputs
+  private _fogAtlasW: number = 0;
+  private _fogAtlasH: number = 0;
+  // Cached filtered walls array – avoids re-filtering + door wall rebuild per frame
+  private _cachedFogWalls: any[] | null = null;
+  private _cachedFogWallsKey: string = '';    // wallsHash + envAsset door digest
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -3531,7 +3545,113 @@ export class PlayerMapView extends ItemView {
 
   }
 
+  /**
+   * Compute a fast content digest of all fog-relevant inputs.
+   * When `isDragging` is true the dragged marker's position is quantised to
+   * 4 px so the digest stays stable across small drag movements, giving the
+   * atlas cache a much higher hit-rate.
+   */
+  private _computeFogDigest(config: any, w: number, h: number, isDragging: boolean): string {
+    let d = 5381;
+    const n = (v: number) => { d = ((d << 5) + d + (v | 0)) | 0; };
+    const s = (v: string) => { for (let i = 0; i < v.length; i++) d = ((d << 5) + d + v.charCodeAt(i)) | 0; };
+
+    n(w); n(h);
+
+    // Markers (position, vision, light, elevation, tunnel state)
+    const markers: any[] = config.markers || [];
+    n(markers.length);
+    const dragId = config.draggingMarkerId || null;
+    for (let i = 0; i < markers.length; i++) {
+      const m = markers[i];
+      let px = m.position?.x || 0;
+      let py = m.position?.y || 0;
+      // During drag, quantise the moving token's position to 4 px grid
+      if (isDragging && m.id === dragId) {
+        px = (px >> 2) << 2;
+        py = (py >> 2) << 2;
+      }
+      n(px); n(py);
+      n(m.darkvision || 0);
+      n(m.light?.bright || 0); n(m.light?.dim || 0);
+      if (m.light?.type) s(m.light.type);
+      n(m.visibleToPlayers ? 1 : 0);
+      if (m.elevation) { n(m.elevation.height || 0); n(m.elevation.depth || 0); }
+      n(m.tunnelState ? 1 : 0);
+      if (m.markerId) s(m.markerId);
+    }
+
+    // Walls (count + per-wall open state / height)
+    const walls: any[] = config.walls || [];
+    n(walls.length);
+    for (let i = 0; i < walls.length; i++) {
+      const wl = walls[i];
+      n(wl.open ? 1 : 0);
+      n(wl.height || 0);
+    }
+
+    // Standalone light sources
+    const lights: any[] = config.lightSources || [];
+    n(lights.length);
+    for (let i = 0; i < lights.length; i++) {
+      const l = lights[i];
+      n(l.x || 0); n(l.y || 0);
+      n(l.bright || 0); n(l.dim || 0);
+      n(l.active !== false ? 1 : 0);
+      if (l.type) s(l.type);
+    }
+
+    // Fog regions
+    const regions: any[] = config.fogOfWar?.regions || [];
+    n(regions.length);
+    for (let i = 0; i < regions.length; i++) {
+      const r = regions[i];
+      if (r.type) s(r.type);
+      n(r.x || r.cx || 0); n(r.y || r.cy || 0);
+      n(r.width || r.radius || 0); n(r.height || 0);
+    }
+
+    // Grid + scale (affects pixelsPerFoot)
+    n(config.gridSize || 0);
+    n(config.scale?.value || 0);
+
+    // Vision selection
+    if (config.selectedVisionTokenId) s(config.selectedVisionTokenId);
+
+    // Env-asset doors (affect wall list)
+    const envAssets: any[] = config.envAssets || [];
+    n(envAssets.length);
+    for (let i = 0; i < envAssets.length; i++) {
+      const ea = envAssets[i];
+      if (ea.doorConfig) {
+        n(ea.doorConfig.isOpen ? 1 : 0);
+        n(ea.doorConfig.openAngle || 0);
+        n(ea.doorConfig.slidePosition || 0);
+      }
+      if (ea.scatterConfig?.blocksVision) n(1);
+    }
+
+    return String(d);
+  }
+
   private drawFogOfWar(ctx: CanvasRenderingContext2D, w: number, h: number, config: any) {
+    const _freezeFlicker = !!config.draggingMarkerId;
+
+    // ── Fog atlas cache: skip the entire O(n²) pipeline when inputs are unchanged ──
+    // During drag the moving token's position is quantised to 4 px so the
+    // digest only changes every ~4 px → halves fog recomputes on fast drags.
+    const _fogDigest = this._computeFogDigest(config, w, h, _freezeFlicker);
+    if (_fogDigest === this._fogAtlasKey && this._fogAtlasCanvas &&
+        this._fogAtlasW === w && this._fogAtlasH === h) {
+      ctx.drawImage(this._fogAtlasCanvas, 0, 0);
+      return;
+    }
+
+    // Composite canvas: fog, colour overlay and grayscale tint are drawn
+    // here first so we can cache the result for future frames.
+    const _fogComp = _canvasPool.acquire(w, h);
+    const _fogCompCtx = _fogComp.getContext('2d')!;
+
     const fogCanvas = _canvasPool.acquire(w, h);
     const fogCtx = fogCanvas.getContext('2d');
     if (!fogCtx) { _canvasPool.release(fogCanvas); return; }
@@ -3790,9 +3910,10 @@ export class PlayerMapView extends ItemView {
 
       allLights.forEach((light: any, i: number) => {
         // Apply flicker/buzz modulation for lights
+        // During drag, freeze flicker to prevent cache-busting radius changes
         const pvFlickerKey = `pv_light_${light.attachedToMarker || i}`;
         const pvIsBuzz = BUZZ_LIGHT_TYPES_SET.has(light.type);
-        const pvShouldFlicker = FLICKER_LIGHT_TYPES_SET.has(light.type);
+        const pvShouldFlicker = !_freezeFlicker && FLICKER_LIGHT_TYPES_SET.has(light.type);
         const pvFlickerTime = performance.now() / 1000;
         const pvFlicker = pvShouldFlicker
           ? (pvIsBuzz
@@ -4030,11 +4151,8 @@ export class PlayerMapView extends ItemView {
       _canvasPool.release(mdBlack);
     }
 
-    // Draw fully opaque fog for player view
-    ctx.save();
-    ctx.globalAlpha = 1.0;
-    ctx.drawImage(fogCanvas, 0, 0);
-    ctx.restore();
+    // Draw fully opaque fog onto composite canvas (for caching)
+    _fogCompCtx.drawImage(fogCanvas, 0, 0);
     _canvasPool.release(fogCanvas);
     
     // Draw coloured light glow overlay (visible through revealed fog areas)
@@ -4049,10 +4167,10 @@ export class PlayerMapView extends ItemView {
           const col = hexToRgb(colHex);
           const colDim = { r: Math.floor(col.r * 0.7), g: Math.floor(col.g * 0.7), b: Math.floor(col.b * 0.7) };
 
-          // Flicker / buzz
+          // Flicker / buzz — frozen during drag for cache stability
           const lcFlickerKey = `pv_light_${light.attachedToMarker || li}`;
           const lcIsBuzz = BUZZ_LIGHT_TYPES_SET.has(light.type);
-          const lcShouldFlicker = FLICKER_LIGHT_TYPES_SET.has(light.type);
+          const lcShouldFlicker = !_freezeFlicker && FLICKER_LIGHT_TYPES_SET.has(light.type);
           const lcTime = performance.now() / 1000;
           const lcFlicker = lcShouldFlicker
             ? (lcIsBuzz
@@ -4178,11 +4296,8 @@ export class PlayerMapView extends ItemView {
           lcCtx.globalCompositeOperation = 'source-over';
         }
 
-        // Composite colour overlay onto the main canvas (over fog)
-        ctx.save();
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.drawImage(lightColorCanvas, 0, 0);
-        ctx.restore();
+        // Composite colour overlay onto the fog composite (for caching)
+        _fogCompCtx.drawImage(lightColorCanvas, 0, 0);
         _canvasPool.release(lightColorCanvas);
       }
     }
@@ -4195,13 +4310,31 @@ export class PlayerMapView extends ItemView {
         grayCtx.drawImage(_mdMask, 0, 0);
         grayCtx.globalCompositeOperation = 'source-over';
       }
-      ctx.save();
-      ctx.globalAlpha = 1.0;
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.drawImage(grayscaleCanvas, 0, 0);
-      ctx.restore();
+      _fogCompCtx.drawImage(grayscaleCanvas, 0, 0);
     } else {
     }
+
+    // ── Blit composite to main canvas + cache for future frames ──
+    ctx.drawImage(_fogComp, 0, 0);
+
+    // Persist to atlas cache (reuse canvas, avoiding re-allocation)
+    if (!this._fogAtlasCanvas) {
+      this._fogAtlasCanvas = document.createElement('canvas');
+    }
+    if (this._fogAtlasCanvas.width !== w || this._fogAtlasCanvas.height !== h) {
+      this._fogAtlasCanvas.width = w;
+      this._fogAtlasCanvas.height = h;
+    }
+    const _atlasCtx = this._fogAtlasCanvas.getContext('2d');
+    if (_atlasCtx) {
+      _atlasCtx.clearRect(0, 0, w, h);
+      _atlasCtx.drawImage(_fogComp, 0, 0);
+    }
+    this._fogAtlasKey = _fogDigest;
+    this._fogAtlasW = w;
+    this._fogAtlasH = h;
+
+    _canvasPool.release(_fogComp);
     _canvasPool.release(_mdMask);
     _canvasPool.releaseAll(playerVisionCanvas, playerDarkvisionCanvas, grayscaleCanvas, _allLightsMask);
   }
@@ -4384,7 +4517,9 @@ export class PlayerMapView extends ItemView {
     const segments: { p1: { x: number; y: number }; p2: { x: number; y: number } }[] = [];
     
     // Add bounding circle as segments (approximated with many points)
-    const circleSegments = 64;
+    // 36 segments ≈ 10° each – visually indistinguishable from 64 but ~40% fewer
+    // angles to ray-cast, which is the inner loop of the O(angles × segments) algorithm.
+    const circleSegments = 36;
     for (let i = 0; i < circleSegments; i++) {
       const angle1 = (i / circleSegments) * Math.PI * 2;
       const angle2 = ((i + 1) / circleSegments) * Math.PI * 2;
@@ -4524,8 +4659,8 @@ export class PlayerMapView extends ItemView {
       }
     }
     
-    // â”€â”€ Populate cache (cap size to prevent unbounded growth) â”€â”€
-    if (_visCacheMap.size >= _VIS_CACHE_MAX) _visCacheMap.clear();
+    // â”€â”€ Populate cache (LRU evict oldest 50%% when at capacity) â”€â”€
+    if (_visCacheMap.size >= _VIS_CACHE_MAX) _visCacheEvict();
     _visCacheMap.set(_cKey, uniquePoints);
     return uniquePoints;
   }
