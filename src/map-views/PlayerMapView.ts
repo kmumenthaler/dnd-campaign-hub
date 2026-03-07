@@ -1,4 +1,4 @@
-﻿import { App, ItemView, Notice, WorkspaceLeaf } from "obsidian";
+import { App, ItemView, Notice, WorkspaceLeaf } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { PLAYER_MAP_VIEW_TYPE } from "../constants";
 import type { MapMediaElement } from "../constants";
@@ -36,6 +36,7 @@ export class PlayerMapView extends ItemView {
   private _pvLastFlickerRedraw: number = 0; // Timestamp of last flicker redraw
   private _pvFlickerRetryTimer: ReturnType<typeof setTimeout> | null = null; // Self-healing retry timer
   private _pvRendered: boolean = false; // Guard against double renderPlayerView (setState + onOpen race)
+  private _lastConfigDigest: number = 0; // Fast hash of last synced config — skip redundant redraws
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -95,11 +96,18 @@ export class PlayerMapView extends ItemView {
     if (hexcrawlTravel) {
       delete config.hexcrawlTravel; // Don't persist animation trigger
     }
+    // Fast change detection: skip expensive redraw when nothing changed.
+    const digest = this._computeConfigDigest(config);
+    const changed = digest !== this._lastConfigDigest;
+    this._lastConfigDigest = digest;
+
     this.mapConfig = config;
-    // Redraw annotations only â€” skip the full syncCanvasToImage() which
-    // recalculates CSS layout every call.  Layout is kept in sync by
-    // ResizeObserver, image/video onload, and tabletop mode toggles.
-    this.redrawAnnotations();
+
+    if (changed) {
+      this.redrawAnnotations();
+    }
+
+    // Layout is kept in sync by ResizeObserver, image/video onload, and tabletop mode toggles
     // Ensure the flicker animation loop is alive (it may have died during
     // a popout transition when the container was briefly disconnected, or
     // because the window context changed).
@@ -108,6 +116,98 @@ export class PlayerMapView extends ItemView {
     if (hexcrawlTravel) {
       this.animateHexcrawlTravel(hexcrawlTravel.fromCol, hexcrawlTravel.fromRow, hexcrawlTravel.toCol, hexcrawlTravel.toRow);
     }
+  }
+
+  /**
+   * Compute a fast numeric hash (djb2) of player-relevant config fields.
+   * Captures marker positions, wall open-states, light positions, rulers,
+   * fog regions, grid settings, and vision selection.
+   * Cost: ~microseconds for typical maps (<50 markers).
+   */
+  private _computeConfigDigest(c: any): number {
+    let h = 5381;
+    const n = (v: number) => { h = ((h << 5) + h + (v | 0)) | 0; };
+    const s = (v: string) => { for (let i = 0; i < v.length; i++) h = ((h << 5) + h + v.charCodeAt(i)) | 0; };
+
+    // Markers
+    const markers: any[] = c.markers || [];
+    n(markers.length);
+    for (let i = 0; i < markers.length; i++) {
+      const m = markers[i];
+      n(m.position?.x || 0); n(m.position?.y || 0);
+      n(m.darkvision || 0);
+      n(m.light?.bright || 0); n(m.light?.dim || 0);
+      n(m.visibleToPlayers ? 1 : 0);
+      if (m.elevation) { n(m.elevation.height || 0); n(m.elevation.depth || 0); }
+      if (m.tunnelState) { s(m.tunnelState.tunnelId || ''); n(m.tunnelState.pathIndex || 0); }
+      if (m.layer) s(m.layer);
+    }
+
+    // Walls (count + open-state; positions are static per-session)
+    const walls: any[] = c.walls || [];
+    n(walls.length);
+    for (let i = 0; i < walls.length; i++) n(walls[i].open ? 1 : 0);
+
+    // Light sources
+    const lights: any[] = c.lightSources || [];
+    n(lights.length);
+    for (let i = 0; i < lights.length; i++) {
+      const l = lights[i];
+      n(l.x || 0); n(l.y || 0);
+      n(l.bright || 0); n(l.dim || 0);
+      n(l.active !== false ? 1 : 0);
+    }
+
+    // Collections
+    n(c.drawings?.length || 0);
+    n(c.highlights?.length || 0);
+    n(c.aoeEffects?.length || 0);
+    n(c.envAssets?.length || 0);
+    n(c.tunnels?.length || 0);
+    n(c.poiReferences?.length || 0);
+
+    // Fog-of-war
+    n(c.fogOfWar?.enabled ? 1 : 0);
+    n(c.fogOfWar?.regions?.length || 0);
+
+    // Grid
+    n(c.gridSize || 0);
+    n(c.gridVisible ? 1 : 0);
+    n(c.gridOffsetX || 0); n(c.gridOffsetY || 0);
+    if (c.gridType) s(c.gridType);
+
+    // Vision selection
+    if (c.selectedVisionTokenId) s(c.selectedVisionTokenId);
+
+    // Rulers
+    if (c.dragRuler) {
+      n(1);
+      n(c.dragRuler.origin?.x || 0); n(c.dragRuler.origin?.y || 0);
+      n(c.dragRuler.current?.x || 0); n(c.dragRuler.current?.y || 0);
+    }
+    if (c.measureRuler) {
+      n(2);
+      n(c.measureRuler.start?.x || 0); n(c.measureRuler.start?.y || 0);
+      n(c.measureRuler.end?.x || 0); n(c.measureRuler.end?.y || 0);
+    }
+    if (c.targetDistRuler) {
+      n(3);
+      n(c.targetDistRuler.origin?.x || 0); n(c.targetDistRuler.origin?.y || 0);
+      n(c.targetDistRuler.target?.x || 0); n(c.targetDistRuler.target?.y || 0);
+    }
+
+    // Hexcrawl
+    if (c.hexcrawlRangeOverlay?.active) { n(4); }
+    if (c.hexcrawlState?.partyPosition) {
+      n(c.hexcrawlState.partyPosition.col || 0);
+      n(c.hexcrawlState.partyPosition.row || 0);
+    }
+
+    // Difficult terrain
+    const dt = c.difficultTerrain;
+    if (dt) n(Object.keys(dt).length);
+
+    return h;
   }
 
   /**
