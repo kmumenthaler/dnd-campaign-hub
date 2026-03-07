@@ -16,6 +16,8 @@ import { CreatureSelectorModal, MultiCreatureSelectorModal, RenameCreatureModal 
 import { ClearDrawingsConfirmModal, ClearTokensConfirmModal } from "../utils/ConfirmModal";
 import { DeleteMapConfirmModal } from "../map-views/DeleteMapConfirmModal";
 import { TabletopCalibrationModal } from "../map-views/TabletopCalibrationModal";
+import { enumerateScreens, screenKey, isMultiScreenSupported } from "../utils/ScreenEnumeration";
+import type { ScreenInfo } from "../utils/ScreenEnumeration";
 import { canvasPool as _canvasPool } from "../utils/CanvasPool";
 import { getWallsHash as _getWallsHash, visCacheKey as _visCacheKey, visCacheMap as _visCacheMap, VIS_CACHE_MAX as _VIS_CACHE_MAX } from "../utils/VisibilityCache";
 import { computeLightFlicker, computeNeonBuzz, hexToRgb, getFlickerSeedForKey, FLICKER_LIGHT_TYPES_SET, BUZZ_LIGHT_TYPES_SET } from "../utils/LightFlicker";
@@ -1630,6 +1632,112 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 				} catch (e) { console.warn('pvCalibrate callback error', e); }
 			}).open();
+		});
+
+		// ── "Project to..." button in PV picker ──
+		const pvProjectBtn = pvPicker.createEl('button', {
+			cls: 'dnd-map-aoe-shape-btn',
+			attr: { title: 'Project to Monitor' }
+		});
+		pvProjectBtn.createEl('span', { text: '📺' });
+		pvProjectBtn.addEventListener('click', async (e) => {
+			e.stopPropagation();
+			pvPicker.addClass('hidden');
+
+			const pm = plugin.projectionManager;
+			if (!pm) {
+				new Notice('Projection manager not available');
+				return;
+			}
+
+			// Enumerate screens
+			const screens = await pm.getScreens();
+
+			if (screens.length <= 1 && !isMultiScreenSupported()) {
+				// Single monitor or API unavailable — project to the only screen
+				const screen = screens[0];
+				const mapId = config.mapId || resourcePath;
+				await pm.project(mapId, {
+					markers: config.markers,
+					drawings: config.drawings,
+					highlights: config.highlights,
+					aoeEffects: config.aoeEffects,
+					fogOfWar: config.fogOfWar,
+					walls: config.walls,
+					lightSources: config.lightSources,
+					tunnels: config.tunnels,
+					poiReferences: config.poiReferences,
+					gridType: config.gridType,
+					gridSize: config.gridSize,
+					gridOffsetX: config.gridOffsetX || 0,
+					gridOffsetY: config.gridOffsetY || 0,
+					scale: config.scale,
+					name: config.name,
+					isVideo: config.isVideo,
+					type: config.type
+				}, resourcePath, screen);
+				return;
+			}
+
+			// Multi-monitor — show a context menu of available screens
+			const menu = new Menu();
+
+			// If there's an active projection, add a "Stop Projection" option
+			if (pm.isProjectionAlive()) {
+				menu.addItem((item) => {
+					item.setTitle('⏹ Stop Projection');
+					item.onClick(() => pm.stopProjection());
+				});
+				menu.addSeparator();
+			}
+
+			for (const screen of screens) {
+				const key = screenKey(screen);
+				const cal = pm.getCalibrationForScreen(screen);
+				const isActive = pm.activeProjection?.screen?.label === screen.label;
+				const label = `${screen.isPrimary ? '🖥️' : '🖵'} ${screen.label} (${screen.width}×${screen.height})${cal ? ' ✓' : ''}${isActive ? ' ◄' : ''}`;
+
+				menu.addItem((item) => {
+					item.setTitle(label);
+					item.onClick(async () => {
+						const mapId = config.mapId || resourcePath;
+						await pm.project(mapId, {
+							markers: config.markers,
+							drawings: config.drawings,
+							highlights: config.highlights,
+							aoeEffects: config.aoeEffects,
+							fogOfWar: config.fogOfWar,
+							walls: config.walls,
+							lightSources: config.lightSources,
+							tunnels: config.tunnels,
+							poiReferences: config.poiReferences,
+							gridType: config.gridType,
+							gridSize: config.gridSize,
+							gridOffsetX: config.gridOffsetX || 0,
+							gridOffsetY: config.gridOffsetY || 0,
+							scale: config.scale,
+							name: config.name,
+							isVideo: config.isVideo,
+							type: config.type
+						}, resourcePath, screen);
+					});
+				});
+			}
+
+			// Add calibration option
+			menu.addSeparator();
+			menu.addItem((item) => {
+				item.setTitle('⚙️ Manage Calibrations...');
+				item.onClick(() => {
+					// Open the existing calibration modal
+					const popoutWin = window;
+					new TabletopCalibrationModal(plugin.app, plugin, popoutWin, () => {
+						new Notice('Calibration saved');
+					}).open();
+				});
+			});
+
+			menu.showAtMouseEvent(e as MouseEvent);
 		});
 
 		// AoE shape picker sub-menu (shown when AoE tool is active, positioned right of button)
