@@ -990,28 +990,29 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		};
 
 		// Helper to create icon-only buttons with hover labels
-		const createToolBtn = (parent: HTMLElement, icon: string, label: string, isActive = false, fullWidth = false): HTMLButtonElement => {
+		const createToolBtn = (parent: HTMLElement, icon: string, label: string, isActive = false, fullWidth = false, shortcut?: string): HTMLButtonElement => {
+			const displayLabel = shortcut ? `${label} [${shortcut.toUpperCase()}]` : label;
 			const btn = parent.createEl('button', { 
 				cls: 'dnd-map-tool-btn' + (isActive ? ' active' : '') + (fullWidth ? ' full-width' : '')
 			});
 			btn.createEl('span', { text: icon, cls: 'dnd-map-tool-btn-icon' });
-			btn.createEl('span', { text: label, cls: 'dnd-map-tool-btn-label' });
+			btn.createEl('span', { text: displayLabel, cls: 'dnd-map-tool-btn-label' });
 			// Tooltip positioning is handled via CSS (position:absolute on .dnd-map-tool-btn-label)
 			return btn;
 		};
 		
 		// Common navigation and editing tools (2 columns)
-		const panBtn = createToolBtn(commonToolGroup, '⬆', 'Pan', true);
-		const selectBtn = createToolBtn(commonToolGroup, '👆', 'Select');
+		const panBtn = createToolBtn(commonToolGroup, '⬆', 'Pan', true, false, 'v');
+		const selectBtn = createToolBtn(commonToolGroup, '👆', 'Select', false, false, 's');
 		const highlightIcon = config.gridType === 'square' ? '⬜' : '⬡';
-		const highlightBtn = createToolBtn(commonToolGroup, highlightIcon, 'Highlight');
-		const poiBtn = createToolBtn(commonToolGroup, '📍', 'Point of Interest');
-		const markerBtn = createToolBtn(commonToolGroup, '🎯', 'Marker');
-		const drawBtn = createToolBtn(commonToolGroup, '✏', 'Draw');
-		const rulerBtn = createToolBtn(commonToolGroup, '📏', 'Ruler');
-		const targetDistBtn = createToolBtn(commonToolGroup, '📐', 'Token Distance');
-		const aoeBtn = createToolBtn(commonToolGroup, '💥', 'AoE');
-		const eraserBtn = createToolBtn(commonToolGroup, '🧹', 'Eraser');
+		const highlightBtn = createToolBtn(commonToolGroup, highlightIcon, 'Highlight', false, false, 'h');
+		const poiBtn = createToolBtn(commonToolGroup, '📍', 'Point of Interest', false, false, 'p');
+		const markerBtn = createToolBtn(commonToolGroup, '🎯', 'Marker', false, false, 'm');
+		const drawBtn = createToolBtn(commonToolGroup, '✏', 'Draw', false, false, 'd');
+		const rulerBtn = createToolBtn(commonToolGroup, '📏', 'Ruler', false, false, 'r');
+		const targetDistBtn = createToolBtn(commonToolGroup, '📐', 'Token Distance', false, false, 't');
+		const aoeBtn = createToolBtn(commonToolGroup, '💥', 'AoE', false, false, 'a');
+		const eraserBtn = createToolBtn(commonToolGroup, '🧹', 'Eraser', false, false, 'x');
 		
 		// === HEXCRAWL SECTION (expandable, hex maps on world/regional maps only) ===
 		const isHexcrawlMap = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && (config.type === 'world' || config.type === 'regional');
@@ -1183,12 +1184,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			bgViewChips[v.key] = chip;
 		}
 		
-		const fogBtn = createToolBtn(visionContent, '🌫️', 'Fog');
-		const wallsBtn = createToolBtn(visionContent, '🧱', 'Walls');
-		const lightsBtn = createToolBtn(visionContent, '💡', 'Lights');
-		const elevationPaintBtn = createToolBtn(visionContent, '⛰️', 'Tile Elevation');
+		const fogBtn = createToolBtn(visionContent, '🌫️', 'Fog', false, false, 'f');
+		const wallsBtn = createToolBtn(visionContent, '🧱', 'Walls', false, false, 'w');
+		const lightsBtn = createToolBtn(visionContent, '💡', 'Lights', false, false, 'l');
+		const elevationPaintBtn = createToolBtn(visionContent, '⛰️', 'Tile Elevation', false, false, 'e');
 		const difficultTerrainBtn = createToolBtn(visionContent, '🌿', 'Difficult Terrain');
-		const envAssetBtn = createToolBtn(visionContent, '📦', 'Env Assets');
+		const envAssetBtn = createToolBtn(visionContent, '📦', 'Env Assets', false, false, 'n');
 		// Toggle vision section visibility based on layer (hidden entirely for hexcrawl maps)
 		visionSectionHeader.toggleClass('hidden', config.activeLayer !== 'Background' || isHexcrawlMap);
 		visionContent.toggleClass('hidden', config.activeLayer !== 'Background' || isHexcrawlMap);
@@ -1423,7 +1424,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		setupSectionHeader.createEl('span', { text: '▼', cls: 'dnd-map-section-toggle' });
 		const setupContent = toolbarContent.createDiv({ cls: 'dnd-map-section-content' });
 		
-		const moveGridBtn = createToolBtn(setupContent, '✥', 'Move Grid');
+		const moveGridBtn = createToolBtn(setupContent, '✥', 'Move Grid', false, false, 'g');
 		const calibrateBtn = createToolBtn(setupContent, '⚙', 'Calibrate');
 		const measureBtn = createToolBtn(setupContent, '📏', 'Measure');
 		
@@ -9414,8 +9415,38 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				redrawAnnotations();
 			});
 
-			// Keyboard shortcuts for player-view rotation
+			// Keyboard shortcuts for tools and player-view rotation
 			viewport.addEventListener('keydown', (e: KeyboardEvent) => {
+				// Skip tool shortcuts when an input/textarea is focused
+				const tag = (e.target as HTMLElement)?.tagName;
+				if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+				// ── Tool-switching shortcuts (single letter, no modifiers) ──
+				if (!e.ctrlKey && !e.metaKey && !e.altKey && activeTool !== 'player-view') {
+					const toolMap: Record<string, typeof activeTool> = {
+						v: 'pan', s: 'select', h: 'highlight', p: 'poi',
+						m: 'marker', d: 'draw', r: 'ruler', t: 'target-distance',
+						a: 'aoe', x: 'eraser', f: 'fog', w: 'walls',
+						l: 'lights', e: 'elevation-paint', g: 'move-grid',
+						n: 'env-asset',
+					};
+					const tool = toolMap[e.key.toLowerCase()];
+					if (tool) {
+						// Only allow background-layer tools when on Background layer
+						const bgOnlyTools = new Set(['fog', 'walls', 'lights', 'elevation-paint', 'env-asset', 'move-grid']);
+						if (bgOnlyTools.has(tool) && config.activeLayer !== 'Background') return;
+						e.preventDefault();
+						setActiveTool(tool);
+						return;
+					}
+					// Escape → revert to Select tool
+					if (e.key === 'Escape' && activeTool !== 'select') {
+						e.preventDefault();
+						setActiveTool('select');
+						return;
+					}
+				}
+
 				// Tunnel traversal with arrow keys
 				if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
 					const selectedMarkerIdx = config.markers.findIndex((m: any) => m.tunnelState);
