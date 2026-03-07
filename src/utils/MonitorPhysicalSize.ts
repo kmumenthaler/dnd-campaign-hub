@@ -46,12 +46,12 @@ export function queryPhysicalMonitorSizes(): PhysicalMonitorInfo[] {
     if (platform !== 'win32') return [];
 
     const { execSync } = nodeRequire('child_process') as typeof import('child_process');
+    const fs = nodeRequire('fs') as typeof import('fs');
+    const os = nodeRequire('os') as typeof import('os');
+    const path = nodeRequire('path') as typeof import('path');
 
-    // PowerShell script that:
-    // 1. Queries WmiMonitorBasicDisplayParams for physical panel size (cm)
-    // 2. Queries WmiMonitorID for the EDID friendly name
-    // 3. Correlates them by InstanceName prefix
-    // 4. Outputs JSON array
+    // Write the PowerShell script to a temp file to avoid stdin-piping
+    // issues inside Electron's sandboxed Node environment.
     const psScript = [
       '$ErrorActionPreference="SilentlyContinue"',
       '$p=Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBasicDisplayParams',
@@ -73,14 +73,24 @@ export function queryPhysicalMonitorSizes(): PhysicalMonitorInfo[] {
       'if($r.Count -eq 0){"[]"}',
       'elseif($r.Count -eq 1){ConvertTo-Json @($r) -Compress}',
       'else{ConvertTo-Json $r -Compress}',
-    ].join('\n');
+    ].join('\r\n');
 
-    const output = (execSync('powershell -NoProfile -Command -', {
-      input: psScript,
-      encoding: 'utf-8',
-      timeout: 10_000,
-      windowsHide: true,
-    }) as string).trim();
+    const tmpFile = path.join(os.tmpdir(), 'obsidian_edid_query.ps1');
+    fs.writeFileSync(tmpFile, psScript, 'utf-8');
+
+    const output = (execSync(
+      `powershell -NoProfile -ExecutionPolicy Bypass -File "${tmpFile}"`,
+      {
+        encoding: 'utf-8',
+        timeout: 10_000,
+        windowsHide: true,
+      }
+    ) as string).trim();
+
+    // Clean up temp file (best effort)
+    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+
+    console.log('MonitorPhysicalSize: raw output:', output);
 
     if (!output || output === '[]') {
       _cache = [];
