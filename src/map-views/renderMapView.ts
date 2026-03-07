@@ -2368,6 +2368,29 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			mapWrapper.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
 		};
 
+		/**
+		 * Compute the zoom + offset needed to fit the full map image in the
+		 * current viewport bounds (with a small margin), then apply them.
+		 * Returns the computed scale so callers can update the zoom label.
+		 */
+		const fitToViewport = (): number => {
+			const vpRect = viewport.getBoundingClientRect();
+			if (vpRect.width === 0 || vpRect.height === 0) return scale; // not visible yet
+			const margin = 8; // px padding
+			const imgW = img.width || img.naturalWidth;
+			const imgH = img.height || img.naturalHeight;
+			if (imgW === 0 || imgH === 0) return scale;
+			scale = Math.min(
+				(vpRect.width - margin * 2) / imgW,
+				(vpRect.height - margin * 2) / imgH,
+			);
+			// Centre the image
+			translateX = (vpRect.width - imgW * scale) / 2;
+			translateY = (vpRect.height - imgH * scale) / 2;
+			updateTransform();
+			return scale;
+		};
+
 		// Function to convert screen coordinates to map coordinates (in natural image pixel space)
 		const screenToMap = (screenX: number, screenY: number) => {
 			const rect = viewport.getBoundingClientRect();
@@ -10215,6 +10238,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			
 			const zoomOut = zoomContainer.createEl('button', { text: '−', cls: 'dnd-map-zoom-btn' });
 			const zoomReset = zoomContainer.createEl('button', { text: '100%', cls: 'dnd-map-zoom-btn' });
+			const zoomFit = zoomContainer.createEl('button', { text: '⊞', cls: 'dnd-map-zoom-btn' });
+			zoomFit.title = 'Fit map to viewport';
 			const zoomIn = zoomContainer.createEl('button', { text: '+', cls: 'dnd-map-zoom-btn' });
 			
 			zoomIn.addEventListener('click', () => {
@@ -10235,6 +10260,17 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				translateY = 0;
 				updateTransform();
 				zoomReset.textContent = '100%';
+			});
+
+			zoomFit.addEventListener('click', () => {
+				const s = fitToViewport();
+				zoomReset.textContent = `${Math.round(s * 100)}%`;
+			});
+
+			// Auto-fit on first render so the map is always fully visible
+			requestAnimationFrame(() => {
+				const s = fitToViewport();
+				zoomReset.textContent = `${Math.round(s * 100)}%`;
 			});
 
 			// Grid toggle
