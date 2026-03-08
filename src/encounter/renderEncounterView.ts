@@ -143,16 +143,39 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 		loadBtn.addEventListener('click', async () => {
 			const tracker = plugin.combatTracker;
 
+			// Map YAML creatures (snake_case → camelCase for EncounterCreature)
+			const mappedCreatures = (fm.creatures || []).map((c: any) => ({
+				name: c.name,
+				count: c.count ?? 1,
+				hp: c.hp,
+				ac: c.ac,
+				cr: c.cr,
+				source: c.source,
+				path: c.path && c.path !== "[SRD]" ? c.path : undefined,
+				isFriendly: c.isFriendly ?? c.is_friendly ?? false,
+				isHidden: c.isHidden ?? c.is_hidden ?? false,
+			}));
+
 			// Build party from campaign PCs
 			const partyMembers: Array<{ name: string; level: number; hp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];
-			const campaignName = plugin.settings.currentCampaign;
-			if (campaignName) {
+
+			// Resolve campaign: try plugin setting, then encounter's campaign_path
+			const campaignPath = fm.campaign_path || '';
+			const campaignBaseName = campaignPath ? (campaignPath.split('/').pop() || '') : '';
+			const currentCampaign = plugin.settings.currentCampaign || '';
+
+			const campaignMatchers = new Set<string>();
+			if (currentCampaign) campaignMatchers.add(currentCampaign);
+			if (campaignPath) campaignMatchers.add(campaignPath);
+			if (campaignBaseName) campaignMatchers.add(campaignBaseName);
+
+			if (campaignMatchers.size > 0) {
 				const allFiles = plugin.app.vault.getMarkdownFiles();
 				for (const f of allFiles) {
 					const fc = plugin.app.metadataCache.getFileCache(f);
 					const ffm = fc?.frontmatter;
 					if (!ffm) continue;
-					if ((ffm.type === "player" || ffm.type === "pc") && ffm.campaign === campaignName) {
+					if ((ffm.type === "player" || ffm.type === "pc") && campaignMatchers.has(ffm.campaign)) {
 						partyMembers.push({
 							name: ffm.name || f.basename,
 							level: typeof ffm.level === "number" ? ffm.level : 1,
@@ -169,9 +192,9 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 
 			await tracker.startFromEncounter(
 				encounterName,
-				creatures,
+				mappedCreatures,
 				partyMembers,
-				true, // color names
+				fm.use_color_names ?? true,
 			);
 
 			// Open the Combat Tracker sidebar

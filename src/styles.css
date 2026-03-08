@@ -989,6 +989,45 @@
   white-space: nowrap;
 }
 
+/* ── Inline Statblock Panel ── */
+.dnd-ct-statblock-panel:empty {
+  display: none;
+}
+.dnd-ct-statblock-panel {
+  margin-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 8px;
+}
+.dnd-ct-statblock-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.dnd-ct-statblock-title {
+  font-weight: 600;
+  font-size: 0.95em;
+}
+.dnd-ct-statblock-close {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 1em;
+  color: var(--text-muted);
+}
+.dnd-ct-statblock-close:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.dnd-ct-statblock-content {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
 /* =================================================================
    Player View (fullscreen projection)
    ================================================================= */

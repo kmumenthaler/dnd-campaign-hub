@@ -1,4 +1,4 @@
-import { ItemView, Menu, Modal, Notice, Setting, TFile, WorkspaceLeaf } from "obsidian";
+import { ItemView, MarkdownRenderer, Menu, Modal, Notice, Setting, TFile, WorkspaceLeaf } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { COMBAT_TRACKER_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE } from "../constants";
 import type { CombatTracker } from "./CombatTracker";
@@ -17,6 +17,8 @@ import type { Combatant, CombatState, StatusEffect } from "./types";
 export class CombatTrackerView extends ItemView {
   plugin: DndCampaignHubPlugin;
   private unsubscribe: (() => void) | null = null;
+  private statblockPanel: HTMLElement | null = null;
+  private activeStatblockName: string | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -66,6 +68,12 @@ export class CombatTrackerView extends ItemView {
     this.renderEncounterHeader(container, state);
     this.renderColumnHeaders(container);
     this.renderCombatantList(container, tracker, state);
+
+    // Statblock panel (rendered inline below combatant list)
+    this.statblockPanel = container.createDiv({ cls: "dnd-ct-statblock-panel" });
+    if (this.activeStatblockName) {
+      this.renderStatblockInPanel(this.activeStatblockName);
+    }
   }
 
   /* ═══════════════════════ No Active Combat ═══════════════════════ */
@@ -234,11 +242,19 @@ export class CombatTrackerView extends ItemView {
       cls: `dnd-ct-name ${c.player ? "dnd-ct-name-player" : ""} ${c.friendly && !c.player ? "dnd-ct-name-friendly" : ""} ${!c.player && !c.friendly ? "dnd-ct-name-enemy" : ""}`,
     });
 
-    if (c.notePath) {
+    if (c.player && c.notePath) {
+      // PCs: open full note in split leaf
       nameEl.addClass("dnd-ct-name-link");
       nameEl.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (c.notePath) this.showStatblock(c.notePath);
+        this.openNote(c.notePath!);
+      });
+    } else if (!c.player) {
+      // Creatures/NPCs: show Fantasy Statblock inline
+      nameEl.addClass("dnd-ct-name-link");
+      nameEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.toggleStatblock(c.name);
       });
     }
 
@@ -318,13 +334,42 @@ export class CombatTrackerView extends ItemView {
 
   /* ═══════════════════════ Statblock Display ═══════════════════════ */
 
-  private async showStatblock(notePath: string) {
+  /** Toggle the inline statblock panel for a creature. */
+  private toggleStatblock(creatureName: string) {
+    if (this.activeStatblockName === creatureName) {
+      this.activeStatblockName = null;
+      if (this.statblockPanel) this.statblockPanel.empty();
+    } else {
+      this.activeStatblockName = creatureName;
+      this.renderStatblockInPanel(creatureName);
+    }
+  }
+
+  /** Render a Fantasy Statblocks code block into the inline panel. */
+  private async renderStatblockInPanel(creatureName: string) {
+    if (!this.statblockPanel) return;
+    this.statblockPanel.empty();
+
+    const header = this.statblockPanel.createDiv({ cls: "dnd-ct-statblock-header" });
+    header.createEl("span", { text: creatureName, cls: "dnd-ct-statblock-title" });
+    const closeBtn = header.createEl("button", { text: "✕", cls: "dnd-ct-statblock-close" });
+    closeBtn.addEventListener("click", () => {
+      this.activeStatblockName = null;
+      if (this.statblockPanel) this.statblockPanel.empty();
+    });
+
+    const content = this.statblockPanel.createDiv({ cls: "dnd-ct-statblock-content" });
+    const markdown = "```statblock\ncreature: " + creatureName + "\n```";
+    await MarkdownRenderer.render(this.app, markdown, content, "", this);
+  }
+
+  /** Open a note in a split leaf below the tracker (for PCs). */
+  private async openNote(notePath: string) {
     const file = this.app.vault.getAbstractFileByPath(notePath);
     if (!(file instanceof TFile)) {
-      new Notice("Note not found: " + notePath);
+      new Notice("Note not found");
       return;
     }
-    // Open the note in a horizontal split below this tracker leaf
     const newLeaf = this.app.workspace.createLeafBySplit(this.leaf, "horizontal", false);
     await newLeaf.openFile(file, { state: { mode: "preview" } });
   }

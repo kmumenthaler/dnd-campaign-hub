@@ -127,7 +127,7 @@ export class CombatTracker {
           player: false,
           friendly: ec.isFriendly ?? false,
           hidden: ec.isHidden ?? false,
-          notePath: ec.path,
+          notePath: ec.path && ec.path !== "[SRD]" ? ec.path : undefined,
           tokenId,
           statuses: [],
           cr: ec.cr,
