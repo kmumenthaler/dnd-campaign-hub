@@ -126,6 +126,27 @@ export class MapController {
 
 	/* ═══════════════════════ Mutations ═══════════════════════ */
 
+	/** Map of common color names to hex values for border color extraction. */
+	private static readonly COLOR_NAME_TO_HEX: Record<string, string> = {
+		red: "#ff0000", blue: "#3399ff", green: "#00cc44", yellow: "#ffcc00",
+		purple: "#9933ff", orange: "#ff6600", pink: "#ff66cc", cyan: "#00cccc",
+		magenta: "#ff00ff", lime: "#88ff00", teal: "#009999", gold: "#ffd700",
+		brown: "#8B4513", black: "#333333", white: "#ffffff", gray: "#808080",
+		grey: "#808080", indigo: "#4b0082", violet: "#ee82ee", silver: "#c0c0c0",
+		bronze: "#cd7f32", crimson: "#dc143c", coral: "#ff7f50", maroon: "#800000",
+	};
+
+	/**
+	 * Extract a border color hex from a display name like "Goblin (Blue)".
+	 * Returns undefined if no color suffix is found.
+	 */
+	private extractBorderColor(display?: string): string | undefined {
+		if (!display) return undefined;
+		const match = display.match(/\((\w+)\)\s*$/);
+		if (!match) return undefined;
+		return MapController.COLOR_NAME_TO_HEX[match[1]!.toLowerCase()];
+	}
+
 	/**
 	 * Place a token on the active map.
 	 *
@@ -198,8 +219,11 @@ export class MapController {
 			await library.setMarker(markerDef);
 		}
 
-		// ── Duplicate check ──
-		if (this.hasMarkerOnMap(markerDef.id)) {
+		// ── Extract border color from display name (e.g. "Goblin (Blue)") ──
+		const borderColor = this.extractBorderColor(opts.display);
+
+		// ── Duplicate check (same markerId + same borderColor) ──
+		if (this.hasMarkerOnMap(markerDef.id, borderColor)) {
 			return { success: false, reason: `"${opts.display ?? opts.name}" is already on the map` };
 		}
 
@@ -213,13 +237,18 @@ export class MapController {
 		const layer: Layer = isAlly ? "Player" : "DM";
 
 		// ── Create MarkerReference ──
-		const markerRef: MarkerReference = {
+		const markerRef: any = {
 			id: `marker_inst_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
 			markerId: markerDef.id,
 			position,
 			placedAt: Date.now(),
 			layer,
 		};
+
+		// Apply per-instance border color from display name
+		if (borderColor) {
+			markerRef.borderColor = borderColor;
+		}
 
 		// ── Apply to map ──
 		saveToHistory();
