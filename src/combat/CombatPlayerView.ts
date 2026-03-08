@@ -135,6 +135,14 @@ export class CombatPlayerView extends ItemView {
         turnCallout.createEl("span", { text: `${current.display}'s Turn`, cls: "dnd-ct-pv-turn-text" });
       }
     }
+
+    // Smooth-scroll active row into view after layout settles
+    requestAnimationFrame(() => {
+      const activeRow = list.querySelector(".dnd-ct-pv-row-active") as HTMLElement | null;
+      if (activeRow) {
+        activeRow.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
   }
 
   /** Map HP percentage to a green→orange→red color. */
