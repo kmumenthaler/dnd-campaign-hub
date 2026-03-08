@@ -1209,6 +1209,7 @@
 .dnd-ct-pv-hp {
   flex: 1;
   min-width: 0;
+  max-width: 10em;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -1243,6 +1244,7 @@
 .dnd-ct-pv-hp-condition {
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  font-size: 0.95em;
   text-shadow: none;
 }
 
