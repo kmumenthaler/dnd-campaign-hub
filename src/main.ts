@@ -2556,7 +2556,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			prevRound = state.round;
 
 			const combatant = state.combatants[state.turnIndex];
-			if (!combatant?.tokenId) return;
+			if (!combatant) return;
 
 			// Smooth-pan all live projections (battle & free) to the active combatant's token.
 			const projections = this.projectionManager.getLiveProjections();
@@ -2564,13 +2564,42 @@ export default class DndCampaignHubPlugin extends Plugin {
 				const view = proj.leaf.view as PlayerMapView;
 				const mapCfg = view.getMapConfig?.();
 				if (!mapCfg?.markers) continue;
+				const markers = mapCfg.markers as any[];
 
-				const marker = (mapCfg.markers as any[]).find(
-					(m: any) => m.markerId === combatant.tokenId
-				);
+				let marker: any = null;
+
+				// 1. Direct tokenId match
+				if (combatant.tokenId) {
+					marker = markers.find((m: any) => m.markerId === combatant.tokenId);
+				}
+
+				// 2. Vault note token_id fallback
+				if (!marker && combatant.notePath) {
+					const noteFile = this.app.vault.getAbstractFileByPath(combatant.notePath);
+					if (noteFile && (noteFile as any).extension) {
+						const noteCache = this.app.metadataCache.getFileCache(noteFile as any);
+						const noteTokenId = noteCache?.frontmatter?.token_id;
+						if (noteTokenId) {
+							marker = markers.find((m: any) => m.markerId === noteTokenId);
+						}
+					}
+				}
+
+				// 3. Name-based fallback
+				if (!marker) {
+					marker = markers.find((m: any) => {
+						const def = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
+						if (!def) return false;
+						const mn = def.name.toLowerCase();
+						const dn = (combatant.display || '').toLowerCase();
+						const bn = (combatant.name || '').toLowerCase();
+						return dn === mn || bn === mn || dn.startsWith(mn);
+					});
+				}
+
 				if (marker?.position) {
 					view.smoothPanToImageCoords(marker.position.x, marker.position.y);
-					break; // Pan the first matching projection
+					break;
 				}
 			}
 		});
