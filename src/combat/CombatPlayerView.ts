@@ -148,23 +148,45 @@ export class CombatPlayerView extends ItemView {
       });
     }
 
-    // Restore scroll, then smoothly pan to active row
+    // Restore scroll, then handle pan sequence
     requestAnimationFrame(() => {
       list.scrollTop = previousScroll;
-      const activeRow = list.querySelector(".dnd-ct-pv-row-active") as HTMLElement | null;
-      if (activeRow) {
-        // Calculate target: center the active row in the list viewport
-        const rowTop = activeRow.offsetTop;
-        const rowH = activeRow.offsetHeight;
-        const listH = list.clientHeight;
-        const target = rowTop - (listH - rowH) / 2;
+
+      // Find the row that had an HP change (damage/heal flash)
+      const changedRow = list.querySelector(
+        ".dnd-ct-pv-row-damage, .dnd-ct-pv-row-heal",
+      ) as HTMLElement | null;
+      const activeRow = list.querySelector(
+        ".dnd-ct-pv-row-active",
+      ) as HTMLElement | null;
+
+      if (changedRow && changedRow !== activeRow) {
+        // 1. Pan to the changed combatant so the flash is visible
+        const changedTarget = this.centeredScrollTarget(list, changedRow);
+        this.smoothScrollTo(list, changedTarget, 600, () => {
+          // 2. Hold while animation plays (~1s), then pan back to active
+          setTimeout(() => {
+            if (activeRow) {
+              const activeTarget = this.centeredScrollTarget(list, activeRow);
+              this.smoothScrollTo(list, activeTarget, 800);
+            }
+          }, 1000);
+        });
+      } else if (activeRow) {
+        // No HP change — just pan to active combatant
+        const target = this.centeredScrollTarget(list, activeRow);
         this.smoothScrollTo(list, target, 800);
       }
     });
   }
 
+  /** Calculate the scrollTop that centers a row in the list viewport. */
+  private centeredScrollTarget(list: HTMLElement, row: HTMLElement): number {
+    return row.offsetTop - (list.clientHeight - row.offsetHeight) / 2;
+  }
+
   /** Animate scrollTop from current position to target over duration ms. */
-  private smoothScrollTo(el: HTMLElement, target: number, duration: number) {
+  private smoothScrollTo(el: HTMLElement, target: number, duration: number, onDone?: () => void) {
     if (this.scrollAnimationId !== null) {
       cancelAnimationFrame(this.scrollAnimationId);
       this.scrollAnimationId = null;
@@ -174,7 +196,7 @@ export class CombatPlayerView extends ItemView {
     const maxScroll = el.scrollHeight - el.clientHeight;
     const clampedTarget = Math.max(0, Math.min(target, maxScroll));
     const distance = clampedTarget - start;
-    if (Math.abs(distance) < 1) return;
+    if (Math.abs(distance) < 1) { onDone?.(); return; }
 
     const startTime = performance.now();
 
@@ -191,6 +213,7 @@ export class CombatPlayerView extends ItemView {
         this.scrollAnimationId = requestAnimationFrame(step);
       } else {
         this.scrollAnimationId = null;
+        onDone?.();
       }
     };
 
