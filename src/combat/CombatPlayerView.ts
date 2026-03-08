@@ -196,7 +196,7 @@ export class CombatPlayerView extends ItemView {
   }
 
   /** Render a circular portrait from the combatant's token marker image. */
-  private renderPortrait(parent: HTMLElement, c: { tokenId?: string; notePath?: string }) {
+  private renderPortrait(parent: HTMLElement, c: { name: string; tokenId?: string; notePath?: string }) {
     let imageFile: string | undefined;
 
     // Try tokenId first
@@ -216,6 +216,13 @@ export class CombatPlayerView extends ItemView {
           if (marker?.imageFile) imageFile = marker.imageFile;
         }
       }
+    }
+
+    // Fallback: match by name in the marker library
+    if (!imageFile && c.name) {
+      const matches = this.plugin.markerLibrary.findMarkersByName(c.name);
+      const withImage = matches.find((m) => m.imageFile);
+      if (withImage) imageFile = withImage.imageFile;
     }
 
     if (!imageFile) return;
