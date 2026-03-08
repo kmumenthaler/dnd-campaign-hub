@@ -100,6 +100,9 @@ export class CombatPlayerView extends ItemView {
       const initEl = row.createEl("span", { cls: "dnd-ct-pv-init" });
       initEl.textContent = state.started ? String(c.initiative) : "—";
 
+      // Portrait image (from token marker if available)
+      this.renderPortrait(row, c);
+
       // Name + markers
       const nameCell = row.createDiv({ cls: "dnd-ct-pv-name-cell" });
       if (c.player) {
@@ -143,6 +146,37 @@ export class CombatPlayerView extends ItemView {
         activeRow.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     });
+  }
+
+  /** Render a circular portrait from the combatant's token marker image. */
+  private renderPortrait(parent: HTMLElement, c: { tokenId?: string; notePath?: string }) {
+    let imageFile: string | undefined;
+
+    // Try tokenId first
+    if (c.tokenId) {
+      const marker = this.plugin.markerLibrary.getMarker(c.tokenId);
+      if (marker?.imageFile) imageFile = marker.imageFile;
+    }
+
+    // Fallback: read token_id from vault note frontmatter
+    if (!imageFile && c.notePath) {
+      const file = this.app.vault.getAbstractFileByPath(c.notePath);
+      if (file) {
+        const cache = this.app.metadataCache.getFileCache(file as any);
+        const noteTokenId = cache?.frontmatter?.token_id;
+        if (noteTokenId) {
+          const marker = this.plugin.markerLibrary.getMarker(noteTokenId);
+          if (marker?.imageFile) imageFile = marker.imageFile;
+        }
+      }
+    }
+
+    if (!imageFile) return;
+
+    const wrap = parent.createDiv({ cls: "dnd-ct-pv-portrait" });
+    const img = wrap.createEl("img", { cls: "dnd-ct-pv-portrait-img" });
+    img.src = this.app.vault.adapter.getResourcePath(imageFile);
+    img.alt = "";
   }
 
   /** Map HP percentage to a green→orange→red color. */
