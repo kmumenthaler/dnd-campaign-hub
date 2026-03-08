@@ -58,6 +58,22 @@ export class CombatPlayerView extends ItemView {
       return;
     }
 
+    // Count visible combatants to compute dynamic sizing
+    const visibleCount = state.combatants.filter(
+      (c) => c && !c.hidden && (c.enabled ?? true),
+    ).length;
+    const hasTurnCallout = state.started &&
+      state.combatants[state.turnIndex] &&
+      !state.combatants[state.turnIndex]!.hidden;
+
+    // Budget: header ~3.2em, each row ~2.6em, row gaps ~0.3em, callout ~3.5em, padding ~2em
+    const overhead = 3.2 + 2 + (hasTurnCallout ? 3.5 : 0);
+    const rowBudget = visibleCount * 2.6 + Math.max(0, visibleCount - 1) * 0.3;
+    const totalEms = overhead + rowBudget;
+    // vh available = 100; font-size = vh / totalEms, clamped to reasonable bounds
+    const computedSize = Math.min(5, Math.max(1.2, 100 / totalEms));
+    container.style.fontSize = `${computedSize}vh`;
+
     // Header
     const header = container.createDiv({ cls: "dnd-ct-pv-header" });
     header.createEl("h2", { text: state.encounterName, cls: "dnd-ct-pv-title" });
