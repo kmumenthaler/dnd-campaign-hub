@@ -2535,15 +2535,16 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	/**
-	 * Register a combat tracker listener that auto-pans any projected
+	 * Register a combat tracker listener that smoothly pans any projected
 	 * player map view to center on the active combatant's token whenever
-	 * the turn changes.
+	 * the turn changes. Only active when the `combatAutoPan` setting is on.
 	 */
 	private registerCombatAutoPan(): void {
 		let prevTurnIndex = -1;
 		let prevRound = -1;
 
 		const unsubscribe = this.combatTracker.onChange((state) => {
+			if (!this.settings.combatAutoPan) return;
 			if (!state || !state.started) {
 				prevTurnIndex = -1;
 				prevRound = -1;
@@ -2557,11 +2558,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const combatant = state.combatants[state.turnIndex];
 			if (!combatant?.tokenId) return;
 
-			// Find the combatant's token on any live free-mode projection and pan to it.
-			// Battle-mode projections must remain still — only free-mode gets auto-pan.
+			// Smooth-pan all live projections (battle & free) to the active combatant's token.
 			const projections = this.projectionManager.getLiveProjections();
 			for (const proj of projections) {
-				if (proj.mode !== 'free') continue;
 				const view = proj.leaf.view as PlayerMapView;
 				const mapCfg = view.getMapConfig?.();
 				if (!mapCfg?.markers) continue;
@@ -2570,7 +2569,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 					(m: any) => m.markerId === combatant.tokenId
 				);
 				if (marker?.position) {
-					view.setTabletopPanFromImageCoords(marker.position.x, marker.position.y);
+					view.smoothPanToImageCoords(marker.position.x, marker.position.y);
 					break; // Pan the first matching projection
 				}
 			}

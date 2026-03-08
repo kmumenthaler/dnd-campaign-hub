@@ -38,6 +38,8 @@ export interface DndCampaignHubSettings {
   visionUpdateMode: 'on-drop' | 'while-dragging';
   /** Saved mid-combat states keyed by encounter name. */
   combatStates: Record<string, CombatState>;
+  /** Auto-pan projected player view to the active combatant's token on turn change. */
+  combatAutoPan: boolean;
 }
 
 export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
@@ -50,4 +52,5 @@ export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   musicPlaybackState: { ...DEFAULT_PLAYBACK_STATE },
   visionUpdateMode: 'on-drop',
   combatStates: {},
+  combatAutoPan: false,
 };

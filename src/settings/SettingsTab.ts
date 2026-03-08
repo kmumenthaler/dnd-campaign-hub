@@ -157,7 +157,24 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
       );
 
     // Battle Map Settings
-    containerEl.createEl("h3", { text: "🔦 Dynamic Lighting" });
+    containerEl.createEl("h3", { text: "�️ Battle Maps" });
+
+    new Setting(containerEl)
+      .setName("Auto-pan to active combatant")
+      .setDesc(
+        "When combat is running, smoothly pan the projected player view " +
+        "to center on the active combatant's token each time the turn changes."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.combatAutoPan)
+          .onChange(async (value) => {
+            this.plugin.settings.combatAutoPan = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    containerEl.createEl("h3", { text: "�🔦 Dynamic Lighting" });
 
     new Setting(containerEl)
       .setName("Vision update mode")
