@@ -1,6 +1,6 @@
-import { ItemView, MarkdownRenderer, Menu, Modal, Notice, Setting, TFile, WorkspaceLeaf } from "obsidian";
+import { ItemView, Menu, Modal, Notice, Setting, TFile, WorkspaceLeaf } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
-import { COMBAT_TRACKER_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE } from "../constants";
+import { COMBAT_TRACKER_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE, STATBLOCK_PANEL_VIEW_TYPE } from "../constants";
 import type { CombatTracker } from "./CombatTracker";
 import type { Combatant, CombatState, StatusEffect } from "./types";
 import { enumerateScreens, screenKey, type ScreenInfo } from "../utils/ScreenEnumeration";
@@ -18,8 +18,6 @@ import { enumerateScreens, screenKey, type ScreenInfo } from "../utils/ScreenEnu
 export class CombatTrackerView extends ItemView {
   plugin: DndCampaignHubPlugin;
   private unsubscribe: (() => void) | null = null;
-  private statblockPanel: HTMLElement | null = null;
-  private activeStatblockName: string | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -69,12 +67,6 @@ export class CombatTrackerView extends ItemView {
     this.renderEncounterHeader(container, state);
     this.renderColumnHeaders(container);
     this.renderCombatantList(container, tracker, state);
-
-    // Statblock panel (rendered inline below combatant list)
-    this.statblockPanel = container.createDiv({ cls: "dnd-ct-statblock-panel" });
-    if (this.activeStatblockName) {
-      this.renderStatblockInPanel(this.activeStatblockName);
-    }
   }
 
   /* ═══════════════════════ No Active Combat ═══════════════════════ */
@@ -280,11 +272,11 @@ export class CombatTrackerView extends ItemView {
         this.openNote(c.notePath!);
       });
     } else if (!c.player) {
-      // Creatures/NPCs: show Fantasy Statblock inline
+      // Creatures/NPCs: show Fantasy Statblock in split leaf
       nameEl.addClass("dnd-ct-name-link");
       nameEl.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.toggleStatblock(c.name);
+        this.openStatblockLeaf(c.name);
       });
     }
 
@@ -364,77 +356,28 @@ export class CombatTrackerView extends ItemView {
 
   /* ═══════════════════════ Statblock Display ═══════════════════════ */
 
-  /** Toggle the inline statblock panel for a creature. */
-  private toggleStatblock(creatureName: string) {
-    if (this.activeStatblockName === creatureName) {
-      this.activeStatblockName = null;
-      if (this.statblockPanel) this.statblockPanel.empty();
-    } else {
-      this.activeStatblockName = creatureName;
-      this.renderStatblockInPanel(creatureName);
+  /** Open or update a statblock in a split leaf below the tracker. */
+  private async openStatblockLeaf(creatureName: string) {
+    // Reuse an existing statblock panel leaf if one is already open
+    const existing = this.app.workspace.getLeavesOfType(STATBLOCK_PANEL_VIEW_TYPE);
+    if (existing.length > 0 && existing[0]) {
+      await existing[0].setViewState({
+        type: STATBLOCK_PANEL_VIEW_TYPE,
+        active: true,
+        state: { creature: creatureName },
+      });
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
     }
-  }
 
-  /** Render a Fantasy Statblocks code block into the inline panel. */
-  private async renderStatblockInPanel(creatureName: string) {
-    if (!this.statblockPanel) return;
-    this.statblockPanel.empty();
-
-    const header = this.statblockPanel.createDiv({ cls: "dnd-ct-statblock-header" });
-    header.createEl("span", { text: creatureName, cls: "dnd-ct-statblock-title" });
-    const closeBtn = header.createEl("button", { text: "✕", cls: "dnd-ct-statblock-close" });
-    closeBtn.addEventListener("click", () => {
-      this.activeStatblockName = null;
-      if (this.statblockPanel) this.statblockPanel.empty();
+    // Create a new leaf split below the combat tracker
+    const newLeaf = this.app.workspace.createLeafBySplit(this.leaf, "horizontal", false);
+    await newLeaf.setViewState({
+      type: STATBLOCK_PANEL_VIEW_TYPE,
+      active: true,
+      state: { creature: creatureName },
     });
-
-    const content = this.statblockPanel.createDiv({ cls: "dnd-ct-statblock-content" });
-    const markdown = "```statblock\ncreature: " + creatureName + "\n```";
-    await MarkdownRenderer.render(this.app, markdown, content, "", this);
-
-    // Fantasy Statblocks renders asynchronously inside the code-block
-    // processor, so the Dice Roller plugin's post-processor misses the
-    // inline `dice:` code elements it creates.  Watch for the DOM to
-    // settle, then re-process those elements through the Dice Roller API.
-    this.postProcessDiceRollers(content);
-  }
-
-  /**
-   * After Fantasy Statblocks finishes rendering, find unprocessed inline
-   * `dice:` code elements and replace them with interactive dice rollers.
-   */
-  private postProcessDiceRollers(container: HTMLElement) {
-    const dicePlugin: any =
-      (this.app as any).plugins?.getPlugin?.("obsidian-dice-roller");
-    if (!dicePlugin?.getRoller) return;
-
-    let debounce: ReturnType<typeof setTimeout>;
-    const observer = new MutationObserver(() => {
-      clearTimeout(debounce);
-      debounce = setTimeout(async () => {
-        observer.disconnect();
-        const codeEls = container.querySelectorAll("code");
-        for (const code of Array.from(codeEls)) {
-          const raw = code.textContent?.trim() ?? "";
-          if (!/^dice:/i.test(raw)) continue;
-          const formula = raw.replace(/^dice:\s*/i, "");
-          try {
-            const roller = await dicePlugin.getRoller(formula, "");
-            await roller.roll();
-            code.replaceWith(roller.containerEl);
-          } catch {
-            // Dice notation unrecognised — leave as static text
-          }
-        }
-      }, 250);
-    });
-    observer.observe(container, { childList: true, subtree: true });
-
-    // Safety: disconnect if nothing happens within 5 s
-    setTimeout(() => {
-      observer.disconnect();
-      clearTimeout(debounce);
-    }, 5000);
+    this.app.workspace.revealLeaf(newLeaf);
   }
 
   /** Open a note in a split leaf below the tracker (for PCs). */

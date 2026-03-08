@@ -5,6 +5,7 @@ export const PLAYER_MAP_VIEW_TYPE = "dnd-player-map-view";
 export const GM_MAP_VIEW_TYPE = "dnd-gm-map-view";
 export const COMBAT_TRACKER_VIEW_TYPE = "dnd-combat-tracker";
 export const COMBAT_PLAYER_VIEW_TYPE = "dnd-combat-player-view";
+export const STATBLOCK_PANEL_VIEW_TYPE = "dnd-statblock-panel";
 
 /**
  * A media element (image or video) that exposes image-compatible dimension properties.

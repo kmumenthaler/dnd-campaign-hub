@@ -90,6 +90,7 @@ import {
   GM_MAP_VIEW_TYPE,
   COMBAT_TRACKER_VIEW_TYPE,
   COMBAT_PLAYER_VIEW_TYPE,
+  STATBLOCK_PANEL_VIEW_TYPE,
 } from './constants';
 import type { MapMediaElement } from './constants';
 
@@ -108,6 +109,7 @@ import { EncounterBuilder } from './encounter/EncounterBuilder';
 import { CombatTracker } from './combat/CombatTracker';
 import { CombatTrackerView } from './combat/CombatTrackerView';
 import { CombatPlayerView } from './combat/CombatPlayerView';
+import { StatblockPanelView } from './combat/StatblockPanelView';
 import { PCCreationModal } from './character/PCCreationModal';
 import { ImportPCModal } from './character/ImportPCModal';
 import { NPCCreationModal } from './character/NPCCreationModal';
@@ -253,6 +255,12 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.registerView(
       COMBAT_PLAYER_VIEW_TYPE,
       (leaf) => new CombatPlayerView(leaf, this)
+    );
+
+    // Register the Statblock Panel View (split below combat tracker)
+    this.registerView(
+      STATBLOCK_PANEL_VIEW_TYPE,
+      (leaf) => new StatblockPanelView(leaf)
     );
 
     // Initialize the encounter builder
