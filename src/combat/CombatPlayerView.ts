@@ -94,7 +94,7 @@ export class CombatPlayerView extends ItemView {
       if (!c || c.hidden || !(c.enabled ?? true)) continue;
 
       const isActive = state.started && i === state.turnIndex;
-      const isDead = c.currentHP <= 0;
+      const isDead = c.dead ?? (c.currentHP <= 0);
       const isAlly = c.player || c.friendly;
 
       const row = list.createDiv({
@@ -137,9 +137,28 @@ export class CombatPlayerView extends ItemView {
         nameCell.createEl("span", { text: "YOUR TURN", cls: "dnd-ct-pv-turn-badge" });
       }
 
-      // Status badges
-      if (c.statuses.length > 0) {
+      // Status badges + death saves
+      if (c.statuses.length > 0 || c.deathSaves) {
         const statuses = nameCell.createDiv({ cls: "dnd-ct-pv-statuses" });
+
+        // Death save indicators (visible for allies only)
+        if (c.deathSaves && isAlly) {
+          const dsContainer = statuses.createEl("span", { cls: "dnd-ct-pv-death-saves" });
+          for (let i = 0; i < 3; i++) {
+            dsContainer.createEl("span", {
+              cls: `dnd-ct-ds-pip dnd-ct-ds-success ${i < c.deathSaves.successes ? "dnd-ct-ds-filled" : ""}`,
+              text: i < c.deathSaves.successes ? "✔" : "○",
+            });
+          }
+          dsContainer.createEl("span", { cls: "dnd-ct-ds-divider", text: "|" });
+          for (let i = 0; i < 3; i++) {
+            dsContainer.createEl("span", {
+              cls: `dnd-ct-ds-pip dnd-ct-ds-failure ${i < c.deathSaves.failures ? "dnd-ct-ds-filled" : ""}`,
+              text: i < c.deathSaves.failures ? "✘" : "○",
+            });
+          }
+        }
+
         for (const s of c.statuses) {
           statuses.createEl("span", {
             text: s.duration !== undefined ? `${s.name} (${s.duration})` : s.name,

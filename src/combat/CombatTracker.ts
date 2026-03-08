@@ -1,6 +1,6 @@
 import { App, Notice, TFile } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
-import type { Combatant, CombatState, CombatListener, StatusEffect } from "./types";
+import type { Combatant, CombatState, CombatListener, StatusEffect, DeathSaveState } from "./types";
 import type { EncounterCreature } from "../encounter/EncounterBuilder";
 
 /**
@@ -29,7 +29,7 @@ export class CombatTracker {
   /* ────────────────── State Accessors ────────────────── */
 
   getState(): CombatState | null {
-    return this.state ? { ...this.state, combatants: this.state.combatants.map(c => ({ ...c, statuses: [...c.statuses] })) } : null;
+    return this.state ? { ...this.state, combatants: this.state.combatants.map(c => ({ ...c, statuses: [...c.statuses], deathSaves: c.deathSaves ? { ...c.deathSaves } : undefined })) } : null;
   }
 
   isActive(): boolean {
@@ -247,11 +247,17 @@ export class CombatTracker {
 
   /* ────────────────── HP Management ────────────────── */
 
-  /** Apply damage to a combatant. Temp HP absorbed first. */
-  applyDamage(combatantId: string, amount: number): void {
+  /** Apply damage to a combatant. Temp HP absorbed first.
+   *  Implements D&D 5e instant death and death save rules:
+   *  - Overflow damage >= maxHP at 0 HP → instant death
+   *  - Damage at 0 HP → 1 failed death save (2 if critical hit)
+   *  - 3 failed death saves → dead */
+  applyDamage(combatantId: string, amount: number, isCritical = false): void {
     const c = this.findCombatant(combatantId);
-    if (!c) return;
+    if (!c || c.dead) return;
     let remaining = Math.max(0, amount);
+
+    const wasAtZero = c.currentHP <= 0;
 
     // Temp HP absorbs first
     if (c.tempHP > 0) {
@@ -264,16 +270,48 @@ export class CombatTracker {
       }
     }
 
-    c.currentHP = Math.max(0, c.currentHP - remaining);
-    this.syncUnconsciousStatus(c);
+    if (wasAtZero && remaining > 0) {
+      // ── Already at 0 HP: check instant death or add failed saves ──
+      if (remaining >= c.maxHP) {
+        this.killCombatant(c);
+      } else {
+        if (!c.deathSaves) c.deathSaves = { successes: 0, failures: 0 };
+        c.deathSaves.failures += isCritical ? 2 : 1;
+        if (c.deathSaves.failures >= 3) {
+          this.killCombatant(c);
+        }
+      }
+    } else {
+      // ── Normal damage: reduce HP, check for 0 ──
+      const hpBefore = c.currentHP;
+      c.currentHP = Math.max(0, c.currentHP - remaining);
+
+      if (c.currentHP <= 0 && hpBefore > 0) {
+        // Just dropped to 0 — check massive damage (overflow >= maxHP → instant death)
+        const overflow = remaining - hpBefore;
+        if (overflow >= c.maxHP) {
+          this.killCombatant(c);
+        } else {
+          // Falls unconscious, start death saves
+          c.deathSaves = { successes: 0, failures: 0 };
+          this.syncUnconsciousStatus(c);
+        }
+      }
+    }
+
     this.emit();
   }
 
-  /** Heal a combatant (cannot exceed maxHP). */
+  /** Heal a combatant (cannot exceed maxHP).
+   *  Healing a creature at 0 HP clears death saves and removes Unconscious. */
   applyHealing(combatantId: string, amount: number): void {
     const c = this.findCombatant(combatantId);
-    if (!c) return;
+    if (!c || c.dead) return;
+    const wasAtZero = c.currentHP <= 0;
     c.currentHP = Math.min(c.maxHP, c.currentHP + Math.max(0, amount));
+    if (wasAtZero && c.currentHP > 0) {
+      c.deathSaves = undefined;
+    }
     this.syncUnconsciousStatus(c);
     this.emit();
   }
@@ -299,7 +337,15 @@ export class CombatTracker {
   setHP(combatantId: string, hp: number): void {
     const c = this.findCombatant(combatantId);
     if (!c) return;
+    const wasAtZero = c.currentHP <= 0;
     c.currentHP = Math.max(0, Math.min(c.maxHP, hp));
+    if (wasAtZero && c.currentHP > 0) {
+      c.deathSaves = undefined;
+      c.dead = false;
+      // Remove "Dead" status if manually revived
+      const deadIdx = c.statuses.findIndex(s => s.name === "Dead");
+      if (deadIdx !== -1) c.statuses.splice(deadIdx, 1);
+    }
     this.syncUnconsciousStatus(c);
     this.emit();
   }
@@ -318,11 +364,114 @@ export class CombatTracker {
   private syncUnconsciousStatus(c: Combatant): void {
     const label = "Unconscious";
     const idx = c.statuses.findIndex(s => s.name === label);
-    if (c.currentHP <= 0 && idx === -1) {
+    if (c.currentHP <= 0 && !c.dead && idx === -1) {
       c.statuses.push({ name: label });
-    } else if (c.currentHP > 0 && idx !== -1) {
+    } else if ((c.currentHP > 0 || c.dead) && idx !== -1) {
       c.statuses.splice(idx, 1);
     }
+  }
+
+  /* ────────────────── Death Saving Throws ────────────────── */
+
+  /** Mark a combatant as dead — clears death saves, replaces Unconscious with Dead. */
+  private killCombatant(c: Combatant): void {
+    c.currentHP = 0;
+    c.dead = true;
+    c.deathSaves = undefined;
+    // Replace Unconscious with Dead
+    c.statuses = c.statuses.filter(s => s.name !== "Unconscious");
+    if (!c.statuses.some(s => s.name === "Dead")) {
+      c.statuses.push({ name: "Dead" });
+    }
+    new Notice(`☠️ ${c.display} has died!`);
+  }
+
+  /** Add a death save success. Natural 20 = regain 1 HP (auto-handled by caller). */
+  addDeathSaveSuccess(combatantId: string): void {
+    const c = this.findCombatant(combatantId);
+    if (!c || c.dead || c.currentHP > 0) return;
+    if (!c.deathSaves) c.deathSaves = { successes: 0, failures: 0 };
+    c.deathSaves.successes++;
+    if (c.deathSaves.successes >= 3) {
+      // Stabilized — remove Unconscious, zero out saves, add Stable
+      c.deathSaves = undefined;
+      c.statuses = c.statuses.filter(s => s.name !== "Unconscious");
+      if (!c.statuses.some(s => s.name === "Stable")) {
+        c.statuses.push({ name: "Stable" });
+      }
+      new Notice(`💤 ${c.display} is stabilized!`);
+    }
+    this.emit();
+  }
+
+  /** Add a death save failure. */
+  addDeathSaveFailure(combatantId: string): void {
+    const c = this.findCombatant(combatantId);
+    if (!c || c.dead || c.currentHP > 0) return;
+    if (!c.deathSaves) c.deathSaves = { successes: 0, failures: 0 };
+    c.deathSaves.failures++;
+    if (c.deathSaves.failures >= 3) {
+      this.killCombatant(c);
+    }
+    this.emit();
+  }
+
+  /**
+   * Roll a death saving throw (d20). Applies 5e rules:
+   * - Natural 1: 2 failures
+   * - Natural 20: regain 1 HP (clears death saves, removes Unconscious)
+   * - 10+: 1 success
+   * - <10: 1 failure
+   * Returns the die result for UI display.
+   */
+  rollDeathSave(combatantId: string): number | null {
+    const c = this.findCombatant(combatantId);
+    if (!c || c.dead || c.currentHP > 0) return null;
+    if (!c.deathSaves) c.deathSaves = { successes: 0, failures: 0 };
+
+    const roll = this.rollD20();
+
+    if (roll === 1) {
+      // Natural 1: two failures
+      c.deathSaves.failures += 2;
+      new Notice(`🎲 ${c.display} death save: ☠️ Natural 1! (2 failures)`);
+    } else if (roll === 20) {
+      // Natural 20: regain 1 HP
+      c.currentHP = 1;
+      c.deathSaves = undefined;
+      c.statuses = c.statuses.filter(s => s.name !== "Unconscious" && s.name !== "Stable");
+      new Notice(`🎲 ${c.display} death save: ✨ Natural 20! Regains 1 HP!`);
+      this.emit();
+      return roll;
+    } else if (roll >= 10) {
+      c.deathSaves.successes++;
+      new Notice(`🎲 ${c.display} death save: ✅ ${roll} (success)`);
+    } else {
+      c.deathSaves.failures++;
+      new Notice(`🎲 ${c.display} death save: ❌ ${roll} (failure)`);
+    }
+
+    // Check thresholds
+    if (c.deathSaves && c.deathSaves.failures >= 3) {
+      this.killCombatant(c);
+    } else if (c.deathSaves && c.deathSaves.successes >= 3) {
+      c.deathSaves = undefined;
+      c.statuses = c.statuses.filter(s => s.name !== "Unconscious");
+      if (!c.statuses.some(s => s.name === "Stable")) {
+        c.statuses.push({ name: "Stable" });
+      }
+      new Notice(`💤 ${c.display} is stabilized!`);
+    }
+
+    this.emit();
+    return roll;
+  }
+
+  /** Get the death save state for a combatant (null if not making death saves). */
+  getDeathSaves(combatantId: string): DeathSaveState | null {
+    const c = this.findCombatant(combatantId);
+    if (!c || !c.deathSaves) return null;
+    return { ...c.deathSaves };
   }
 
   /* ────────────────── Status Effects ────────────────── */
@@ -388,7 +537,7 @@ export class CombatTracker {
     this.emit();
   }
 
-  /** Reset all combatants to full HP, clear temp HP and status effects. */
+  /** Reset all combatants to full HP, clear temp HP, statuses, death saves, and dead flag. */
   resetHPAndStatuses(): void {
     if (!this.state) return;
     for (const c of this.state.combatants) {
@@ -396,6 +545,8 @@ export class CombatTracker {
       c.tempHP = 0;
       c.currentAC = c.ac;
       c.statuses = [];
+      c.deathSaves = undefined;
+      c.dead = false;
     }
     this.emit();
     new Notice("❤️ All HP & statuses reset");

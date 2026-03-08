@@ -12,6 +12,14 @@ export interface StatusEffect {
   note?: string;
 }
 
+/** Death saving throw tracker (D&D 5e). */
+export interface DeathSaveState {
+  /** Number of successful saves (0–3). Three = stabilized. */
+  successes: number;
+  /** Number of failed saves (0–3). Three = dead. */
+  failures: number;
+}
+
 /** A single combatant in a running combat. */
 export interface Combatant {
   /** Unique identifier for this instance. */
@@ -48,6 +56,10 @@ export interface Combatant {
   tokenId?: string;
   /** Active status effects. */
   statuses: StatusEffect[];
+  /** Death saving throw state (only present while at 0 HP). */
+  deathSaves?: DeathSaveState;
+  /** True when the combatant has been killed (instant death or 3 failed saves). */
+  dead?: boolean;
   /** Creature level (for PCs) or CR string (for creatures). */
   level?: number;
   cr?: string;

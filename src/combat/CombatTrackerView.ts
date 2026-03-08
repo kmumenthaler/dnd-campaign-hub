@@ -224,11 +224,13 @@ export class CombatTrackerView extends ItemView {
     state: CombatState,
   ) {
     const isEnabled = c.enabled ?? true;
-    const isDead = c.currentHP <= 0;
+    const isDead = c.dead ?? false;
+    const isDown = c.currentHP <= 0;
 
     const rowClasses = ["dnd-ct-row"];
     if (isActive) rowClasses.push("dnd-ct-row-active");
     if (isDead) rowClasses.push("dnd-ct-row-dead");
+    else if (isDown) rowClasses.push("dnd-ct-row-dead");
     if (c.hidden) rowClasses.push("dnd-ct-row-hidden");
     if (!isEnabled) rowClasses.push("dnd-ct-row-disabled");
 
@@ -269,8 +271,29 @@ export class CombatTrackerView extends ItemView {
     }
 
     // Status badges (inline under name)
-    if (c.statuses.length > 0) {
+    if (c.statuses.length > 0 || c.deathSaves) {
       const statusRow = nameCell.createDiv({ cls: "dnd-ct-statuses" });
+
+      // Death save indicators
+      if (c.deathSaves) {
+        const dsContainer = statusRow.createEl("span", { cls: "dnd-ct-death-saves" });
+        // Successes (green pips)
+        for (let i = 0; i < 3; i++) {
+          dsContainer.createEl("span", {
+            cls: `dnd-ct-ds-pip dnd-ct-ds-success ${i < c.deathSaves.successes ? "dnd-ct-ds-filled" : ""}`,
+            text: i < c.deathSaves.successes ? "✔" : "○",
+          });
+        }
+        dsContainer.createEl("span", { cls: "dnd-ct-ds-divider", text: "|" });
+        // Failures (red pips)
+        for (let i = 0; i < 3; i++) {
+          dsContainer.createEl("span", {
+            cls: `dnd-ct-ds-pip dnd-ct-ds-failure ${i < c.deathSaves.failures ? "dnd-ct-ds-filled" : ""}`,
+            text: i < c.deathSaves.failures ? "✘" : "○",
+          });
+        }
+      }
+
       for (let si = 0; si < c.statuses.length; si++) {
         const s = c.statuses[si];
         if (!s) continue;
@@ -459,6 +482,26 @@ export class CombatTrackerView extends ItemView {
 
   private showRowContextMenu(e: MouseEvent, tracker: CombatTracker, c: Combatant) {
     const menu = new Menu();
+
+    // Death save options (only when at 0 HP, not dead)
+    if (c.currentHP <= 0 && !c.dead && c.deathSaves) {
+      menu.addItem((item) =>
+        item.setTitle("🎲 Roll Death Save").setIcon("dice").onClick(() => {
+          tracker.rollDeathSave(c.id);
+        }),
+      );
+      menu.addItem((item) =>
+        item.setTitle("✅ Death Save Success").setIcon("check").onClick(() => {
+          tracker.addDeathSaveSuccess(c.id);
+        }),
+      );
+      menu.addItem((item) =>
+        item.setTitle("❌ Death Save Failure").setIcon("x").onClick(() => {
+          tracker.addDeathSaveFailure(c.id);
+        }),
+      );
+      menu.addSeparator();
+    }
 
     menu.addItem((item) =>
       item.setTitle("💔 Set Health / Status").setIcon("heart").onClick(() => {

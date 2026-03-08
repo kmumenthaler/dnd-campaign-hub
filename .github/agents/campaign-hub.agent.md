@@ -48,6 +48,18 @@ feat: short description
 
 When you encounter deprecated or duplicated code, analyze the broader context to confirm it is safe to remove, then clean it up.
 
+## Cross-System Integration
+
+When a feature requires one system to read or manipulate another system's data (e.g. the Combat Tracker placing tokens on a Battle Map), **do not** reach directly into that system's internals or create ad-hoc workarounds. Instead:
+
+1. **Design a Controller / API layer** — Create a typed class that owns the interface between the two systems (e.g. `MapController`). This class exposes clean query and mutation methods while encapsulating internal state.
+2. **Use a registration pattern** — The owning system registers a handle (callbacks, live references) when it becomes active and unregisters on teardown. Consumers never hold direct references to closure-scoped variables.
+3. **Keep it self-contained** — All side-effects (undo history, persistence, view sync) happen inside the API layer, not in the caller.
+4. **Expose on the plugin** — Attach the controller as a property on `DndCampaignHubPlugin` so any system can access it through the plugin reference.
+
+Before implementing, check whether an existing controller already covers the need. Existing controllers:
+- `MapController` (`src/map/MapController.ts`) — query and manipulate the active battle map (place/remove tokens, check placement, grid info).
+
 ## Template & Migration Changes
 
 When modifying a template in `src/templates.ts`:

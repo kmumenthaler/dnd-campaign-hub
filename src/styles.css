@@ -858,6 +858,42 @@
   color: var(--text-error);
 }
 
+/* ── Death save indicators ── */
+.dnd-ct-death-saves,
+.dnd-ct-pv-death-saves {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  font-size: 0.75em;
+  line-height: 1;
+}
+.dnd-ct-ds-pip {
+  font-size: 1em;
+  color: var(--text-faint);
+}
+.dnd-ct-ds-pip.dnd-ct-ds-success.dnd-ct-ds-filled {
+  color: #4caf50;
+  font-weight: 700;
+}
+.dnd-ct-ds-pip.dnd-ct-ds-failure.dnd-ct-ds-filled {
+  color: #f44336;
+  font-weight: 700;
+}
+.dnd-ct-ds-divider {
+  color: var(--text-faint);
+  margin: 0 2px;
+  opacity: 0.5;
+}
+/* Player view — scale up for projection */
+.dnd-ct-pv-death-saves {
+  font-size: 0.65em;
+  padding: 0.05em 0.3em;
+  gap: 0.1em;
+}
+
 /* ── HP cell ── */
 .dnd-ct-hp-cell {
   width: 80px;
