@@ -148,10 +148,11 @@ export class CombatTracker {
     new Notice(`⚔️ Combat ready: ${combatants.length} combatants. Roll initiative!`);
   }
 
-  /** Check whether the Initiative Tracker plugin is configured to auto-roll initiative for PCs. */
+  /** Check whether the Initiative Tracker plugin is configured to auto-roll initiative for PCs.
+   *  IT stores this as a number: 0 = don't roll, 1 = roll, 2 = let players roll. */
   private get rollPlayerInitiatives(): boolean {
     const it = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-    return !!it?.data?.rollPlayerInitiatives;
+    return it?.data?.rollPlayerInitiatives === 1;
   }
 
   /** Roll initiative for all combatants and sort.
