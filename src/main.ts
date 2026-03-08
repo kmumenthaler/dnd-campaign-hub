@@ -985,7 +985,17 @@ export default class DndCampaignHubPlugin extends Plugin {
           const cache = this.app.metadataCache.getFileCache(file);
           if (cache?.frontmatter?.type === "encounter") {
             const name = cache.frontmatter.name || file.basename;
-            await this.combatTracker.clearSavedState(name);
+            new ConfirmModal(
+              this.app,
+              'Clear Saved Combat State',
+              `Are you sure you want to clear the saved combat state for "${name}"?\nThis action cannot be undone.`,
+              async (confirmed) => {
+                if (confirmed) {
+                  await this.combatTracker.clearSavedState(name);
+                  new Notice(`Saved combat state for "${name}" cleared.`);
+                }
+              }
+            ).open();
           } else {
             new Notice("Please open an encounter note first");
           }

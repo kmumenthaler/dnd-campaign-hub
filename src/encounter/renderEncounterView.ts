@@ -1,4 +1,5 @@
 import { App, Notice, TFile } from "obsidian";
+import { ConfirmModal } from "../utils/ConfirmModal";
 import type DndCampaignHubPlugin from "../main";
 
 /** Format a relative "time ago" string from an ISO date. */
@@ -264,9 +265,18 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 					text: '\u2716 Clear',
 					cls: 'dnd-encounter-btn mod-muted',
 				});
-				clearBtn.addEventListener('click', async () => {
-					await plugin.combatTracker.clearSavedState(encounterName);
-					renderSavedStateInfo();
+				clearBtn.addEventListener('click', () => {
+					new ConfirmModal(
+						plugin.app,
+						'Clear Saved Combat State',
+						`Are you sure you want to clear the saved combat state for "${encounterName}"?\nThis action cannot be undone.`,
+						async (confirmed) => {
+							if (confirmed) {
+								await plugin.combatTracker.clearSavedState(encounterName);
+								renderSavedStateInfo();
+							}
+						}
+					).open();
 				});
 			} else {
 				resumeBtn.style.display = 'none';
