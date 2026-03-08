@@ -121,7 +121,7 @@ export class CombatPlayerView extends ItemView {
       }
 
       // HP bar
-      this.renderPVHPBar(row, c);
+      this.renderPVHPBar(row, c, isAlly);
 
       // AC
       row.createEl("span", { text: String(c.currentAC), cls: "dnd-ct-pv-ac" });
@@ -137,26 +137,49 @@ export class CombatPlayerView extends ItemView {
     }
   }
 
-  private renderPVHPBar(parent: HTMLElement, c: { currentHP: number; maxHP: number; tempHP: number }) {
+  /** Map HP percentage to a green→orange→red color. */
+  private hpColor(pct: number): string {
+    // 1.0 = green (#5cb85c), 0.5 = orange (#e0a030), 0.0 = red (#c9302c)
+    const r = pct > 0.5 ? Math.round(92 + (224 - 92) * (1 - (pct - 0.5) * 2)) : Math.round(224 + (201 - 224) * (1 - pct * 2));
+    const g = pct > 0.5 ? Math.round(184 + (160 - 184) * (1 - (pct - 0.5) * 2)) : Math.round(160 * pct * 2 + 48 * (1 - pct * 2));
+    const b = pct > 0.5 ? Math.round(92 + (48 - 92) * (1 - (pct - 0.5) * 2)) : Math.round(48 * pct * 2 + 44 * (1 - pct * 2));
+    return `rgb(${r},${g},${b})`;
+  }
+
+  /** Map HP percentage to a condition label for enemies. */
+  private hpCondition(pct: number): string {
+    if (pct <= 0) return "Dead";
+    if (pct <= 0.25) return "Critical";
+    if (pct <= 0.5) return "Bloodied";
+    if (pct <= 0.75) return "Hurt";
+    if (pct < 1) return "Scratched";
+    return "Uninjured";
+  }
+
+  private renderPVHPBar(parent: HTMLElement, c: { currentHP: number; maxHP: number; tempHP: number }, isAlly: boolean) {
     const hpCell = parent.createDiv({ cls: "dnd-ct-pv-hp" });
-    const pct = c.maxHP > 0 ? Math.max(0, c.currentHP / c.maxHP) : 0;
+    const pct = c.maxHP > 0 ? Math.max(0, Math.min(1, c.currentHP / c.maxHP)) : 0;
+    const color = this.hpColor(pct);
 
     const bar = hpCell.createDiv({ cls: "dnd-ct-pv-hp-bar" });
     const fill = bar.createDiv({ cls: "dnd-ct-pv-hp-fill" });
     fill.style.width = `${pct * 100}%`;
-
-    if (pct > 0.5) fill.addClass("dnd-ct-hp-healthy");
-    else if (pct > 0.25) fill.addClass("dnd-ct-hp-wounded");
-    else if (pct > 0) fill.addClass("dnd-ct-hp-critical");
-    else fill.addClass("dnd-ct-hp-dead");
+    fill.style.background = color;
 
     if (c.tempHP > 0) {
       const tempPct = Math.min(1, c.tempHP / c.maxHP);
       bar.createDiv({ cls: "dnd-ct-hp-temp" }).style.width = `${tempPct * 100}%`;
     }
 
-    let text = `${c.currentHP}/${c.maxHP}`;
-    if (c.tempHP > 0) text += ` (+${c.tempHP})`;
-    hpCell.createEl("span", { text, cls: "dnd-ct-pv-hp-text" });
+    if (isAlly) {
+      let text = `${c.currentHP}/${c.maxHP}`;
+      if (c.tempHP > 0) text += ` (+${c.tempHP})`;
+      const textEl = hpCell.createEl("span", { text, cls: "dnd-ct-pv-hp-text" });
+      textEl.style.color = color;
+    } else {
+      const condition = this.hpCondition(pct);
+      const textEl = hpCell.createEl("span", { text: condition, cls: "dnd-ct-pv-hp-text dnd-ct-pv-hp-condition" });
+      textEl.style.color = color;
+    }
   }
 }
