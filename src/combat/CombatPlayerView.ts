@@ -66,9 +66,9 @@ export class CombatPlayerView extends ItemView {
       state.combatants[state.turnIndex] &&
       !state.combatants[state.turnIndex]!.hidden;
 
-    // Budget: header ~3.2em, each row ~2.6em, row gaps ~0.3em, callout ~3.5em, padding ~2em
-    const overhead = 3.2 + 2 + (hasTurnCallout ? 3.5 : 0);
-    const rowBudget = visibleCount * 2.6 + Math.max(0, visibleCount - 1) * 0.3;
+    // Budget: header ~3.2em, each row ~2.8em, row gaps ~0.3em, callout ~3.5em, padding ~2.5em
+    const overhead = 3.2 + 2.5 + (hasTurnCallout ? 3.5 : 0);
+    const rowBudget = visibleCount * 2.8 + Math.max(0, visibleCount - 1) * 0.3;
     const totalEms = overhead + rowBudget;
     // vh available = 100; font-size = vh / totalEms, clamped to reasonable bounds
     const computedSize = Math.min(5, Math.max(1.2, 100 / totalEms));
@@ -161,22 +161,24 @@ export class CombatPlayerView extends ItemView {
     const pct = c.maxHP > 0 ? Math.max(0, Math.min(1, c.currentHP / c.maxHP)) : 0;
     const color = this.hpColor(pct);
 
-    const bar = hpCell.createDiv({ cls: "dnd-ct-pv-hp-bar" });
-    const fill = bar.createDiv({ cls: "dnd-ct-pv-hp-fill" });
-    fill.style.width = `${pct * 100}%`;
-    fill.style.background = color;
-
-    if (c.tempHP > 0) {
-      const tempPct = Math.min(1, c.tempHP / c.maxHP);
-      bar.createDiv({ cls: "dnd-ct-hp-temp" }).style.width = `${tempPct * 100}%`;
-    }
-
     if (isAlly) {
+      // Allies: show HP bar + numbers
+      const bar = hpCell.createDiv({ cls: "dnd-ct-pv-hp-bar" });
+      const fill = bar.createDiv({ cls: "dnd-ct-pv-hp-fill" });
+      fill.style.width = `${pct * 100}%`;
+      fill.style.background = color;
+
+      if (c.tempHP > 0) {
+        const tempPct = Math.min(1, c.tempHP / c.maxHP);
+        bar.createDiv({ cls: "dnd-ct-hp-temp" }).style.width = `${tempPct * 100}%`;
+      }
+
       let text = `${c.currentHP}/${c.maxHP}`;
       if (c.tempHP > 0) text += ` (+${c.tempHP})`;
       const textEl = hpCell.createEl("span", { text, cls: "dnd-ct-pv-hp-text" });
       textEl.style.color = color;
     } else {
+      // Enemies: condition text only — no bar
       const condition = this.hpCondition(pct);
       const textEl = hpCell.createEl("span", { text: condition, cls: "dnd-ct-pv-hp-text dnd-ct-pv-hp-condition" });
       textEl.style.color = color;
