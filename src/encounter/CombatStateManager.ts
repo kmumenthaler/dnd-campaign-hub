@@ -59,8 +59,15 @@ export class CombatStateManager {
     this.plugin.settings.combatStates[encounterName] = state;
     await this.plugin.saveSettings();
 
+    const statusCount = state.combatants.reduce((n, c) => n + c.status.length, 0);
+    console.log(
+      `[CombatStateManager] Saved "${encounterName}" — round ${state.round}, ` +
+      `${state.combatants.length} combatants, ${statusCount} active statuses. ` +
+      `Initiative order: ${state.combatants.map(c => `${c.display || c.name}(${c.initiative})`).join(", ")}`,
+    );
     new Notice(
-      `💾 Combat saved! Round ${state.round}, ${state.combatants.length} combatants`,
+      `💾 Combat saved! Round ${state.round}, ${state.combatants.length} combatants ` +
+      `(HP, initiative, and ${statusCount} status effect${statusCount !== 1 ? "s" : ""} preserved)`,
     );
     return true;
   }
@@ -204,25 +211,40 @@ export class CombatStateManager {
 
   /** Create a clean snapshot of a single combatant from an IT creature object. */
   private snapshot(c: any): CombatantSnapshot {
+    // Deep-clone statuses — they may contain nested duration/condition objects
+    let statuses: any[] = [];
+    if (Array.isArray(c.status) && c.status.length > 0) {
+      try {
+        statuses = JSON.parse(JSON.stringify(c.status));
+      } catch {
+        statuses = c.status.map((s: any) => ({ ...s }));
+      }
+    }
+
     return {
       name: c.name ?? "",
       display: c.display ?? c.name ?? "",
       id: c.id ?? this.generateId(),
-      initiative: c.initiative ?? 0,
-      currentHP: c.currentHP ?? c.hp ?? 0,
-      currentMaxHP: c.currentMaxHP ?? c.hp ?? c.currentHP ?? 0,
-      tempHP: c.tempHP ?? 0,
-      ac: c.ac ?? 10,
-      currentAC: c.currentAC ?? c.ac ?? 10,
+      initiative: typeof c.initiative === "number" ? c.initiative : 0,
+      currentHP: typeof c.currentHP === "number" ? c.currentHP
+        : typeof c.hp === "number" ? c.hp : 0,
+      currentMaxHP: typeof c.currentMaxHP === "number" ? c.currentMaxHP
+        : typeof c.maxHP === "number" ? c.maxHP
+        : typeof c.max === "number" ? c.max
+        : typeof c.hp === "number" ? c.hp : 0,
+      tempHP: typeof c.tempHP === "number" ? c.tempHP : 0,
+      ac: typeof c.ac === "number" ? c.ac : 10,
+      currentAC: typeof c.currentAC === "number" ? c.currentAC
+        : typeof c.ac === "number" ? c.ac : 10,
       friendly: c.friendly ?? false,
       hidden: c.hidden ?? false,
       player: c.player ?? false,
       enabled: c.enabled ?? true,
       active: c.active ?? false,
       note: c.note ?? undefined,
-      status: Array.isArray(c.status) ? c.status.map((s: any) => ({ ...s })) : [],
+      status: statuses,
       marker: c.marker ?? undefined,
-      modifier: c.modifier ?? 0,
+      modifier: typeof c.modifier === "number" ? c.modifier : 0,
     };
   }
 
