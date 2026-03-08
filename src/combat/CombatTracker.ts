@@ -265,6 +265,7 @@ export class CombatTracker {
     }
 
     c.currentHP = Math.max(0, c.currentHP - remaining);
+    this.syncUnconsciousStatus(c);
     this.emit();
   }
 
@@ -273,6 +274,7 @@ export class CombatTracker {
     const c = this.findCombatant(combatantId);
     if (!c) return;
     c.currentHP = Math.min(c.maxHP, c.currentHP + Math.max(0, amount));
+    this.syncUnconsciousStatus(c);
     this.emit();
   }
 
@@ -298,6 +300,7 @@ export class CombatTracker {
     const c = this.findCombatant(combatantId);
     if (!c) return;
     c.currentHP = Math.max(0, Math.min(c.maxHP, hp));
+    this.syncUnconsciousStatus(c);
     this.emit();
   }
 
@@ -307,6 +310,19 @@ export class CombatTracker {
     if (!c) return;
     c.currentAC = Math.max(0, c.currentAC + delta);
     this.emit();
+  }
+
+  /* ────────────────── Auto-Condition Sync ────────────────── */
+
+  /** Add Unconscious when HP drops to 0; remove it when HP rises above 0. */
+  private syncUnconsciousStatus(c: Combatant): void {
+    const label = "Unconscious";
+    const idx = c.statuses.findIndex(s => s.name === label);
+    if (c.currentHP <= 0 && idx === -1) {
+      c.statuses.push({ name: label });
+    } else if (c.currentHP > 0 && idx !== -1) {
+      c.statuses.splice(idx, 1);
+    }
   }
 
   /* ────────────────── Status Effects ────────────────── */
