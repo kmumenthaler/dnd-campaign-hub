@@ -751,7 +751,7 @@ class HPAndStatusModal extends Modal {
       }
     }
 
-    // Quick-add condition buttons
+    // Quick-add condition buttons (toggle: click to add, click again to remove)
     const quickRow = contentEl.createDiv({ cls: "dnd-ct-quick-statuses" });
     const conditions = [
       "Blinded", "Charmed", "Deafened", "Frightened", "Grappled",
@@ -759,10 +759,22 @@ class HPAndStatusModal extends Modal {
       "Prone", "Restrained", "Stunned", "Unconscious", "Exhaustion",
       "Concentrating",
     ];
+    const activeConditions = new Set(this.combatant.statuses.map((s) => s.name));
     for (const cond of conditions) {
-      const btn = quickRow.createEl("button", { text: cond, cls: "dnd-ct-quick-status-btn" });
+      const isActive = activeConditions.has(cond);
+      const btn = quickRow.createEl("button", {
+        text: cond,
+        cls: `dnd-ct-quick-status-btn ${isActive ? "dnd-ct-quick-status-btn-active" : ""}`,
+      });
       btn.addEventListener("click", () => {
-        this.tracker.addStatus(this.combatant.id, { name: cond });
+        const idx = this.combatant.statuses.findIndex((s) => s.name === cond);
+        if (idx >= 0) {
+          this.tracker.removeStatus(this.combatant.id, idx);
+        } else {
+          this.tracker.addStatus(this.combatant.id, { name: cond });
+        }
+        this.close();
+        new StatusModal(this.app, this.combatant, this.tracker).open();
       });
     }
 
