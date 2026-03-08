@@ -1997,6 +1997,52 @@ use_color_names: ${this.useColorNames}`;
   if (this.selectedPartyId) frontmatter += `\nselected_party_id: ${this.escapeYamlString(this.selectedPartyId)}`;
   if (this.selectedPartyName) frontmatter += `\nselected_party_name: ${this.escapeYamlString(this.selectedPartyName)}`;
 
+    // Save individual party members so the Combat Tracker can load them
+    // without depending on Initiative Tracker at runtime.
+    if (this.includeParty && this.selectedPartyMembers.length > 0) {
+      try {
+        this.syncEncounterBuilder();
+        const resolvedPlayers = await this.encounterBuilder.getSelectedPartyPlayers();
+
+        // Build a lookup of PC note paths by player name
+        const pcNotePaths = new Map<string, { path: string; tokenId?: string; initBonus?: number }>();
+        const allFiles = this.app.vault.getMarkdownFiles();
+        for (const f of allFiles) {
+          const fc = this.app.metadataCache.getFileCache(f);
+          const ffm = fc?.frontmatter;
+          if (ffm && (ffm.type === "player" || ffm.type === "pc")) {
+            const name = ffm.name || f.basename;
+            pcNotePaths.set(name, {
+              path: f.path,
+              tokenId: ffm.token_id,
+              initBonus: typeof ffm.init_bonus === "number" ? ffm.init_bonus : undefined,
+            });
+          }
+        }
+
+        if (resolvedPlayers.length > 0) {
+          frontmatter += `\nparty_members:`;
+          for (const player of resolvedPlayers) {
+            const name = player.name || "Unknown";
+            const hp = player.hp || player.currentMaxHP || 20;
+            const ac = player.ac || player.currentAC || 14;
+            const level = player.level || 1;
+            const pcInfo = pcNotePaths.get(name);
+
+            frontmatter += `\n  - name: ${this.escapeYamlString(name)}`;
+            frontmatter += `\n    level: ${level}`;
+            frontmatter += `\n    hp: ${hp}`;
+            frontmatter += `\n    ac: ${ac}`;
+            if (pcInfo?.path) frontmatter += `\n    note_path: ${this.escapeYamlString(pcInfo.path)}`;
+            if (pcInfo?.tokenId) frontmatter += `\n    token_id: ${this.escapeYamlString(pcInfo.tokenId)}`;
+            if (pcInfo?.initBonus !== undefined) frontmatter += `\n    init_bonus: ${pcInfo.initBonus}`;
+          }
+        }
+      } catch (error) {
+        console.error("Error saving party members to encounter frontmatter:", error);
+      }
+    }
+
     if (this.adventurePath) frontmatter += `\nadventure_path: ${this.escapeYamlString(this.adventurePath)}`;
     if (this.scenePath) frontmatter += `\nscene_path: ${this.escapeYamlString(this.scenePath)}`;
     if (this.campaignPath) frontmatter += `\ncampaign_path: ${this.escapeYamlString(this.campaignPath)}`;

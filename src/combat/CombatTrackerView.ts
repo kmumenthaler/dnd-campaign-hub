@@ -3,6 +3,7 @@ import type DndCampaignHubPlugin from "../main";
 import { COMBAT_TRACKER_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE } from "../constants";
 import type { CombatTracker } from "./CombatTracker";
 import type { Combatant, CombatState, StatusEffect } from "./types";
+import { enumerateScreens, type ScreenInfo } from "../utils/ScreenEnumeration";
 
 /**
  * Sidebar view for the Combat Tracker — styled to match Initiative Tracker.
@@ -135,7 +136,7 @@ export class CombatTrackerView extends ItemView {
       cls: "dnd-ct-toolbar-btn",
       attr: { title: "Open Player View" },
     });
-    pvBtn.addEventListener("click", () => this.openPlayerView());
+    pvBtn.addEventListener("click", (e) => this.openPlayerView(e));
 
     // Options menu button (⋮)
     const menuBtn = toolbar.createEl("button", {
@@ -376,7 +377,7 @@ export class CombatTrackerView extends ItemView {
 
   /* ═══════════════════════ Player View Projection ═══════════════════════ */
 
-  private async openPlayerView() {
+  private async openPlayerView(evt?: MouseEvent) {
     // Check if one is already open
     const existing = this.app.workspace.getLeavesOfType(COMBAT_PLAYER_VIEW_TYPE);
     if (existing.length > 0 && existing[0]) {
@@ -385,8 +386,32 @@ export class CombatTrackerView extends ItemView {
       return;
     }
 
+    const screens = await enumerateScreens();
+
+    if (screens.length <= 1) {
+      // Single screen — project directly
+      await this.projectPlayerView(screens[0]!);
+    } else {
+      // Multi-screen — show picker menu
+      const menu = new Menu();
+      for (const screen of screens) {
+        const label = `${screen.label}${screen.isPrimary ? " (Primary)" : ""} — ${screen.width}×${screen.height}`;
+        menu.addItem((item) =>
+          item.setTitle(label).onClick(() => this.projectPlayerView(screen)),
+        );
+      }
+      if (evt) {
+        menu.showAtMouseEvent(evt);
+      } else {
+        menu.showAtPosition({ x: 100, y: 100 });
+      }
+    }
+  }
+
+  /** Open the player view popout on the selected screen and fullscreen it. */
+  private async projectPlayerView(screen: ScreenInfo) {
     const popoutLeaf = this.app.workspace.openPopoutLeaf({
-      size: { width: 1280, height: 720 },
+      size: { width: screen.width, height: screen.height },
     });
 
     await popoutLeaf.setViewState({
@@ -394,10 +419,12 @@ export class CombatTrackerView extends ItemView {
       active: true,
     });
 
-    // Fullscreen after a short delay for the window to initialize
+    // Position and fullscreen after the window initialises
     setTimeout(() => {
       const win = popoutLeaf.view?.containerEl?.win;
       if (win) {
+        win.moveTo(screen.left, screen.top);
+        win.resizeTo(screen.width, screen.height);
         win.document.documentElement.requestFullscreen?.();
       }
     }, 400);

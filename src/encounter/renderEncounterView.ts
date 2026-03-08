@@ -156,36 +156,53 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 				isHidden: c.isHidden ?? c.is_hidden ?? false,
 			}));
 
-			// Build party from campaign PCs
+			// Build party — prefer frontmatter party_members, fall back to vault search
 			const partyMembers: Array<{ name: string; level: number; hp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];
 
-			// Resolve campaign: try plugin setting, then encounter's campaign_path
-			const campaignPath = fm.campaign_path || '';
-			const campaignBaseName = campaignPath ? (campaignPath.split('/').pop() || '') : '';
-			const currentCampaign = plugin.settings.currentCampaign || '';
+			const fmParty: any[] | undefined = fm.party_members;
+			if (Array.isArray(fmParty) && fmParty.length > 0) {
+				for (const m of fmParty) {
+					if (!m || !m.name) continue;
+					partyMembers.push({
+						name: m.name,
+						level: typeof m.level === "number" ? m.level : 1,
+						hp: typeof m.hp === "number" ? m.hp : 10,
+						ac: typeof m.ac === "number" ? m.ac : 10,
+						notePath: m.note_path || undefined,
+						tokenId: m.token_id || undefined,
+						initBonus: typeof m.init_bonus === "number" ? m.init_bonus : 0,
+						thp: typeof m.thp === "number" ? m.thp : 0,
+					});
+				}
+			} else {
+				// Legacy fallback: resolve from vault PC notes by campaign
+				const campaignPath = fm.campaign_path || '';
+				const campaignBaseName = campaignPath ? (campaignPath.split('/').pop() || '') : '';
+				const currentCampaign = plugin.settings.currentCampaign || '';
 
-			const campaignMatchers = new Set<string>();
-			if (currentCampaign) campaignMatchers.add(currentCampaign);
-			if (campaignPath) campaignMatchers.add(campaignPath);
-			if (campaignBaseName) campaignMatchers.add(campaignBaseName);
+				const campaignMatchers = new Set<string>();
+				if (currentCampaign) campaignMatchers.add(currentCampaign);
+				if (campaignPath) campaignMatchers.add(campaignPath);
+				if (campaignBaseName) campaignMatchers.add(campaignBaseName);
 
-			if (campaignMatchers.size > 0) {
-				const allFiles = plugin.app.vault.getMarkdownFiles();
-				for (const f of allFiles) {
-					const fc = plugin.app.metadataCache.getFileCache(f);
-					const ffm = fc?.frontmatter;
-					if (!ffm) continue;
-					if ((ffm.type === "player" || ffm.type === "pc") && campaignMatchers.has(ffm.campaign)) {
-						partyMembers.push({
-							name: ffm.name || f.basename,
-							level: typeof ffm.level === "number" ? ffm.level : 1,
-							hp: typeof ffm.hp === "number" ? ffm.hp : 10,
-							ac: typeof ffm.ac === "number" ? ffm.ac : 10,
-							notePath: f.path,
-							tokenId: ffm.token_id,
-							initBonus: typeof ffm.init_bonus === "number" ? ffm.init_bonus : 0,
-							thp: typeof ffm.thp === "number" ? ffm.thp : 0,
-						});
+				if (campaignMatchers.size > 0) {
+					const allFiles = plugin.app.vault.getMarkdownFiles();
+					for (const f of allFiles) {
+						const fc = plugin.app.metadataCache.getFileCache(f);
+						const ffm = fc?.frontmatter;
+						if (!ffm) continue;
+						if ((ffm.type === "player" || ffm.type === "pc") && campaignMatchers.has(ffm.campaign)) {
+							partyMembers.push({
+								name: ffm.name || f.basename,
+								level: typeof ffm.level === "number" ? ffm.level : 1,
+								hp: typeof ffm.hp === "number" ? ffm.hp : 10,
+								ac: typeof ffm.ac === "number" ? ffm.ac : 10,
+								notePath: f.path,
+								tokenId: ffm.token_id,
+								initBonus: typeof ffm.init_bonus === "number" ? ffm.init_bonus : 0,
+								thp: typeof ffm.thp === "number" ? ffm.thp : 0,
+							});
+						}
 					}
 				}
 			}
