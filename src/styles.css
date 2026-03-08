@@ -1035,20 +1035,21 @@
 .dnd-ct-player-view {
   background: #1a1a2e;
   color: #eee;
-  padding: 24px 32px;
+  padding: 2.5vh 3vw;
   min-height: 100vh;
   font-family: inherit;
+  font-size: 2.4vh;
 }
 .dnd-ct-pv-waiting {
   text-align: center;
   padding: 25vh 0;
 }
 .dnd-ct-pv-waiting h1 {
-  font-size: 4em;
+  font-size: 10vh;
   margin: 0;
 }
 .dnd-ct-pv-waiting p {
-  font-size: 1.4em;
+  font-size: 3.5vh;
   color: #888;
 }
 
@@ -1057,17 +1058,17 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 16px;
-  border-bottom: 2px solid #333;
-  padding-bottom: 12px;
+  margin-bottom: 2vh;
+  border-bottom: 3px solid #333;
+  padding-bottom: 1.5vh;
 }
 .dnd-ct-pv-title {
   margin: 0;
-  font-size: 1.8em;
+  font-size: 4.5vh;
   color: #e0c097;
 }
 .dnd-ct-pv-round {
-  font-size: 1.2em;
+  font-size: 3vh;
   color: #aaa;
   font-weight: 600;
 }
@@ -1076,19 +1077,19 @@
 .dnd-ct-pv-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0.6vh;
 }
 
 /* Row */
 .dnd-ct-pv-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  border-radius: 6px;
+  gap: 1.5vw;
+  padding: 1.2vh 1.5vw;
+  border-radius: 8px;
   background: #16213e;
-  border-left: 4px solid transparent;
-  font-size: 1.1em;
+  border-left: 6px solid transparent;
+  font-size: 1em;
 }
 .dnd-ct-pv-row-active {
   border-left-color: #e94560;
@@ -1116,10 +1117,10 @@
 
 /* Initiative */
 .dnd-ct-pv-init {
-  min-width: 40px;
+  min-width: 3.5vw;
   text-align: center;
   font-weight: 700;
-  font-size: 1.15em;
+  font-size: 1.2em;
   color: #e0c097;
 }
 
@@ -1129,50 +1130,50 @@
   min-width: 0;
 }
 .dnd-ct-pv-marker {
-  font-size: 0.9em;
+  font-size: 1em;
 }
 .dnd-ct-pv-marker-friendly {
   color: #4caf50;
 }
 .dnd-ct-pv-name {
   font-weight: 600;
-  font-size: 1.05em;
+  font-size: 1.1em;
 }
 
 /* Status badges */
 .dnd-ct-pv-statuses {
   display: flex;
-  gap: 4px;
+  gap: 0.5vw;
   flex-wrap: wrap;
-  margin-top: 3px;
+  margin-top: 0.4vh;
 }
 .dnd-ct-pv-status {
   font-size: 0.7em;
-  padding: 2px 6px;
-  border-radius: 3px;
+  padding: 0.3vh 0.6vw;
+  border-radius: 4px;
   background: #2a2a4a;
   color: #bbb;
 }
 
 /* HP */
 .dnd-ct-pv-hp {
-  width: 100px;
+  width: 10vw;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 0.3vh;
 }
 .dnd-ct-pv-hp-bar {
   width: 100%;
-  height: 8px;
+  height: 1.2vh;
   background: #333;
-  border-radius: 4px;
+  border-radius: 6px;
   overflow: hidden;
   position: relative;
 }
 .dnd-ct-pv-hp-fill {
   height: 100%;
-  border-radius: 4px;
+  border-radius: 6px;
   transition: width 0.3s ease;
 }
 .dnd-ct-pv-hp-text {
@@ -1182,21 +1183,21 @@
 
 /* AC */
 .dnd-ct-pv-ac {
-  min-width: 35px;
+  min-width: 3vw;
   text-align: center;
   font-weight: 600;
-  font-size: 1em;
+  font-size: 1.1em;
   color: #8ac;
 }
 
 /* Turn callout */
 .dnd-ct-pv-turn-callout {
   text-align: center;
-  margin-top: 20px;
-  padding: 14px;
+  margin-top: 2.5vh;
+  padding: 1.8vh 2vw;
   background: #e94560;
-  border-radius: 8px;
-  font-size: 1.4em;
+  border-radius: 10px;
+  font-size: 1.6em;
   font-weight: 700;
   color: #fff;
   animation: dnd-ct-pv-pulse 2s ease-in-out infinite;
