@@ -21,6 +21,37 @@ export interface ProjectionTarget {
   calibration: TabletopCalibration;
 }
 
+/** Snapshot of a single combatant (player or creature) in a running combat. */
+export interface CombatantSnapshot {
+  name: string;
+  display: string;
+  id: string;
+  initiative: number;
+  currentHP: number;
+  currentMaxHP: number;
+  tempHP: number;
+  ac: number;
+  currentAC: number;
+  friendly: boolean;
+  hidden: boolean;
+  player: boolean;
+  enabled: boolean;
+  active: boolean;
+  note?: string;
+  status: any[];
+  marker?: string;
+  modifier?: number;
+}
+
+/** Complete snapshot of a running combat, persisted by the plugin. */
+export interface CombatState {
+  encounterName: string;
+  savedAt: string;
+  round: number;
+  combatants: CombatantSnapshot[];
+  activeIndex: number;
+}
+
 export interface DndCampaignHubSettings {
   currentCampaign: string;
   pluginVersion: string;
@@ -35,6 +66,8 @@ export interface DndCampaignHubSettings {
    *  'on-drop'        – freeze fog during drag, recompute on drop (default)
    *  'while-dragging'  – update fog each time the token crosses a grid cell */
   visionUpdateMode: 'on-drop' | 'while-dragging';
+  /** Saved mid-combat states keyed by encounter name. */
+  combatStates: Record<string, CombatState>;
 }
 
 export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
@@ -46,4 +79,5 @@ export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   musicSettings: { ...DEFAULT_MUSIC_SETTINGS },
   musicPlaybackState: { ...DEFAULT_PLAYBACK_STATE },
   visionUpdateMode: 'on-drop',
+  combatStates: {},
 };

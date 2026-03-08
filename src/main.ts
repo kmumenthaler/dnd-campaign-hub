@@ -103,6 +103,7 @@ import { ConfirmModal, NamePromptModal, ClearDrawingsConfirmModal } from './util
 import { PDFFileSuggest, PDFBrowserModal } from './utils/PDFBrowser';
 import { EncounterBuilderModal } from './encounter/EncounterBuilderModal';
 import { EncounterBuilder } from './encounter/EncounterBuilder';
+import { CombatStateManager } from './encounter/CombatStateManager';
 import { PCCreationModal } from './character/PCCreationModal';
 import { ImportPCModal } from './character/ImportPCModal';
 import { NPCCreationModal } from './character/NPCCreationModal';
@@ -170,6 +171,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   AdventureCreationModal = AdventureCreationModal;
   migrationManager!: MigrationManager;
   encounterBuilder!: EncounterBuilder;
+  combatStateManager!: CombatStateManager;
   mapManager!: MapManager;
   markerLibrary!: MarkerLibrary;
   envAssetLibrary!: EnvAssetLibrary;
@@ -239,6 +241,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     // Initialize the encounter builder
     this.encounterBuilder = new EncounterBuilder(this.app, this);
+
+    // Initialize the combat state manager (save/resume mid-combat)
+    this.combatStateManager = new CombatStateManager(this.app, this);
 
     // Initialize the map manager
     this.mapManager = new MapManager(this.app);
@@ -920,6 +925,57 @@ export default class DndCampaignHubPlugin extends Plugin {
           this.editEncounter(file.path);
         } else {
           new Notice("Please open an encounter note first");
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "save-combat-state",
+      name: "💾 Save Combat State",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "encounter") {
+            const name = cache.frontmatter.name || file.basename;
+            this.combatStateManager.saveCombatState(name);
+          } else {
+            new Notice("Please open an encounter note first");
+          }
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "load-combat-state",
+      name: "🔄 Resume Saved Combat",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "encounter") {
+            const name = cache.frontmatter.name || file.basename;
+            this.combatStateManager.loadCombatState(name);
+          } else {
+            new Notice("Please open an encounter note first");
+          }
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "clear-combat-state",
+      name: "🗑️ Clear Saved Combat State",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "encounter") {
+            const name = cache.frontmatter.name || file.basename;
+            this.combatStateManager.clearCombatState(name);
+          } else {
+            new Notice("Please open an encounter note first");
+          }
         }
       },
     });

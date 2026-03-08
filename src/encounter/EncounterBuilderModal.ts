@@ -2080,9 +2080,36 @@ editBtn.addEventListener("click", () => {
   app.commands.executeCommandById("dnd-campaign-hub:edit-encounter");
 });
 
+// Save Combat button
+const saveBtn = buttonContainer.createEl("button", { 
+  text: "💾 Save Combat",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+saveBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:save-combat-state");
+});
+
+// Resume Combat button
+const resumeBtn = buttonContainer.createEl("button", { 
+  text: "🔄 Resume Combat",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px; background-color: var(--interactive-accent); color: var(--text-on-accent);" }
+});
+resumeBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:load-combat-state");
+});
+
+// Clear Saved State button
+const clearStateBtn = buttonContainer.createEl("button", { 
+  text: "🗑️ Clear Saved State",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+clearStateBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:clear-combat-state");
+});
+
 // Delete button  
 const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete",
+  text: "🗑️ Delete Encounter",
   attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
 });
 deleteBtn.addEventListener("click", () => {

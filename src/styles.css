@@ -568,6 +568,20 @@
   font-size: 13px;
 }
 
+/* Saved combat state indicator */
+.dnd-combat-state-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-top: 8px;
+  background-color: var(--background-primary);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 4px;
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
 /* PoI Block Styles */
 .dnd-poi-block {
   background: var(--background-secondary);

@@ -1,6 +1,18 @@
 import { App, Notice, TFile } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 
+/** Format a relative "time ago" string from an ISO date. */
+function formatTimeAgo(isoDate: string): string {
+	const diff = Date.now() - new Date(isoDate).getTime();
+	const mins = Math.floor(diff / 60_000);
+	if (mins < 1) return "just now";
+	if (mins < 60) return `${mins}m ago`;
+	const hours = Math.floor(mins / 60);
+	if (hours < 24) return `${hours}h ago`;
+	const days = Math.floor(hours / 24);
+	return `${days}d ago`;
+}
+
 /**
  * Renders the dnd-encounter code block.
  */
@@ -121,6 +133,7 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 
 		// Action buttons
 		const buttonRow = container.createDiv({ cls: 'dnd-encounter-block-actions' });
+		const encounterName = fm.name || encounterFile!.basename;
 
 		// Load in Initiative Tracker button (primary CTA)
 		const loadBtn = buttonRow.createEl('button', {
@@ -134,7 +147,6 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 				return;
 			}
 
-			const encounterName = fm.name || encounterFile!.basename;
 			const encounter = initiativeTracker.data?.encounters?.[encounterName];
 			if (!encounter) {
 				new Notice(`Encounter "${encounterName}" not found in Initiative Tracker. Try re-saving the encounter.`);
@@ -152,6 +164,26 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 			}
 		});
 
+		// Save Combat button
+		const saveBtn = buttonRow.createEl('button', {
+			text: '\ud83d\udcbe Save Combat',
+			cls: 'dnd-encounter-btn'
+		});
+		saveBtn.addEventListener('click', async () => {
+			await plugin.combatStateManager.saveCombatState(encounterName);
+			// Re-render saved state indicator
+			renderSavedStateInfo();
+		});
+
+		// Resume Combat button (shown only when saved state exists)
+		const resumeBtn = buttonRow.createEl('button', {
+			text: '\ud83d\udd04 Resume Combat',
+			cls: 'dnd-encounter-btn mod-cta'
+		});
+		resumeBtn.addEventListener('click', async () => {
+			await plugin.combatStateManager.loadCombatState(encounterName);
+		});
+
 		// Edit button (secondary / less prominent)
 		const editBtn = buttonRow.createEl('button', {
 			text: '\u270f\ufe0f Edit',
@@ -160,6 +192,33 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 		editBtn.addEventListener('click', () => {
 			plugin.editEncounter(encounterFile!.path);
 		});
+
+		// Saved state info bar + clear button
+		const stateInfoEl = container.createDiv({ cls: 'dnd-combat-state-info' });
+
+		const renderSavedStateInfo = () => {
+			stateInfoEl.empty();
+			const info = plugin.combatStateManager.getSavedStateInfo(encounterName);
+			if (info) {
+				resumeBtn.style.display = '';
+				stateInfoEl.style.display = '';
+				stateInfoEl.createEl('span', {
+					text: `\ud83d\udcbe Paused at Round ${info.round}, ${info.combatantCount} combatants (${formatTimeAgo(info.savedAt)})`,
+				});
+				const clearBtn = stateInfoEl.createEl('button', {
+					text: '\u2716 Clear',
+					cls: 'dnd-encounter-btn mod-muted',
+				});
+				clearBtn.addEventListener('click', async () => {
+					await plugin.combatStateManager.clearCombatState(encounterName);
+					renderSavedStateInfo();
+				});
+			} else {
+				resumeBtn.style.display = 'none';
+				stateInfoEl.style.display = 'none';
+			}
+		};
+		renderSavedStateInfo();
 
 	} catch (error) {
 		console.error('Error rendering encounter block:', error);
