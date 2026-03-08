@@ -101,14 +101,18 @@ export class CombatPlayerView extends ItemView {
         cls: `dnd-ct-pv-row ${isActive ? "dnd-ct-pv-row-active" : ""} ${isDead ? "dnd-ct-pv-row-dead" : ""} ${isAlly ? "dnd-ct-pv-row-ally" : "dnd-ct-pv-row-enemy"}`,
       });
 
-      // Detect HP change for flash animation
+      // Detect HP change — defer the CSS class until after pan
       const prev = this.prevHP.get(c.id);
+      let hpChangeClass: string | null = null;
       if (prev) {
         if (c.currentHP < prev.hp) {
-          row.addClass("dnd-ct-pv-row-damage");
+          hpChangeClass = "dnd-ct-pv-row-damage";
         } else if (c.currentHP > prev.hp) {
-          row.addClass("dnd-ct-pv-row-heal");
+          hpChangeClass = "dnd-ct-pv-row-heal";
         }
+      }
+      if (hpChangeClass) {
+        row.dataset.hpChange = hpChangeClass;
       }
 
       // Initiative
@@ -152,26 +156,41 @@ export class CombatPlayerView extends ItemView {
     requestAnimationFrame(() => {
       list.scrollTop = previousScroll;
 
-      // Find the row that had an HP change (damage/heal flash)
+      // Find the row that had an HP change (deferred animation)
       const changedRow = list.querySelector(
-        ".dnd-ct-pv-row-damage, .dnd-ct-pv-row-heal",
+        "[data-hp-change]",
       ) as HTMLElement | null;
       const activeRow = list.querySelector(
         ".dnd-ct-pv-row-active",
       ) as HTMLElement | null;
 
-      if (changedRow && changedRow !== activeRow) {
-        // 1. Pan to the changed combatant so the flash is visible
-        const changedTarget = this.centeredScrollTarget(list, changedRow);
-        this.smoothScrollTo(list, changedTarget, 600, () => {
-          // 2. Hold while animation plays (~1s), then pan back to active
+      if (changedRow) {
+        const animClass = changedRow.dataset.hpChange!;
+        delete changedRow.dataset.hpChange;
+
+        const panTarget = changedRow !== activeRow
+          ? this.centeredScrollTarget(list, changedRow)
+          : null;
+
+        const applyAndReturn = () => {
+          // Pause → apply flash → pause → pan back
           setTimeout(() => {
-            if (activeRow) {
-              const activeTarget = this.centeredScrollTarget(list, activeRow);
-              this.smoothScrollTo(list, activeTarget, 800);
-            }
-          }, 1000);
-        });
+            changedRow.addClass(animClass);
+            setTimeout(() => {
+              if (activeRow && changedRow !== activeRow) {
+                const activeTarget = this.centeredScrollTarget(list, activeRow);
+                this.smoothScrollTo(list, activeTarget, 1000);
+              }
+            }, 1200);
+          }, 400);
+        };
+
+        if (panTarget !== null) {
+          // Pan to changed combatant first
+          this.smoothScrollTo(list, panTarget, 1000, applyAndReturn);
+        } else {
+          applyAndReturn();
+        }
       } else if (activeRow) {
         // No HP change — just pan to active combatant
         const target = this.centeredScrollTarget(list, activeRow);
