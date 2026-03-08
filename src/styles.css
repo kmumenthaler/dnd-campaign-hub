@@ -1230,7 +1230,7 @@
   top: 0;
   height: 100%;
   border-radius: 0.3em;
-  transition: width 0.3s ease;
+  transition: width 0.6s ease-in-out;
 }
 .dnd-ct-pv-hp-text {
   position: relative;
@@ -1245,6 +1245,22 @@
   letter-spacing: 0.05em;
   font-size: 0.95em;
   text-shadow: none;
+}
+
+/* Damage / Heal row flash */
+.dnd-ct-pv-row-damage {
+  animation: dnd-ct-pv-flash-damage 0.8s ease-out;
+}
+.dnd-ct-pv-row-heal {
+  animation: dnd-ct-pv-flash-heal 0.8s ease-out;
+}
+@keyframes dnd-ct-pv-flash-damage {
+  0% { background: rgba(220, 40, 40, 0.5); }
+  100% { background: transparent; }
+}
+@keyframes dnd-ct-pv-flash-heal {
+  0% { background: rgba(40, 200, 80, 0.5); }
+  100% { background: transparent; }
 }
 
 /* AC */

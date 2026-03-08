@@ -13,6 +13,8 @@ export class CombatPlayerView extends ItemView {
   plugin: DndCampaignHubPlugin;
   private unsubscribe: (() => void) | null = null;
   private scrollAnimationId: number | null = null;
+  /** Track previous HP so we can detect changes and animate. */
+  private prevHP: Map<string, { hp: number; maxHP: number }> = new Map();
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -98,6 +100,16 @@ export class CombatPlayerView extends ItemView {
       const row = list.createDiv({
         cls: `dnd-ct-pv-row ${isActive ? "dnd-ct-pv-row-active" : ""} ${isDead ? "dnd-ct-pv-row-dead" : ""} ${isAlly ? "dnd-ct-pv-row-ally" : "dnd-ct-pv-row-enemy"}`,
       });
+
+      // Detect HP change for flash animation
+      const prev = this.prevHP.get(c.id);
+      if (prev) {
+        if (c.currentHP < prev.hp) {
+          row.addClass("dnd-ct-pv-row-damage");
+        } else if (c.currentHP > prev.hp) {
+          row.addClass("dnd-ct-pv-row-heal");
+        }
+      }
 
       // Initiative
       const initEl = row.createEl("span", { cls: "dnd-ct-pv-init" });
@@ -247,17 +259,29 @@ export class CombatPlayerView extends ItemView {
     return "Uninjured";
   }
 
-  private renderPVHPBar(parent: HTMLElement, c: { currentHP: number; maxHP: number; tempHP: number }, isAlly: boolean) {
+  private renderPVHPBar(parent: HTMLElement, c: { id: string; currentHP: number; maxHP: number; tempHP: number }, isAlly: boolean) {
     const hpCell = parent.createDiv({ cls: "dnd-ct-pv-hp" });
     const pct = c.maxHP > 0 ? Math.max(0, Math.min(1, c.currentHP / c.maxHP)) : 0;
     const color = this.hpColor(pct);
+
+    // Determine old percentage for animation
+    const prev = this.prevHP.get(c.id);
+    const oldPct = prev && prev.maxHP > 0
+      ? Math.max(0, Math.min(1, prev.hp / prev.maxHP))
+      : pct;
 
     if (isAlly) {
       // Allies: HP bar with text inside
       const bar = hpCell.createDiv({ cls: "dnd-ct-pv-hp-bar" });
       const fill = bar.createDiv({ cls: "dnd-ct-pv-hp-fill" });
-      fill.style.width = `${pct * 100}%`;
+      // Start at old width, then animate to new
+      fill.style.width = `${oldPct * 100}%`;
       fill.style.background = color;
+      if (oldPct !== pct) {
+        requestAnimationFrame(() => {
+          fill.style.width = `${pct * 100}%`;
+        });
+      }
 
       if (c.tempHP > 0) {
         const tempPct = Math.min(1, c.tempHP / c.maxHP);
@@ -273,5 +297,8 @@ export class CombatPlayerView extends ItemView {
       const textEl = hpCell.createEl("span", { text: condition, cls: "dnd-ct-pv-hp-text dnd-ct-pv-hp-condition" });
       textEl.style.color = color;
     }
+
+    // Store current HP for next render
+    this.prevHP.set(c.id, { hp: c.currentHP, maxHP: c.maxHP });
   }
 }
