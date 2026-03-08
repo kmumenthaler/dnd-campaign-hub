@@ -582,6 +582,575 @@
   color: var(--text-muted);
 }
 
+/* ─── Combat Tracker View ─── */
+
+.dnd-combat-tracker {
+  padding: 8px;
+  font-size: 0.9em;
+}
+
+/* ── Empty state ── */
+.dnd-ct-empty {
+  text-align: center;
+  padding: 24px 8px;
+  color: var(--text-muted);
+}
+.dnd-ct-hint {
+  font-size: 0.85em;
+}
+.dnd-ct-resume-section {
+  text-align: left;
+  margin-top: 16px;
+  padding: 8px;
+}
+.dnd-ct-resume-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 0.95em;
+}
+.dnd-ct-resume-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+/* ── Toolbar ── */
+.dnd-ct-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.dnd-ct-toolbar-btn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 1em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-normal);
+}
+.dnd-ct-toolbar-btn:hover {
+  background: var(--background-modifier-hover);
+}
+.dnd-ct-toolbar-btn-primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.dnd-ct-toolbar-btn-primary:hover {
+  opacity: 0.9;
+}
+.dnd-ct-toolbar-btn-menu {
+  font-size: 1.3em;
+  font-weight: 700;
+}
+.dnd-ct-toolbar-round {
+  font-weight: 600;
+  font-size: 0.9em;
+  margin: 0 4px;
+  white-space: nowrap;
+}
+.dnd-ct-toolbar-spacer {
+  flex: 1;
+}
+
+/* ── Buttons ── */
+.dnd-ct-btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+.dnd-ct-btn:hover {
+  background: var(--background-modifier-hover);
+}
+.dnd-ct-btn-primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+.dnd-ct-btn-primary:hover {
+  opacity: 0.9;
+}
+
+/* ── Encounter header ── */
+.dnd-ct-encounter-header {
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+}
+.dnd-ct-encounter-name {
+  font-weight: 600;
+  font-size: 1em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dnd-ct-current-turn {
+  font-size: 0.9em;
+  color: var(--interactive-accent);
+  font-weight: 600;
+  margin-top: 2px;
+}
+.dnd-ct-encounter-summary {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ── Column headers ── */
+.dnd-ct-col-headers {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 4px;
+}
+.dnd-ct-col-init { min-width: 32px; text-align: center; }
+.dnd-ct-col-name { flex: 1; }
+.dnd-ct-col-hp   { width: 80px; text-align: center; }
+.dnd-ct-col-ac   { width: 28px; text-align: center; }
+.dnd-ct-col-menu { width: 24px; }
+
+/* ── Combatant list ── */
+.dnd-ct-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ── Combatant row ── */
+.dnd-ct-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  border-left: 3px solid transparent;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+.dnd-ct-row-active {
+  border-left-color: var(--interactive-accent);
+  background: var(--background-secondary-alt, var(--background-secondary));
+}
+.dnd-ct-row-dead {
+  opacity: 0.4;
+}
+.dnd-ct-row-hidden {
+  border-left-color: var(--text-muted);
+}
+.dnd-ct-row-disabled {
+  opacity: 0.35;
+  filter: grayscale(0.5);
+}
+
+/* ── Initiative badge ── */
+.dnd-ct-init {
+  min-width: 32px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.95em;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: var(--background-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.dnd-ct-init:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* ── Name cell ── */
+.dnd-ct-name-cell {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.dnd-ct-markers {
+  display: inline;
+  margin-right: 4px;
+}
+.dnd-ct-marker {
+  font-size: 0.85em;
+}
+.dnd-ct-marker-friendly {
+  color: var(--color-green, #4caf50);
+}
+.dnd-ct-marker-hidden {
+  color: var(--text-muted);
+}
+.dnd-ct-name {
+  font-weight: 600;
+  font-size: 0.9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dnd-ct-name-player {
+  color: var(--interactive-accent);
+}
+.dnd-ct-name-friendly {
+  color: var(--color-green, #4caf50);
+}
+.dnd-ct-name-enemy {
+  color: var(--text-normal);
+}
+.dnd-ct-name-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+.dnd-ct-name-link:hover {
+  text-decoration-style: solid;
+}
+
+/* ── Status badges ── */
+.dnd-ct-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 2px;
+}
+.dnd-ct-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.7em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+.dnd-ct-status-remove {
+  cursor: pointer;
+  font-size: 0.9em;
+  color: var(--text-faint);
+  margin-left: 2px;
+}
+.dnd-ct-status-remove:hover {
+  color: var(--text-error);
+}
+
+/* ── HP cell ── */
+.dnd-ct-hp-cell {
+  width: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.dnd-ct-hp-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+.dnd-ct-hp-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.dnd-ct-hp-healthy  { background: #4caf50; }
+.dnd-ct-hp-wounded  { background: #ff9800; }
+.dnd-ct-hp-critical { background: #f44336; }
+.dnd-ct-hp-dead     { background: #555; }
+.dnd-ct-hp-temp {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  background: #2196f3;
+  opacity: 0.5;
+  border-radius: 3px;
+}
+.dnd-ct-hp-text {
+  font-size: 0.75em;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+/* ── AC cell ── */
+.dnd-ct-ac-cell {
+  width: 28px;
+  text-align: center;
+  font-size: 0.85em;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.dnd-ct-ac-modified {
+  color: var(--interactive-accent);
+}
+
+/* ── Row context menu button ── */
+.dnd-ct-row-menu-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 1.1em;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.dnd-ct-row-menu-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* ── Quick status buttons in modal ── */
+.dnd-ct-quick-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0;
+}
+.dnd-ct-quick-status-btn {
+  padding: 3px 8px;
+  font-size: 0.8em;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+.dnd-ct-quick-status-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* ── Modal info ── */
+.dnd-ct-modal-info {
+  color: var(--text-muted);
+  font-size: 0.9em;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dnd-ct-hp-status-modal .setting-item {
+  border-top: none;
+  padding: 6px 0;
+}
+
+/* ── Load encounter modal ── */
+.dnd-ct-encounter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.dnd-ct-encounter-list-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+}
+.dnd-ct-encounter-list-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* =================================================================
+   Player View (fullscreen projection)
+   ================================================================= */
+
+.dnd-ct-player-view {
+  background: #1a1a2e;
+  color: #eee;
+  padding: 24px 32px;
+  min-height: 100vh;
+  font-family: inherit;
+}
+.dnd-ct-pv-waiting {
+  text-align: center;
+  padding: 25vh 0;
+}
+.dnd-ct-pv-waiting h1 {
+  font-size: 4em;
+  margin: 0;
+}
+.dnd-ct-pv-waiting p {
+  font-size: 1.4em;
+  color: #888;
+}
+
+/* Header */
+.dnd-ct-pv-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 16px;
+  border-bottom: 2px solid #333;
+  padding-bottom: 12px;
+}
+.dnd-ct-pv-title {
+  margin: 0;
+  font-size: 1.8em;
+  color: #e0c097;
+}
+.dnd-ct-pv-round {
+  font-size: 1.2em;
+  color: #aaa;
+  font-weight: 600;
+}
+
+/* List */
+.dnd-ct-pv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Row */
+.dnd-ct-pv-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: #16213e;
+  border-left: 4px solid transparent;
+  font-size: 1.1em;
+}
+.dnd-ct-pv-row-active {
+  border-left-color: #e94560;
+  background: #1a2744;
+}
+.dnd-ct-pv-row-dead {
+  opacity: 0.35;
+}
+
+/* Initiative */
+.dnd-ct-pv-init {
+  min-width: 40px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 1.15em;
+  color: #e0c097;
+}
+
+/* Name cell */
+.dnd-ct-pv-name-cell {
+  flex: 1;
+  min-width: 0;
+}
+.dnd-ct-pv-marker {
+  font-size: 0.9em;
+}
+.dnd-ct-pv-marker-friendly {
+  color: #4caf50;
+}
+.dnd-ct-pv-name {
+  font-weight: 600;
+  font-size: 1.05em;
+}
+
+/* Status badges */
+.dnd-ct-pv-statuses {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+}
+.dnd-ct-pv-status {
+  font-size: 0.7em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #2a2a4a;
+  color: #bbb;
+}
+
+/* HP */
+.dnd-ct-pv-hp {
+  width: 100px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.dnd-ct-pv-hp-bar {
+  width: 100%;
+  height: 8px;
+  background: #333;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.dnd-ct-pv-hp-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.dnd-ct-pv-hp-text {
+  font-size: 0.75em;
+  color: #999;
+}
+
+/* AC */
+.dnd-ct-pv-ac {
+  min-width: 35px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 1em;
+  color: #8ac;
+}
+
+/* Turn callout */
+.dnd-ct-pv-turn-callout {
+  text-align: center;
+  margin-top: 20px;
+  padding: 14px;
+  background: #e94560;
+  border-radius: 8px;
+  font-size: 1.4em;
+  font-weight: 700;
+  color: #fff;
+  animation: dnd-ct-pv-pulse 2s ease-in-out infinite;
+}
+@keyframes dnd-ct-pv-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
 /* PoI Block Styles */
 .dnd-poi-block {
   background: var(--background-secondary);

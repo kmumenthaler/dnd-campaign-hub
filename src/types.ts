@@ -1,5 +1,6 @@
 import type { MusicSettings, MusicPlaybackState } from "./music/types";
 import { DEFAULT_MUSIC_SETTINGS, DEFAULT_PLAYBACK_STATE } from "./music/types";
+import type { CombatState } from "./combat/types";
 
 export interface TabletopCalibration {
   monitorDiagonalInch: number;
@@ -19,37 +20,6 @@ export interface ProjectionTarget {
   devicePixelRatio: number;
   /** Physical calibration for this monitor. */
   calibration: TabletopCalibration;
-}
-
-/** Snapshot of a single combatant (player or creature) in a running combat. */
-export interface CombatantSnapshot {
-  name: string;
-  display: string;
-  id: string;
-  initiative: number;
-  currentHP: number;
-  currentMaxHP: number;
-  tempHP: number;
-  ac: number;
-  currentAC: number;
-  friendly: boolean;
-  hidden: boolean;
-  player: boolean;
-  enabled: boolean;
-  active: boolean;
-  note?: string;
-  status: any[];
-  marker?: string;
-  modifier?: number;
-}
-
-/** Complete snapshot of a running combat, persisted by the plugin. */
-export interface CombatState {
-  encounterName: string;
-  savedAt: string;
-  round: number;
-  combatants: CombatantSnapshot[];
-  activeIndex: number;
 }
 
 export interface DndCampaignHubSettings {

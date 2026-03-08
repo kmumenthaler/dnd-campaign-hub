@@ -88,6 +88,8 @@ import {
   DM_SCREEN_VIEW_TYPE,
   PLAYER_MAP_VIEW_TYPE,
   GM_MAP_VIEW_TYPE,
+  COMBAT_TRACKER_VIEW_TYPE,
+  COMBAT_PLAYER_VIEW_TYPE,
 } from './constants';
 import type { MapMediaElement } from './constants';
 
@@ -103,7 +105,9 @@ import { ConfirmModal, NamePromptModal, ClearDrawingsConfirmModal } from './util
 import { PDFFileSuggest, PDFBrowserModal } from './utils/PDFBrowser';
 import { EncounterBuilderModal } from './encounter/EncounterBuilderModal';
 import { EncounterBuilder } from './encounter/EncounterBuilder';
-import { CombatStateManager } from './encounter/CombatStateManager';
+import { CombatTracker } from './combat/CombatTracker';
+import { CombatTrackerView } from './combat/CombatTrackerView';
+import { CombatPlayerView } from './combat/CombatPlayerView';
 import { PCCreationModal } from './character/PCCreationModal';
 import { ImportPCModal } from './character/ImportPCModal';
 import { NPCCreationModal } from './character/NPCCreationModal';
@@ -171,7 +175,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   AdventureCreationModal = AdventureCreationModal;
   migrationManager!: MigrationManager;
   encounterBuilder!: EncounterBuilder;
-  combatStateManager!: CombatStateManager;
+  combatTracker!: CombatTracker;
   mapManager!: MapManager;
   markerLibrary!: MarkerLibrary;
   envAssetLibrary!: EnvAssetLibrary;
@@ -239,11 +243,23 @@ export default class DndCampaignHubPlugin extends Plugin {
       }
     );
 
+    // Register the Combat Tracker View (right sidebar)
+    this.registerView(
+      COMBAT_TRACKER_VIEW_TYPE,
+      (leaf) => new CombatTrackerView(leaf, this)
+    );
+
+    // Register the Combat Player View (projection popout)
+    this.registerView(
+      COMBAT_PLAYER_VIEW_TYPE,
+      (leaf) => new CombatPlayerView(leaf, this)
+    );
+
     // Initialize the encounter builder
     this.encounterBuilder = new EncounterBuilder(this.app, this);
 
-    // Initialize the combat state manager (save/resume mid-combat)
-    this.combatStateManager = new CombatStateManager(this.app, this);
+    // Initialize the combat tracker engine
+    this.combatTracker = new CombatTracker(this.app, this);
 
     // Initialize the map manager
     this.mapManager = new MapManager(this.app);
@@ -932,18 +948,7 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.addCommand({
       id: "save-combat-state",
       name: "💾 Save Combat State",
-      callback: () => {
-        const file = this.app.workspace.getActiveFile();
-        if (file) {
-          const cache = this.app.metadataCache.getFileCache(file);
-          if (cache?.frontmatter?.type === "encounter") {
-            const name = cache.frontmatter.name || file.basename;
-            this.combatStateManager.saveCombatState(name);
-          } else {
-            new Notice("Please open an encounter note first");
-          }
-        }
-      },
+      callback: () => this.combatTracker.saveCombat(),
     });
 
     this.addCommand({
@@ -955,7 +960,7 @@ export default class DndCampaignHubPlugin extends Plugin {
           const cache = this.app.metadataCache.getFileCache(file);
           if (cache?.frontmatter?.type === "encounter") {
             const name = cache.frontmatter.name || file.basename;
-            this.combatStateManager.loadCombatState(name);
+            this.combatTracker.resumeCombat(name);
           } else {
             new Notice("Please open an encounter note first");
           }
@@ -966,18 +971,36 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.addCommand({
       id: "clear-combat-state",
       name: "🗑️ Clear Saved Combat State",
-      callback: () => {
+      callback: async () => {
         const file = this.app.workspace.getActiveFile();
         if (file) {
           const cache = this.app.metadataCache.getFileCache(file);
           if (cache?.frontmatter?.type === "encounter") {
             const name = cache.frontmatter.name || file.basename;
-            this.combatStateManager.clearCombatState(name);
+            await this.combatTracker.clearSavedState(name);
           } else {
             new Notice("Please open an encounter note first");
           }
         }
       },
+    });
+
+    this.addCommand({
+      id: "open-combat-tracker",
+      name: "⚔️ Open Combat Tracker",
+      callback: () => this.openCombatTracker(),
+    });
+
+    this.addCommand({
+      id: "next-turn",
+      name: "⏩ Next Turn",
+      callback: () => this.combatTracker.nextTurn(),
+    });
+
+    this.addCommand({
+      id: "prev-turn",
+      name: "⏪ Previous Turn",
+      callback: () => this.combatTracker.prevTurn(),
     });
 
     // Register file watcher for encounter modifications
@@ -2492,6 +2515,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 				active: true,
 			});
 			this.app.workspace.revealLeaf(dmScreenLeaf);
+		}
+	}
+
+	async openCombatTracker() {
+		const existing = this.app.workspace.getLeavesOfType(COMBAT_TRACKER_VIEW_TYPE);
+		if (existing.length > 0 && existing[0]) {
+			this.app.workspace.revealLeaf(existing[0]);
+			return;
+		}
+		const leaf = this.app.workspace.getRightLeaf(false);
+		if (leaf) {
+			await leaf.setViewState({ type: COMBAT_TRACKER_VIEW_TYPE, active: true });
+			this.app.workspace.revealLeaf(leaf);
 		}
 	}
 

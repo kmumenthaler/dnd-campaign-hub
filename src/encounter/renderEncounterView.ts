@@ -135,33 +135,47 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 		const buttonRow = container.createDiv({ cls: 'dnd-encounter-block-actions' });
 		const encounterName = fm.name || encounterFile!.basename;
 
-		// Load in Initiative Tracker button (primary CTA)
+		// Run Encounter → feeds into our Combat Tracker
 		const loadBtn = buttonRow.createEl('button', {
 			text: '\u2694\ufe0f Run Encounter',
 			cls: 'dnd-encounter-btn mod-cta'
 		});
 		loadBtn.addEventListener('click', async () => {
-			const initiativeTracker = (plugin.app as any).plugins?.plugins?.["initiative-tracker"];
-			if (!initiativeTracker) {
-				new Notice("Initiative Tracker plugin not found");
-				return;
-			}
+			const tracker = plugin.combatTracker;
 
-			const encounter = initiativeTracker.data?.encounters?.[encounterName];
-			if (!encounter) {
-				new Notice(`Encounter "${encounterName}" not found in Initiative Tracker. Try re-saving the encounter.`);
-				return;
-			}
-
-			try {
-				if (initiativeTracker.tracker?.new) {
-					initiativeTracker.tracker.new(initiativeTracker, encounter);
-					new Notice(`\u2705 Loaded: ${encounterName}`);
+			// Build party from campaign PCs
+			const partyMembers: Array<{ name: string; level: number; hp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];
+			const campaignName = plugin.settings.currentCampaign;
+			if (campaignName) {
+				const allFiles = plugin.app.vault.getMarkdownFiles();
+				for (const f of allFiles) {
+					const fc = plugin.app.metadataCache.getFileCache(f);
+					const ffm = fc?.frontmatter;
+					if (!ffm) continue;
+					if ((ffm.type === "player" || ffm.type === "pc") && ffm.campaign === campaignName) {
+						partyMembers.push({
+							name: ffm.name || f.basename,
+							level: typeof ffm.level === "number" ? ffm.level : 1,
+							hp: typeof ffm.hp === "number" ? ffm.hp : 10,
+							ac: typeof ffm.ac === "number" ? ffm.ac : 10,
+							notePath: f.path,
+							tokenId: ffm.token_id,
+							initBonus: typeof ffm.init_bonus === "number" ? ffm.init_bonus : 0,
+							thp: typeof ffm.thp === "number" ? ffm.thp : 0,
+						});
+					}
 				}
-				(plugin.app as any).commands?.executeCommandById("initiative-tracker:open-tracker");
-			} catch (e) {
-				new Notice(`\u26a0\ufe0f Could not load encounter: ${(e as Error).message}`);
 			}
+
+			await tracker.startFromEncounter(
+				encounterName,
+				creatures,
+				partyMembers,
+				true, // color names
+			);
+
+			// Open the Combat Tracker sidebar
+			await plugin.openCombatTracker();
 		});
 
 		// Save Combat button
@@ -170,8 +184,7 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 			cls: 'dnd-encounter-btn'
 		});
 		saveBtn.addEventListener('click', async () => {
-			await plugin.combatStateManager.saveCombatState(encounterName);
-			// Re-render saved state indicator
+			await plugin.combatTracker.saveCombat();
 			renderSavedStateInfo();
 		});
 
@@ -181,7 +194,8 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 			cls: 'dnd-encounter-btn mod-cta'
 		});
 		resumeBtn.addEventListener('click', async () => {
-			await plugin.combatStateManager.loadCombatState(encounterName);
+			plugin.combatTracker.resumeCombat(encounterName);
+			await plugin.openCombatTracker();
 		});
 
 		// Edit button (secondary / less prominent)
@@ -198,7 +212,7 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 
 		const renderSavedStateInfo = () => {
 			stateInfoEl.empty();
-			const info = plugin.combatStateManager.getSavedStateInfo(encounterName);
+			const info = plugin.combatTracker.getSavedStateInfo(encounterName);
 			if (info) {
 				resumeBtn.style.display = '';
 				stateInfoEl.style.display = '';
@@ -210,7 +224,7 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 					cls: 'dnd-encounter-btn mod-muted',
 				});
 				clearBtn.addEventListener('click', async () => {
-					await plugin.combatStateManager.clearCombatState(encounterName);
+					await plugin.combatTracker.clearSavedState(encounterName);
 					renderSavedStateInfo();
 				});
 			} else {
