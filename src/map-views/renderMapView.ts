@@ -12447,6 +12447,27 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				).open();
 			});
 
+			// ── Register with MapController (external API) ──
+			const unregisterMapController = plugin.mapController.register({
+				mapId: config.mapId || resourcePath,
+				config,
+				redrawAnnotations,
+				saveToHistory,
+				syncPlayerView: () => (viewport as any)._syncPlayerView?.(),
+				save: () => plugin.saveMapAnnotations(config, el),
+				el,
+			});
+			// Auto-unregister when the map DOM node is removed
+			const mcObserver = new MutationObserver(() => {
+				if (!viewport.isConnected) {
+					unregisterMapController();
+					mcObserver.disconnect();
+				}
+			});
+			if (viewport.parentElement) {
+				mcObserver.observe(viewport.parentElement, { childList: true });
+			}
+
 		} catch (error) {
 			console.error('Error rendering dnd-map:', error);
 			el.createEl('div', { 

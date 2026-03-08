@@ -15,6 +15,7 @@ import {
   SESSION_DEFAULT_TEMPLATE
 } from "./templates";
 import { MapManager } from "./map/MapManager";
+import { MapController } from "./map/MapController";
 import { MapCreationModal, BATTLEMAP_TEMPLATE_FOLDER } from "./map/MapCreationModal";
 import { MapManagerModal } from "./map/MapManagerModal";
 import { TemplatePickerModal } from "./map/TemplatePickerModal";
@@ -177,6 +178,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   encounterBuilder!: EncounterBuilder;
   combatTracker!: CombatTracker;
   mapManager!: MapManager;
+  mapController!: MapController;
   markerLibrary!: MarkerLibrary;
   envAssetLibrary!: EnvAssetLibrary;
   musicPlayer!: MusicPlayer;
@@ -263,6 +265,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     // Initialize the map manager
     this.mapManager = new MapManager(this.app);
+
+    // Initialize the map controller (external API for map manipulation)
+    this.mapController = new MapController(this);
 
     // Initialize the marker library
     this.markerLibrary = new MarkerLibrary(this.app, this.manifest.id);

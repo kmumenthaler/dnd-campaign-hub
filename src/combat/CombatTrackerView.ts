@@ -491,6 +491,35 @@ export class CombatTrackerView extends ItemView {
 
     menu.addSeparator();
 
+    // Place on Map — only shown when a map is active
+    const mc = this.plugin.mapController;
+    if (mc.isMapActive()) {
+      const alreadyOnMap = mc.isCombatantOnMap(c.name, c.tokenId);
+      menu.addItem((item) =>
+        item
+          .setTitle(alreadyOnMap ? "📍 Already on Map" : "📍 Place on Map")
+          .setIcon("map-pin")
+          .setDisabled(alreadyOnMap)
+          .onClick(async () => {
+            const result = await mc.placeToken({
+              name: c.name,
+              display: c.display,
+              tokenId: c.tokenId,
+              notePath: c.notePath,
+              player: c.player,
+              friendly: c.friendly,
+            });
+            if (result.success) {
+              new Notice(`📍 Placed "${c.display}" on the map`);
+            } else {
+              new Notice(`⚠️ ${result.reason}`);
+            }
+          }),
+      );
+    }
+
+    menu.addSeparator();
+
     menu.addItem((item) =>
       item
         .setTitle("🗑️ Remove")
