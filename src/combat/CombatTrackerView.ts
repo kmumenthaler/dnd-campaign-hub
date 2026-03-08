@@ -418,14 +418,16 @@ export class CombatTrackerView extends ItemView {
         // Screen occupied by a map — offer to switch
         const menu = new Menu();
         menu.addItem((item) =>
-          item.setTitle(`🔄 Switch ${screen.label} to Combat View`).onClick(() =>
-            pm.projectCombatView(screen)
-          )
+          item.setTitle(`🔄 Switch ${screen.label} to Combat View`).onClick(async () => {
+            await pm.projectCombatView(screen);
+            this.render();
+          })
         );
         if (evt) menu.showAtMouseEvent(evt);
         else menu.showAtPosition({ x: 100, y: 100 });
       } else {
         await pm.projectCombatView(screen);
+        this.render();
       }
       return;
     }
@@ -439,13 +441,17 @@ export class CombatTrackerView extends ItemView {
 
       if (isOccupied) {
         menu.addItem((item) =>
-          item.setTitle(`🔄 Switch ${screen.label} to Combat View`).onClick(() =>
-            pm.projectCombatView(screen)
-          )
+          item.setTitle(`🔄 Switch ${screen.label} to Combat View`).onClick(async () => {
+            await pm.projectCombatView(screen);
+            this.render();
+          })
         );
       } else {
         menu.addItem((item) =>
-          item.setTitle(label).onClick(() => pm.projectCombatView(screen))
+          item.setTitle(label).onClick(async () => {
+            await pm.projectCombatView(screen);
+            this.render();
+          })
         );
       }
     }
