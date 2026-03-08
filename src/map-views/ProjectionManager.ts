@@ -13,7 +13,7 @@
 import { Notice, WorkspaceLeaf } from 'obsidian';
 import type DndCampaignHubPlugin from '../main';
 import type { PlayerMapView } from '../map-views/PlayerMapView';
-import { PLAYER_MAP_VIEW_TYPE } from '../constants';
+import { PLAYER_MAP_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE } from '../constants';
 import type { ProjectionTarget, TabletopCalibration } from '../types';
 import { enumerateScreens, screenKey, type ScreenInfo } from '../utils/ScreenEnumeration';
 import { queryPhysicalMonitorSizes, matchScreenToPhysical } from '../utils/MonitorPhysicalSize';
@@ -23,15 +23,20 @@ import { queryPhysicalMonitorSizes, matchScreenToPhysical } from '../utils/Monit
 /** Projection mode: 'battle' = auto-calibrated grid-scale, 'free' = user-controlled pan/zoom. */
 export type ProjectionMode = 'battle' | 'free';
 
+/** What is being projected: a battle map or the combat tracker player view. */
+export type ProjectionContentType = 'map' | 'combat';
+
 export interface ProjectionState {
   /** The player view leaf currently being projected. */
   leaf: WorkspaceLeaf;
   /** The screen this projection is targeting. */
   screen: ScreenInfo;
-  /** The mapId currently displayed. */
+  /** The mapId currently displayed (empty string for combat projections). */
   mapId: string;
   /** Projection mode. */
   mode: ProjectionMode;
+  /** What kind of content is projected. */
+  contentType: ProjectionContentType;
 }
 
 // ── Class ──────────────────────────────────────────────────────────────
@@ -78,26 +83,32 @@ export class ProjectionManager {
     // ── Reuse existing projection on the SAME screen ───────────────
     const existing = this.activeProjections.get(sKey);
     if (existing && this.isProjectionAliveOnScreen(sKey)) {
-      const pv = existing.leaf.view as PlayerMapView | undefined;
-      if (pv && typeof pv.swapMap === 'function') {
-        existing.mapId = mapId;
-        existing.mode = mode;
+      // If the existing projection is a combat view, stop it first
+      if (existing.contentType === 'combat') {
+        this.stopProjectionOnScreen(sKey);
+      } else {
+        const pv = existing.leaf.view as PlayerMapView | undefined;
+        if (pv && typeof pv.swapMap === 'function') {
+          existing.mapId = mapId;
+          existing.mode = mode;
+          existing.contentType = 'map';
 
-        if (mode === 'battle') {
-          await this.ensureCalibration(screen);
-          pv.swapMap(mapId, mapConfig, imageResourcePath, (fadeIn) => {
-            const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
-            this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
-              fadeIn();
+          if (mode === 'battle') {
+            await this.ensureCalibration(screen);
+            pv.swapMap(mapId, mapConfig, imageResourcePath, (fadeIn) => {
+              const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
+              this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
+                fadeIn();
+              });
             });
-          });
-        } else {
-          // Free mode: swap map, fade in immediately (no calibration/orient)
-          pv.swapMap(mapId, mapConfig, imageResourcePath);
-        }
+          } else {
+            // Free mode: swap map, fade in immediately (no calibration/orient)
+            pv.swapMap(mapId, mapConfig, imageResourcePath);
+          }
 
-        new Notice(`Projection updated — ${mapConfig.name || mapId}`);
-        return;
+          new Notice(`Projection updated — ${mapConfig.name || mapId}`);
+          return;
+        }
       }
     }
 
@@ -116,7 +127,7 @@ export class ProjectionManager {
       },
     });
 
-    this.activeProjections.set(sKey, { leaf: popoutLeaf, screen, mapId, mode });
+    this.activeProjections.set(sKey, { leaf: popoutLeaf, screen, mapId, mode, contentType: 'map' });
 
     // Save last-used screen preference
     this.plugin.settings.lastProjectionScreenKey = sKey;
@@ -146,6 +157,43 @@ export class ProjectionManager {
     }, 300);
 
     new Notice(`Projecting to ${screen.label} (${mode === 'battle' ? 'Battle' : 'Free'})`);
+  }
+
+  /**
+   * Project the Combat Tracker player view to a specific screen.
+   * Stops any existing projection on that screen first.
+   */
+  async projectCombatView(screen: ScreenInfo): Promise<void> {
+    const sKey = screenKey(screen);
+
+    // Stop existing projection on this screen (map or combat)
+    if (this.isProjectionAliveOnScreen(sKey)) {
+      this.stopProjectionOnScreen(sKey);
+    }
+
+    const popoutLeaf = this.plugin.app.workspace.openPopoutLeaf({
+      size: { width: screen.width, height: screen.height },
+    });
+
+    await popoutLeaf.setViewState({
+      type: COMBAT_PLAYER_VIEW_TYPE,
+      active: true,
+    });
+
+    this.activeProjections.set(sKey, {
+      leaf: popoutLeaf,
+      screen,
+      mapId: '',
+      mode: 'free',
+      contentType: 'combat',
+    });
+
+    // Position and fullscreen
+    setTimeout(async () => {
+      await this.positionAndFullscreen(popoutLeaf, screen);
+    }, 300);
+
+    new Notice(`⚔️ Combat view projected to ${screen.label}`);
   }
 
   /**

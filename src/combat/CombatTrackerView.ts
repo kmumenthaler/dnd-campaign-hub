@@ -3,7 +3,7 @@ import type DndCampaignHubPlugin from "../main";
 import { COMBAT_TRACKER_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE } from "../constants";
 import type { CombatTracker } from "./CombatTracker";
 import type { Combatant, CombatState, StatusEffect } from "./types";
-import { enumerateScreens, type ScreenInfo } from "../utils/ScreenEnumeration";
+import { enumerateScreens, screenKey, type ScreenInfo } from "../utils/ScreenEnumeration";
 
 /**
  * Sidebar view for the Combat Tracker — styled to match Initiative Tracker.
@@ -378,58 +378,65 @@ export class CombatTrackerView extends ItemView {
   /* ═══════════════════════ Player View Projection ═══════════════════════ */
 
   private async openPlayerView(evt?: MouseEvent) {
-    // Check if one is already open
-    const existing = this.app.workspace.getLeavesOfType(COMBAT_PLAYER_VIEW_TYPE);
-    if (existing.length > 0 && existing[0]) {
-      this.app.workspace.revealLeaf(existing[0]);
-      new Notice("Player view already open");
+    const pm = this.plugin.projectionManager;
+    if (!pm) { new Notice("Projection manager not available"); return; }
+
+    const screens = await enumerateScreens();
+    if (screens.length === 0) { new Notice("No screens detected"); return; }
+
+    const occupied = pm.getOccupiedScreenKeys();
+
+    // Check if a combat view is already projected
+    for (const proj of pm.getLiveProjections()) {
+      if (proj.contentType === 'combat') {
+        new Notice("Combat player view already projected");
+        return;
+      }
+    }
+
+    if (screens.length <= 1) {
+      const screen = screens[0]!;
+      const sKey = screenKey(screen);
+      if (occupied.has(sKey)) {
+        // Screen occupied by a map — offer to switch
+        const menu = new Menu();
+        menu.addItem((item) =>
+          item.setTitle(`🔄 Switch ${screen.label} to Combat View`).onClick(() =>
+            pm.projectCombatView(screen)
+          )
+        );
+        if (evt) menu.showAtMouseEvent(evt);
+        else menu.showAtPosition({ x: 100, y: 100 });
+      } else {
+        await pm.projectCombatView(screen);
+      }
       return;
     }
 
-    const screens = await enumerateScreens();
+    // Multi-screen — show menu with available + switch options
+    const menu = new Menu();
+    for (const screen of screens) {
+      const sKey = screenKey(screen);
+      const isOccupied = occupied.has(sKey);
+      const label = `${screen.isPrimary ? '🖥️' : '🖵'} ${screen.label} (${screen.width}×${screen.height})`;
 
-    if (screens.length <= 1) {
-      // Single screen — project directly
-      await this.projectPlayerView(screens[0]!);
-    } else {
-      // Multi-screen — show picker menu
-      const menu = new Menu();
-      for (const screen of screens) {
-        const label = `${screen.label}${screen.isPrimary ? " (Primary)" : ""} — ${screen.width}×${screen.height}`;
+      if (isOccupied) {
         menu.addItem((item) =>
-          item.setTitle(label).onClick(() => this.projectPlayerView(screen)),
+          item.setTitle(`🔄 Switch ${screen.label} to Combat View`).onClick(() =>
+            pm.projectCombatView(screen)
+          )
+        );
+      } else {
+        menu.addItem((item) =>
+          item.setTitle(label).onClick(() => pm.projectCombatView(screen))
         );
       }
-      if (evt) {
-        menu.showAtMouseEvent(evt);
-      } else {
-        menu.showAtPosition({ x: 100, y: 100 });
-      }
     }
-  }
-
-  /** Open the player view popout on the selected screen and fullscreen it. */
-  private async projectPlayerView(screen: ScreenInfo) {
-    const popoutLeaf = this.app.workspace.openPopoutLeaf({
-      size: { width: screen.width, height: screen.height },
-    });
-
-    await popoutLeaf.setViewState({
-      type: COMBAT_PLAYER_VIEW_TYPE,
-      active: true,
-    });
-
-    // Position and fullscreen after the window initialises
-    setTimeout(() => {
-      const win = popoutLeaf.view?.containerEl?.win;
-      if (win) {
-        win.moveTo(screen.left, screen.top);
-        win.resizeTo(screen.width, screen.height);
-        win.document.documentElement.requestFullscreen?.();
-      }
-    }, 400);
-
-    new Notice("📺 Player view opened");
+    if (evt) {
+      menu.showAtMouseEvent(evt);
+    } else {
+      menu.showAtPosition({ x: 100, y: 100 });
+    }
   }
 
   /* ═══════════════════════ Row Context Menu ═══════════════════════ */

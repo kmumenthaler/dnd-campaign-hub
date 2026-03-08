@@ -2463,8 +2463,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			const screens = await pm.getScreens();
 			const occupied = pm.getOccupiedScreenKeys();
 			const available = screens.filter(s => !occupied.has(screenKey(s)));
+			// Screens occupied by a combat projection (switchable)
+			const switchable = screens.filter(s => {
+				const sKey = screenKey(s);
+				if (!occupied.has(sKey)) return false;
+				const proj = pm.getLiveProjections().find(p => screenKey(p.screen) === sKey);
+				return proj?.contentType === 'combat';
+			});
 
-			if (available.length === 0 && screens.length > 0) {
+			if (available.length === 0 && switchable.length === 0 && screens.length > 0) {
 				new Notice('All screens are already in use');
 				return;
 			}
@@ -2473,10 +2480,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			const payload = buildMapPayload();
 
 			// Single screen: project directly (skip menu)
-			if (available.length <= 1 && !isMultiScreenSupported()) {
-				const screen = available[0] ?? screens[0];
-				if (!screen) { new Notice('No screens detected'); return; }
-				await pm.project(mapId, payload, resourcePath, screen, mode);
+			// Single available screen & no multi-screen API: project directly
+			if (available.length === 1 && switchable.length === 0 && !isMultiScreenSupported()) {
+				await pm.project(mapId, payload, resourcePath, available[0]!, mode);
+				return;
+			}
+			// Only a switchable screen and nothing else available
+			if (available.length === 0 && switchable.length === 1 && !isMultiScreenSupported()) {
+				await pm.project(mapId, payload, resourcePath, switchable[0]!, mode);
 				return;
 			}
 
@@ -2486,6 +2497,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const label = `${screen.isPrimary ? '🖥️' : '🖵'} ${screen.label} (${screen.width}×${screen.height})${cal ? ' ✓' : ''}`;
 				menu.addItem((item) => {
 					item.setTitle(label);
+					item.onClick(async () => {
+						await pm.project(mapId, payload, resourcePath, screen, mode);
+					});
+				});
+			}
+			// Switch options for combat-occupied screens
+			for (const screen of switchable) {
+				menu.addItem((item) => {
+					item.setTitle(`🔄 Switch ${screen.label} (Combat → Map)`);
 					item.onClick(async () => {
 						await pm.project(mapId, payload, resourcePath, screen, mode);
 					});
@@ -2537,25 +2557,33 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 			const mapPayload = buildMapPayload();
 
-			// "Transition [screen] to this Map" for each projection NOT showing this map
+			// "Transition / Switch" buttons for projections NOT showing this map
 			for (const proj of projections) {
 				const sKey = screenKey(proj.screen);
-				if (proj.mapId === currentMapId) continue;
-				const modeTag = proj.mode === 'battle' ? '⚔️' : '🔍';
+				if (proj.contentType !== 'combat' && proj.mapId === currentMapId) continue;
 				const btn = pvProjActions.createEl('button', { cls: 'dnd-map-pv-dropdown-item' });
-				btn.innerHTML = `🔄 Transition ${proj.screen.label} ${modeTag} to this Map`;
-				btn.addEventListener('click', () => {
-					pvDropdown.addClass('hidden');
-					pm.swapMapOnScreen(sKey, currentMapId, mapPayload, resourcePath);
-				});
+				if (proj.contentType === 'combat') {
+					btn.innerHTML = `🔄 Switch ${proj.screen.label} (Combat → Map)`;
+					btn.addEventListener('click', () => {
+						pvDropdown.addClass('hidden');
+						pm.project(currentMapId, mapPayload, resourcePath, proj.screen, 'battle');
+					});
+				} else {
+					const modeTag = proj.mode === 'battle' ? '⚔️' : '🔍';
+					btn.innerHTML = `🔄 Transition ${proj.screen.label} ${modeTag} to this Map`;
+					btn.addEventListener('click', () => {
+						pvDropdown.addClass('hidden');
+						pm.swapMapOnScreen(sKey, currentMapId, mapPayload, resourcePath);
+					});
+				}
 			}
 
 			// Stop buttons for each active projection
 			for (const proj of projections) {
 				const sKey = screenKey(proj.screen);
-				const modeTag = proj.mode === 'battle' ? '⚔️' : '🔍';
+				const typeTag = proj.contentType === 'combat' ? '⚔️ Combat' : (proj.mode === 'battle' ? '⚔️' : '🔍');
 				const btn = pvProjActions.createEl('button', { cls: 'dnd-map-pv-dropdown-item dnd-map-pv-stop-btn' });
-				btn.innerHTML = `⏹ Stop ${modeTag} — ${proj.screen.label}`;
+				btn.innerHTML = `⏹ Stop ${typeTag} — ${proj.screen.label}`;
 				btn.addEventListener('click', () => {
 					pvDropdown.addClass('hidden');
 					pm.stopProjectionOnScreen(sKey);
