@@ -1273,13 +1273,23 @@
   100% { background: transparent; }
 }
 
-/* AC */
+/* AC — shield shape */
 .dnd-ct-pv-ac {
-  min-width: 2em;
-  text-align: center;
-  font-weight: 600;
-  font-size: 1.05em;
-  color: #8ac;
+  width: 2em;
+  height: 2.2em;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9em;
+  color: #fff;
+  background: #5a7a9a;
+  clip-path: polygon(50% 0%, 100% 0%, 100% 65%, 50% 100%, 0% 65%, 0% 0%);
+  text-shadow: 0 0 0.2em rgba(0,0,0,0.6);
+}
+.dnd-ct-pv-ac:empty {
+  background: transparent;
 }
 
 /* Turn callout */
