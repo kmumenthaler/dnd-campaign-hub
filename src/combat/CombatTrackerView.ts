@@ -537,7 +537,7 @@ export class CombatTrackerView extends ItemView {
     // Place on Map — only shown when a map is active
     const mc = this.plugin.mapController;
     if (mc.isMapActive()) {
-      const alreadyOnMap = mc.isCombatantOnMap(c.name, c.tokenId);
+      const alreadyOnMap = mc.isCombatantOnMap(c.name, c.tokenId, c.display);
       menu.addItem((item) =>
         item
           .setTitle(alreadyOnMap ? "📍 Already on Map" : "📍 Place on Map")

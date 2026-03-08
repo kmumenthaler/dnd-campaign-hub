@@ -106,20 +106,32 @@ export class MapController {
 	}
 
 	/**
-	 * Check whether a combatant (by name) already has a matching token placed.
-	 * This is a higher-level check that resolves through the marker library.
+	 * Check whether a combatant already has a matching token placed.
+	 * Considers both marker definition name and per-instance border color
+	 * so that "Imp (Blue)" and "Imp (Red)" are treated as distinct.
 	 */
-	isCombatantOnMap(name: string, tokenId?: string): boolean {
+	isCombatantOnMap(name: string, tokenId?: string, display?: string): boolean {
 		if (!this.handle) return false;
 		const markers: MarkerReference[] = this.handle.config.markers ?? [];
 		const library = this.plugin.markerLibrary;
+		const expectedColor = this.extractBorderColor(display);
 
 		for (const m of markers) {
-			// Direct tokenId match
-			if (tokenId && m.markerId === tokenId) return true;
+			const instanceColor = ((m as any).borderColor || "").toLowerCase();
+
+			// Direct tokenId match — still check color to distinguish duplicates
+			if (tokenId && m.markerId === tokenId) {
+				if (!expectedColor) return true;
+				if (instanceColor === expectedColor.toLowerCase()) return true;
+				continue;
+			}
 			// Name-based match through library
 			const def = library.getMarker(m.markerId);
-			if (def && def.name.toLowerCase() === name.toLowerCase()) return true;
+			if (def && def.name.toLowerCase() === name.toLowerCase()) {
+				if (!expectedColor && !instanceColor) return true;
+				if (expectedColor && instanceColor === expectedColor.toLowerCase()) return true;
+				if (!expectedColor && instanceColor) continue; // colored instance, but we have no color
+			}
 		}
 		return false;
 	}
