@@ -455,11 +455,11 @@ export class ProjectionManager {
         await new Promise(r => setTimeout(r, 200));
         bw.setFullScreen(true);
 
-        if (pv) {
+        if (pv && typeof (pv as any).hideObsidianChrome === 'function') {
           (pv as any).isFullscreen = true;
-          if (typeof (pv as any).hideObsidianChrome === 'function') {
-            (pv as any).hideObsidianChrome();
-          }
+          (pv as any).hideObsidianChrome();
+        } else {
+          this.hidePopoutChrome(win);
         }
         return;
       }
@@ -470,11 +470,11 @@ export class ProjectionManager {
           await win.document.documentElement.requestFullscreen({
             screen: screen._native,
           } as any);
-          if (pv) {
+          if (pv && typeof (pv as any).hideObsidianChrome === 'function') {
             (pv as any).isFullscreen = true;
-            if (typeof (pv as any).hideObsidianChrome === 'function') {
-              (pv as any).hideObsidianChrome();
-            }
+            (pv as any).hideObsidianChrome();
+          } else {
+            this.hidePopoutChrome(win);
           }
           return;
         } catch (e) {
@@ -499,6 +499,7 @@ export class ProjectionManager {
               pv.toggleFullscreen();
             }
           } else {
+            this.hidePopoutChrome(win);
             win.document.documentElement.requestFullscreen().catch(() => {});
           }
         } catch { /* fullscreen may be blocked by policy */ }
@@ -506,6 +507,27 @@ export class ProjectionManager {
     } catch (e) {
       console.warn('ProjectionManager: positionAndFullscreen failed', e);
     }
+  }
+
+  /** Hide Obsidian chrome (tabs, title bar, status bar) in a popout window. */
+  private hidePopoutChrome(win: Window): void {
+    const doc = win.document;
+    const existingStyle = doc.getElementById('dnd-projection-chrome-hide');
+    if (existingStyle) return;
+
+    const style = doc.createElement('style');
+    style.id = 'dnd-projection-chrome-hide';
+    style.textContent = `
+      .workspace-tab-header-container { display: none !important; }
+      .view-header { display: none !important; }
+      .titlebar { display: none !important; }
+      .sidebar-toggle-button { display: none !important; }
+      .status-bar { display: none !important; }
+      .mod-root { top: 0 !important; }
+      .workspace-leaf-content { position: relative !important; }
+      .workspace-leaf-content::before { display: none !important; }
+    `;
+    doc.head.appendChild(style);
   }
 
   /**

@@ -130,13 +130,30 @@ export class CombatTrackerView extends ItemView {
     // Spacer
     toolbar.createDiv({ cls: "dnd-ct-toolbar-spacer" });
 
-    // Player view button
+    // Player view button — toggles between project and stop
+    const pm = this.plugin.projectionManager;
+    const hasCombatProjection = pm
+      ? pm.getLiveProjections().some((p) => p.contentType === "combat")
+      : false;
+
     const pvBtn = toolbar.createEl("button", {
-      text: "📺",
-      cls: "dnd-ct-toolbar-btn",
-      attr: { title: "Open Player View" },
+      text: hasCombatProjection ? "⏹" : "📺",
+      cls: `dnd-ct-toolbar-btn ${hasCombatProjection ? "dnd-ct-toolbar-btn-stop" : ""}`,
+      attr: { title: hasCombatProjection ? "Stop Player View" : "Open Player View" },
     });
-    pvBtn.addEventListener("click", (e) => this.openPlayerView(e));
+    pvBtn.addEventListener("click", (e) => {
+      if (hasCombatProjection && pm) {
+        // Stop all combat projections
+        for (const proj of pm.getLiveProjections()) {
+          if (proj.contentType === "combat") {
+            pm.stopProjectionOnScreen(screenKey(proj.screen));
+          }
+        }
+        this.render();
+      } else {
+        this.openPlayerView(e);
+      }
+    });
 
     // Options menu button (⋮)
     const menuBtn = toolbar.createEl("button", {
