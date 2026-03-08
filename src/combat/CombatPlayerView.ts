@@ -14,7 +14,7 @@ export class CombatPlayerView extends ItemView {
   private unsubscribe: (() => void) | null = null;
   private scrollAnimationId: number | null = null;
   /** Track previous HP so we can detect changes and animate. */
-  private prevHP: Map<string, { hp: number; maxHP: number }> = new Map();
+  private prevHP: Map<string, { hp: number; maxHP: number; tempHP: number }> = new Map();
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -109,6 +109,12 @@ export class CombatPlayerView extends ItemView {
           hpChangeClass = "dnd-ct-pv-row-damage";
         } else if (c.currentHP > prev.hp) {
           hpChangeClass = "dnd-ct-pv-row-heal";
+        } else if (c.maxHP !== prev.maxHP) {
+          hpChangeClass = "dnd-ct-pv-row-maxhp";
+        } else if (c.tempHP > prev.tempHP) {
+          hpChangeClass = "dnd-ct-pv-row-temp-gain";
+        } else if (c.tempHP < prev.tempHP) {
+          hpChangeClass = "dnd-ct-pv-row-temp-loss";
         }
       }
       if (hpChangeClass) {
@@ -150,12 +156,15 @@ export class CombatPlayerView extends ItemView {
 
       // HP bar (defer animation if HP changed — bar starts at old value)
       const hasHPChange = !!hpChangeClass;
-      // Capture damage amount before renderPVHPBar overwrites prevHP
-      const dmgAmount = (prev && hasHPChange) ? prev.hp - c.currentHP : 0;
+      // Capture deltas before renderPVHPBar overwrites prevHP
+      const hpDelta = prev ? prev.hp - c.currentHP : 0;
+      const tempDelta = prev ? c.tempHP - prev.tempHP : 0;
+      const maxDelta = prev ? c.maxHP - prev.maxHP : 0;
       this.renderPVHPBar(row, c, isAlly, hasHPChange);
       if (hasHPChange) {
         row.dataset.changedCombatant = JSON.stringify({
-          id: c.id, currentHP: c.currentHP, maxHP: c.maxHP, tempHP: c.tempHP, isAlly, dmg: dmgAmount,
+          id: c.id, currentHP: c.currentHP, maxHP: c.maxHP, tempHP: c.tempHP, isAlly,
+          dmg: hpDelta, tempDelta, maxDelta, changeType: hpChangeClass,
         });
       }
     }
@@ -181,19 +190,25 @@ export class CombatPlayerView extends ItemView {
           : null;
 
         const applyAndReturn = () => {
-          // Pause → shield break + flash + HP bar transition + damage number → pause → pan back
+          // Pause → shield break + flash + HP bar transition + floating number → pause → pan back
           setTimeout(() => {
             const ccData = changedRow.dataset.changedCombatant;
-            let isDamage = false;
-            let dmgAmount = 0;
+            let changeType = "";
+            let hpDelta = 0;
+            let tempDelta = 0;
+            let maxDelta = 0;
             if (ccData) {
               const parsed = JSON.parse(ccData);
-              isDamage = parsed.dmg > 0;
-              dmgAmount = Math.abs(parsed.dmg);
+              changeType = parsed.changeType || "";
+              hpDelta = parsed.dmg ?? 0;
+              tempDelta = parsed.tempDelta ?? 0;
+              maxDelta = parsed.maxDelta ?? 0;
             }
 
-            // Shield break animation on damage
-            if (isDamage) {
+            const isHPDamage = hpDelta > 0; // prev.hp - current > 0 means damage
+
+            // Shield break animation on actual HP damage
+            if (isHPDamage) {
               const acEl = changedRow.querySelector(".dnd-ct-pv-ac") as HTMLElement | null;
               if (acEl && acEl.textContent) {
                 acEl.addClass("dnd-ct-pv-ac-break");
@@ -210,16 +225,22 @@ export class CombatPlayerView extends ItemView {
               delete changedRow.dataset.changedCombatant;
             }
 
-            // Floating damage/heal number
-            if (dmgAmount > 0) {
-              const hpCell = changedRow.querySelector(".dnd-ct-pv-hp") as HTMLElement | null;
-              if (hpCell) {
-                hpCell.style.position = "relative";
-                const numEl = document.createElement("span");
-                numEl.className = isDamage ? "dnd-ct-pv-dmg-number" : "dnd-ct-pv-heal-number";
-                numEl.textContent = isDamage ? `-${dmgAmount}` : `+${dmgAmount}`;
-                hpCell.appendChild(numEl);
-                setTimeout(() => numEl.remove(), 1300);
+            // Floating number indicator
+            const hpCell = changedRow.querySelector(".dnd-ct-pv-hp") as HTMLElement | null;
+            if (hpCell) {
+              hpCell.style.position = "relative";
+
+              if (changeType === "dnd-ct-pv-row-damage" && Math.abs(hpDelta) > 0) {
+                this.showFloatingNumber(hpCell, `-${Math.abs(hpDelta)}`, "dnd-ct-pv-dmg-number");
+              } else if (changeType === "dnd-ct-pv-row-heal" && Math.abs(hpDelta) > 0) {
+                this.showFloatingNumber(hpCell, `+${Math.abs(hpDelta)}`, "dnd-ct-pv-heal-number");
+              } else if (changeType === "dnd-ct-pv-row-temp-gain" && tempDelta > 0) {
+                this.showFloatingNumber(hpCell, `+${tempDelta} THP`, "dnd-ct-pv-temp-number");
+              } else if (changeType === "dnd-ct-pv-row-temp-loss" && tempDelta < 0) {
+                this.showFloatingNumber(hpCell, `${tempDelta} THP`, "dnd-ct-pv-temp-loss-number");
+              } else if (changeType === "dnd-ct-pv-row-maxhp" && maxDelta !== 0) {
+                const sign = maxDelta > 0 ? "+" : "";
+                this.showFloatingNumber(hpCell, `${sign}${maxDelta} Max`, "dnd-ct-pv-maxhp-number");
               }
             }
 
@@ -353,16 +374,18 @@ export class CombatPlayerView extends ItemView {
     const pct = c.maxHP > 0 ? Math.max(0, Math.min(1, c.currentHP / c.maxHP)) : 0;
     const color = this.hpColor(pct);
 
-    // Determine old percentage for animation
+    // Determine old values for animation deferral
     const prev = this.prevHP.get(c.id);
     const oldPct = prev && prev.maxHP > 0
       ? Math.max(0, Math.min(1, prev.hp / prev.maxHP))
       : pct;
     const hpChanged = Math.abs(oldPct - pct) > 0.001;
+    const tempChanged = prev ? c.tempHP !== prev.tempHP : false;
+    const shouldDefer = deferAnimation && (hpChanged || tempChanged);
 
     // When deferring, render at old values first
-    const displayPct = (deferAnimation && hpChanged) ? oldPct : pct;
-    const displayColor = (deferAnimation && hpChanged) ? this.hpColor(oldPct) : color;
+    const displayPct = (shouldDefer && hpChanged) ? oldPct : pct;
+    const displayColor = (shouldDefer && hpChanged) ? this.hpColor(oldPct) : color;
 
     if (isAlly) {
       // Allies: HP bar with text inside
@@ -385,26 +408,29 @@ export class CombatPlayerView extends ItemView {
       fill.style.width = `${displayPct * 100}%`;
       fill.style.background = displayColor;
 
-      if (c.tempHP > 0) {
-        const tempPct = Math.min(1, c.tempHP / c.maxHP);
+      // Temp HP segment — show old value when deferring
+      const displayTempHP = shouldDefer && prev ? prev.tempHP : c.tempHP;
+      if (displayTempHP > 0) {
+        const tempPct = Math.min(1, displayTempHP / c.maxHP);
         bar.createDiv({ cls: "dnd-ct-hp-temp" }).style.width = `${tempPct * 100}%`;
       }
 
       const oldHP = prev ? prev.hp : c.currentHP;
-      const displayHP = (deferAnimation && hpChanged) ? oldHP : c.currentHP;
-      let text = `${displayHP}/${c.maxHP}`;
-      if (c.tempHP > 0) text += ` (+${c.tempHP})`;
+      const displayHP = (shouldDefer && hpChanged) ? oldHP : c.currentHP;
+      const displayMax = (shouldDefer && prev && prev.maxHP !== c.maxHP) ? prev.maxHP : c.maxHP;
+      let text = `${displayHP}/${displayMax}`;
+      if (displayTempHP > 0) text += ` (+${displayTempHP})`;
       bar.createEl("span", { text, cls: "dnd-ct-pv-hp-text" });
     } else {
       // Enemies: condition text only, no bar
-      const dispPct = (deferAnimation && hpChanged) ? oldPct : pct;
+      const dispPct = (shouldDefer && hpChanged) ? oldPct : pct;
       const condition = this.hpCondition(dispPct);
       const textEl = hpCell.createEl("span", { text: condition, cls: "dnd-ct-pv-hp-text dnd-ct-pv-hp-condition" });
       textEl.style.color = displayColor;
     }
 
     // Store current HP for next render
-    this.prevHP.set(c.id, { hp: c.currentHP, maxHP: c.maxHP });
+    this.prevHP.set(c.id, { hp: c.currentHP, maxHP: c.maxHP, tempHP: c.tempHP });
   }
 
   /** Transition a deferred HP bar from old values to current values. */
@@ -425,6 +451,27 @@ export class CombatPlayerView extends ItemView {
           ghost.style.opacity = "0";
         }, 400);
       }
+
+      // Update temp HP segment
+      const bar = row.querySelector(".dnd-ct-pv-hp-bar") as HTMLElement | null;
+      if (bar) {
+        const oldTemp = bar.querySelector(".dnd-ct-hp-temp") as HTMLElement | null;
+        if (c.tempHP > 0) {
+          const tempPct = Math.min(1, c.tempHP / c.maxHP);
+          if (oldTemp) {
+            oldTemp.style.width = `${tempPct * 100}%`;
+          } else {
+            const tempEl = document.createElement("div");
+            tempEl.className = "dnd-ct-hp-temp";
+            tempEl.style.width = `${tempPct * 100}%`;
+            bar.insertBefore(tempEl, bar.querySelector(".dnd-ct-pv-hp-text"));
+          }
+        } else if (oldTemp) {
+          oldTemp.style.width = "0%";
+          setTimeout(() => oldTemp.remove(), 600);
+        }
+      }
+
       const hpText = row.querySelector(".dnd-ct-pv-hp-text") as HTMLElement | null;
       if (hpText) {
         let text = `${c.currentHP}/${c.maxHP}`;
@@ -438,5 +485,14 @@ export class CombatPlayerView extends ItemView {
         condEl.style.color = color;
       }
     }
+  }
+
+  /** Append a floating number element that auto-removes after animation. */
+  private showFloatingNumber(parent: HTMLElement, text: string, cls: string) {
+    const el = document.createElement("span");
+    el.className = cls;
+    el.textContent = text;
+    parent.appendChild(el);
+    setTimeout(() => el.remove(), 1300);
   }
 }

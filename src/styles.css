@@ -892,6 +892,7 @@
   background: #2196f3;
   opacity: 0.5;
   border-radius: 3px;
+  transition: width 0.6s ease-in-out;
 }
 .dnd-ct-hp-text {
   font-size: 0.75em;
@@ -1271,12 +1272,33 @@
 .dnd-ct-pv-row-heal {
   animation: dnd-ct-pv-flash-heal 0.8s ease-out;
 }
+.dnd-ct-pv-row-temp-gain {
+  animation: dnd-ct-pv-flash-temp-gain 0.8s ease-out;
+}
+.dnd-ct-pv-row-temp-loss {
+  animation: dnd-ct-pv-flash-temp-loss 0.8s ease-out;
+}
+.dnd-ct-pv-row-maxhp {
+  animation: dnd-ct-pv-flash-maxhp 0.8s ease-out;
+}
 @keyframes dnd-ct-pv-flash-damage {
   0% { background: rgba(220, 40, 40, 0.5); }
   100% { background: transparent; }
 }
 @keyframes dnd-ct-pv-flash-heal {
   0% { background: rgba(40, 200, 80, 0.5); }
+  100% { background: transparent; }
+}
+@keyframes dnd-ct-pv-flash-temp-gain {
+  0% { background: rgba(33, 150, 243, 0.5); }
+  100% { background: transparent; }
+}
+@keyframes dnd-ct-pv-flash-temp-loss {
+  0% { background: rgba(33, 100, 180, 0.45); }
+  100% { background: transparent; }
+}
+@keyframes dnd-ct-pv-flash-maxhp {
+  0% { background: rgba(156, 39, 176, 0.45); }
   100% { background: transparent; }
 }
 
@@ -1335,6 +1357,48 @@
   font-weight: 900;
   color: #44ff66;
   text-shadow: 0 0 0.2em #000, 0 0 0.4em rgba(0,255,80,0.5);
+  pointer-events: none;
+  animation: dnd-ct-pv-dmg-fly 1.2s ease-out forwards;
+  z-index: 10;
+}
+/* Floating temp HP gain number */
+.dnd-ct-pv-temp-number {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.3em;
+  font-weight: 900;
+  color: #42a5f5;
+  text-shadow: 0 0 0.2em #000, 0 0 0.4em rgba(33,150,243,0.5);
+  pointer-events: none;
+  animation: dnd-ct-pv-dmg-fly 1.2s ease-out forwards;
+  z-index: 10;
+}
+/* Floating temp HP loss number */
+.dnd-ct-pv-temp-loss-number {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.3em;
+  font-weight: 900;
+  color: #64b5f6;
+  text-shadow: 0 0 0.2em #000, 0 0 0.4em rgba(33,100,180,0.5);
+  pointer-events: none;
+  animation: dnd-ct-pv-dmg-fly 1.2s ease-out forwards;
+  z-index: 10;
+}
+/* Floating max HP change number */
+.dnd-ct-pv-maxhp-number {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.3em;
+  font-weight: 900;
+  color: #ce93d8;
+  text-shadow: 0 0 0.2em #000, 0 0 0.4em rgba(156,39,176,0.5);
   pointer-events: none;
   animation: dnd-ct-pv-dmg-fly 1.2s ease-out forwards;
   z-index: 10;
