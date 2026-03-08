@@ -118,13 +118,8 @@ export class CombatPlayerView extends ItemView {
       // Portrait image (from token marker if available)
       this.renderPortrait(row, c);
 
-      // Name + markers
+      // Name
       const nameCell = row.createDiv({ cls: "dnd-ct-pv-name-cell" });
-      if (c.player) {
-        nameCell.createEl("span", { text: "👤 ", cls: "dnd-ct-pv-marker" });
-      } else if (c.friendly) {
-        nameCell.createEl("span", { text: "♥ ", cls: "dnd-ct-pv-marker dnd-ct-pv-marker-friendly" });
-      }
       nameCell.createEl("span", { text: c.display, cls: "dnd-ct-pv-name" });
 
       // "YOUR TURN" badge on active combatant
@@ -203,7 +198,7 @@ export class CombatPlayerView extends ItemView {
   }
 
   /** Render a circular portrait from the combatant's token marker image. */
-  private renderPortrait(parent: HTMLElement, c: { name: string; tokenId?: string; notePath?: string }) {
+  private renderPortrait(parent: HTMLElement, c: { name: string; tokenId?: string; notePath?: string; friendly?: boolean; player?: boolean }) {
     let imageFile: string | undefined;
 
     // Try tokenId first
@@ -238,6 +233,11 @@ export class CombatPlayerView extends ItemView {
     const img = wrap.createEl("img", { cls: "dnd-ct-pv-portrait-img" });
     img.src = this.app.vault.adapter.getResourcePath(imageFile);
     img.alt = "";
+
+    // Friendly heart overlay (top-left of portrait)
+    if (c.friendly && !c.player) {
+      wrap.createEl("span", { text: "♥", cls: "dnd-ct-pv-portrait-friendly" });
+    }
   }
 
   /** Map HP percentage to a green→orange→red color. */

@@ -246,18 +246,6 @@ export class CombatTrackerView extends ItemView {
     // ── Name cell ──
     const nameCell = row.createDiv({ cls: "dnd-ct-name-cell" });
 
-    // Markers row
-    const markers = nameCell.createDiv({ cls: "dnd-ct-markers" });
-    if (c.player) {
-      markers.createEl("span", { text: "👤", cls: "dnd-ct-marker", attr: { title: "Player Character" } });
-    }
-    if (c.friendly && !c.player) {
-      markers.createEl("span", { text: "♥", cls: "dnd-ct-marker dnd-ct-marker-friendly", attr: { title: "Friendly" } });
-    }
-    if (c.hidden) {
-      markers.createEl("span", { text: "👁", cls: "dnd-ct-marker dnd-ct-marker-hidden", attr: { title: "Hidden from players" } });
-    }
-
     // Name (clickable → statblock below)
     const nameEl = nameCell.createEl("span", {
       text: c.display,
