@@ -1112,7 +1112,8 @@
   background: rgba(240, 192, 64, 0.2);
   box-shadow: 0 0 0.4em 0.05em rgba(240, 192, 64, 0.4), inset 0 0 0.4em rgba(240, 192, 64, 0.1);
   animation: dnd-ct-pv-row-glow 2s ease-in-out infinite;
-  transform: scaleY(1.04);
+  padding-top: 0.5em;
+  padding-bottom: 0.5em;
   z-index: 1;
   position: relative;
 }
