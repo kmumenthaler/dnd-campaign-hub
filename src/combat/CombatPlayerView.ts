@@ -115,6 +115,11 @@ export class CombatPlayerView extends ItemView {
       }
       nameCell.createEl("span", { text: c.display, cls: "dnd-ct-pv-name" });
 
+      // "YOUR TURN" badge on active combatant
+      if (isActive) {
+        nameCell.createEl("span", { text: "YOUR TURN", cls: "dnd-ct-pv-turn-badge" });
+      }
+
       // Status badges
       if (c.statuses.length > 0) {
         const statuses = nameCell.createDiv({ cls: "dnd-ct-pv-statuses" });
@@ -131,11 +136,6 @@ export class CombatPlayerView extends ItemView {
 
       // AC
       row.createEl("span", { text: String(c.currentAC), cls: "dnd-ct-pv-ac" });
-
-      // "YOUR TURN" badge on active combatant
-      if (isActive) {
-        row.createEl("span", { text: "YOUR TURN", cls: "dnd-ct-pv-turn-badge" });
-      }
     }
 
     // Restore scroll, then smoothly pan to active row

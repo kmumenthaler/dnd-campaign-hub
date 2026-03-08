@@ -1238,8 +1238,9 @@
 
 /* Turn callout */
 .dnd-ct-pv-turn-badge {
-  margin-left: auto;
-  padding: 0.15em 0.5em;
+  display: inline-block;
+  margin-left: 0.4em;
+  padding: 0.1em 0.4em;
   background: #e94560;
   border-radius: 0.25em;
   font-size: 0.75em;
