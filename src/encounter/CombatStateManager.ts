@@ -154,54 +154,95 @@ export class CombatStateManager {
    */
   private readLiveTrackerState(it: any): { combatants: CombatantSnapshot[]; round: number } | null {
     try {
-      // Strategy 1: Read from the open IT tracker view
+      // Helper: extract creatures array from any object that might hold them
+      const extractCreatures = (obj: any): any[] | null => {
+        if (!obj) return null;
+        for (const key of ["ordered", "creatures", "combatants"]) {
+          if (Array.isArray(obj[key]) && obj[key].length > 0) return obj[key];
+        }
+        return null;
+      };
+
+      // Helper: extract round number from any object that might hold it
+      const extractRound = (obj: any): number => {
+        if (!obj) return 1;
+        if (typeof obj.round === "number") return obj.round;
+        if (typeof obj.state?.round === "number") return obj.state.round;
+        if (typeof obj.data?.round === "number") return obj.data.round;
+        return 1;
+      };
+
+      // Strategy 1: Read from the open IT tracker view leaf
       const leaves = this.app.workspace.getLeavesOfType("initiative-tracker");
       for (const leaf of leaves) {
         const view = leaf.view as any;
         if (!view) continue;
 
-        // IT ≥ 13: view has `ordered` (sorted initiative array)
-        if (Array.isArray(view.ordered) && view.ordered.length > 0) {
+        // Log top-level keys for debugging
+        console.log("[CombatStateManager] IT view keys:", Object.keys(view).filter(k => !k.startsWith("_")));
+
+        // Direct arrays on the view
+        const viewCreatures = extractCreatures(view);
+        if (viewCreatures) {
           return {
-            combatants: view.ordered.map((c: any) => this.snapshot(c)),
-            round: view.round ?? view.state?.round ?? 1,
+            combatants: viewCreatures.map((c: any) => this.snapshot(c)),
+            round: extractRound(view),
           };
         }
-        // Older IT: `creatures` array
-        if (Array.isArray(view.creatures) && view.creatures.length > 0) {
-          return {
-            combatants: view.creatures.map((c: any) => this.snapshot(c)),
-            round: view.round ?? 1,
-          };
-        }
-        // Svelte store access
-        if (view.tracker?.creatures) {
-          const creatures = Array.isArray(view.tracker.creatures)
-            ? view.tracker.creatures
-            : [];
-          if (creatures.length > 0) {
+
+        // Nested tracker/store on the view (Svelte component internals)
+        for (const prop of ["tracker", "store", "state", "encounter", "combat"]) {
+          const nested = view[prop];
+          if (!nested) continue;
+          const nestedCreatures = extractCreatures(nested);
+          if (nestedCreatures) {
             return {
-              combatants: creatures.map((c: any) => this.snapshot(c)),
-              round: view.tracker.round ?? 1,
+              combatants: nestedCreatures.map((c: any) => this.snapshot(c)),
+              round: extractRound(nested) || extractRound(view),
             };
+          }
+        }
+
+        // Walk one more level: view.tracker.creatures, etc.
+        if (view.tracker) {
+          for (const prop of ["store", "state", "data"]) {
+            const deep = view.tracker[prop];
+            const deepCreatures = extractCreatures(deep);
+            if (deepCreatures) {
+              return {
+                combatants: deepCreatures.map((c: any) => this.snapshot(c)),
+                round: extractRound(deep) || extractRound(view.tracker) || extractRound(view),
+              };
+            }
           }
         }
       }
 
       // Strategy 2: Read from the plugin's tracker object directly
       if (it.tracker) {
+        console.log("[CombatStateManager] IT plugin.tracker keys:", Object.keys(it.tracker).filter(k => !k.startsWith("_")));
         const t = it.tracker;
-        const src = Array.isArray(t.ordered) ? t.ordered
-          : Array.isArray(t.creatures) ? t.creatures
-          : null;
-        if (src && src.length > 0) {
+        const trackerCreatures = extractCreatures(t);
+        if (trackerCreatures) {
           return {
-            combatants: src.map((c: any) => this.snapshot(c)),
-            round: t.round ?? 1,
+            combatants: trackerCreatures.map((c: any) => this.snapshot(c)),
+            round: extractRound(t),
           };
+        }
+        // One level deeper
+        for (const prop of ["store", "state", "data", "encounter"]) {
+          const nested = t[prop];
+          const nestedCreatures = extractCreatures(nested);
+          if (nestedCreatures) {
+            return {
+              combatants: nestedCreatures.map((c: any) => this.snapshot(c)),
+              round: extractRound(nested) || extractRound(t),
+            };
+          }
         }
       }
 
+      console.warn("[CombatStateManager] Could not read live tracker state — falling back to stored encounter data");
       return null;
     } catch (e) {
       console.error("[CombatStateManager] Error reading live tracker:", e);
