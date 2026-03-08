@@ -148,11 +148,20 @@ export class CombatTracker {
     new Notice(`⚔️ Combat ready: ${combatants.length} combatants. Roll initiative!`);
   }
 
-  /** Roll initiative for all combatants and sort. */
+  /** Check whether the Initiative Tracker plugin is configured to auto-roll initiative for PCs. */
+  private get rollPlayerInitiatives(): boolean {
+    const it = (this.app as any).plugins?.plugins?.["initiative-tracker"];
+    return !!it?.data?.rollPlayerInitiatives;
+  }
+
+  /** Roll initiative for all combatants and sort.
+   *  PCs are skipped unless the Initiative Tracker's "Roll for Players" setting is enabled. */
   rollAllInitiative(): void {
     if (!this.state) return;
+    const rollPCs = this.rollPlayerInitiatives;
 
     for (const c of this.state.combatants) {
+      if (c.player && !rollPCs) continue;
       c.initiative = this.rollD20() + c.modifier;
     }
 
@@ -163,7 +172,8 @@ export class CombatTracker {
 
     // Mark first combatant as active turn
     this.emit();
-    new Notice(`🎲 Initiative rolled! Round 1 — ${this.state.combatants[0]?.display}'s turn`);
+    const pcNote = rollPCs ? "" : " (enter PC initiatives manually)";
+    new Notice(`🎲 Initiative rolled! Round 1 — ${this.state.combatants[0]?.display}'s turn${pcNote}`);
   }
 
   /** Set initiative manually for a single combatant. */
@@ -372,10 +382,13 @@ export class CombatTracker {
     new Notice("❤️ All HP & statuses reset");
   }
 
-  /** Re-roll initiative for all combatants and re-sort. */
+  /** Re-roll initiative for all combatants and re-sort.
+   *  PCs are skipped unless the Initiative Tracker's "Roll for Players" setting is enabled. */
   rerollAllInitiative(): void {
     if (!this.state) return;
+    const rollPCs = this.rollPlayerInitiatives;
     for (const c of this.state.combatants) {
+      if (c.player && !rollPCs) continue;
       c.initiative = this.rollD20() + c.modifier;
     }
     this.sortByInitiative();
