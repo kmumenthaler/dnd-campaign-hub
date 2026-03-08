@@ -733,50 +733,59 @@ class HPAndStatusModal extends Modal {
     contentEl.createEl("hr");
     contentEl.createEl("h4", { text: "⚡ Status Effects" });
 
-    // Current statuses
-    if (this.combatant.statuses.length > 0) {
-      const currentStatuses = contentEl.createDiv({ cls: "dnd-ct-statuses" });
-      for (let si = 0; si < this.combatant.statuses.length; si++) {
-        const s = this.combatant.statuses[si];
-        if (!s) continue;
-        const badge = currentStatuses.createEl("span", {
-          cls: "dnd-ct-status-badge",
-          title: s.note ? `${s.name}: ${s.note}` : s.name,
-        });
-        badge.createEl("span", {
-          text: s.duration !== undefined ? `${s.name} (${s.duration})` : s.name,
-        });
-        const removeBtn = badge.createEl("span", { text: "✕", cls: "dnd-ct-status-remove" });
-        removeBtn.addEventListener("click", () => this.tracker.removeStatus(this.combatant.id, si));
-      }
-    }
+    // Container for statuses + quick buttons — re-rendered on toggle
+    const statusContainer = contentEl.createDiv();
+    const renderStatusSection = () => {
+      statusContainer.empty();
 
-    // Quick-add condition buttons (toggle: click to add, click again to remove)
-    const quickRow = contentEl.createDiv({ cls: "dnd-ct-quick-statuses" });
-    const conditions = [
-      "Blinded", "Charmed", "Deafened", "Frightened", "Grappled",
-      "Incapacitated", "Invisible", "Paralyzed", "Petrified", "Poisoned",
-      "Prone", "Restrained", "Stunned", "Unconscious", "Exhaustion",
-      "Concentrating",
-    ];
-    const activeConditions = new Set(this.combatant.statuses.map((s) => s.name));
-    for (const cond of conditions) {
-      const isActive = activeConditions.has(cond);
-      const btn = quickRow.createEl("button", {
-        text: cond,
-        cls: `dnd-ct-quick-status-btn ${isActive ? "dnd-ct-quick-status-btn-active" : ""}`,
-      });
-      btn.addEventListener("click", () => {
-        const idx = this.combatant.statuses.findIndex((s) => s.name === cond);
-        if (idx >= 0) {
-          this.tracker.removeStatus(this.combatant.id, idx);
-        } else {
-          this.tracker.addStatus(this.combatant.id, { name: cond });
+      // Current statuses
+      if (this.combatant.statuses.length > 0) {
+        const currentStatuses = statusContainer.createDiv({ cls: "dnd-ct-statuses" });
+        for (let si = 0; si < this.combatant.statuses.length; si++) {
+          const s = this.combatant.statuses[si];
+          if (!s) continue;
+          const badge = currentStatuses.createEl("span", {
+            cls: "dnd-ct-status-badge",
+            title: s.note ? `${s.name}: ${s.note}` : s.name,
+          });
+          badge.createEl("span", {
+            text: s.duration !== undefined ? `${s.name} (${s.duration})` : s.name,
+          });
+          const removeBtn = badge.createEl("span", { text: "✕", cls: "dnd-ct-status-remove" });
+          removeBtn.addEventListener("click", () => {
+            this.tracker.removeStatus(this.combatant.id, si);
+            renderStatusSection();
+          });
         }
-        this.close();
-        new StatusModal(this.app, this.combatant, this.tracker).open();
-      });
-    }
+      }
+
+      // Quick-add condition buttons (toggle: click to add, click again to remove)
+      const quickRow = statusContainer.createDiv({ cls: "dnd-ct-quick-statuses" });
+      const conditions = [
+        "Blinded", "Charmed", "Deafened", "Frightened", "Grappled",
+        "Incapacitated", "Invisible", "Paralyzed", "Petrified", "Poisoned",
+        "Prone", "Restrained", "Stunned", "Unconscious", "Exhaustion",
+        "Concentrating",
+      ];
+      const activeConditions = new Set(this.combatant.statuses.map((s) => s.name));
+      for (const cond of conditions) {
+        const isActive = activeConditions.has(cond);
+        const btn = quickRow.createEl("button", {
+          text: cond,
+          cls: `dnd-ct-quick-status-btn ${isActive ? "dnd-ct-quick-status-btn-active" : ""}`,
+        });
+        btn.addEventListener("click", () => {
+          const idx = this.combatant.statuses.findIndex((s) => s.name === cond);
+          if (idx >= 0) {
+            this.tracker.removeStatus(this.combatant.id, idx);
+          } else {
+            this.tracker.addStatus(this.combatant.id, { name: cond });
+          }
+          renderStatusSection();
+        });
+      }
+    };
+    renderStatusSection();
 
     // Custom status
     contentEl.createEl("h5", { text: "Custom Status" });
