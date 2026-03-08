@@ -155,6 +155,18 @@ export class CombatTrackerView extends ItemView {
       }
     });
 
+    // End encounter button (only when combat is active)
+    if (state.started) {
+      const endBtn = toolbar.createEl("button", {
+        text: "🏁",
+        cls: "dnd-ct-toolbar-btn dnd-ct-toolbar-btn-stop",
+        attr: { title: "End Encounter" },
+      });
+      endBtn.addEventListener("click", () => {
+        new ConfirmEndCombatModal(this.app, tracker).open();
+      });
+    }
+
     // Options menu button (⋮)
     const menuBtn = toolbar.createEl("button", {
       text: "⋮",
