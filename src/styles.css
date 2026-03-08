@@ -1251,7 +1251,7 @@
 
 /* HP */
 .dnd-ct-pv-hp {
-  width: 10em;
+  width: 14em;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -1259,7 +1259,7 @@
 }
 .dnd-ct-pv-hp-bar {
   width: 100%;
-  height: 1.6em;
+  height: 2em;
   background: #333;
   border-radius: 0.3em;
   overflow: hidden;
@@ -1289,7 +1289,7 @@
 .dnd-ct-pv-hp-text {
   position: relative;
   z-index: 1;
-  font-size: 0.75em;
+  font-size: 0.9em;
   font-weight: 700;
   color: #fff;
   text-shadow: 0 0 0.3em #000, 0 0 0.1em #000;
