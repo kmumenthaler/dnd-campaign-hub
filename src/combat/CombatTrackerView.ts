@@ -1,6 +1,6 @@
 import { ItemView, Menu, Modal, Notice, Setting, TFile, WorkspaceLeaf } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
-import { COMBAT_TRACKER_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE, STATBLOCK_PANEL_VIEW_TYPE } from "../constants";
+import { COMBAT_TRACKER_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE } from "../constants";
 import type { CombatTracker } from "./CombatTracker";
 import type { Combatant, CombatState, StatusEffect } from "./types";
 import { enumerateScreens, screenKey, type ScreenInfo } from "../utils/ScreenEnumeration";
@@ -356,28 +356,34 @@ export class CombatTrackerView extends ItemView {
 
   /* ═══════════════════════ Statblock Display ═══════════════════════ */
 
-  /** Open or update a statblock in a split leaf below the tracker. */
+  private static readonly STATBLOCK_TEMP_PATH = "_statblock_preview.md";
+
+  /** Open a creature statblock in a split leaf using a real MarkdownView. */
   private async openStatblockLeaf(creatureName: string) {
-    // Reuse an existing statblock panel leaf if one is already open
-    const existing = this.app.workspace.getLeavesOfType(STATBLOCK_PANEL_VIEW_TYPE);
-    if (existing.length > 0 && existing[0]) {
-      await existing[0].setViewState({
-        type: STATBLOCK_PANEL_VIEW_TYPE,
-        active: true,
-        state: { creature: creatureName },
-      });
-      this.app.workspace.revealLeaf(existing[0]);
-      return;
+    const tempPath = CombatTrackerView.STATBLOCK_TEMP_PATH;
+    const content = "```statblock\ncreature: " + creatureName + "\n```";
+
+    // Write (or overwrite) the temp preview file
+    const existing = this.app.vault.getAbstractFileByPath(tempPath);
+    if (existing instanceof TFile) {
+      await this.app.vault.modify(existing, content);
+    } else {
+      await this.app.vault.create(tempPath, content);
+    }
+    const file = this.app.vault.getAbstractFileByPath(tempPath) as TFile;
+
+    // Reuse an existing preview leaf if one is already showing this file
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      if ((leaf.view as any)?.file?.path === tempPath) {
+        await leaf.openFile(file, { state: { mode: "preview" } });
+        this.app.workspace.revealLeaf(leaf);
+        return;
+      }
     }
 
-    // Create a new leaf split below the combat tracker
+    // Otherwise split below the combat tracker
     const newLeaf = this.app.workspace.createLeafBySplit(this.leaf, "horizontal", false);
-    await newLeaf.setViewState({
-      type: STATBLOCK_PANEL_VIEW_TYPE,
-      active: true,
-      state: { creature: creatureName },
-    });
-    this.app.workspace.revealLeaf(newLeaf);
+    await newLeaf.openFile(file, { state: { mode: "preview" } });
   }
 
   /** Open a note in a split leaf below the tracker (for PCs). */
