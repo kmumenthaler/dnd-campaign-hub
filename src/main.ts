@@ -2557,9 +2557,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const combatant = state.combatants[state.turnIndex];
 			if (!combatant?.tokenId) return;
 
-			// Find the combatant's token on any live projection and pan to it
+			// Find the combatant's token on any live free-mode projection and pan to it.
+			// Battle-mode projections must remain still — only free-mode gets auto-pan.
 			const projections = this.projectionManager.getLiveProjections();
 			for (const proj of projections) {
+				if (proj.mode !== 'free') continue;
 				const view = proj.leaf.view as PlayerMapView;
 				const mapCfg = view.getMapConfig?.();
 				if (!mapCfg?.markers) continue;

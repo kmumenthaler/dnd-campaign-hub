@@ -1477,6 +1477,94 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			})
 		);
 
+		// === COMBAT TRACKER VISION SYNC ===
+		// Mirror the IT integration above but driven by our built-in CombatTracker.
+		// When the GM advances turns, automatically switch the "View as" to the
+		// matching player token so the projected player view shows that PC's vision.
+		if (plugin.combatTracker) {
+			let ctPrevTurnIndex = -1;
+			let ctPrevRound = -1;
+			const unsubCombatVision = plugin.combatTracker.onChange((state) => {
+				if (!el.isConnected) return;
+				if (!state || !state.started) {
+					ctPrevTurnIndex = -1;
+					ctPrevRound = -1;
+					return;
+				}
+				// Only act when the turn actually changed
+				if (state.turnIndex === ctPrevTurnIndex && state.round === ctPrevRound) return;
+				ctPrevTurnIndex = state.turnIndex;
+				ctPrevRound = state.round;
+
+				const combatant = state.combatants[state.turnIndex];
+				if (!combatant) return;
+
+				// Collect vision-eligible tokens (player tokens + "Show to Players")
+				const visionTokens = (config.markers || []).filter((m: any) => {
+					const markerDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
+					if (!markerDef) return false;
+					return markerDef.type === 'player' || m.visibleToPlayers;
+				});
+
+				let matchedMarker: any = null;
+				if (combatant.player || combatant.friendly) {
+					// First try direct tokenId match
+					if (combatant.tokenId) {
+						matchedMarker = visionTokens.find((m: any) => m.markerId === combatant.tokenId);
+					}
+
+					// Fallback: vault note token_id
+					if (!matchedMarker && combatant.notePath) {
+						const noteFile = plugin.app.vault.getAbstractFileByPath(combatant.notePath);
+						if (noteFile instanceof TFile) {
+							const noteCache = plugin.app.metadataCache.getFileCache(noteFile);
+							const noteTokenId = noteCache?.frontmatter?.token_id;
+							if (noteTokenId) {
+								matchedMarker = visionTokens.find((m: any) => m.markerId === noteTokenId);
+							}
+						}
+					}
+
+					// Fallback: name-based matching
+					if (!matchedMarker) {
+						matchedMarker = visionTokens.find((m: any) => {
+							const markerDef = plugin.markerLibrary.getMarker(m.markerId);
+							if (!markerDef) return false;
+							const markerName = markerDef.name.toLowerCase();
+							const displayName = (combatant.display || '').toLowerCase();
+							const baseName = (combatant.name || '').toLowerCase();
+							return displayName === markerName || baseName === markerName || displayName.startsWith(markerName);
+						});
+					}
+				}
+
+				if (matchedMarker && selectedVisionTokenId !== matchedMarker.id) {
+					selectedVisionTokenId = matchedMarker.id;
+					refreshVisionSelector();
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					const markerDef = plugin.markerLibrary.getMarker(matchedMarker.markerId);
+					const icon = markerDef?.type === 'player' ? '👤' : markerDef?.type === 'creature' ? '👹' : '🧑';
+					new Notice(`Vision synced: ${icon} ${markerDef?.name || matchedMarker.id}`);
+				} else if (!matchedMarker && selectedVisionTokenId !== null) {
+					selectedVisionTokenId = null;
+					refreshVisionSelector();
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					new Notice('Vision synced: 👥 All Players');
+				}
+			});
+
+			// Unsubscribe when this map view element leaves the DOM
+			const ctVisionObserver = new MutationObserver(() => {
+				if (!el.isConnected) {
+					unsubCombatVision();
+					ctVisionObserver.disconnect();
+				}
+			});
+			if (el.parentElement) {
+				ctVisionObserver.observe(el.parentElement, { childList: true, subtree: true });
+			}
+		}
+
 		// === TUNNELS SECTION (expandable) ===
 		const tunnelsSectionHeader = toolbarContent.createDiv({ cls: 'dnd-map-section-header' });
 		tunnelsSectionHeader.createEl('span', { text: 'Tunnels', cls: 'dnd-map-section-title' });
