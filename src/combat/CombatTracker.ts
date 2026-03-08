@@ -271,30 +271,36 @@ export class CombatTracker {
     }
 
     if (wasAtZero && remaining > 0) {
-      // ── Already at 0 HP: check instant death or add failed saves ──
+      // ── Already at 0 HP ──
       if (remaining >= c.maxHP) {
+        // Massive damage → instant death
         this.killCombatant(c);
-      } else {
+      } else if (c.player) {
+        // PCs: add failed death saves
         if (!c.deathSaves) c.deathSaves = { successes: 0, failures: 0 };
         c.deathSaves.failures += isCritical ? 2 : 1;
         if (c.deathSaves.failures >= 3) {
           this.killCombatant(c);
         }
       }
+      // Non-PCs at 0 HP are already dead — no further action
     } else {
       // ── Normal damage: reduce HP, check for 0 ──
       const hpBefore = c.currentHP;
       c.currentHP = Math.max(0, c.currentHP - remaining);
 
       if (c.currentHP <= 0 && hpBefore > 0) {
-        // Just dropped to 0 — check massive damage (overflow >= maxHP → instant death)
         const overflow = remaining - hpBefore;
         if (overflow >= c.maxHP) {
+          // Massive damage → instant death
           this.killCombatant(c);
-        } else {
-          // Falls unconscious, start death saves
+        } else if (c.player) {
+          // PCs fall unconscious and start death saves
           c.deathSaves = { successes: 0, failures: 0 };
           this.syncUnconsciousStatus(c);
+        } else {
+          // Non-PCs die immediately at 0 HP
+          this.killCombatant(c);
         }
       }
     }

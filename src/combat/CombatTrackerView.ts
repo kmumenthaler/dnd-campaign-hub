@@ -483,8 +483,8 @@ export class CombatTrackerView extends ItemView {
   private showRowContextMenu(e: MouseEvent, tracker: CombatTracker, c: Combatant) {
     const menu = new Menu();
 
-    // Death save options (only when at 0 HP, not dead)
-    if (c.currentHP <= 0 && !c.dead && c.deathSaves) {
+    // Death save options (PCs only, at 0 HP, not dead)
+    if (c.player && c.currentHP <= 0 && !c.dead && c.deathSaves) {
       menu.addItem((item) =>
         item.setTitle("🎲 Roll Death Save").setIcon("dice").onClick(() => {
           tracker.rollDeathSave(c.id);
