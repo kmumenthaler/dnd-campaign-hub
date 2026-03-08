@@ -1,4 +1,4 @@
-import { ItemView, Menu, Modal, Notice, Setting, TFile, WorkspaceLeaf } from "obsidian";
+import { ItemView, Menu, Modal, Notice, Setting, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { COMBAT_TRACKER_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE } from "../constants";
 import type { CombatTracker } from "./CombatTracker";
@@ -508,7 +508,7 @@ export class CombatTrackerView extends ItemView {
 
     menu.addItem((item) =>
       item.setTitle("➕ Add Creature").setIcon("plus").onClick(() => {
-        new AddCreatureModal(this.app, tracker).open();
+        new AddCreatureModal(this.app, this.plugin, tracker).open();
       }),
     );
 
@@ -892,6 +892,16 @@ class CombatantEditModal extends Modal {
 
 /** Add a creature mid-combat. */
 class AddCreatureModal extends Modal {
+  private plugin: DndCampaignHubPlugin;
+  private tracker: CombatTracker;
+
+  /* Vault creature state */
+  private selectedCreature: { name: string; path: string; hp: number; ac: number; cr?: string } | null = null;
+  private vaultCount = "1";
+  private vaultFriendly = false;
+  private vaultHidden = false;
+
+  /* Manual creature state */
   private creatureName = "";
   private hp = "10";
   private ac = "10";
@@ -899,18 +909,33 @@ class AddCreatureModal extends Modal {
   private count = "1";
   private friendly = false;
 
-  constructor(app: any, private tracker: CombatTracker) {
+  private static readonly COLORS = [
+    "Red", "Blue", "Green", "Yellow", "Purple", "Orange",
+    "Pink", "Brown", "Black", "White", "Gray", "Cyan",
+    "Magenta", "Lime", "Teal", "Indigo", "Violet", "Gold",
+    "Silver", "Bronze",
+  ];
+
+  constructor(app: any, plugin: DndCampaignHubPlugin, tracker: CombatTracker) {
     super(app);
+    this.plugin = plugin;
+    this.tracker = tracker;
   }
 
-  onOpen() {
+  async onOpen() {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.createEl("h3", { text: "➕ Add Creature" });
 
+    /* ── Vault creature section ── */
+    await this.buildVaultSection(contentEl);
+
+    /* ── Manual section ── */
+    const manualHeader = contentEl.createEl("h4", { text: "Manual Entry" });
+    manualHeader.style.marginTop = "18px";
+
     new Setting(contentEl).setName("Name").addText((text) => {
       text.setPlaceholder("Creature name").onChange((v) => (this.creatureName = v));
-      text.inputEl.focus();
     });
     new Setting(contentEl).setName("HP").addText((text) => {
       text.setValue(this.hp).onChange((v) => (this.hp = v));
@@ -933,34 +958,189 @@ class AddCreatureModal extends Modal {
     new Setting(contentEl).setName("Friendly").addToggle((toggle) =>
       toggle.setValue(this.friendly).onChange((v) => (this.friendly = v)),
     );
-
     new Setting(contentEl).addButton((btn) =>
-      btn.setButtonText("Add").setCta().onClick(() => this.add()),
+      btn.setButtonText("Add").setCta().onClick(() => this.addManual()),
     );
   }
 
-  private add() {
+  /* ── Vault creature search UI ── */
+  private async buildVaultSection(container: HTMLElement) {
+    const vaultCreatures = await this.plugin.encounterBuilder.loadAllCreatures();
+    if (vaultCreatures.length === 0) return;
+
+    const section = container.createDiv();
+    const setting = new Setting(section)
+      .setName("Add from Vault")
+      .setDesc(`Search creatures from your vault (${vaultCreatures.length} available)`);
+
+    const searchContainer = setting.controlEl.createDiv({ cls: "dnd-creature-search-container" });
+    const searchInput = searchContainer.createEl("input", {
+      type: "text",
+      placeholder: "Search creatures...",
+      cls: "dnd-creature-search-input",
+    });
+    const searchResults = searchContainer.createDiv({ cls: "dnd-creature-search-results" });
+    searchResults.style.display = "none";
+
+    const showResults = (query: string) => {
+      if (!query || query.length < 1) { searchResults.style.display = "none"; return; }
+      const q = query.toLowerCase().trim();
+      const filtered = vaultCreatures.filter(c => c.name.toLowerCase().includes(q)).slice(0, 10);
+      searchResults.empty();
+      if (filtered.length === 0) {
+        searchResults.createEl("div", { text: "No creatures found", cls: "dnd-creature-search-no-results" });
+      } else {
+        for (const creature of filtered) {
+          const row = searchResults.createDiv({ cls: "dnd-creature-search-result" });
+          row.createDiv({ cls: "dnd-creature-search-result-name", text: creature.name });
+          const parts: string[] = [];
+          if (creature.cr) parts.push(`CR ${creature.cr}`);
+          parts.push(`HP ${creature.hp}`, `AC ${creature.ac}`);
+          row.createDiv({ cls: "dnd-creature-search-result-stats", text: parts.join(" | ") });
+          row.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.selectedCreature = creature;
+            searchInput.value = creature.name;
+            searchResults.style.display = "none";
+          });
+        }
+      }
+      searchResults.style.display = "block";
+    };
+
+    searchInput.addEventListener("input", (e) => showResults((e.target as HTMLInputElement).value));
+    searchInput.addEventListener("focus", (e) => {
+      const v = (e.target as HTMLInputElement).value;
+      if (v.length >= 1) showResults(v);
+    });
+    searchInput.addEventListener("blur", () => setTimeout(() => { searchResults.style.display = "none"; }, 250));
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && this.selectedCreature) { e.preventDefault(); this.addVaultCreature(searchInput); }
+    });
+    setTimeout(() => searchInput.focus(), 50);
+
+    /* Count */
+    setting.addText((text) => {
+      text.setPlaceholder("Count").setValue("1").onChange((v) => (this.vaultCount = v));
+      text.inputEl.type = "number";
+      text.inputEl.min = "1";
+      text.inputEl.style.width = "60px";
+    });
+
+    /* Friendly checkbox */
+    const friendlyC = setting.controlEl.createDiv({ cls: "dnd-inline-checkbox" });
+    friendlyC.style.cssText = "display:inline-flex;align-items:center;margin-left:8px;";
+    const friendlyCB = friendlyC.createEl("input", { type: "checkbox" });
+    friendlyCB.style.marginRight = "4px";
+    friendlyCB.addEventListener("change", (e) => { this.vaultFriendly = (e.target as HTMLInputElement).checked; });
+    const friendlyLbl = friendlyC.createEl("label", { text: "Friendly" });
+    friendlyLbl.style.cssText = "font-size:13px;cursor:pointer;";
+    friendlyLbl.addEventListener("click", () => { friendlyCB.checked = !friendlyCB.checked; this.vaultFriendly = friendlyCB.checked; });
+
+    /* Hidden checkbox */
+    const hiddenC = setting.controlEl.createDiv({ cls: "dnd-inline-checkbox" });
+    hiddenC.style.cssText = "display:inline-flex;align-items:center;margin-left:8px;";
+    const hiddenCB = hiddenC.createEl("input", { type: "checkbox" });
+    hiddenCB.style.marginRight = "4px";
+    hiddenCB.addEventListener("change", (e) => { this.vaultHidden = (e.target as HTMLInputElement).checked; });
+    const hiddenLbl = hiddenC.createEl("label", { text: "Hidden" });
+    hiddenLbl.style.cssText = "font-size:13px;cursor:pointer;";
+    hiddenLbl.addEventListener("click", () => { hiddenCB.checked = !hiddenCB.checked; this.vaultHidden = hiddenCB.checked; });
+
+    /* Add button */
+    setting.addButton((btn) =>
+      btn.setButtonText("Add").setCta().onClick(() => this.addVaultCreature(searchInput)),
+    );
+  }
+
+  /* ── Read DEX modifier from a creature note ── */
+  private readModifier(path: string): number {
+    try {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (!(file instanceof TFile)) return 0;
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache?.frontmatter;
+      if (!fm) return 0;
+      if (typeof fm.init_bonus === "number") return fm.init_bonus;
+      if (Array.isArray(fm.stats) && fm.stats.length >= 2) {
+        const dex = fm.stats[1];
+        if (typeof dex === "number") return Math.floor((dex - 10) / 2);
+      }
+      return 0;
+    } catch { return 0; }
+  }
+
+  /* ── Roll initiative ── */
+  private rollInit(modifier: number): number {
+    return Math.floor(Math.random() * 20) + 1 + modifier;
+  }
+
+  /* ── Add vault creature(s) ── */
+  private addVaultCreature(searchInput: HTMLInputElement) {
+    if (!this.selectedCreature) { new Notice("Select a creature from the search results"); return; }
+    const creature = this.selectedCreature;
+    const count = Math.max(1, parseInt(this.vaultCount, 10) || 1);
+    const modifier = creature.path ? this.readModifier(creature.path) : 0;
+
+    /* Resolve tokenId from note frontmatter */
+    let tokenId: string | undefined;
+    if (creature.path) {
+      const file = this.app.vault.getAbstractFileByPath(creature.path);
+      if (file instanceof TFile) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        tokenId = cache?.frontmatter?.token_id;
+      }
+    }
+
+    for (let i = 0; i < count; i++) {
+      let display = creature.name;
+      if (count > 1) display = `${display} (${AddCreatureModal.COLORS[i % AddCreatureModal.COLORS.length]})`;
+
+      this.tracker.addCombatant({
+        id: `add-${Date.now()}-${i}`,
+        name: creature.name,
+        display,
+        initiative: this.rollInit(modifier),
+        modifier,
+        currentHP: creature.hp,
+        maxHP: creature.hp,
+        tempHP: 0,
+        ac: creature.ac,
+        currentAC: creature.ac,
+        player: false,
+        friendly: this.vaultFriendly,
+        hidden: this.vaultHidden,
+        notePath: creature.path,
+        tokenId,
+        statuses: [],
+        cr: creature.cr,
+      });
+    }
+
+    new Notice(`Added ${count}× ${creature.name}`);
+    /* Reset for another addition */
+    this.selectedCreature = null;
+    searchInput.value = "";
+  }
+
+  /* ── Add manual creature(s) ── */
+  private addManual() {
     if (!this.creatureName.trim()) { new Notice("Enter a creature name"); return; }
     const hp = parseInt(this.hp, 10) || 10;
     const ac = parseInt(this.ac, 10) || 10;
     const mod = parseInt(this.modifier, 10) || 0;
     const count = Math.max(1, parseInt(this.count, 10) || 1);
 
-    const colors = [
-      "Red", "Blue", "Green", "Yellow", "Purple", "Orange",
-      "Pink", "Brown", "Black", "White", "Gray", "Cyan",
-    ];
-
     for (let i = 0; i < count; i++) {
       let display = this.creatureName.trim();
-      if (count > 1) display = `${display} (${colors[i % colors.length]})`;
+      if (count > 1) display = `${display} (${AddCreatureModal.COLORS[i % AddCreatureModal.COLORS.length]})`;
 
-      const id = `add-${Date.now()}-${i}`;
       this.tracker.addCombatant({
-        id,
+        id: `add-${Date.now()}-${i}`,
         name: this.creatureName.trim(),
         display,
-        initiative: Math.floor(Math.random() * 20) + 1 + mod,
+        initiative: this.rollInit(mod),
         modifier: mod,
         currentHP: hp,
         maxHP: hp,
