@@ -3999,7 +3999,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						drawTextAnnotation(ctx, ta);
 					});
 					// Selection frame & transform handles for selected text annotation
-					if (selectedTextAnnotationId && activeTool === 'draw' && activeDrawSubTool === 'text') {
+					if (selectedTextAnnotationId && (activeTool === 'select' || (activeTool === 'draw' && activeDrawSubTool === 'text'))) {
 						const selTa = config.textAnnotations.find((t: any) => t.id === selectedTextAnnotationId);
 						if (selTa) {
 							ctx.save();
@@ -7300,6 +7300,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					isAnnotErasing = false;
 					annotEraserCursorPos = null;
 					annotEraserHadRemoval = false;
+				}
+				// Clear text annotation selection when switching to a tool that doesn't support it
+				if (tool !== 'draw' && tool !== 'select') {
 					selectedTextAnnotationId = null;
 					textAnnotDragOffset = null;
 					textAnnotTransformHandle = null;
@@ -7888,9 +7891,57 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							}
 						}
 					}
+					// Check if clicking on a text annotation for select / drag / transform
+					let foundTextAnnot = false;
+					if (!foundMarker && !foundEnvAsset && config.textAnnotations && config.textAnnotations.length > 0) {
+						// If a text annotation is already selected, check transform handles first
+						if (selectedTextAnnotationId) {
+							const selTa = config.textAnnotations.find((t: any) => t.id === selectedTextAnnotationId);
+							if (selTa) {
+								const handle = hitTestTextTransformHandle(selTa, mapPos.x, mapPos.y);
+								if (handle === 'rotate') {
+									saveToHistory();
+									textAnnotTransformHandle = 'rotate';
+									textAnnotRotateStart = (selTa.rotation || 0);
+									textAnnotDragOrigin = { x: mapPos.x, y: mapPos.y };
+									viewport.style.cursor = 'grab';
+									foundTextAnnot = true;
+								} else if (handle) {
+									saveToHistory();
+									textAnnotTransformHandle = handle;
+									textAnnotTransformStart = { w: selTa.width, h: selTa.height };
+									textAnnotDragOrigin = { x: mapPos.x, y: mapPos.y };
+									viewport.style.cursor = 'nwse-resize';
+									foundTextAnnot = true;
+								}
+							}
+						}
+						// Then check if clicking on a text annotation body
+						if (!foundTextAnnot) {
+							const hitTa = findTextAnnotationAtPoint(mapPos.x, mapPos.y);
+							if (hitTa) {
+								selectedTextAnnotationId = hitTa.id;
+								saveToHistory();
+								textAnnotDragOffset = {
+									x: mapPos.x - hitTa.position.x,
+									y: mapPos.y - hitTa.position.y,
+								};
+								textAnnotDragOrigin = { x: hitTa.position.x, y: hitTa.position.y };
+								viewport.style.cursor = 'grabbing';
+								foundTextAnnot = true;
+								redrawAnnotations();
+							} else {
+								// Clicked empty space — deselect text annotation
+								if (selectedTextAnnotationId) {
+									selectedTextAnnotationId = null;
+									redrawAnnotations();
+								}
+							}
+						}
+					}
 					// Check if clicking on a light for drag (only if no marker or env asset found)
 					const canInteractLights = config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'lights');
-					if (!foundMarker && !foundEnvAsset && canInteractLights && config.lightSources && config.lightSources.length > 0) {
+					if (!foundMarker && !foundEnvAsset && !foundTextAnnot && canInteractLights && config.lightSources && config.lightSources.length > 0) {
 						const lightClickRadius = 15; // Radius for detecting light clicks
 						for (let i = config.lightSources.length - 1; i >= 0; i--) {
 							const light = config.lightSources[i];
@@ -7909,7 +7960,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 					// Check if clicking on a wall/door/window for drag (only if no marker, env asset, or light found)
 					const canInteractWalls = config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'walls');
-					if (!foundMarker && !foundEnvAsset && draggingLightIndex < 0 && canInteractWalls && config.walls && config.walls.length > 0) {
+					if (!foundMarker && !foundEnvAsset && !foundTextAnnot && draggingLightIndex < 0 && canInteractWalls && config.walls && config.walls.length > 0) {
 						const wallClickRadius = 12; // Radius for detecting wall clicks
 						for (let i = config.walls.length - 1; i >= 0; i--) {
 							const wall = config.walls[i];
@@ -7945,7 +7996,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						}
 					}
 					// If nothing was clicked, start a wall selection rectangle (only in walls view)
-					if (!foundMarker && !foundEnvAsset && draggingLightIndex < 0 && draggingWallIndex < 0 && canInteractWalls) {
+					if (!foundMarker && !foundEnvAsset && !foundTextAnnot && draggingLightIndex < 0 && draggingWallIndex < 0 && canInteractWalls) {
 						wallSelectionRect = { startX: mapPos.x, startY: mapPos.y, endX: mapPos.x, endY: mapPos.y };
 						selectedWallIndices = [];
 						viewport.style.cursor = 'crosshair';
@@ -9111,6 +9162,35 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							_requestDragRedraw();
 						}
 					}
+				} else if (activeTool === 'select' && selectedTextAnnotationId && (textAnnotDragOffset || textAnnotTransformHandle)) {
+					// Drag or transform text annotation (select tool)
+					const selTa = (config.textAnnotations || []).find((t: any) => t.id === selectedTextAnnotationId);
+					if (selTa && textAnnotTransformHandle === 'rotate' && textAnnotDragOrigin) {
+						const cx = selTa.position.x;
+						const cy = selTa.position.y;
+						const startAngle = Math.atan2(textAnnotDragOrigin.y - cy, textAnnotDragOrigin.x - cx);
+						const curAngle = Math.atan2(mapPos.y - cy, mapPos.x - cx);
+						const delta = (curAngle - startAngle) * (180 / Math.PI);
+						selTa.rotation = ((textAnnotRotateStart || 0) + delta) % 360;
+						redrawAnnotations();
+					} else if (selTa && textAnnotTransformHandle && textAnnotTransformStart && textAnnotDragOrigin) {
+						const dx = mapPos.x - textAnnotDragOrigin.x;
+						const dy = mapPos.y - textAnnotDragOrigin.y;
+						const h = textAnnotTransformHandle;
+						let nw = textAnnotTransformStart.w;
+						let nh = textAnnotTransformStart.h;
+						if (h === 'e' || h === 'ne' || h === 'se') nw = Math.max(40, textAnnotTransformStart.w + dx);
+						if (h === 'w' || h === 'nw' || h === 'sw') nw = Math.max(40, textAnnotTransformStart.w - dx);
+						if (h === 's' || h === 'se' || h === 'sw') nh = Math.max(20, textAnnotTransformStart.h + dy);
+						if (h === 'n' || h === 'ne' || h === 'nw') nh = Math.max(20, textAnnotTransformStart.h - dy);
+						selTa.width = nw;
+						selTa.height = nh;
+						redrawAnnotations();
+					} else if (selTa && textAnnotDragOffset) {
+						selTa.position.x = mapPos.x - textAnnotDragOffset.x;
+						selTa.position.y = mapPos.y - textAnnotDragOffset.y;
+						redrawAnnotations();
+					}
 				} else if (activeTool === 'select' && wallSelectionRect) {
 					// Updating wall selection rectangle
 					wallSelectionRect.endX = mapPos.x;
@@ -9501,6 +9581,16 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					redrawAnnotations();
 					plugin.saveMapAnnotations(config, el);
 					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+				} else if (activeTool === 'select' && selectedTextAnnotationId && (textAnnotDragOffset || textAnnotTransformHandle)) {
+					// ── Text annotation: finish drag or transform (select tool) ──
+					plugin.saveMapAnnotations(config, el);
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					textAnnotDragOffset = null;
+					textAnnotDragOrigin = null;
+					textAnnotTransformHandle = null;
+					textAnnotTransformStart = null;
+					textAnnotRotateStart = 0;
+					viewport.style.cursor = 'default';
 				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
 					// Drop marker: snap creature types to grid
 					const m = config.markers[draggingMarkerIndex];
@@ -9765,6 +9855,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					viewport.style.cursor = activeTool === 'env-asset' ? 'crosshair' : 'default';
 					redrawAnnotations();
 					plugin.saveMapAnnotations(config, el);
+				} else if (activeTool === 'select' && selectedTextAnnotationId && (textAnnotDragOffset || textAnnotTransformHandle)) {
+					// Finalize text annotation drag/transform on mouseleave
+					plugin.saveMapAnnotations(config, el);
+					textAnnotDragOffset = null;
+					textAnnotDragOrigin = null;
+					textAnnotTransformHandle = null;
+					textAnnotTransformStart = null;
+					textAnnotRotateStart = 0;
+					viewport.style.cursor = 'default';
 				} else if (activeTool === 'move-grid' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'move';
@@ -10182,8 +10281,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				}
 				const mapPos = screenToMap(e.clientX, e.clientY);
 
-				// ── Text annotation context menu ──
-				if (activeTool === 'draw' && activeDrawSubTool === 'text') {
+				// ── Text annotation context menu (draw-text or select tool) ──
+				if (activeTool === 'select' || (activeTool === 'draw' && activeDrawSubTool === 'text')) {
 					const hitTa = findTextAnnotationAtPoint(mapPos.x, mapPos.y);
 					if (hitTa) {
 						e.preventDefault();
