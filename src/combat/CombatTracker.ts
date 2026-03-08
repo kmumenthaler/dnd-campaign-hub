@@ -299,8 +299,8 @@ export class CombatTracker {
           c.deathSaves = { successes: 0, failures: 0 };
           this.syncUnconsciousStatus(c);
         } else {
-          // Non-PCs die immediately at 0 HP
-          this.killCombatant(c);
+          // Non-PCs fall unconscious at 0 HP (no death saves)
+          this.syncUnconsciousStatus(c);
         }
       }
     }
