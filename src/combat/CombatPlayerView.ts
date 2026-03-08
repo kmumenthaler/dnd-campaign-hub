@@ -134,8 +134,10 @@ export class CombatPlayerView extends ItemView {
       // HP bar
       this.renderPVHPBar(row, c, isAlly);
 
-      // AC
-      row.createEl("span", { text: String(c.currentAC), cls: "dnd-ct-pv-ac" });
+      // AC (allies only)
+      if (isAlly) {
+        row.createEl("span", { text: String(c.currentAC), cls: "dnd-ct-pv-ac" });
+      }
     }
 
     // Restore scroll, then smoothly pan to active row
@@ -249,13 +251,13 @@ export class CombatPlayerView extends ItemView {
     const pct = c.maxHP > 0 ? Math.max(0, Math.min(1, c.currentHP / c.maxHP)) : 0;
     const color = this.hpColor(pct);
 
-    if (isAlly) {
-      // Allies: show HP bar + numbers
-      const bar = hpCell.createDiv({ cls: "dnd-ct-pv-hp-bar" });
-      const fill = bar.createDiv({ cls: "dnd-ct-pv-hp-fill" });
-      fill.style.width = `${pct * 100}%`;
-      fill.style.background = color;
+    // Bar container (used for both allies and enemies)
+    const bar = hpCell.createDiv({ cls: "dnd-ct-pv-hp-bar" });
+    const fill = bar.createDiv({ cls: "dnd-ct-pv-hp-fill" });
+    fill.style.width = `${pct * 100}%`;
+    fill.style.background = color;
 
+    if (isAlly) {
       if (c.tempHP > 0) {
         const tempPct = Math.min(1, c.tempHP / c.maxHP);
         bar.createDiv({ cls: "dnd-ct-hp-temp" }).style.width = `${tempPct * 100}%`;
@@ -263,13 +265,12 @@ export class CombatPlayerView extends ItemView {
 
       let text = `${c.currentHP}/${c.maxHP}`;
       if (c.tempHP > 0) text += ` (+${c.tempHP})`;
-      const textEl = hpCell.createEl("span", { text, cls: "dnd-ct-pv-hp-text" });
-      textEl.style.color = color;
+      const textEl = bar.createEl("span", { text, cls: "dnd-ct-pv-hp-text" });
+      textEl.style.color = "#fff";
     } else {
-      // Enemies: condition text only — no bar
       const condition = this.hpCondition(pct);
-      const textEl = hpCell.createEl("span", { text: condition, cls: "dnd-ct-pv-hp-text dnd-ct-pv-hp-condition" });
-      textEl.style.color = color;
+      const textEl = bar.createEl("span", { text: condition, cls: "dnd-ct-pv-hp-text dnd-ct-pv-hp-condition" });
+      textEl.style.color = "#fff";
     }
   }
 }
