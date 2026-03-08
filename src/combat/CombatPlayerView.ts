@@ -273,15 +273,21 @@ export class CombatPlayerView extends ItemView {
     if (isAlly) {
       // Allies: HP bar with text inside
       const bar = hpCell.createDiv({ cls: "dnd-ct-pv-hp-bar" });
-      const fill = bar.createDiv({ cls: "dnd-ct-pv-hp-fill" });
-      // Start at old width, then animate to new
-      fill.style.width = `${oldPct * 100}%`;
-      fill.style.background = color;
-      if (oldPct !== pct) {
-        requestAnimationFrame(() => {
-          fill.style.width = `${pct * 100}%`;
-        });
+
+      // Ghost bar: shows the lost HP segment, then fades away
+      if (oldPct > pct) {
+        const ghost = bar.createDiv({ cls: "dnd-ct-pv-hp-ghost" });
+        ghost.style.width = `${oldPct * 100}%`;
+        // After a short pause, shrink to current and fade out
+        setTimeout(() => {
+          ghost.style.width = `${pct * 100}%`;
+          ghost.style.opacity = "0";
+        }, 400);
       }
+
+      const fill = bar.createDiv({ cls: "dnd-ct-pv-hp-fill" });
+      fill.style.width = `${pct * 100}%`;
+      fill.style.background = color;
 
       if (c.tempHP > 0) {
         const tempPct = Math.min(1, c.tempHP / c.maxHP);
