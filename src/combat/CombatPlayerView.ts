@@ -74,9 +74,10 @@ export class CombatPlayerView extends ItemView {
 
       const isActive = state.started && i === state.turnIndex;
       const isDead = c.currentHP <= 0;
+      const isAlly = c.player || c.friendly;
 
       const row = list.createDiv({
-        cls: `dnd-ct-pv-row ${isActive ? "dnd-ct-pv-row-active" : ""} ${isDead ? "dnd-ct-pv-row-dead" : ""}`,
+        cls: `dnd-ct-pv-row ${isActive ? "dnd-ct-pv-row-active" : ""} ${isDead ? "dnd-ct-pv-row-dead" : ""} ${isAlly ? "dnd-ct-pv-row-ally" : "dnd-ct-pv-row-enemy"}`,
       });
 
       // Initiative

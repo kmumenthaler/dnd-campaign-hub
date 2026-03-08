@@ -1094,6 +1094,22 @@
   border-left-color: #e94560;
   background: #1a2744;
 }
+.dnd-ct-pv-row-ally {
+  background: rgba(120, 180, 120, 0.12);
+  border-left-color: rgba(120, 180, 120, 0.45);
+}
+.dnd-ct-pv-row-enemy {
+  background: rgba(190, 100, 100, 0.12);
+  border-left-color: rgba(190, 100, 100, 0.45);
+}
+.dnd-ct-pv-row-active.dnd-ct-pv-row-ally {
+  background: rgba(120, 180, 120, 0.2);
+  border-left-color: rgba(120, 180, 120, 0.7);
+}
+.dnd-ct-pv-row-active.dnd-ct-pv-row-enemy {
+  background: rgba(190, 100, 100, 0.2);
+  border-left-color: rgba(190, 100, 100, 0.7);
+}
 .dnd-ct-pv-row-dead {
   opacity: 0.35;
 }
