@@ -11915,7 +11915,73 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				});
 			}
 
-			// Import tokens from Initiative Tracker encounter
+			// ── Link Encounter ──
+			const linkEncounterBtn = controls.createEl('button', {
+				text: config.linkedEncounter ? `🔗 ${config.linkedEncounter.split('/').pop()?.replace('.md', '') || 'Linked'}` : '🔗 Link Encounter',
+				cls: 'dnd-map-toggle-btn',
+				attr: { title: config.linkedEncounter || 'Link an encounter note to this map' },
+			});
+			linkEncounterBtn.addEventListener('click', (evt: MouseEvent) => {
+				const menu = new Menu();
+
+				// Option 1: Link from active combat
+				const combatState = plugin.combatTracker.getState();
+				if (combatState?.encounterPath) {
+					const label = combatState.encounterName || combatState.encounterPath.split('/').pop()?.replace('.md', '') || 'Active Combat';
+					menu.addItem((item) =>
+						item.setTitle(`⚔️ Active: ${label}`).setIcon('swords').onClick(() => {
+							config.linkedEncounter = combatState.encounterPath;
+							plugin.saveMapAnnotations(config, el);
+							linkEncounterBtn.textContent = `🔗 ${label}`;
+							linkEncounterBtn.title = combatState.encounterPath || '';
+							new Notice(`✅ Map linked to encounter "${label}"`);
+						}),
+					);
+					menu.addSeparator();
+				}
+
+				// Option 2: Browse encounter notes in vault
+				const encounterFiles = plugin.app.vault.getMarkdownFiles().filter((f: TFile) => {
+					const fc = plugin.app.metadataCache.getFileCache(f);
+					return fc?.frontmatter?.type === 'encounter';
+				}).sort((a: TFile, b: TFile) => b.stat.mtime - a.stat.mtime).slice(0, 20);
+
+				for (const ef of encounterFiles) {
+					const name = plugin.app.metadataCache.getFileCache(ef)?.frontmatter?.name || ef.basename;
+					const isCurrent = config.linkedEncounter === ef.path;
+					menu.addItem((item) =>
+						item.setTitle(`${isCurrent ? '✓ ' : ''}${name}`).onClick(() => {
+							config.linkedEncounter = ef.path;
+							plugin.saveMapAnnotations(config, el);
+							linkEncounterBtn.textContent = `🔗 ${name}`;
+							linkEncounterBtn.title = ef.path;
+							new Notice(`✅ Map linked to encounter "${name}"`);
+						}),
+					);
+				}
+
+				if (encounterFiles.length === 0 && !combatState?.encounterPath) {
+					menu.addItem((item) => item.setTitle('No encounters found').setDisabled(true));
+				}
+
+				// Option 3: Unlink
+				if (config.linkedEncounter) {
+					menu.addSeparator();
+					menu.addItem((item) =>
+						item.setTitle('✕ Unlink Encounter').setIcon('x').onClick(() => {
+							config.linkedEncounter = '';
+							plugin.saveMapAnnotations(config, el);
+							linkEncounterBtn.textContent = '🔗 Link Encounter';
+							linkEncounterBtn.title = 'Link an encounter note to this map';
+							new Notice('Encounter unlinked from map');
+						}),
+					);
+				}
+
+				menu.showAtMouseEvent(evt);
+			});
+
+			// Import tokens from Combat Tracker or Initiative Tracker encounter
 			const itImportBtn = controls.createEl('button', {
 				text: '⚔️ Import Encounter Tokens',
 				cls: 'dnd-map-toggle-btn'
@@ -11937,19 +12003,33 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				];
 
 				const initiativeTracker = (plugin.app as any).plugins?.plugins?.["initiative-tracker"];
-				if (!initiativeTracker) {
-					new Notice('⚠️ Initiative Tracker plugin not found');
+
+				// Prefer our Combat Tracker's active state; fall back to IT
+				const combatState = plugin.combatTracker.getState();
+				let creatures: any[];
+
+				if (combatState && combatState.combatants.length > 0) {
+					// Map our Combatant[] to the shape the import loop expects
+					creatures = combatState.combatants.map((c: any) => ({
+						name: c.name,
+						display: c.display,
+						player: c.player,
+						friendly: c.friendly,
+						path: c.notePath,
+						note: c.notePath,
+						tokenId: c.tokenId,
+					}));
+				} else if (initiativeTracker) {
+					const itState = initiativeTracker.data?.state;
+					if (!itState || !Array.isArray(itState.creatures) || itState.creatures.length === 0) {
+						new Notice('\u26a0\ufe0f No active combat or encounter loaded');
+						return;
+					}
+					creatures = itState.creatures;
+				} else {
+					new Notice('\u26a0\ufe0f No active combat — run an encounter first');
 					return;
 				}
-
-				// Get the current encounter state from IT
-				const itState = initiativeTracker.data?.state;
-				if (!itState || !Array.isArray(itState.creatures) || itState.creatures.length === 0) {
-					new Notice('⚠️ No encounter loaded in Initiative Tracker');
-					return;
-				}
-
-				const creatures: any[] = itState.creatures;
 
 				// Get existing markers on the map to check for duplicates
 				const existingMarkers = config.markers || [];
@@ -12033,10 +12113,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						const markerType: MarkerType = isPlayer ? 'player' : (isFriendly ? 'npc' : 'creature');
 						let markerDef: MarkerDefinition | undefined;
 
-						// Try to resolve creature vault path from IT state data
+						// Try direct tokenId from combat tracker first
+						if (creature.tokenId) {
+							markerDef = plugin.markerLibrary.getMarker(creature.tokenId);
+						}
+
+						// Try to resolve creature vault path from state data
 						const creaturePath = creature.path || creature.note;
 						let resolvedNoteFile: TFile | null = null;
-						if (creaturePath && typeof creaturePath === 'string') {
+						if (!markerDef && creaturePath && typeof creaturePath === 'string') {
 							const noteFile = plugin.app.vault.getAbstractFileByPath(creaturePath);
 							if (noteFile instanceof TFile) {
 								resolvedNoteFile = noteFile;

@@ -57,6 +57,8 @@ export interface Combatant {
 export interface CombatState {
   /** Encounter name this combat belongs to. */
   encounterName: string;
+  /** Vault path to the encounter note (for map linking). */
+  encounterPath?: string;
   /** Ordered combatant list (sorted by initiative descending). */
   combatants: Combatant[];
   /** Current round number (1-based). */

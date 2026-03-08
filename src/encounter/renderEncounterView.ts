@@ -212,6 +212,7 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 				mappedCreatures,
 				partyMembers,
 				fm.use_color_names ?? true,
+				encounterFile!.path,
 			);
 
 			// Open the Combat Tracker sidebar

@@ -53,6 +53,7 @@ export class CombatTracker {
     creatures: EncounterCreature[],
     partyMembers: Array<{ name: string; level: number; hp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }>,
     useColorNames: boolean,
+    encounterPath?: string,
   ): Promise<void> {
     const combatants: Combatant[] = [];
 
@@ -137,6 +138,7 @@ export class CombatTracker {
 
     this.state = {
       encounterName,
+      encounterPath,
       combatants,
       round: 0,
       turnIndex: 0,

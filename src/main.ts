@@ -287,6 +287,9 @@ export default class DndCampaignHubPlugin extends Plugin {
     // Initialize the projection manager (OBS-style project-to-monitor)
     this.projectionManager = new ProjectionManager(this);
 
+    // Auto-pan player view to active PC's token on turn change
+    this.registerCombatAutoPan();
+
     // Restore persisted playback state (volumes, playlists, etc.)
     this.restoreMusicPlaybackState();
 
@@ -2529,6 +2532,49 @@ export default class DndCampaignHubPlugin extends Plugin {
 			await leaf.setViewState({ type: COMBAT_TRACKER_VIEW_TYPE, active: true });
 			this.app.workspace.revealLeaf(leaf);
 		}
+	}
+
+	/**
+	 * Register a combat tracker listener that auto-pans any projected
+	 * player map view to center on the active combatant's token whenever
+	 * the turn changes.
+	 */
+	private registerCombatAutoPan(): void {
+		let prevTurnIndex = -1;
+		let prevRound = -1;
+
+		const unsubscribe = this.combatTracker.onChange((state) => {
+			if (!state || !state.started) {
+				prevTurnIndex = -1;
+				prevRound = -1;
+				return;
+			}
+			// Only act when the turn actually changed
+			if (state.turnIndex === prevTurnIndex && state.round === prevRound) return;
+			prevTurnIndex = state.turnIndex;
+			prevRound = state.round;
+
+			const combatant = state.combatants[state.turnIndex];
+			if (!combatant?.tokenId) return;
+
+			// Find the combatant's token on any live projection and pan to it
+			const projections = this.projectionManager.getLiveProjections();
+			for (const proj of projections) {
+				const view = proj.leaf.view as PlayerMapView;
+				const mapCfg = view.getMapConfig?.();
+				if (!mapCfg?.markers) continue;
+
+				const marker = (mapCfg.markers as any[]).find(
+					(m: any) => m.markerId === combatant.tokenId
+				);
+				if (marker?.position) {
+					view.setTabletopPanFromImageCoords(marker.position.x, marker.position.y);
+					break; // Pan the first matching projection
+				}
+			}
+		});
+
+		this.register(() => unsubscribe());
 	}
 
 	/**

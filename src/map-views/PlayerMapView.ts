@@ -45,6 +45,11 @@ export class PlayerMapView extends ItemView {
   private mapConfig: any = null;
   private imageResourcePath: string = '';
   private mapId: string = ''; // Unique identifier for the associated GM map
+
+  /** Public read-only access to the current map configuration (markers, etc.). */
+  getMapConfig(): any { return this.mapConfig; }
+  /** Public read-only access to the mapId currently displayed. */
+  getMapId(): string { return this.mapId; }
   private canvas: HTMLCanvasElement | null = null;
   private mapImage: MapMediaElement | null = null;
   private markerImageCache: Map<string, HTMLImageElement> = new Map();
