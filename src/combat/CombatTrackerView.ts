@@ -735,6 +735,13 @@ class HPAndStatusModal extends Modal {
 
     // Container for statuses + quick buttons — re-rendered on toggle
     const statusContainer = contentEl.createDiv();
+
+    /** Re-sync this.combatant from tracker state (getState returns copies). */
+    const refreshCombatant = () => {
+      const fresh = this.tracker.getState()?.combatants.find((c) => c.id === this.combatant.id);
+      if (fresh) this.combatant = fresh;
+    };
+
     const renderStatusSection = () => {
       statusContainer.empty();
 
@@ -754,6 +761,7 @@ class HPAndStatusModal extends Modal {
           const removeBtn = badge.createEl("span", { text: "✕", cls: "dnd-ct-status-remove" });
           removeBtn.addEventListener("click", () => {
             this.tracker.removeStatus(this.combatant.id, si);
+            refreshCombatant();
             renderStatusSection();
           });
         }
@@ -781,6 +789,7 @@ class HPAndStatusModal extends Modal {
           } else {
             this.tracker.addStatus(this.combatant.id, { name: cond });
           }
+          refreshCombatant();
           renderStatusSection();
         });
       }
