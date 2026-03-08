@@ -12,6 +12,7 @@ import type { CombatState } from "./types";
 export class CombatPlayerView extends ItemView {
   plugin: DndCampaignHubPlugin;
   private unsubscribe: (() => void) | null = null;
+  private scrollAnimationId: number | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -46,6 +47,11 @@ export class CombatPlayerView extends ItemView {
   private render() {
     const container = this.containerEl.children[1] as HTMLElement;
     if (!container) return;
+
+    // Preserve scroll position from existing list before rebuild
+    const oldList = container.querySelector(".dnd-ct-pv-list") as HTMLElement | null;
+    const previousScroll = oldList ? oldList.scrollTop : 0;
+
     container.empty();
     container.addClass("dnd-ct-player-view");
 
@@ -71,7 +77,8 @@ export class CombatPlayerView extends ItemView {
     const rowBudget = visibleCount * 2.8 + Math.max(0, visibleCount - 1) * 0.3;
     const totalEms = overhead + rowBudget;
     // vh available = 100; font-size = vh / totalEms, clamped to reasonable bounds
-    const computedSize = Math.min(5, Math.max(1.2, 100 / totalEms));
+    // Min 2.5vh keeps text readable from a distance on projected screens
+    const computedSize = Math.min(5, Math.max(2.5, 100 / totalEms));
     container.style.fontSize = `${computedSize}vh`;
 
     // Header
@@ -139,13 +146,53 @@ export class CombatPlayerView extends ItemView {
       }
     }
 
-    // Smooth-scroll active row into view after layout settles
+    // Restore scroll, then smoothly pan to active row
     requestAnimationFrame(() => {
+      list.scrollTop = previousScroll;
       const activeRow = list.querySelector(".dnd-ct-pv-row-active") as HTMLElement | null;
       if (activeRow) {
-        activeRow.scrollIntoView({ behavior: "smooth", block: "center" });
+        // Calculate target: center the active row in the list viewport
+        const rowTop = activeRow.offsetTop;
+        const rowH = activeRow.offsetHeight;
+        const listH = list.clientHeight;
+        const target = rowTop - (listH - rowH) / 2;
+        this.smoothScrollTo(list, target, 800);
       }
     });
+  }
+
+  /** Animate scrollTop from current position to target over duration ms. */
+  private smoothScrollTo(el: HTMLElement, target: number, duration: number) {
+    if (this.scrollAnimationId !== null) {
+      cancelAnimationFrame(this.scrollAnimationId);
+      this.scrollAnimationId = null;
+    }
+
+    const start = el.scrollTop;
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    const clampedTarget = Math.max(0, Math.min(target, maxScroll));
+    const distance = clampedTarget - start;
+    if (Math.abs(distance) < 1) return;
+
+    const startTime = performance.now();
+
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // ease-in-out cubic
+      const ease = progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+      el.scrollTop = start + distance * ease;
+
+      if (progress < 1) {
+        this.scrollAnimationId = requestAnimationFrame(step);
+      } else {
+        this.scrollAnimationId = null;
+      }
+    };
+
+    this.scrollAnimationId = requestAnimationFrame(step);
   }
 
   /** Render a circular portrait from the combatant's token marker image. */

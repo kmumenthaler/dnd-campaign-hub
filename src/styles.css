@@ -1085,7 +1085,6 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  scroll-behavior: smooth;
   scrollbar-width: none; /* Firefox */
 }
 .dnd-ct-pv-list::-webkit-scrollbar {
