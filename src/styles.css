@@ -1062,8 +1062,8 @@
 /* Header */
 .dnd-ct-pv-header {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  flex-direction: column;
+  align-items: center;
   flex-shrink: 0;
   margin-bottom: 0.5em;
   border-bottom: 0.06em solid #333;
@@ -1073,11 +1073,13 @@
   margin: 0;
   font-size: 1.8em;
   color: #e0c097;
+  text-align: center;
 }
 .dnd-ct-pv-round {
   font-size: 1.2em;
   color: #aaa;
   font-weight: 600;
+  text-align: center;
 }
 
 /* List */
