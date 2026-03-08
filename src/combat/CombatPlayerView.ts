@@ -142,20 +142,22 @@ export class CombatPlayerView extends ItemView {
         }
       }
 
-      // HP bar (defer animation if HP changed — bar starts at old value)
-      const hasHPChange = !!hpChangeClass;
-      this.renderPVHPBar(row, c, isAlly, hasHPChange);
-      if (hasHPChange) {
-        row.dataset.changedCombatant = JSON.stringify({
-          id: c.id, currentHP: c.currentHP, maxHP: c.maxHP, tempHP: c.tempHP, isAlly,
-        });
-      }
-
-      // AC (show value for allies, empty placeholder for enemies to preserve spacing)
+      // AC (show value for allies, empty placeholder for enemies — before HP bar)
       row.createEl("span", {
         text: isAlly ? String(c.currentAC) : "",
         cls: "dnd-ct-pv-ac",
       });
+
+      // HP bar (defer animation if HP changed — bar starts at old value)
+      const hasHPChange = !!hpChangeClass;
+      // Capture damage amount before renderPVHPBar overwrites prevHP
+      const dmgAmount = (prev && hasHPChange) ? prev.hp - c.currentHP : 0;
+      this.renderPVHPBar(row, c, isAlly, hasHPChange);
+      if (hasHPChange) {
+        row.dataset.changedCombatant = JSON.stringify({
+          id: c.id, currentHP: c.currentHP, maxHP: c.maxHP, tempHP: c.tempHP, isAlly, dmg: dmgAmount,
+        });
+      }
     }
 
     // Restore scroll, then handle pan sequence
@@ -179,16 +181,48 @@ export class CombatPlayerView extends ItemView {
           : null;
 
         const applyAndReturn = () => {
-          // Pause → apply flash + HP bar transition → pause → pan back
+          // Pause → shield break + flash + HP bar transition + damage number → pause → pan back
           setTimeout(() => {
-            changedRow.addClass(animClass);
-            // Transition HP bar from old to new values
             const ccData = changedRow.dataset.changedCombatant;
+            let isDamage = false;
+            let dmgAmount = 0;
+            if (ccData) {
+              const parsed = JSON.parse(ccData);
+              isDamage = parsed.dmg > 0;
+              dmgAmount = Math.abs(parsed.dmg);
+            }
+
+            // Shield break animation on damage
+            if (isDamage) {
+              const acEl = changedRow.querySelector(".dnd-ct-pv-ac") as HTMLElement | null;
+              if (acEl && acEl.textContent) {
+                acEl.addClass("dnd-ct-pv-ac-break");
+                setTimeout(() => acEl.removeClass("dnd-ct-pv-ac-break"), 850);
+              }
+            }
+
+            changedRow.addClass(animClass);
+
+            // Transition HP bar from old to new values
             if (ccData) {
               const { id, currentHP, maxHP, tempHP, isAlly } = JSON.parse(ccData);
               this.applyHPBarTransition(changedRow, { id, currentHP, maxHP, tempHP }, isAlly);
               delete changedRow.dataset.changedCombatant;
             }
+
+            // Floating damage/heal number
+            if (dmgAmount > 0) {
+              const hpCell = changedRow.querySelector(".dnd-ct-pv-hp") as HTMLElement | null;
+              if (hpCell) {
+                hpCell.style.position = "relative";
+                const numEl = document.createElement("span");
+                numEl.className = isDamage ? "dnd-ct-pv-dmg-number" : "dnd-ct-pv-heal-number";
+                numEl.textContent = isDamage ? `-${dmgAmount}` : `+${dmgAmount}`;
+                hpCell.appendChild(numEl);
+                setTimeout(() => numEl.remove(), 1300);
+              }
+            }
+
             setTimeout(() => {
               if (activeRow && changedRow !== activeRow) {
                 const activeTarget = this.centeredScrollTarget(list, activeRow);

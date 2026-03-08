@@ -1204,11 +1204,12 @@
   margin-top: 0.15em;
 }
 .dnd-ct-pv-status {
-  font-size: 0.65em;
-  padding: 0.1em 0.4em;
-  border-radius: 0.2em;
+  font-size: 0.8em;
+  padding: 0.15em 0.5em;
+  border-radius: 0.25em;
   background: #2a2a4a;
-  color: #bbb;
+  color: #ccc;
+  font-weight: 600;
 }
 
 /* HP */
@@ -1296,6 +1297,52 @@
 }
 .dnd-ct-pv-ac:empty {
   background: transparent;
+}
+
+/* Shield break animation on damage */
+.dnd-ct-pv-ac-break {
+  animation: dnd-ct-pv-shield-break 0.8s ease-out forwards;
+}
+@keyframes dnd-ct-pv-shield-break {
+  0%   { transform: scale(1);     opacity: 1;   filter: none; }
+  15%  { transform: scale(1.25);  opacity: 1;   filter: brightness(2); }
+  40%  { transform: scale(1.1) rotate(8deg); opacity: 0.8; filter: brightness(1.2); }
+  60%  { transform: scale(0.9) rotate(-5deg); opacity: 0.5; filter: brightness(0.7); }
+  100% { transform: scale(1);     opacity: 1;   filter: none; }
+}
+
+/* Floating damage number */
+.dnd-ct-pv-dmg-number {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.3em;
+  font-weight: 900;
+  color: #ff4444;
+  text-shadow: 0 0 0.2em #000, 0 0 0.4em rgba(255,0,0,0.5);
+  pointer-events: none;
+  animation: dnd-ct-pv-dmg-fly 1.2s ease-out forwards;
+  z-index: 10;
+}
+/* Floating heal number */
+.dnd-ct-pv-heal-number {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.3em;
+  font-weight: 900;
+  color: #44ff66;
+  text-shadow: 0 0 0.2em #000, 0 0 0.4em rgba(0,255,80,0.5);
+  pointer-events: none;
+  animation: dnd-ct-pv-dmg-fly 1.2s ease-out forwards;
+  z-index: 10;
+}
+@keyframes dnd-ct-pv-dmg-fly {
+  0%   { opacity: 1; transform: translateX(-50%) translateY(0); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-2.5em); }
 }
 
 /* Turn callout */
