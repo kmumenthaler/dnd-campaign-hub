@@ -1207,12 +1207,11 @@
 
 /* HP */
 .dnd-ct-pv-hp {
-  flex: 1;
-  min-width: 0;
-  max-width: 10em;
+  width: 10em;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
 }
 .dnd-ct-pv-hp-bar {
   width: 100%;
