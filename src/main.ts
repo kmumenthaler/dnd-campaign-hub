@@ -2559,18 +2559,26 @@ export default class DndCampaignHubPlugin extends Plugin {
 			if (!combatant) return;
 
 			// Smooth-pan all live projections (battle & free) to the active combatant's token.
+			// Only consider vision-eligible tokens (player tokens + "Show to Players")
+			// matching the "View as" dropdown filter.
 			const projections = this.projectionManager.getLiveProjections();
 			for (const proj of projections) {
 				const view = proj.leaf.view as PlayerMapView;
 				const mapCfg = view.getMapConfig?.();
 				if (!mapCfg?.markers) continue;
-				const markers = mapCfg.markers as any[];
+
+				// Filter to vision-eligible markers (same criteria as the View-as list)
+				const visionMarkers = (mapCfg.markers as any[]).filter((m: any) => {
+					const def = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
+					if (!def) return false;
+					return def.type === 'player' || m.visibleToPlayers;
+				});
 
 				let marker: any = null;
 
 				// 1. Direct tokenId match
 				if (combatant.tokenId) {
-					marker = markers.find((m: any) => m.markerId === combatant.tokenId);
+					marker = visionMarkers.find((m: any) => m.markerId === combatant.tokenId);
 				}
 
 				// 2. Vault note token_id fallback
@@ -2580,14 +2588,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 						const noteCache = this.app.metadataCache.getFileCache(noteFile as any);
 						const noteTokenId = noteCache?.frontmatter?.token_id;
 						if (noteTokenId) {
-							marker = markers.find((m: any) => m.markerId === noteTokenId);
+							marker = visionMarkers.find((m: any) => m.markerId === noteTokenId);
 						}
 					}
 				}
 
 				// 3. Name-based fallback
 				if (!marker) {
-					marker = markers.find((m: any) => {
+					marker = visionMarkers.find((m: any) => {
 						const def = m.markerId ? this.markerLibrary.getMarker(m.markerId) : null;
 						if (!def) return false;
 						const mn = def.name.toLowerCase();
