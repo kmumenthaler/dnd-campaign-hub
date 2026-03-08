@@ -391,6 +391,50 @@ export class CombatTrackerView extends ItemView {
     const content = this.statblockPanel.createDiv({ cls: "dnd-ct-statblock-content" });
     const markdown = "```statblock\ncreature: " + creatureName + "\n```";
     await MarkdownRenderer.render(this.app, markdown, content, "", this);
+
+    // Fantasy Statblocks renders asynchronously inside the code-block
+    // processor, so the Dice Roller plugin's post-processor misses the
+    // inline `dice:` code elements it creates.  Watch for the DOM to
+    // settle, then re-process those elements through the Dice Roller API.
+    this.postProcessDiceRollers(content);
+  }
+
+  /**
+   * After Fantasy Statblocks finishes rendering, find unprocessed inline
+   * `dice:` code elements and replace them with interactive dice rollers.
+   */
+  private postProcessDiceRollers(container: HTMLElement) {
+    const dicePlugin: any =
+      (this.app as any).plugins?.getPlugin?.("obsidian-dice-roller");
+    if (!dicePlugin?.getRoller) return;
+
+    let debounce: ReturnType<typeof setTimeout>;
+    const observer = new MutationObserver(() => {
+      clearTimeout(debounce);
+      debounce = setTimeout(async () => {
+        observer.disconnect();
+        const codeEls = container.querySelectorAll("code");
+        for (const code of Array.from(codeEls)) {
+          const raw = code.textContent?.trim() ?? "";
+          if (!/^dice:/i.test(raw)) continue;
+          const formula = raw.replace(/^dice:\s*/i, "");
+          try {
+            const roller = await dicePlugin.getRoller(formula, "");
+            await roller.roll();
+            code.replaceWith(roller.containerEl);
+          } catch {
+            // Dice notation unrecognised — leave as static text
+          }
+        }
+      }, 250);
+    });
+    observer.observe(container, { childList: true, subtree: true });
+
+    // Safety: disconnect if nothing happens within 5 s
+    setTimeout(() => {
+      observer.disconnect();
+      clearTimeout(debounce);
+    }, 5000);
   }
 
   /** Open a note in a split leaf below the tracker (for PCs). */
