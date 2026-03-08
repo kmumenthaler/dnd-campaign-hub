@@ -427,67 +427,41 @@ export class PlayerMapView extends ItemView {
     this.applyTabletopTransform();
   }
 
-  /** Animation frame id for smooth pan (cancel on new request). */
-  private _smoothPanRAF: number | null = null;
+  /** Timer id for removing the CSS transition after animation completes. */
+  private _smoothPanTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
-   * Smoothly animate the viewport from its current center to a new image
-   * coordinate over the given duration (ms). Uses ease-in-out cubic.
-   * If called while a previous animation is running, the old one is cancelled
-   * and the new animation picks up from the current position.
+   * Smoothly animate the viewport from its current position to center on
+   * the given image coordinate. Uses a CSS transition on the sled element
+   * so the browser handles the interpolation natively — no manual math.
    */
   smoothPanToImageCoords(centerX: number, centerY: number, durationMs: number = 600) {
     if (!this.mapContainer || !this.mapImage) {
       this.setTabletopPanFromImageCoords(centerX, centerY);
       return;
     }
-    // Cancel any in-flight animation
-    if (this._smoothPanRAF !== null) {
-      const win = (this.containerEl as any).win || this.containerEl.ownerDocument?.defaultView || window;
-      win.cancelAnimationFrame(this._smoothPanRAF);
-      this._smoothPanRAF = null;
+    const sled = this.mapContainer.querySelector('.dnd-player-map-sled') as HTMLElement;
+    if (!sled) {
+      this.setTabletopPanFromImageCoords(centerX, centerY);
+      return;
     }
-    // Compute current image-center from existing pan values
-    const s = this.tabletopScale || 1;
-    const deg = this.tabletopRotation || 0;
-    const rad = (deg * Math.PI) / 180;
-    const c = Math.cos(rad);
-    const sn = Math.sin(rad);
-    const vRect = this.mapContainer.getBoundingClientRect();
-    const vcx = vRect.width / 2;
-    const vcy = vRect.height / 2;
-    // Inverse of the pan formula: pan = viewportCenter - s*(rot*target)
-    // => rot*target = (viewportCenter - pan) / s
-    // => target = rotInv * ((viewportCenter - pan) / s)
-    const rx = (vcx - this.tabletopPanX) / s;
-    const ry = (vcy - this.tabletopPanY) / s;
-    const startX = c * rx + sn * ry;   // inverse rotation
-    const startY = -sn * rx + c * ry;
-    const endX = centerX;
-    const endY = centerY;
 
-    const win = (this.containerEl as any).win || this.containerEl.ownerDocument?.defaultView || window;
-    const t0 = performance.now();
+    // Clear any pending cleanup from a previous smooth pan
+    if (this._smoothPanTimer !== null) {
+      clearTimeout(this._smoothPanTimer);
+      this._smoothPanTimer = null;
+    }
 
-    const step = (now: number) => {
-      const elapsed = now - t0;
-      const progress = Math.min(elapsed / durationMs, 1);
-      // Ease-in-out cubic
-      const t = progress < 0.5
-        ? 4 * progress * progress * progress
-        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
-      const ix = startX + (endX - startX) * t;
-      const iy = startY + (endY - startY) * t;
-      this.tabletopTargetX = ix;
-      this.tabletopTargetY = iy;
-      this.applyTabletopTransform();
-      if (progress < 1) {
-        this._smoothPanRAF = win.requestAnimationFrame(step);
-      } else {
-        this._smoothPanRAF = null;
-      }
-    };
-    this._smoothPanRAF = win.requestAnimationFrame(step);
+    // Enable CSS transition on the sled, then set the new target
+    sled.style.transition = `transform ${durationMs}ms cubic-bezier(0.33, 1, 0.68, 1)`;
+    this.setTabletopPanFromImageCoords(centerX, centerY);
+
+    // Remove the transition property after animation completes so it
+    // doesn't interfere with other transform updates (GM drag, sync, etc.)
+    this._smoothPanTimer = setTimeout(() => {
+      sled.style.transition = '';
+      this._smoothPanTimer = null;
+    }, durationMs + 50);
   }
 
   /**
