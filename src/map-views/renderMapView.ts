@@ -1,4 +1,4 @@
-import { App, Menu, Notice, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
+import { App, Menu, Modal, Notice, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import type { MapMediaElement } from "../constants";
 import { PLAYER_MAP_VIEW_TYPE, GM_MAP_VIEW_TYPE } from "../constants";
@@ -266,7 +266,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			let textAnnotDragOffset: { x: number; y: number } | null = null;
 			let textAnnotDragOrigin: { x: number; y: number } | null = null;
 			let textAnnotTransformHandle: TransformHandle | 'rotate' | null = null;
-			let textAnnotTransformStart: { x: number; y: number; w: number; h: number; rot: number } | null = null;
+			let textAnnotTransformStart: { w: number; h: number } | null = null;
 			let textAnnotRotateStart: number | null = null;
 			// Annotation eraser state (pen + text only)
 			let isAnnotErasing = false;
@@ -3985,9 +3985,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					ctx.lineCap = 'round';
 					ctx.lineJoin = 'round';
 					ctx.beginPath();
-					ctx.moveTo(currentPath[0].x, currentPath[0].y);
+					ctx.moveTo(currentPath[0]!.x, currentPath[0]!.y);
 					for (let i = 1; i < currentPath.length; i++) {
-						ctx.lineTo(currentPath[i].x, currentPath[i].y);
+						ctx.lineTo(currentPath[i]!.x, currentPath[i]!.y);
 					}
 					ctx.stroke();
 					ctx.restore();
@@ -5877,7 +5877,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					const input = document.createElement('textarea');
 					input.value = ta.text === 'Text' ? '' : ta.text;
 					input.style.cssText = 'width:300px;height:80px;resize:both;';
-					const modal = new (class extends (plugin.app as any).constructor.Modal {
+					const modal = new (class extends Modal {
 						onOpen() {
 							this.contentEl.createEl('h3', { text: 'Edit Text Annotation' });
 							this.contentEl.appendChild(input);
@@ -5906,7 +5906,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						const input = document.createElement('textarea');
 						input.value = ta.text;
 						input.style.cssText = 'width:300px;height:80px;resize:both;';
-						const modal = new (class extends (plugin.app as any).constructor.Modal {
+						const modal = new (class extends Modal {
 							onOpen() {
 								this.contentEl.createEl('h3', { text: 'Edit Text Annotation' });
 								this.contentEl.appendChild(input);
@@ -7898,7 +7898,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						if (selectedTextAnnotationId) {
 							const selTa = config.textAnnotations.find((t: any) => t.id === selectedTextAnnotationId);
 							if (selTa) {
-								const handle = hitTestTextTransformHandle(selTa, mapPos.x, mapPos.y);
+								const handle = hitTestTextTransformHandle(mapPos.x, mapPos.y, selTa);
 								if (handle === 'rotate') {
 									saveToHistory();
 									textAnnotTransformHandle = 'rotate';
@@ -8103,7 +8103,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						if (hitTa) {
 							// Check for transform handle hit if already selected
 							if (selectedTextAnnotationId === hitTa.id) {
-								const handle = hitTestTextTransformHandle(hitTa, mapPos.x, mapPos.y);
+								const handle = hitTestTextTransformHandle(mapPos.x, mapPos.y, hitTa);
 								if (handle === 'rotate') {
 									textAnnotTransformHandle = 'rotate';
 									textAnnotRotateStart = (hitTa.rotation || 0);
@@ -9179,10 +9179,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						const h = textAnnotTransformHandle;
 						let nw = textAnnotTransformStart.w;
 						let nh = textAnnotTransformStart.h;
-						if (h === 'e' || h === 'ne' || h === 'se') nw = Math.max(40, textAnnotTransformStart.w + dx);
-						if (h === 'w' || h === 'nw' || h === 'sw') nw = Math.max(40, textAnnotTransformStart.w - dx);
-						if (h === 's' || h === 'se' || h === 'sw') nh = Math.max(20, textAnnotTransformStart.h + dy);
-						if (h === 'n' || h === 'ne' || h === 'nw') nh = Math.max(20, textAnnotTransformStart.h - dy);
+						if (h === 'right' || h === 'top-right' || h === 'bottom-right') nw = Math.max(40, textAnnotTransformStart.w + dx);
+						if (h === 'left' || h === 'top-left' || h === 'bottom-left') nw = Math.max(40, textAnnotTransformStart.w - dx);
+						if (h === 'bottom' || h === 'bottom-right' || h === 'bottom-left') nh = Math.max(20, textAnnotTransformStart.h + dy);
+						if (h === 'top' || h === 'top-right' || h === 'top-left') nh = Math.max(20, textAnnotTransformStart.h - dy);
 						selTa.width = nw;
 						selTa.height = nh;
 						redrawAnnotations();
@@ -9219,10 +9219,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const h = textAnnotTransformHandle;
 							let nw = textAnnotTransformStart.w;
 							let nh = textAnnotTransformStart.h;
-							if (h === 'e' || h === 'ne' || h === 'se') nw = Math.max(40, textAnnotTransformStart.w + dx);
-							if (h === 'w' || h === 'nw' || h === 'sw') nw = Math.max(40, textAnnotTransformStart.w - dx);
-							if (h === 's' || h === 'se' || h === 'sw') nh = Math.max(20, textAnnotTransformStart.h + dy);
-							if (h === 'n' || h === 'ne' || h === 'nw') nh = Math.max(20, textAnnotTransformStart.h - dy);
+							if (h === 'right' || h === 'top-right' || h === 'bottom-right') nw = Math.max(40, textAnnotTransformStart.w + dx);
+							if (h === 'left' || h === 'top-left' || h === 'bottom-left') nw = Math.max(40, textAnnotTransformStart.w - dx);
+							if (h === 'bottom' || h === 'bottom-right' || h === 'bottom-left') nh = Math.max(20, textAnnotTransformStart.h + dy);
+							if (h === 'top' || h === 'top-right' || h === 'top-left') nh = Math.max(20, textAnnotTransformStart.h - dy);
 							selTa.width = nw;
 							selTa.height = nh;
 							redrawAnnotations();
