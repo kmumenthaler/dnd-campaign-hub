@@ -68,12 +68,8 @@ export class CombatPlayerView extends ItemView {
     const visibleCount = state.combatants.filter(
       (c) => c && !c.hidden && (c.enabled ?? true),
     ).length;
-    const hasTurnCallout = state.started &&
-      state.combatants[state.turnIndex] &&
-      !state.combatants[state.turnIndex]!.hidden;
-
-    // Budget: header ~3.2em, each row ~2.8em, row gaps ~0.3em, callout ~3.5em, padding ~2.5em
-    const overhead = 3.2 + 2.5 + (hasTurnCallout ? 3.5 : 0);
+    // Budget: header ~3.2em, each row ~2.8em, row gaps ~0.3em, padding ~2.5em
+    const overhead = 3.2 + 2.5;
     const rowBudget = visibleCount * 2.8 + Math.max(0, visibleCount - 1) * 0.3;
     const totalEms = overhead + rowBudget;
     // vh available = 100; font-size = vh / totalEms, clamped to reasonable bounds
@@ -135,14 +131,10 @@ export class CombatPlayerView extends ItemView {
 
       // AC
       row.createEl("span", { text: String(c.currentAC), cls: "dnd-ct-pv-ac" });
-    }
 
-    // Current turn callout
-    if (state.started) {
-      const current = state.combatants[state.turnIndex];
-      if (current && !current.hidden) {
-        const turnCallout = container.createDiv({ cls: "dnd-ct-pv-turn-callout" });
-        turnCallout.createEl("span", { text: `${current.display}'s Turn`, cls: "dnd-ct-pv-turn-text" });
+      // "YOUR TURN" badge on active combatant
+      if (isActive) {
+        row.createEl("span", { text: "YOUR TURN", cls: "dnd-ct-pv-turn-badge" });
       }
     }
 
