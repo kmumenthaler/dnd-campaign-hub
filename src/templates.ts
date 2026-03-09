@@ -396,7 +396,7 @@ art: ""
 
 export const NPC_TEMPLATE = `---
 type: npc
-template_version: 1.2.0
+template_version: 1.3.0
 name: 
 world: 
 campaign: 
@@ -460,6 +460,15 @@ const deleteBtn = buttonContainer.createEl("button", {
 });
 deleteBtn.addEventListener("click", () => {
   app.commands.executeCommandById("dnd-campaign-hub:delete-npc");
+});
+
+// Manage Statblock button
+const statblockBtn = buttonContainer.createEl("button", { 
+  text: "⚔️ Manage Statblock",
+  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
+});
+statblockBtn.addEventListener("click", () => {
+  app.commands.executeCommandById("dnd-campaign-hub:edit-npc");
 });
 \`\`\`
 

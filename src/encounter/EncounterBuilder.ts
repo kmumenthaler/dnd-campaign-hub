@@ -1210,6 +1210,19 @@ export class EncounterBuilder {
       }
     }
 
+    // Also search campaign NPC folders for NPCs with statblock: true
+    const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
+    if (ttrpgsFolder instanceof TFolder) {
+      for (const child of ttrpgsFolder.children) {
+        if (child instanceof TFolder) {
+          const npcsFolder = this.app.vault.getAbstractFileByPath(`${child.path}/NPCs`);
+          if (npcsFolder instanceof TFolder) {
+            beastiaryFolders.push(npcsFolder);
+          }
+        }
+      }
+    }
+
     if (beastiaryFolders.length === 0) return creatures;
 
     const queryLower = query.toLowerCase();

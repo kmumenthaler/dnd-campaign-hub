@@ -8,7 +8,7 @@ import { MarkerDefinition, CreatureSize } from "../marker/MarkerTypes";
 export const TEMPLATE_VERSIONS = {
   world: "1.0.0",
   session: "1.3.0", // Added starting_scene / ending_scene frontmatter fields
-  npc: "1.2.0", // Added Edit/Delete buttons
+  npc: "1.3.0", // Added optional statblock support + Manage Statblock button
   pc: "1.2.0", // Added Edit/Delete buttons
   player: "1.2.0", // Added Edit/Delete buttons (same as pc)
   adventure: "1.2.0", // Added Edit/Delete buttons + adventurePath context passing to scene creation
@@ -605,6 +605,34 @@ deleteBtn.addEventListener("click", () => {
   }
 
   /**
+   * Migrate NPC to v1.3.0 (add Manage Statblock button)
+   */
+  async migrateNPCTo1_3_0(file: TFile): Promise<void> {
+    console.log(`Migrating NPC ${file.path} to v1.3.0`);
+
+    const content = await this.app.vault.read(file);
+
+    // Check if Manage Statblock button already exists
+    if (content.includes("⚔️ Manage Statblock")) {
+      console.log(`NPC ${file.path} already has Manage Statblock button`);
+      await this.updateTemplateVersion(file, "1.3.0");
+      return;
+    }
+
+    // Add the Manage Statblock button after the delete button in the existing dataviewjs block
+    const deleteButtonEnd = `deleteBtn.addEventListener("click", () => {\n  app.commands.executeCommandById("dnd-campaign-hub:delete-npc");\n});`;
+    const statblockButton = `deleteBtn.addEventListener("click", () => {\n  app.commands.executeCommandById("dnd-campaign-hub:delete-npc");\n});\n\n// Manage Statblock button\nconst statblockBtn = buttonContainer.createEl("button", { \n  text: "⚔️ Manage Statblock",\n  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }\n});\nstatblockBtn.addEventListener("click", () => {\n  app.commands.executeCommandById("dnd-campaign-hub:edit-npc");\n});`;
+
+    if (content.includes(deleteButtonEnd)) {
+      const newContent = content.replace(deleteButtonEnd, statblockButton);
+      await this.app.vault.modify(file, newContent);
+    }
+
+    await this.updateTemplateVersion(file, "1.3.0");
+    console.log(`NPC ${file.path} migrated to v1.3.0 with Manage Statblock button`);
+  }
+
+  /**
    * Migrate encounter-table to v1.1.0 (add edit/delete/reroll buttons)
    */
   async migrateEncounterTableTo1_1_0(file: TFile): Promise<void> {
@@ -939,16 +967,16 @@ deleteBtn.addEventListener("click", () => {
         // Migrate to 1.1.0 (add token)
         if (this.compareVersions(currentVersion, "1.1.0") < 0) {
           await this.migrateNPCTo1_1_0(file);
-          // After migrating to 1.1.0, continue to check for 1.2.0
-          const updatedVersion = await this.getFileTemplateVersion(file);
-          if (updatedVersion && this.compareVersions(updatedVersion, "1.2.0") < 0) {
-            await this.migrateNPCTo1_2_0(file);
-          }
-          return true;
+          currentVersion = "1.1.0";
         }
         // Migrate from 1.1.0 to 1.2.0 (add edit/delete buttons)
         if (this.compareVersions(currentVersion, "1.2.0") < 0) {
           await this.migrateNPCTo1_2_0(file);
+          currentVersion = "1.2.0";
+        }
+        // Migrate from 1.2.0 to 1.3.0 (add Manage Statblock button)
+        if (this.compareVersions(currentVersion, "1.3.0") < 0) {
+          await this.migrateNPCTo1_3_0(file);
           return true;
         }
         // Check if token_id is missing even if version is up to date
@@ -958,11 +986,17 @@ deleteBtn.addEventListener("click", () => {
           await this.migrateNPCTo1_1_0(file);
           return true;
         }
-        // Check if edit/delete buttons are missing even if version is 1.2.0
+        // Check if edit/delete buttons are missing
         const npcContent = await this.app.vault.read(file);
         if (!npcContent.includes("dnd-campaign-hub:edit-npc")) {
-          console.log(`${file.path} has v1.2.0 but missing buttons, re-running migration`);
+          console.log(`${file.path} missing buttons, re-running migration`);
           await this.migrateNPCTo1_2_0(file);
+          return true;
+        }
+        // Check if Manage Statblock button is missing
+        if (!npcContent.includes("⚔️ Manage Statblock")) {
+          console.log(`${file.path} missing Manage Statblock button, re-running migration`);
+          await this.migrateNPCTo1_3_0(file);
           return true;
         }
       }
