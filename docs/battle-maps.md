@@ -4,7 +4,7 @@ The battle map system provides a full-featured virtual tabletop inside Obsidian.
 
 ## Quick start
 
-1. **Create a template** — Run the command **Create Battlemap Template** (from the command palette or the DnD Hub). This opens the Map Creation modal.
+1. **Create a template** — Run the command **Create Battlemap Template** (from the command palette or the DnD Hub). This opens the Map Creation modal. See the Map Manager workflow: [Map Manager & Views](map-manager.md).
 2. **Select an image** — Pick a map image from `z_Assets/Maps/` or upload one from your computer.
 3. **Configure the grid** — Choose square or hex, set the cell size, and adjust the offset until the grid aligns with your image.
 4. **Save the template** — The template is stored as a note in `z_BattlemapTemplates/` with a `dnd-map` code block.
@@ -285,7 +285,7 @@ Mark grid tiles as difficult terrain (halves movement speed). Toggle between the
 ### Environmental assets
 **Icon:** 📦
 
-Opens the **Env Asset Picker** modal to select an asset from your library, then enter placement mode. Select a grid cell on the map to place it. See [Environmental assets library](#environmental-assets-library) for details.
+Opens the **Env Asset Picker** modal to select an asset from your library, then enter placement mode. Select a grid cell on the map to place it. See [Env Assets](envasset.md) for details.
 
 ## Token vision
 
@@ -358,7 +358,7 @@ Remove the token from the map.
 
 ## Markers (token library)
 
-Markers are reusable token definitions stored globally in your vault.
+Markers are reusable token definitions stored globally in your vault. For library and API details see [Marker system](marker-system.md).
 
 ### Creating markers
 

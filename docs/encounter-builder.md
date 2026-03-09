@@ -1,6 +1,6 @@
 # Encounter builder
 
-The encounter builder helps you create balanced combat encounters with live difficulty calculation. You can use it as a standalone tool, embed it inside a scene, or generate random encounter tables for hexcrawl and overland travel.
+The encounter builder helps you create balanced combat encounters with live difficulty calculation. You can use it as a standalone tool, embed it inside a scene, or generate random encounter tables for hexcrawl and overland travel. For system-level behavior, SRD integration, and encounter spawning/spawn-to-map workflows see [Encounter System](encounter-system.md). For map placement and map-related workflows see [Map Manager & Views](map-manager.md).
 
 ## Create an encounter
 
@@ -122,4 +122,4 @@ Run **Reroll Encounter Table Entry** to open a modal that shows each table row w
 
 ## SRD API
 
-The encounter system uses the D&D 5e API (`dnd5eapi.co`) to fetch monster data. Results are cached in memory during the session. The environment mapping covers approximately 330 SRD monsters across 11 environments.
+The encounter system uses the D&D 5e API (`dnd5eapi.co`) to fetch monster data. Results are cached in memory during the session. The environment mapping covers approximately 330 SRD monsters across 11 environments. See [Encounter System](encounter-system.md) for the SRD client and import details.

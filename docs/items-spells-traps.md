@@ -45,6 +45,8 @@ Run **Edit Item** while viewing an item note. All fields are pre-filled, includi
 
 Spell data is cached locally for seven days.
 
+See [Templates & Migration](templates.md) for how imported or custom spells are generated from templates, and [Encounter System](encounter-system.md) for SRD client details.
+
 ### Create a custom spell
 
 1. In the spell import modal, switch to the **Custom Spell** tab.
@@ -91,7 +93,7 @@ Run **Edit Trap** while viewing a trap note. All fields are pre-filled, includin
 
 ### Trap integration with encounters
 
-Traps can be included in encounter difficulty calculations. The encounter builder reads trap elements to compute DPR contributions. See [Encounter builder](encounter-builder.md) for details.
+Traps can be included in encounter difficulty calculations. The encounter builder reads trap elements to compute DPR contributions. See [Encounter builder](encounter-builder.md) and [Encounter System](encounter-system.md) for details on SRD imports and encounter spawning.
 
 ## Factions
 
@@ -131,6 +133,8 @@ Points of interest (PoIs) are map markers linked to vault notes. They are primar
 4. Select **Create**.
 
 The note is saved to `<Campaign>/locations/<Name>.md` with `type: point-of-interest` frontmatter.
+
+Points of interest are linked to map markers — see [Marker system](marker-system.md) — and are primarily used with hexcrawl maps; see [Map Manager & Views](map-manager.md) for hexcrawl workflows.
 
 ### Edit a PoI
 

@@ -84,3 +84,9 @@ Press `Ctrl+Shift+M` (Windows/Linux) or `Command+Shift+M` (macOS) to open the hu
 - [Party management](party-management.md) — Initiative Tracker party integration.
 - [DM screen](dm-screen.md) — quick-reference rules panel.
 - [Settings and reference](settings-and-reference.md) — plugin settings, commands, code blocks, and vault structure.
+ - [Map Manager & Views](map-manager.md) — organize battle maps, map views, and GM/Player map workflows.
+ - [Marker system](marker-system.md) — token/marker library, token sizing, and marker placement API.
+ - [Templates & Migration](templates.md) — templates, `template_version` rules, and migration guidelines.
+ - [Env Assets](envasset.md) — environment asset library, picking, and context menus.
+ - [Combat Tracker](combat-tracker.md) — combat tracker overview, player view, and integration points.
+ - [Encounter System](encounter-system.md) — encounter generation, SRD client, and encounter tables.
