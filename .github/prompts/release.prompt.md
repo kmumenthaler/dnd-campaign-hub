@@ -16,4 +16,6 @@ Create a new release for the dnd-campaign-hub plugin.
 6. **Commit** — `git add -A && git commit -m "chore: release vX.Y.Z"`.
 7. **Tag** — `git tag -a vX.Y.Z -m "Release vX.Y.Z"`.
 8. **Copy release assets** — Copy `dist/main.js`, `manifest.json`, and `src/styles.css` into the `release/` folder.
-9. **Report** — Tell the user the release is ready and list the commands to push: `git push origin main --tags`.
+9. **Push** — `git push origin main --tags`.
+10. **Create GitHub release** — Run `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file CHANGELOG.md release/main.js release/manifest.json release/styles.css`. If `gh` is not on PATH, use the full path `"C:\Program Files\GitHub CLI\gh.exe"`.
+11. **Report** — Tell the user the release is published and link to the GitHub release page.
