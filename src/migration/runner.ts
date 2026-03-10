@@ -221,7 +221,9 @@ export class MigrationRunner {
   private async createBackup(file: TFile, content: string): Promise<void> {
     const backupPath = `${this.backupFolder}/${file.path}`;
 
-    // Ensure parent directories exist
+    // Ensure parent directories exist.
+    // Note: getAbstractFileByPath may not reflect folders created moments ago
+    // (Obsidian vault cache lag), so we catch "Folder already exists" errors.
     const parts = backupPath.split("/");
     parts.pop(); // Remove filename
     let dirPath = "";
@@ -229,7 +231,14 @@ export class MigrationRunner {
       dirPath = dirPath ? `${dirPath}/${part}` : part;
       const existing = this.app.vault.getAbstractFileByPath(dirPath);
       if (!existing) {
-        await this.app.vault.createFolder(dirPath);
+        try {
+          await this.app.vault.createFolder(dirPath);
+        } catch (e) {
+          // Ignore "Folder already exists" — race with vault cache
+          if (!(e instanceof Error && e.message.includes("Folder already exists"))) {
+            throw e;
+          }
+        }
       }
     }
 
