@@ -3,6 +3,7 @@ import type DndCampaignHubPlugin from "../main";
 import { CalendarDateInputModal } from '../campaign/CalendarDateInputModal';
 import { SESSION_GM_TEMPLATE, SESSION_PLAYER_TEMPLATE } from '../templates';
 import { ConfirmModal } from '../utils/ConfirmModal';
+import { PartySelector } from '../party/PartySelector';
 
 export class SessionCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -22,6 +23,8 @@ export class SessionCreationModal extends Modal {
   endDay = "";
   selectedCalendarData: any = null;
   endDayDropdown: any = null;
+  private selectedPartyId = "";
+  private selectedPartyName = "";
 
   constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, campaignPath?: string) {
     super(app);
@@ -389,6 +392,34 @@ export class SessionCreationModal extends Modal {
           })
       );
 
+    // Party selection (dropdown only, no member checkboxes)
+    const partyContainer = contentEl.createDiv({ cls: "dnd-party-selection" });
+
+    // Auto-resolve the campaign party as default
+    const defaultParty = this.plugin.partyManager.resolveParty(undefined, campaignName);
+    if (defaultParty) {
+      this.selectedPartyId = defaultParty.id;
+      this.selectedPartyName = defaultParty.name;
+    }
+
+    const parties = this.plugin.partyManager.getParties();
+    if (parties.length > 0) {
+      new Setting(partyContainer)
+        .setName("Party")
+        .setDesc("Which party is playing in this session?")
+        .addDropdown((dd) => {
+          for (const p of parties) {
+            dd.addOption(p.id, p.name);
+          }
+          if (this.selectedPartyId) dd.setValue(this.selectedPartyId);
+          dd.onChange((value) => {
+            this.selectedPartyId = value;
+            const match = parties.find((p) => p.id === value);
+            this.selectedPartyName = match?.name || "";
+          });
+        });
+    }
+
     // Buttons
     const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
 
@@ -518,6 +549,7 @@ export class SessionCreationModal extends Modal {
         .replace(/^adventure:.*$/m, `adventure: ${this.adventurePath ? `"[[${this.adventurePath}]]"` : ''}`)
         .replace(/^starting_scene:.*$/m, `starting_scene: ${this.startingScenePath ? `"[[${this.startingScenePath}]]"` : '""'}`)
         .replace(/^ending_scene:.*$/m, `ending_scene: ""`)
+        .replace(/^party_id:.*$/m, `party_id: ${this.selectedPartyId}`)
         .replace(/^sessionNum:.*$/m, `sessionNum: ${nextNumber}`)
         .replace(/^location:.*$/m, `location: ${this.location}`)
         .replace(/^date:.*$/m, `date: ${this.sessionDate}`)

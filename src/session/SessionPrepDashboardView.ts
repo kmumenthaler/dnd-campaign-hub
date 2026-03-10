@@ -457,66 +457,37 @@ export class SessionPrepDashboardView extends ItemView {
     content.style.display = isExpanded ? "block" : "none";
     toggle.textContent = isExpanded ? "▼" : "▶";
 
-    // Get PCs from the campaign
-    const pcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/PCs`);
-    
-    if (!(pcsFolder instanceof TFolder)) {
-      content.createEl("p", { text: "No PCs found", cls: "empty-msg" });
-    } else {
-      const pcFiles: TFile[] = [];
-      for (const item of pcsFolder.children) {
-        if (item instanceof TFile && item.extension === "md") {
-          pcFiles.push(item);
-        }
-      }
+    // Resolve party via PartyManager using campaign context
+    const campaignName = this.campaignPath?.split("/").pop() || "";
+    const party = this.plugin.partyManager.resolveParty(undefined, campaignName);
 
-      if (pcFiles.length === 0) {
+    if (!party || party.members.length === 0) {
+      content.createEl("p", { text: "No party members found", cls: "empty-msg" });
+    } else {
+      const resolved = await this.plugin.partyManager.resolveMembers(party.id);
+
+      if (resolved.length === 0) {
         content.createEl("p", { text: "No PCs yet", cls: "empty-msg" });
       } else {
-        // Collect PC stats
-        const party: Array<{
-          name: string;
-          hp: number;
-          hpMax: number;
-          ac: number;
-          path: string;
-        }> = [];
+        resolved.sort((a, b) => a.name.localeCompare(b.name));
 
-        for (const pcFile of pcFiles) {
-          const cache = this.app.metadataCache.getFileCache(pcFile);
-          const fm = cache?.frontmatter;
-          
-          if (fm && fm.type === "player") {
-            party.push({
-              name: fm.name || pcFile.basename,
-              hp: parseInt(fm.hp) || 0,
-              hpMax: parseInt(fm.hp_max) || 0,
-              ac: parseInt(fm.ac) || 10,
-              path: pcFile.path
-            });
-          }
-        }
-
-        party.sort((a, b) => a.name.localeCompare(b.name));
-
-        // Party grid
         const partyGrid = content.createEl("div", { cls: "party-grid" });
         
-        for (const pc of party) {
+        for (const pc of resolved) {
           const pcCard = partyGrid.createEl("div", { cls: "party-card" });
           
           const pcLink = pcCard.createEl("a", { 
-            href: pc.path,
+            href: pc.notePath,
             cls: "pc-name"
           });
           pcLink.textContent = pc.name;
           pcLink.addEventListener("click", async (e) => {
             e.preventDefault();
-            await this.app.workspace.openLinkText(pc.path, "", false);
+            await this.app.workspace.openLinkText(pc.notePath, "", false);
           });
 
           // HP bar
-          const hpPercent = pc.hpMax > 0 ? (pc.hp / pc.hpMax) * 100 : 0;
+          const hpPercent = pc.maxHp > 0 ? (pc.hp / pc.maxHp) * 100 : 0;
           const hpBar = pcCard.createEl("div", { cls: "pc-hp-bar" });
           const hpFill = hpBar.createEl("div", { cls: "pc-hp-fill" });
           hpFill.style.width = `${hpPercent}%`;
@@ -525,7 +496,7 @@ export class SessionPrepDashboardView extends ItemView {
           
           pcCard.createEl("div", { 
             cls: "pc-stats",
-            text: `❤️ ${pc.hp}/${pc.hpMax} • AC ${pc.ac}`
+            text: `❤️ ${pc.hp}/${pc.maxHp} • AC ${pc.ac}`
           });
         }
       }

@@ -170,7 +170,7 @@ export class RandomEncounterTableModal extends Modal {
     this.contentEl.empty();
   }
 
-  // ── Pre-fill from Initiative Tracker ──────────────────────────────────
+  // ── Pre-fill from Party Manager ─────────────────────────────────────
 
   private async prefillPartyData() {
     try {
@@ -181,7 +181,7 @@ export class RandomEncounterTableModal extends Modal {
         this.partyLevel = Math.round(totalLevel / members.length);
       }
     } catch {
-      // No Initiative Tracker or no party — use defaults
+      // No party data available — use defaults
     }
   }
 

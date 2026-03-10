@@ -157,7 +157,7 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 				isHidden: c.isHidden ?? c.is_hidden ?? false,
 			}));
 
-			// Build party — prefer frontmatter party_members, fall back to vault search
+			// Build party — prefer frontmatter party_members, fall back to PartyManager
 			const partyMembers: Array<{ name: string; level: number; hp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];
 
 			const fmParty: any[] | undefined = fm.party_members;
@@ -176,34 +176,23 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 					});
 				}
 			} else {
-				// Legacy fallback: resolve from vault PC notes by campaign
-				const campaignPath = fm.campaign_path || '';
-				const campaignBaseName = campaignPath ? (campaignPath.split('/').pop() || '') : '';
-				const currentCampaign = plugin.settings.currentCampaign || '';
-
-				const campaignMatchers = new Set<string>();
-				if (currentCampaign) campaignMatchers.add(currentCampaign);
-				if (campaignPath) campaignMatchers.add(campaignPath);
-				if (campaignBaseName) campaignMatchers.add(campaignBaseName);
-
-				if (campaignMatchers.size > 0) {
-					const allFiles = plugin.app.vault.getMarkdownFiles();
-					for (const f of allFiles) {
-						const fc = plugin.app.metadataCache.getFileCache(f);
-						const ffm = fc?.frontmatter;
-						if (!ffm) continue;
-						if ((ffm.type === "player" || ffm.type === "pc") && campaignMatchers.has(ffm.campaign)) {
-							partyMembers.push({
-								name: ffm.name || f.basename,
-								level: typeof ffm.level === "number" ? ffm.level : 1,
-								hp: typeof ffm.hp === "number" ? ffm.hp : 10,
-								ac: typeof ffm.ac === "number" ? ffm.ac : 10,
-								notePath: f.path,
-								tokenId: ffm.token_id,
-								initBonus: typeof ffm.init_bonus === "number" ? ffm.init_bonus : 0,
-								thp: typeof ffm.thp === "number" ? ffm.thp : 0,
-							});
-						}
+				// Resolve party from PartyManager using encounter note context
+				const resolvedParty = encounterFile
+					? plugin.partyManager.resolvePartyForNote(encounterFile.path)
+					: plugin.partyManager.getDefaultParty();
+				if (resolvedParty) {
+					const resolved = await plugin.partyManager.resolveMembers(resolvedParty.id);
+					for (const m of resolved) {
+						partyMembers.push({
+							name: m.name,
+							level: m.level,
+							hp: m.maxHp,
+							ac: m.ac,
+							notePath: m.notePath,
+							tokenId: m.tokenId,
+							initBonus: m.initBonus,
+							thp: m.thp,
+						});
 					}
 				}
 			}

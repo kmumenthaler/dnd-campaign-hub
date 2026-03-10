@@ -115,12 +115,13 @@ export class PartyManager {
     return this.data.parties[0];
   }
 
-  async createParty(name: string): Promise<Party> {
+  async createParty(name: string, campaignPath?: string): Promise<Party> {
     const party: Party = {
       id: this.generateId(),
       name,
       members: [],
       createdAt: new Date().toISOString(),
+      ...(campaignPath ? { campaignPath } : {}),
     };
     this.data.parties.push(party);
 
@@ -242,13 +243,13 @@ export class PartyManager {
 
   /**
    * Resolve the "best" party given optional context.
-   * Priority: explicit ID → campaign-matching name → default → first.
+   * Priority: explicit ID → campaignPath match → campaign-name convention → default → first.
    */
   resolveParty(partyIdOrName?: string, campaignName?: string): Party | undefined {
     const parties = this.data.parties;
     if (parties.length === 0) return undefined;
 
-    // 1. Explicit match
+    // 1. Explicit match by ID or name
     if (partyIdOrName) {
       const match = parties.find(
         (p) => p.id === partyIdOrName || p.name === partyIdOrName,
@@ -256,8 +257,18 @@ export class PartyManager {
       if (match) return match;
     }
 
-    // 2. Campaign-based match (convention: "<CampaignName> Party")
     if (campaignName) {
+      // 2a. Match by campaignPath (e.g. "ttrpgs/Frozen Sick")
+      const byPath = parties.find((p) => p.campaignPath === campaignName);
+      if (byPath) return byPath;
+
+      // 2b. Match by campaignPath ending with the campaign name
+      const byPathEnd = parties.find((p) =>
+        p.campaignPath && p.campaignPath.split("/").pop() === campaignName,
+      );
+      if (byPathEnd) return byPathEnd;
+
+      // 2c. Convention: "<CampaignName> Party"
       const partyName = `${campaignName} Party`;
       const match = parties.find((p) => p.name === partyName);
       if (match) return match;
@@ -279,6 +290,63 @@ export class PartyManager {
       campaignName = pathParts[ttrpgsIndex + 1] || "";
     }
     return this.resolveParty(partyIdOverride, campaignName);
+  }
+
+  /**
+   * Cascading party resolution from a note's context.
+   * Walks: note frontmatter (party_id / selected_party_id) →
+   *        campaign folder path → default party.
+   */
+  resolvePartyForNote(notePath: string): Party | undefined {
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (file instanceof TFile) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache?.frontmatter;
+      if (fm) {
+        // Check note-level party_id or selected_party_id
+        const notePartyId = fm.party_id || fm.selected_party_id;
+        if (notePartyId) {
+          const match = this.getParty(notePartyId) ||
+            this.data.parties.find((p) => p.name === notePartyId);
+          if (match) return match;
+        }
+
+        // Check campaign_path frontmatter
+        if (fm.campaign_path) {
+          const match = this.resolveParty(undefined, fm.campaign_path);
+          if (match) return match;
+        }
+
+        // Check campaign frontmatter (bare name)
+        if (fm.campaign) {
+          const match = this.resolveParty(undefined, fm.campaign);
+          if (match) return match;
+        }
+      }
+    }
+
+    // Fall back to path-based resolution
+    return this.resolvePartyFromPath(notePath);
+  }
+
+  /** Get all parties bound to a specific campaign path. */
+  getPartiesForCampaign(campaignPath: string): Party[] {
+    const normalised = campaignPath.replace(/\\/g, "/");
+    return this.data.parties.filter((p) => p.campaignPath === normalised);
+  }
+
+  /** Set (or clear) the campaign path on a party. */
+  async setCampaignPath(partyId: string, campaignPath: string | undefined): Promise<boolean> {
+    const party = this.getParty(partyId);
+    if (!party) return false;
+    if (campaignPath) {
+      party.campaignPath = campaignPath.replace(/\\/g, "/");
+    } else {
+      delete party.campaignPath;
+    }
+    await this.save();
+    this.emit();
+    return true;
   }
 
   /* ────────────────── Live Stats Resolution ────────────────── */
@@ -331,13 +399,19 @@ export class PartyManager {
 
   /**
    * Get or create a campaign party (convention: "<CampaignName> Party").
-   * Used by PC creation / import flows.
+   * Used by PC creation / import flows and campaign creation.
    */
-  async getOrCreateCampaignParty(campaignName: string): Promise<Party> {
+  async getOrCreateCampaignParty(campaignName: string, campaignPath?: string): Promise<Party> {
     const partyName = `${campaignName} Party`;
     const existing = this.getPartyByName(partyName);
-    if (existing) return existing;
-    return this.createParty(partyName);
+    if (existing) {
+      // Backfill campaignPath if it was created before this feature
+      if (campaignPath && !existing.campaignPath) {
+        await this.setCampaignPath(existing.id, campaignPath);
+      }
+      return existing;
+    }
+    return this.createParty(partyName, campaignPath);
   }
 
   /**
@@ -349,7 +423,15 @@ export class PartyManager {
     pcNotePath: string,
     campaignName: string,
   ): Promise<void> {
-    const party = await this.getOrCreateCampaignParty(campaignName);
+    // Derive campaignPath from pcNotePath: "ttrpgs/CampaignName/PCs/Foo.md" → "ttrpgs/CampaignName"
+    let campaignPath: string | undefined;
+    const parts = pcNotePath.split("/");
+    const ttrpgsIdx = parts.indexOf("ttrpgs");
+    if (ttrpgsIdx >= 0 && ttrpgsIdx + 1 < parts.length) {
+      campaignPath = parts.slice(0, ttrpgsIdx + 2).join("/");
+    }
+
+    const party = await this.getOrCreateCampaignParty(campaignName, campaignPath);
 
     // Check for duplicate
     if (party.members.some((m) => m.notePath === pcNotePath || m.name === pcName)) {

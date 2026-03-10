@@ -398,6 +398,9 @@ campaign: ${campaignName}
       this.plugin.settings.currentCampaign = campaignPath;
       await this.plugin.saveSettings();
 
+      // Auto-create a party for this campaign
+      await this.plugin.partyManager.getOrCreateCampaignParty(campaignName, campaignPath);
+
       await this.app.workspace.openLinkText(worldFilePath, "", true);
 
       new Notice(`✅ Campaign "${campaignName}" created successfully!`);

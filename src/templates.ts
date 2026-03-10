@@ -154,12 +154,13 @@ SORT file.ctime DESC
 
 export const SESSION_GM_TEMPLATE = `---
 type: session
-template_version: 1.3.0
+template_version: 1.4.0
 campaign: 
 world: 
 adventure: 
 starting_scene: ""
 ending_scene: ""
+party_id: ""
 sessionNum: 
 location: 
 date: 
@@ -1308,10 +1309,11 @@ How the spell scales with level.
 
 export const CAMPAIGN_TEMPLATE = `---
 type: campaign
-template_version: 1.0.0
+template_version: 1.1.0
 status: active
 dm: 
 players: []
+party_id: ""
 start_date: 
 current_session: 
 ---

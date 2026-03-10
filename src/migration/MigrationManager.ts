@@ -7,7 +7,7 @@ import { MarkerDefinition, CreatureSize } from "../marker/MarkerTypes";
  */
 export const TEMPLATE_VERSIONS = {
   world: "1.0.0",
-  session: "1.3.0", // Added starting_scene / ending_scene frontmatter fields
+  session: "1.4.0", // Added party_id frontmatter field
   npc: "1.3.0", // Added optional statblock support + Manage Statblock button
   pc: "1.2.0", // Added Edit/Delete buttons
   player: "1.2.0", // Added Edit/Delete buttons (same as pc)
@@ -16,7 +16,7 @@ export const TEMPLATE_VERSIONS = {
   faction: "1.0.0",
   item: "1.1.0", // Updated with Edit/Delete buttons
   spell: "1.0.0",
-  campaign: "1.0.0",
+  campaign: "1.1.0", // Added party_id frontmatter field
   trap: "1.1.0", // Updated with Edit/Delete buttons
   creature: "1.2.0", // Added token_id for map markers
   "encounter-table": "1.1.0" // Updated with Edit/Delete/Reroll buttons
@@ -873,6 +873,34 @@ deleteBtn.addEventListener("click", () => {
     console.log(`Session ${file.path} migrated to v1.3.0`);
   }
 
+  /**
+   * Migrate session to v1.4.0 (add party_id field)
+   */
+  async migrateSessionTo1_4_0(file: TFile): Promise<void> {
+    console.log(`Migrating session ${file.path} to v1.4.0`);
+
+    if (!/^party_id:/m.test(await this.app.vault.read(file))) {
+      await this.addFrontmatterField(file, "party_id", '""');
+    }
+
+    await this.updateTemplateVersion(file, "1.4.0");
+    console.log(`Session ${file.path} migrated to v1.4.0`);
+  }
+
+  /**
+   * Migrate campaign to v1.1.0 (add party_id field)
+   */
+  async migrateCampaignTo1_1_0(file: TFile): Promise<void> {
+    console.log(`Migrating campaign ${file.path} to v1.1.0`);
+
+    if (!/^party_id:/m.test(await this.app.vault.read(file))) {
+      await this.addFrontmatterField(file, "party_id", '""');
+    }
+
+    await this.updateTemplateVersion(file, "1.1.0");
+    console.log(`Campaign ${file.path} migrated to v1.1.0`);
+  }
+
   async migrateSceneTo2_2_0(file: TFile): Promise<void> {
     console.log(`Migrating scene ${file.path} to v2.2.0`);
     let content = await this.app.vault.read(file);
@@ -917,7 +945,7 @@ deleteBtn.addEventListener("click", () => {
         
         // For types with migration logic, treat as version 0.0.0 so they
         // go through the full migration path below
-        const typesWithMigration = ['player', 'pc', 'npc', 'creature', 'encounter-table', 'adventure', 'scene', 'session'];
+        const typesWithMigration = ['player', 'pc', 'npc', 'creature', 'encounter-table', 'adventure', 'scene', 'session', 'campaign'];
         if (typesWithMigration.includes(fileType)) {
           // Add version field first, then let migration logic handle the rest
           await this.updateTemplateVersion(file, "0.0.0");
@@ -1075,12 +1103,35 @@ deleteBtn.addEventListener("click", () => {
       if (fileType === "session") {
         if (this.compareVersions(currentVersion, "1.3.0") < 0) {
           await this.migrateSessionTo1_3_0(file);
+          currentVersion = "1.3.0";
+        }
+        if (this.compareVersions(currentVersion, "1.4.0") < 0) {
+          await this.migrateSessionTo1_4_0(file);
           return true;
         }
         // Check for missing starting_scene field
         const sessionFm = await this.parseFrontmatter(file);
         if (sessionFm && !Object.prototype.hasOwnProperty.call(sessionFm, 'starting_scene')) {
           await this.migrateSessionTo1_3_0(file);
+        }
+        // Check for missing party_id field
+        const sessionFm2 = sessionFm || await this.parseFrontmatter(file);
+        if (sessionFm2 && !Object.prototype.hasOwnProperty.call(sessionFm2, 'party_id')) {
+          await this.migrateSessionTo1_4_0(file);
+          return true;
+        }
+      }
+
+      // Campaign-specific migrations
+      if (fileType === "campaign") {
+        if (this.compareVersions(currentVersion, "1.1.0") < 0) {
+          await this.migrateCampaignTo1_1_0(file);
+          return true;
+        }
+        // Check for missing party_id field
+        const campaignFm = await this.parseFrontmatter(file);
+        if (campaignFm && !Object.prototype.hasOwnProperty.call(campaignFm, 'party_id')) {
+          await this.migrateCampaignTo1_1_0(file);
           return true;
         }
       }
