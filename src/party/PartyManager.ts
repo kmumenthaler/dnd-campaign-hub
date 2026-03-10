@@ -207,6 +207,21 @@ export class PartyManager {
     }
   }
 
+  /** Reorder a member within a party (move from one index to another). */
+  async reorderMember(partyId: string, fromIndex: number, toIndex: number): Promise<boolean> {
+    const party = this.getParty(partyId);
+    if (!party) return false;
+    if (fromIndex < 0 || fromIndex >= party.members.length) return false;
+    if (toIndex < 0 || toIndex >= party.members.length) return false;
+    if (fromIndex === toIndex) return false;
+
+    const [member] = party.members.splice(fromIndex, 1);
+    party.members.splice(toIndex, 0, member!);
+    await this.save();
+    this.emit();
+    return true;
+  }
+
   /** Update stored note path when a PC note is renamed / moved. */
   async updateMemberPath(oldPath: string, newPath: string): Promise<void> {
     let changed = false;
