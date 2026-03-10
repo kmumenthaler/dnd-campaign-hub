@@ -422,10 +422,8 @@ export class PartyManagerModal extends Modal {
         // Animate closed, then re-render
         const panel = card.querySelector(".dnd-pm-detail-panel") as HTMLElement;
         if (panel) {
-          // Reset overflow and pin max-height so transition has a start value
           panel.style.overflow = "hidden";
           panel.style.maxHeight = panel.scrollHeight + "px";
-          // Force reflow so browser registers the starting value
           void panel.offsetHeight;
           panel.style.maxHeight = "0";
           panel.removeClass("is-open");
@@ -438,9 +436,25 @@ export class PartyManagerModal extends Modal {
           this.render();
         }
       } else {
-        this.expandedMembers.clear();
-        this.expandedMembers.add(member.notePath);
-        this.render();
+        // Collapse any currently-open panel first, then expand this one
+        const openPanel = container.querySelector(".dnd-pm-card.is-expanded .dnd-pm-detail-panel.is-open") as HTMLElement;
+        if (openPanel) {
+          openPanel.style.overflow = "hidden";
+          openPanel.style.maxHeight = openPanel.scrollHeight + "px";
+          void openPanel.offsetHeight;
+          openPanel.style.maxHeight = "0";
+          openPanel.removeClass("is-open");
+          openPanel.closest(".dnd-pm-card")?.removeClass("is-expanded");
+          openPanel.addEventListener("transitionend", () => {
+            this.expandedMembers.clear();
+            this.expandedMembers.add(member.notePath);
+            this.render();
+          }, { once: true });
+        } else {
+          this.expandedMembers.clear();
+          this.expandedMembers.add(member.notePath);
+          this.render();
+        }
       }
     });
 
