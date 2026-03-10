@@ -1259,6 +1259,7 @@ class ImageSelectorModal extends Modal {
 
     for (let i = this.renderedCount; i < end; i++) {
       const file = this.currentFiles[i];
+      if (!file) continue;
       const card = createDiv({ cls: 'image-file-card' });
       card.dataset.filePath = file.path;
       card.dataset.fileIndex = String(i);
