@@ -1171,34 +1171,23 @@ class ImageSelectorModal extends Modal {
     this.renderFileList(filtered);
   }
 
-  /** How many card placeholders to render per batch */
-  private static readonly BATCH_SIZE = 20;
   /** Concurrent thumbnail loads to prevent browser freeze */
-  private static readonly MAX_CONCURRENT_LOADS = 4;
+  private static readonly MAX_CONCURRENT_LOADS = 6;
   /** Queue of cards waiting for thumbnail load */
   private thumbLoadQueue: HTMLElement[] = [];
   /** Number of thumbnails currently loading */
   private activeLoads = 0;
-  /** Observer for infinite-scroll sentinel */
-  private scrollObserver: IntersectionObserver | null = null;
   /** Observer for lazy-loading individual card thumbnails */
   private thumbObserver: IntersectionObserver | null = null;
-  /** How many cards have been rendered so far */
-  private renderedCount = 0;
   /** The current filtered file list being rendered progressively */
   private currentFiles: TFile[] = [];
 
   private renderFileList(files: TFile[]) {
     if (!this.listContainer) return;
     this.listContainer.empty();
-    this.renderedCount = 0;
     this.currentFiles = files;
 
-    // Tear down previous observers
-    if (this.scrollObserver) {
-      this.scrollObserver.disconnect();
-      this.scrollObserver = null;
-    }
+    // Tear down previous observer
     if (this.thumbObserver) {
       this.thumbObserver.disconnect();
       this.thumbObserver = null;
@@ -1238,38 +1227,11 @@ class ImageSelectorModal extends Modal {
       { root: this.listContainer, rootMargin: '200px' }
     );
 
-    // Render first batch immediately
-    this.renderNextBatch();
-
-    // Set up infinite-scroll observer if there are more items
-    if (this.renderedCount < files.length) {
-      const sentinel = this.listContainer.createDiv({ cls: 'image-grid-sentinel' });
-      this.scrollObserver = new IntersectionObserver(
-        (entries) => {
-          if (entries[0]?.isIntersecting) {
-            this.renderNextBatch();
-            if (this.renderedCount >= this.currentFiles.length) {
-              this.scrollObserver?.disconnect();
-              sentinel.remove();
-            } else {
-              this.listContainer?.appendChild(sentinel);
-            }
-          }
-        },
-        { root: this.listContainer, rootMargin: '200px' }
-      );
-      this.scrollObserver.observe(sentinel);
-    }
-  }
-
-  /** Render the next batch of card skeletons (thumbnails load lazily) */
-  private renderNextBatch() {
-    if (!this.listContainer) return;
-    const end = Math.min(this.renderedCount + ImageSelectorModal.BATCH_SIZE, this.currentFiles.length);
+    // Render all card skeletons at once (lightweight divs with text only,
+    // actual thumbnails are lazy-loaded via IntersectionObserver)
     const fragment = document.createDocumentFragment();
-
-    for (let i = this.renderedCount; i < end; i++) {
-      const file = this.currentFiles[i];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
       if (!file) continue;
       const card = createDiv({ cls: 'image-file-card' });
       card.dataset.filePath = file.path;
@@ -1278,7 +1240,7 @@ class ImageSelectorModal extends Modal {
       // Skeleton placeholder for thumbnail
       card.createDiv({ cls: 'image-file-card-thumb image-file-card-skeleton' });
 
-      // Info bar (rendered immediately — it's just text)
+      // Info bar (just text — no images)
       const info = card.createDiv({ cls: 'image-file-card-info' });
       info.createDiv({ cls: 'image-file-card-name', text: file.basename });
       const relFolder = (file.parent?.path || '').replace(/^z_Assets\/Maps\/?/, '') || '/';
@@ -1290,12 +1252,8 @@ class ImageSelectorModal extends Modal {
       });
 
       fragment.appendChild(card);
-
-      // Register for lazy thumbnail loading
-      this.thumbObserver?.observe(card);
+      this.thumbObserver.observe(card);
     }
-
-    this.renderedCount = end;
     this.listContainer.appendChild(fragment);
   }
 
@@ -1439,10 +1397,6 @@ class ImageSelectorModal extends Modal {
   }
 
   onClose() {
-    if (this.scrollObserver) {
-      this.scrollObserver.disconnect();
-      this.scrollObserver = null;
-    }
     if (this.thumbObserver) {
       this.thumbObserver.disconnect();
       this.thumbObserver = null;
