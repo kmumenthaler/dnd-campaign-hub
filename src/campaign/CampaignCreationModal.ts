@@ -395,9 +395,6 @@ campaign: ${campaignName}
         await this.app.vault.create(`${campaignPath}/House Rules.md`, houseRulesContent);
       }
 
-      this.plugin.settings.currentCampaign = campaignPath;
-      await this.plugin.saveSettings();
-
       // Auto-create a party for this campaign
       await this.plugin.partyManager.getOrCreateCampaignParty(campaignName, campaignPath);
 

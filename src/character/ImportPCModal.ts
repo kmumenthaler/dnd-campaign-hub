@@ -11,7 +11,7 @@ export class ImportPCModal extends Modal {
   constructor(app: App, plugin: DndCampaignHubPlugin) {
     super(app);
     this.plugin = plugin;
-    this.targetCampaign = plugin.settings.currentCampaign;
+    this.targetCampaign = plugin.resolveCampaign();
   }
 
   async onOpen() {

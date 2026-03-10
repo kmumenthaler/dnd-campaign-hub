@@ -673,7 +673,7 @@ export class EncounterBattlemapModal extends Modal {
 
     try {
       // Get campaign path
-      const campaignPath = this.plugin.detectCampaignFromActiveFile?.() || this.plugin.settings?.currentCampaign;
+      const campaignPath = this.plugin.resolveCampaign();
       if (!campaignPath) {
         this.partyLoading = false;
         this.render();

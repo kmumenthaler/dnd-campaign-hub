@@ -2339,15 +2339,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	async createSession() {
-		// Detect campaign from active file or use default
-		const campaignPath = this.detectCampaignFromActiveFile() || this.settings.currentCampaign;
+		const campaignPath = this.resolveCampaign();
 		// Open session creation modal
 		new SessionCreationModal(this.app, this, undefined, campaignPath).open();
 	}
 
 	async openSessionPrepDashboard() {
-		// Detect campaign from active file or use default
-		const campaignPath = this.detectCampaignFromActiveFile() || this.settings.currentCampaign;
+		const campaignPath = this.resolveCampaign();
 		
 		// Check if view is already open
 		const existing = this.app.workspace.getLeavesOfType(SESSION_PREP_VIEW_TYPE);
@@ -2373,8 +2371,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	async openSessionRunDashboard() {
-		// Detect campaign from active file or use default
-		const campaignPath = this.detectCampaignFromActiveFile() || this.settings.currentCampaign;
+		const campaignPath = this.resolveCampaign();
 		
 		// Check if dashboard view is already open
 		const existing = this.app.workspace.getLeavesOfType(SESSION_RUN_VIEW_TYPE);
@@ -2728,6 +2725,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 		}
 		
 		return null;
+	}
+
+	/**
+	 * Resolve the best campaign path for the current context.
+	 * 1. Detect from active file path
+	 * 2. Fall back to the first campaign found in ttrpgs/
+	 * Returns empty string if no campaigns exist.
+	 */
+	resolveCampaign(): string {
+		return this.detectCampaignFromActiveFile()
+			|| this.getAllCampaigns()[0]?.path
+			|| "";
 	}
 
 	async createSpell() {

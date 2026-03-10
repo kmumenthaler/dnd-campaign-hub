@@ -7,7 +7,7 @@ import { MigrationScanResult, TEMPLATE_VERSIONS } from "./types";
  */
 export interface MigrationPluginContext {
   migrationRunner: MigrationRunner;
-  settings: { currentCampaign: string };
+  resolveCampaign(): string;
   getAllCampaigns(): string[] | { name: string }[];
 }
 
@@ -53,7 +53,7 @@ export class MigrationModal extends Modal {
         text: campaignName,
         value: `ttrpgs/${campaignName}`,
       });
-      if (`ttrpgs/${campaign}` === this.plugin.settings.currentCampaign) {
+      if (`ttrpgs/${campaign}` === this.plugin.resolveCampaign()) {
         option.selected = true;
       }
     });

@@ -23,7 +23,6 @@ export interface ProjectionTarget {
 }
 
 export interface DndCampaignHubSettings {
-  currentCampaign: string;
   pluginVersion: string;
   tabletopCalibration: TabletopCalibration | null;
   /** Per-monitor projection targets (keyed by screenKey). */
@@ -43,7 +42,6 @@ export interface DndCampaignHubSettings {
 }
 
 export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
-  currentCampaign: "",
   pluginVersion: "0.0.0",
   tabletopCalibration: null,
   projectionTargets: [],

@@ -76,23 +76,7 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
       cls: "dnd-settings-version",
     });
 
-    // ── 1. General ──────────────────────────────────────────────────────
-    const general = addSection(containerEl, "General", "Core plugin settings.", { startOpen: true });
-
-    new Setting(general)
-      .setName("Current campaign")
-      .setDesc("Vault path to your active campaign folder (e.g. ttrpgs/My Campaign).")
-      .addText((text) =>
-        text
-          .setPlaceholder("ttrpgs/Campaign Name")
-          .setValue(this.plugin.settings.currentCampaign)
-          .onChange(async (value) => {
-            this.plugin.settings.currentCampaign = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    // ── 2. Battle Maps & Combat ─────────────────────────────────────────
+    // ── 1. Battle Maps & Combat ─────────────────────────────────────────
     const maps = addSection(containerEl, "Battle Maps & Combat", "Map management, combat behaviour, and dynamic lighting.");
 
     new Setting(maps)

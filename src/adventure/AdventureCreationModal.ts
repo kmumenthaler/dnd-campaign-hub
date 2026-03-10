@@ -20,7 +20,7 @@ export class AdventureCreationModal extends Modal {
   constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string) {
     super(app);
     this.plugin = plugin;
-    this.campaign = plugin.settings.currentCampaign;
+    this.campaign = plugin.resolveCampaign();
     if (adventurePath) {
       this.isEdit = true;
       this.originalPath = adventurePath;

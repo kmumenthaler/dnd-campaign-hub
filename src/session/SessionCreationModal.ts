@@ -29,7 +29,7 @@ export class SessionCreationModal extends Modal {
   constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
-    this.campaignPath = campaignPath || plugin.settings.currentCampaign;
+    this.campaignPath = campaignPath || plugin.resolveCampaign();
     this.sessionDate = new Date().toISOString().split('T')[0] || "";
     if (adventurePath) {
       this.adventurePath = adventurePath;

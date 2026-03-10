@@ -55,7 +55,7 @@ export class NPCCreationModal extends Modal {
   constructor(app: App, plugin: DndCampaignHubPlugin, npcPath?: string) {
     super(app);
     this.plugin = plugin;
-    this.campaign = plugin.settings.currentCampaign;
+    this.campaign = plugin.resolveCampaign();
     if (npcPath) {
       this.isEdit = true;
       this.originalNPCPath = npcPath;

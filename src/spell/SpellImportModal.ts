@@ -623,7 +623,7 @@ ${classes}
 
   async createCustomSpell(spellName: string) {
     try {
-      const spellPath = `${this.plugin.settings.currentCampaign}/Spells`;
+      const spellPath = `${this.plugin.resolveCampaign()}/Spells`;
       await this.plugin.ensureFolderExists(spellPath);
 
       const template = this.plugin.getDefaultSpellTemplate();

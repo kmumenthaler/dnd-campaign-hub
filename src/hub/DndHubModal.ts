@@ -169,12 +169,13 @@ export class DndHubModal extends Modal {
 
   async browseFolder(folderName: string) {
     let folderPath: string;
+    const campaign = this.plugin.resolveCampaign();
     if (["NPCs", "PCs", "Adventures", "Factions", "Items"].includes(folderName)) {
-      folderPath = `${this.plugin.settings.currentCampaign}/${folderName}`;
+      folderPath = `${campaign}/${folderName}`;
     } else if (folderName === "Campaigns") {
       folderPath = "ttrpgs";
     } else if (folderName === "Sessions") {
-      folderPath = this.plugin.settings.currentCampaign;
+      folderPath = campaign;
     } else {
       folderPath = folderName;
     }

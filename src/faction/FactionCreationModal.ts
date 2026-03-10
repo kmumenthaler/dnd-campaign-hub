@@ -20,7 +20,7 @@ export class FactionCreationModal extends Modal {
   constructor(app: App, plugin: DndCampaignHubPlugin) {
     super(app);
     this.plugin = plugin;
-    this.campaign = plugin.settings.currentCampaign;
+    this.campaign = plugin.resolveCampaign();
   }
 
   onOpen() {

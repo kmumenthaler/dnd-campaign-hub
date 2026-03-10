@@ -12,7 +12,7 @@ export class SessionPrepDashboardView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
     this.plugin = plugin;
-    this.campaignPath = plugin.settings.currentCampaign;
+    this.campaignPath = plugin.resolveCampaign();
   }
 
   getViewType(): string {
@@ -30,6 +30,30 @@ export class SessionPrepDashboardView extends ItemView {
   setCampaign(campaignPath: string) {
     this.campaignPath = campaignPath;
     this.render();
+  }
+
+  private renderCampaignPicker(container: HTMLElement) {
+    const wrapper = container.createEl("div", { cls: "dashboard-campaign-picker" });
+    wrapper.createEl("h2", { text: "📋 Session Prep" });
+    wrapper.createEl("p", { text: "Select a campaign to start preparing your session." });
+
+    const campaigns = this.plugin.getAllCampaigns();
+    if (campaigns.length === 0) {
+      wrapper.createEl("p", { text: "No campaigns found. Create a campaign first.", cls: "empty-msg" });
+      return;
+    }
+
+    const select = wrapper.createEl("select", { cls: "dashboard-campaign-select" });
+    for (const c of campaigns) {
+      const name = typeof c === "string" ? c : c.name;
+      const path = typeof c === "string" ? c : c.path;
+      select.createEl("option", { text: name, value: path });
+    }
+
+    const btn = wrapper.createEl("button", { text: "Open Dashboard", cls: "mod-cta" });
+    btn.addEventListener("click", () => {
+      this.setCampaign(select.value);
+    });
   }
 
   async onOpen() {
@@ -77,15 +101,37 @@ export class SessionPrepDashboardView extends ItemView {
     container.empty();
     container.addClass("session-prep-dashboard");
 
+    // If no campaign resolved, show picker
+    if (!this.campaignPath) {
+      this.renderCampaignPicker(container);
+      return;
+    }
+
     // Compact Header
     const header = container.createEl("div", { cls: "dashboard-header" });
     const headerTitle = header.createEl("div", { cls: "dashboard-header-title" });
     headerTitle.createEl("span", { text: "📋 Session Prep", cls: "dashboard-title" });
-    const campaignName = this.campaignPath.split('/').pop() || "Unknown";
-    headerTitle.createEl("span", { 
-      text: campaignName,
-      cls: "dashboard-campaign-name"
-    });
+
+    // Campaign selector dropdown in header
+    const campaigns = this.plugin.getAllCampaigns();
+    if (campaigns.length > 1) {
+      const select = headerTitle.createEl("select", { cls: "dashboard-campaign-select" });
+      for (const c of campaigns) {
+        const name = typeof c === "string" ? c : c.name;
+        const path = typeof c === "string" ? c : c.path;
+        const opt = select.createEl("option", { text: name, value: path });
+        if (path === this.campaignPath) opt.selected = true;
+      }
+      select.addEventListener("change", () => {
+        this.setCampaign(select.value);
+      });
+    } else {
+      const campaignName = this.campaignPath.split('/').pop() || "Unknown";
+      headerTitle.createEl("span", { 
+        text: campaignName,
+        cls: "dashboard-campaign-name"
+      });
+    }
 
     // Main action button
     const mainAction = container.createEl("button", {

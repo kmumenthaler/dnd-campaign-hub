@@ -197,9 +197,9 @@ export class RandomEncounterTableModal extends Modal {
       if (detected) this.selectedCampaign = detected;
     }
 
-    // Fallback to plugin setting
-    if (!this.selectedCampaign && this.plugin.settings.currentCampaign) {
-      this.selectedCampaign = this.plugin.settings.currentCampaign;
+    // Fallback to campaign detection
+    if (!this.selectedCampaign) {
+      this.selectedCampaign = this.plugin.resolveCampaign();
     }
 
     new Setting(container)

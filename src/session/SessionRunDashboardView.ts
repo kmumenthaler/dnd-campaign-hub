@@ -18,7 +18,7 @@ export class SessionRunDashboardView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
     this.plugin = plugin;
-    this.campaignPath = plugin.settings.currentCampaign;
+    this.campaignPath = plugin.resolveCampaign();
   }
 
   getViewType(): string {
@@ -36,6 +36,32 @@ export class SessionRunDashboardView extends ItemView {
   setCampaign(campaignPath: string) {
     this.campaignPath = campaignPath;
     this.render();
+  }
+
+  private renderCampaignPicker(container: HTMLElement) {
+    const wrapper = container.createEl("div", { cls: "dashboard-campaign-picker" });
+    wrapper.createEl("h2", { text: "🎮 Session Control" });
+    wrapper.createEl("p", { text: "Select a campaign to run your session." });
+
+    const campaigns = this.plugin.getAllCampaigns();
+    if (campaigns.length === 0) {
+      wrapper.createEl("p", { text: "No campaigns found. Create a campaign first.", cls: "empty-msg" });
+      return;
+    }
+
+    const select = wrapper.createEl("select", { cls: "dashboard-campaign-select" });
+    for (const c of campaigns) {
+      const name = typeof c === "string" ? c : c.name;
+      const path = typeof c === "string" ? c : c.path;
+      select.createEl("option", { text: name, value: path });
+    }
+
+    const btn = wrapper.createEl("button", { text: "Start Session", cls: "mod-cta" });
+    btn.addEventListener("click", async () => {
+      this.campaignPath = select.value;
+      await this.detectCurrentSession();
+      this.render();
+    });
   }
 
   async onOpen() {
@@ -240,10 +266,34 @@ export class SessionRunDashboardView extends ItemView {
     container.addClass("session-run-dashboard");
     container.addClass("session-run-compact");
 
+    // If no campaign resolved, show picker
+    if (!this.campaignPath) {
+      this.renderCampaignPicker(container as HTMLElement);
+      return;
+    }
+
     // Header with session info
     const header = container.createEl("div", { cls: "run-dashboard-header-compact" });
     const sessionName = this.currentSessionFile?.basename || "No Active Session";
     header.createEl("h3", { text: `🎮 Session Control` });
+
+    // Campaign selector if multiple campaigns
+    const campaigns = this.plugin.getAllCampaigns();
+    if (campaigns.length > 1) {
+      const select = header.createEl("select", { cls: "dashboard-campaign-select" });
+      for (const c of campaigns) {
+        const name = typeof c === "string" ? c : c.name;
+        const path = typeof c === "string" ? c : c.path;
+        const opt = select.createEl("option", { text: name, value: path });
+        if (path === this.campaignPath) opt.selected = true;
+      }
+      select.addEventListener("change", async () => {
+        this.setCampaign(select.value);
+        await this.detectCurrentSession();
+        this.render();
+      });
+    }
+
     header.createEl("p", { 
       text: sessionName,
       cls: "session-name-compact"

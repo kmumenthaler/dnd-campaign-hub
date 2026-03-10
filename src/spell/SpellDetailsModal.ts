@@ -90,7 +90,7 @@ export class SpellDetailsModal extends Modal {
   async importSpell() {
     try {
       const spell = this.spellData;
-      const spellPath = `${this.plugin.settings.currentCampaign}/Spells`;
+      const spellPath = `${this.plugin.resolveCampaign()}/Spells`;
       await this.plugin.ensureFolderExists(spellPath);
 
       // Build spell content from API data
