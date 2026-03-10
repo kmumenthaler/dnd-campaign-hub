@@ -4356,8 +4356,8 @@
 /* ── Image card grid ─────────────────────────────────────────────── */
 .image-file-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -4369,7 +4369,7 @@
 
 .image-file-card {
   border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
   background: var(--background-primary);
   cursor: pointer;
@@ -4384,7 +4384,6 @@
 
 .image-file-card-thumb {
   width: 100%;
-  min-height: 120px;
   aspect-ratio: 4 / 3;
   overflow: hidden;
   background: var(--background-secondary);
@@ -4408,12 +4407,12 @@
 }
 
 .image-file-card-info {
-  padding: 6px 8px;
+  padding: 4px 6px;
   border-top: 1px solid var(--background-modifier-border);
 }
 
 .image-file-card-name {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--text-normal);
   white-space: nowrap;

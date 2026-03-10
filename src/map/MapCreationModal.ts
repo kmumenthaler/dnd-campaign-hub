@@ -1314,6 +1314,9 @@ class ImageSelectorModal extends Modal {
     this.drainThumbQueue();
   }
 
+  /** Max pixel dimension for generated thumbnails */
+  private static readonly THUMB_MAX_PX = 200;
+
   /** Load the actual thumbnail for a card that has scrolled into view */
   private loadCardThumbnail(card: HTMLElement) {
     const filePath = card.dataset.filePath;
@@ -1334,23 +1337,49 @@ class ImageSelectorModal extends Modal {
       if (isVideo) {
         const video = thumb.createEl('video', { attr: { src: resourcePath, muted: 'true', preload: 'metadata' } });
         video.addEventListener('loadeddata', () => { video.currentTime = 0.1; this.onThumbLoadComplete(); });
-        video.addEventListener('error', () => this.onThumbLoadComplete());
+        video.addEventListener('error', () => { this.showThumbFallback(thumb, '🎬'); this.onThumbLoadComplete(); });
       } else {
-        const img = thumb.createEl('img', { attr: { src: resourcePath, alt: file.name } });
-        img.addEventListener('load', () => { thumb.removeClass('image-file-card-skeleton'); this.onThumbLoadComplete(); });
-        img.addEventListener('error', () => {
-          img.remove();
-          thumb.createDiv({ cls: 'image-file-card-thumb-fallback', text: '🖼️' });
+        // Downscale via offscreen canvas so full-res image can be GC'd
+        const src = new Image();
+        src.src = resourcePath;
+        src.addEventListener('load', () => {
+          const max = ImageSelectorModal.THUMB_MAX_PX;
+          let w = src.naturalWidth;
+          let h = src.naturalHeight;
+          if (w > max || h > max) {
+            const scale = max / Math.max(w, h);
+            w = Math.round(w * scale);
+            h = Math.round(h * scale);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(src, 0, 0, w, h);
+            const smallImg = thumb.createEl('img', { attr: { alt: file.name } });
+            smallImg.src = canvas.toDataURL('image/jpeg', 0.7);
+          }
           thumb.removeClass('image-file-card-skeleton');
           this.onThumbLoadComplete();
         });
-        return; // Don't remove skeleton yet — 'load' callback handles it
+        src.addEventListener('error', () => {
+          this.showThumbFallback(thumb, '🖼️');
+          this.onThumbLoadComplete();
+        });
+        return;
       }
     } catch {
-      thumb.createDiv({ cls: 'image-file-card-thumb-fallback', text: isVideo ? '🎬' : '🖼️' });
+      this.showThumbFallback(thumb, isVideo ? '🎬' : '🖼️');
       this.onThumbLoadComplete();
     }
 
+    thumb.removeClass('image-file-card-skeleton');
+  }
+
+  private showThumbFallback(thumb: HTMLElement, icon: string) {
+    thumb.empty();
+    thumb.createDiv({ cls: 'image-file-card-thumb-fallback', text: icon });
     thumb.removeClass('image-file-card-skeleton');
   }
 
