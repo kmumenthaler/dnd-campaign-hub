@@ -4384,7 +4384,7 @@
 
 .image-file-card-thumb {
   width: 100%;
-  aspect-ratio: 4 / 3;
+  height: 105px;
   overflow: hidden;
   background: var(--background-secondary);
   display: flex;
