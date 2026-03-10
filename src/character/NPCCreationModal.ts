@@ -965,7 +965,7 @@ export class NPCCreationModal extends Modal {
           id: tokenId,
           name: this.npcName,
           type: 'npc',
-          icon: existingMarker?.icon || '👤',
+          icon: existingMarker?.icon || '',
           backgroundColor: existingMarker?.backgroundColor || '#6b8e23',
           borderColor: existingMarker?.borderColor || '#ffffff',
           creatureSize: mappedSize,
