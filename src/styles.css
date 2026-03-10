@@ -4357,6 +4357,7 @@
 .image-file-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-auto-rows: minmax(130px, auto);
   gap: 8px;
   flex: 1;
   min-height: 0;
@@ -4384,7 +4385,8 @@
 
 .image-file-card-thumb {
   width: 100%;
-  height: 105px;
+  height: 105px !important;
+  min-height: 105px !important;
   overflow: hidden;
   background: var(--background-secondary);
   display: flex;
