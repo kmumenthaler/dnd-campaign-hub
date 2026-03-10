@@ -1045,8 +1045,9 @@ class ImageSelectorModal extends Modal {
 
     contentEl.createEl('h2', { text: 'Select Map Image' });
 
-    // Search bar
-    const searchContainer = contentEl.createDiv({ cls: 'image-selector-search' });
+    // Top bar: search + upload on same row
+    const topBar = contentEl.createDiv({ cls: 'image-selector-top-bar' });
+    const searchContainer = topBar.createDiv({ cls: 'image-selector-search' });
     const searchInput = searchContainer.createEl('input', {
       cls: 'image-selector-search-input',
       attr: {
@@ -1055,22 +1056,24 @@ class ImageSelectorModal extends Modal {
         spellcheck: 'false'
       }
     });
-    this.resultCountEl = searchContainer.createDiv({ cls: 'image-selector-result-count' });
 
-    // Folder filter chips (only show when there are subfolders)
-    if (this.folderPaths.length > 0) {
-      this.folderChipsContainer = contentEl.createDiv({ cls: 'image-selector-folder-chips' });
-      this.renderFolderChips();
-    }
-
-    // Action bar with upload button
-    const actionBar = contentEl.createDiv({ cls: 'image-selector-actions' });
-    const uploadBtn = actionBar.createEl('button', {
+    const uploadBtn = topBar.createEl('button', {
       cls: 'image-selector-upload-btn',
       attr: { title: 'Upload an image from your computer' }
     });
-    uploadBtn.innerHTML = '📁 Upload from Computer';
+    uploadBtn.innerHTML = '📁 Upload';
     uploadBtn.addEventListener('click', () => this.uploadFromExplorer());
+
+    // Result count
+    this.resultCountEl = contentEl.createDiv({ cls: 'image-selector-result-count' });
+
+    // Folder filter section (own row, only when subfolders exist)
+    if (this.folderPaths.length > 0) {
+      const folderSection = contentEl.createDiv({ cls: 'image-selector-folder-section' });
+      folderSection.createEl('span', { text: 'Folders', cls: 'image-selector-folder-label' });
+      this.folderChipsContainer = folderSection.createDiv({ cls: 'image-selector-folder-chips' });
+      this.renderFolderChips();
+    }
 
     // File grid (card layout with previews)
     this.listContainer = contentEl.createDiv({ cls: 'image-file-grid' });
