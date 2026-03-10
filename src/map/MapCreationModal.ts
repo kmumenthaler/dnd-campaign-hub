@@ -1171,10 +1171,12 @@ class ImageSelectorModal extends Modal {
     this.renderFileList(filtered);
   }
 
-  /** How many cards to render per batch */
-  private static readonly BATCH_SIZE = 60;
-  /** Observer watching the sentinel for infinite scroll */
+  /** How many card placeholders to render per batch */
+  private static readonly BATCH_SIZE = 30;
+  /** Observer for infinite-scroll sentinel */
   private scrollObserver: IntersectionObserver | null = null;
+  /** Observer for lazy-loading individual card thumbnails */
+  private thumbObserver: IntersectionObserver | null = null;
   /** How many cards have been rendered so far */
   private renderedCount = 0;
   /** The current filtered file list being rendered progressively */
@@ -1186,10 +1188,14 @@ class ImageSelectorModal extends Modal {
     this.renderedCount = 0;
     this.currentFiles = files;
 
-    // Tear down previous observer
+    // Tear down previous observers
     if (this.scrollObserver) {
       this.scrollObserver.disconnect();
       this.scrollObserver = null;
+    }
+    if (this.thumbObserver) {
+      this.thumbObserver.disconnect();
+      this.thumbObserver = null;
     }
 
     // Update result count
@@ -1208,6 +1214,19 @@ class ImageSelectorModal extends Modal {
       return;
     }
 
+    // Create observer that lazy-loads thumbnails when cards scroll into view
+    this.thumbObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const card = entry.target as HTMLElement;
+          this.thumbObserver?.unobserve(card);
+          this.loadCardThumbnail(card);
+        }
+      },
+      { root: this.listContainer, rootMargin: '300px' }
+    );
+
     // Render first batch immediately
     this.renderNextBatch();
 
@@ -1218,12 +1237,10 @@ class ImageSelectorModal extends Modal {
         (entries) => {
           if (entries[0]?.isIntersecting) {
             this.renderNextBatch();
-            // Remove sentinel and re-add at end if more remain
             if (this.renderedCount >= this.currentFiles.length) {
               this.scrollObserver?.disconnect();
               sentinel.remove();
             } else {
-              // Move sentinel to end
               this.listContainer?.appendChild(sentinel);
             }
           }
@@ -1234,7 +1251,7 @@ class ImageSelectorModal extends Modal {
     }
   }
 
-  /** Render the next batch of image cards */
+  /** Render the next batch of card skeletons (thumbnails load lazily) */
   private renderNextBatch() {
     if (!this.listContainer) return;
     const end = Math.min(this.renderedCount + ImageSelectorModal.BATCH_SIZE, this.currentFiles.length);
@@ -1243,26 +1260,13 @@ class ImageSelectorModal extends Modal {
     for (let i = this.renderedCount; i < end; i++) {
       const file = this.currentFiles[i];
       const card = createDiv({ cls: 'image-file-card' });
+      card.dataset.filePath = file.path;
+      card.dataset.fileIndex = String(i);
 
-      // Thumbnail preview
-      const thumb = card.createDiv({ cls: 'image-file-card-thumb' });
-      const ext = file.extension.toLowerCase();
-      const isVideo = ['mp4', 'webm'].includes(ext);
-      try {
-        const resourcePath = this.app.vault.adapter.getResourcePath(file.path);
-        if (isVideo) {
-          const video = thumb.createEl('video', { attr: { src: resourcePath, muted: 'true', preload: 'metadata' } });
-          video.addEventListener('loadeddata', () => {
-            video.currentTime = 0.1;
-          });
-        } else {
-          thumb.createEl('img', { attr: { src: resourcePath, alt: file.name } });
-        }
-      } catch {
-        thumb.createDiv({ cls: 'image-file-card-thumb-fallback', text: isVideo ? '🎬' : '🖼️' });
-      }
+      // Skeleton placeholder for thumbnail
+      card.createDiv({ cls: 'image-file-card-thumb image-file-card-skeleton' });
 
-      // Info bar below thumb
+      // Info bar (rendered immediately — it's just text)
       const info = card.createDiv({ cls: 'image-file-card-info' });
       info.createDiv({ cls: 'image-file-card-name', text: file.basename });
       const relFolder = (file.parent?.path || '').replace(/^z_Assets\/Maps\/?/, '') || '/';
@@ -1274,10 +1278,50 @@ class ImageSelectorModal extends Modal {
       });
 
       fragment.appendChild(card);
+
+      // Register for lazy thumbnail loading
+      this.thumbObserver?.observe(card);
     }
 
     this.renderedCount = end;
     this.listContainer.appendChild(fragment);
+  }
+
+  /** Load the actual thumbnail for a card that has scrolled into view */
+  private loadCardThumbnail(card: HTMLElement) {
+    const filePath = card.dataset.filePath;
+    const idx = Number(card.dataset.fileIndex);
+    if (!filePath || isNaN(idx)) return;
+
+    const file = this.currentFiles[idx];
+    if (!file) return;
+
+    const thumb = card.querySelector('.image-file-card-thumb') as HTMLElement;
+    if (!thumb) return;
+
+    const ext = file.extension.toLowerCase();
+    const isVideo = ['mp4', 'webm'].includes(ext);
+
+    try {
+      const resourcePath = this.app.vault.adapter.getResourcePath(file.path);
+      if (isVideo) {
+        const video = thumb.createEl('video', { attr: { src: resourcePath, muted: 'true', preload: 'metadata' } });
+        video.addEventListener('loadeddata', () => { video.currentTime = 0.1; });
+      } else {
+        const img = thumb.createEl('img', { attr: { src: resourcePath, alt: file.name } });
+        img.addEventListener('load', () => thumb.removeClass('image-file-card-skeleton'));
+        img.addEventListener('error', () => {
+          img.remove();
+          thumb.createDiv({ cls: 'image-file-card-thumb-fallback', text: '🖼️' });
+          thumb.removeClass('image-file-card-skeleton');
+        });
+        return; // Don't remove skeleton yet — 'load' callback handles it
+      }
+    } catch {
+      thumb.createDiv({ cls: 'image-file-card-thumb-fallback', text: isVideo ? '🎬' : '🖼️' });
+    }
+
+    thumb.removeClass('image-file-card-skeleton');
   }
 
   /**
@@ -1339,6 +1383,10 @@ class ImageSelectorModal extends Modal {
     if (this.scrollObserver) {
       this.scrollObserver.disconnect();
       this.scrollObserver = null;
+    }
+    if (this.thumbObserver) {
+      this.thumbObserver.disconnect();
+      this.thumbObserver = null;
     }
     const { contentEl } = this;
     contentEl.empty();
