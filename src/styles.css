@@ -1672,39 +1672,38 @@
 /* ── Tab Bar ── */
 .dnd-pm-tabs {
   display: flex;
-  gap: 2px;
-  padding: 8px 20px 0;
-  border-bottom: 2px solid var(--background-modifier-border);
-  overflow-x: auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .dnd-pm-tab {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 6px 6px 0 0;
-  background: transparent;
+  padding: 5px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 16px;
+  background: var(--background-secondary);
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s ease;
-  margin-bottom: -2px;
 }
 
 .dnd-pm-tab:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
+  border-color: var(--text-faint);
 }
 
 .dnd-pm-tab.is-active {
-  color: var(--interactive-accent);
-  border-bottom-color: var(--interactive-accent);
-  background: transparent;
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
 }
 
 .dnd-pm-tab-name {
@@ -1733,7 +1732,7 @@
 }
 
 .dnd-pm-tab.is-active .dnd-pm-tab-count {
-  background: var(--interactive-accent);
+  background: rgba(255, 255, 255, 0.25);
   color: var(--text-on-accent);
 }
 
@@ -1741,8 +1740,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 10px;
+  padding: 5px 10px;
   color: var(--text-faint);
+  background: transparent;
+  border-style: dashed;
 }
 
 .dnd-pm-tab-add:hover {
