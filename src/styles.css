@@ -1926,9 +1926,31 @@
   margin-bottom: 12px;
 }
 
+/* Member row wrapper */
+.dnd-pm-member-row {
+  display: flex;
+  align-items: start;
+  gap: 4px;
+}
+
+/* Left sidebar actions */
+.dnd-pm-sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding-top: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.dnd-pm-member-row:hover .dnd-pm-sidebar-actions {
+  opacity: 1;
+}
+
 .dnd-pm-card {
   display: grid;
-  grid-template-columns: auto 38px 1fr auto;
+  grid-template-columns: auto 38px 1fr;
   grid-template-rows: auto auto;
   align-items: center;
   gap: 0 8px;
@@ -1938,6 +1960,8 @@
   background: var(--background-primary);
   transition: all 0.15s ease;
   cursor: pointer;
+  flex: 1;
+  min-width: 0;
 }
 
 .dnd-pm-card:hover {
@@ -2199,23 +2223,10 @@
   animation: pulse-critical 2s ease-in-out infinite;
 }
 
-/* Card Actions */
-.dnd-pm-card-actions {
-  grid-row: 1 / -1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
+/* Card Actions (sidebar) */
 .dnd-pm-remove-btn {
   color: var(--text-faint);
-  opacity: 0;
   transition: opacity 0.15s ease;
-}
-
-.dnd-pm-card:hover .dnd-pm-remove-btn {
-  opacity: 1;
 }
 
 .dnd-pm-remove-btn:hover {
@@ -2226,16 +2237,9 @@
   width: 20px;
   height: 20px;
   color: var(--text-faint);
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.dnd-pm-card:hover .dnd-pm-move-btn {
-  opacity: 0.6;
 }
 
 .dnd-pm-move-btn:hover {
-  opacity: 1 !important;
   color: var(--text-normal) !important;
 }
 

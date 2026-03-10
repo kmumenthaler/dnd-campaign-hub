@@ -377,7 +377,48 @@ export class PartyManagerModal extends Modal {
   ) {
     const isExpanded = this.expandedMembers.has(member.notePath);
     const isCompanion = member.role === "companion";
-    const card = container.createDiv({
+
+    // ── Outer wrapper: sidebar actions + card ──
+    const row = container.createDiv({ cls: "dnd-pm-member-row" });
+
+    // ── Left sidebar actions ──
+    const sidebar = row.createDiv({ cls: "dnd-pm-sidebar-actions" });
+
+    const upBtn = sidebar.createEl("button", { cls: "dnd-pm-icon-btn dnd-pm-move-btn" });
+    upBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="18 15 12 9 6 15"/></svg>`;
+    upBtn.setAttribute("title", "Move up");
+    if (index > 0) {
+      upBtn.addEventListener("click", async () => {
+        await this.manager.reorderMember(party.id, index, index - 1);
+        this.render();
+      });
+    } else {
+      upBtn.style.visibility = "hidden";
+    }
+
+    const removeBtn = sidebar.createEl("button", { cls: "dnd-pm-icon-btn dnd-pm-remove-btn" });
+    removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+    removeBtn.setAttribute("title", "Remove from party");
+    removeBtn.addEventListener("click", async () => {
+      await this.manager.removeMember(party.id, member.notePath);
+      this.expandedMembers.delete(member.notePath);
+      this.render();
+    });
+
+    const downBtn = sidebar.createEl("button", { cls: "dnd-pm-icon-btn dnd-pm-move-btn" });
+    downBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+    downBtn.setAttribute("title", "Move down");
+    if (index < total - 1) {
+      downBtn.addEventListener("click", async () => {
+        await this.manager.reorderMember(party.id, index, index + 1);
+        this.render();
+      });
+    } else {
+      downBtn.style.visibility = "hidden";
+    }
+
+    // ── Card ──
+    const card = row.createDiv({
       cls: `dnd-pm-card${isExpanded ? " is-expanded" : ""}${!member.enabled ? " is-disabled" : ""}${isCompanion ? " is-companion" : ""}`,
     });
     card.dataset.index = String(index);
@@ -523,39 +564,6 @@ export class PartyManagerModal extends Modal {
     const init = statsRow.createDiv({ cls: "dnd-pm-badge dnd-pm-init-badge" });
     init.createSpan({ text: "⚡", cls: "dnd-pm-badge-label" });
     init.createSpan({ text: initVal, cls: "dnd-pm-badge-value" });
-
-    // ── Card actions ──
-    const actions = card.createDiv({ cls: "dnd-pm-card-actions" });
-
-    // Remove button
-    const removeBtn = actions.createEl("button", { cls: "dnd-pm-icon-btn dnd-pm-remove-btn" });
-    removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
-    removeBtn.setAttribute("title", "Remove from party");
-    removeBtn.addEventListener("click", async () => {
-      await this.manager.removeMember(party.id, member.notePath);
-      this.expandedMembers.delete(member.notePath);
-      this.render();
-    });
-
-    // Move up/down (keyboard-friendly alternative to drag)
-    if (index > 0) {
-      const upBtn = actions.createEl("button", { cls: "dnd-pm-icon-btn dnd-pm-move-btn" });
-      upBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="18 15 12 9 6 15"/></svg>`;
-      upBtn.setAttribute("title", "Move up");
-      upBtn.addEventListener("click", async () => {
-        await this.manager.reorderMember(party.id, index, index - 1);
-        this.render();
-      });
-    }
-    if (index < total - 1) {
-      const downBtn = actions.createEl("button", { cls: "dnd-pm-icon-btn dnd-pm-move-btn" });
-      downBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>`;
-      downBtn.setAttribute("title", "Move down");
-      downBtn.addEventListener("click", async () => {
-        await this.manager.reorderMember(party.id, index, index + 1);
-        this.render();
-      });
-    }
 
     // ── Detail panel (always rendered, animated via CSS) ──
     const detailPanel = card.createDiv({ cls: "dnd-pm-detail-panel" });
