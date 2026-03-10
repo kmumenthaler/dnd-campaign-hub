@@ -585,6 +585,27 @@ deleteBtn.addEventListener("click", () => {
         return out;
       },
     },
+
+    {
+      id: "world-1.2.0",
+      entityTypes: ["world"],
+      targetVersion: "1.2.0",
+      description: "Remove leftover ^button-* block IDs from world notes",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+
+        // Remove leftover ^button-* block IDs
+        out = out.replace(/^\^button-[\w-]+\n*/gm, "");
+
+        // Collapse runs of 3+ blank lines
+        out = out.replace(/\n{3,}/g, "\n\n");
+
+        if (out === ctx.content) return null;
+
+        out = setFrontmatterField(out, "template_version", "1.2.0");
+        return out;
+      },
+    },
   ];
 }
 

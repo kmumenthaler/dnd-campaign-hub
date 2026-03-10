@@ -10,7 +10,7 @@ status: active
 role: player
 system:
 type: world
-template_version: 1.1.0
+template_version: 1.2.0
 fc-calendar: 
 fc-date: 
   year: 
