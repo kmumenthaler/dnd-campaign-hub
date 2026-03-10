@@ -378,10 +378,10 @@ export class PartyManagerModal extends Modal {
     const isExpanded = this.expandedMembers.has(member.notePath);
     const isCompanion = member.role === "companion";
 
-    // ── Outer wrapper: sidebar actions + card ──
+    // ── Outer wrapper: sidebar actions + card + remove ──
     const row = container.createDiv({ cls: "dnd-pm-member-row" });
 
-    // ── Left sidebar actions ──
+    // ── Left sidebar: move buttons ──
     const sidebar = row.createDiv({ cls: "dnd-pm-sidebar-actions" });
 
     const upBtn = sidebar.createEl("button", { cls: "dnd-pm-icon-btn dnd-pm-move-btn" });
@@ -395,15 +395,6 @@ export class PartyManagerModal extends Modal {
     } else {
       upBtn.style.visibility = "hidden";
     }
-
-    const removeBtn = sidebar.createEl("button", { cls: "dnd-pm-icon-btn dnd-pm-remove-btn" });
-    removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
-    removeBtn.setAttribute("title", "Remove from party");
-    removeBtn.addEventListener("click", async () => {
-      await this.manager.removeMember(party.id, member.notePath);
-      this.expandedMembers.delete(member.notePath);
-      this.render();
-    });
 
     const downBtn = sidebar.createEl("button", { cls: "dnd-pm-icon-btn dnd-pm-move-btn" });
     downBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>`;
@@ -564,6 +555,16 @@ export class PartyManagerModal extends Modal {
     const init = statsRow.createDiv({ cls: "dnd-pm-badge dnd-pm-init-badge" });
     init.createSpan({ text: "⚡", cls: "dnd-pm-badge-label" });
     init.createSpan({ text: initVal, cls: "dnd-pm-badge-value" });
+
+    // ── Right-side remove button ──
+    const removeBtn = row.createEl("button", { cls: "dnd-pm-icon-btn dnd-pm-remove-btn" });
+    removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+    removeBtn.setAttribute("title", "Remove from party");
+    removeBtn.addEventListener("click", async () => {
+      await this.manager.removeMember(party.id, member.notePath);
+      this.expandedMembers.delete(member.notePath);
+      this.render();
+    });
 
     // ── Detail panel (always rendered, animated via CSS) ──
     const detailPanel = card.createDiv({ cls: "dnd-pm-detail-panel" });

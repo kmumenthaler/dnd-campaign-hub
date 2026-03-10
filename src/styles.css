@@ -1929,7 +1929,7 @@
 /* Member row wrapper */
 .dnd-pm-member-row {
   display: flex;
-  align-items: start;
+  align-items: center;
   gap: 4px;
 }
 
@@ -1939,7 +1939,6 @@
   flex-direction: column;
   align-items: center;
   gap: 0;
-  padding-top: 4px;
   opacity: 0;
   transition: opacity 0.15s ease;
 }
@@ -2226,7 +2225,13 @@
 /* Card Actions (sidebar) */
 .dnd-pm-remove-btn {
   color: var(--text-faint);
+  opacity: 0;
   transition: opacity 0.15s ease;
+  flex-shrink: 0;
+}
+
+.dnd-pm-member-row:hover > .dnd-pm-remove-btn {
+  opacity: 1;
 }
 
 .dnd-pm-remove-btn:hover {
