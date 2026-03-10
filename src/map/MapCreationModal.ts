@@ -1045,14 +1045,37 @@ class ImageSelectorModal extends Modal {
 
     contentEl.createEl('h2', { text: 'Select Map Image' });
 
-    // Top bar: search + upload on same row
-    const topBar = contentEl.createDiv({ cls: 'image-selector-top-bar' });
+    // ── Two-column layout: folders | images ──
+    const body = contentEl.createDiv({ cls: 'image-selector-body' });
+
+    // ── LEFT: Folder sidebar ──
+    const sidebar = body.createDiv({ cls: 'image-selector-sidebar' });
+
+    sidebar.createEl('span', { text: 'Folders', cls: 'image-selector-sidebar-label' });
+
+    const folderSearchInput = sidebar.createEl('input', {
+      cls: 'image-selector-search-input image-selector-folder-search',
+      attr: { type: 'text', placeholder: '🔍 Filter folders…', spellcheck: 'false' }
+    });
+
+    this.folderChipsContainer = sidebar.createDiv({ cls: 'image-selector-folder-list' });
+    this.renderFolderChips();
+
+    folderSearchInput.addEventListener('input', () => {
+      this.renderFolderChips(folderSearchInput.value.trim().toLowerCase());
+    });
+
+    // ── RIGHT: Image panel ──
+    const mainPanel = body.createDiv({ cls: 'image-selector-main' });
+
+    // Top bar: image search + upload
+    const topBar = mainPanel.createDiv({ cls: 'image-selector-top-bar' });
     const searchContainer = topBar.createDiv({ cls: 'image-selector-search' });
     const searchInput = searchContainer.createEl('input', {
       cls: 'image-selector-search-input',
       attr: {
         type: 'text',
-        placeholder: '🔍 Search by file name or path...',
+        placeholder: '🔍 Search images…',
         spellcheck: 'false'
       }
     });
@@ -1065,62 +1088,64 @@ class ImageSelectorModal extends Modal {
     uploadBtn.addEventListener('click', () => this.uploadFromExplorer());
 
     // Result count
-    this.resultCountEl = contentEl.createDiv({ cls: 'image-selector-result-count' });
-
-    // Folder filter section (own row, only when subfolders exist)
-    if (this.folderPaths.length > 0) {
-      const folderSection = contentEl.createDiv({ cls: 'image-selector-folder-section' });
-      folderSection.createEl('span', { text: 'Folders', cls: 'image-selector-folder-label' });
-      this.folderChipsContainer = folderSection.createDiv({ cls: 'image-selector-folder-chips' });
-      this.renderFolderChips();
-    }
+    this.resultCountEl = mainPanel.createDiv({ cls: 'image-selector-result-count' });
 
     // File grid (card layout with previews)
-    this.listContainer = contentEl.createDiv({ cls: 'image-file-grid' });
+    this.listContainer = mainPanel.createDiv({ cls: 'image-file-grid' });
 
     // Render initial list
     this.filterAndRender();
 
-    // Wire up search
+    // Wire up image search
     searchInput.addEventListener('input', () => {
       this.searchQuery = searchInput.value.trim().toLowerCase();
       this.filterAndRender();
     });
 
-    // Focus search input after modal opens
+    // Focus image search input after modal opens
     setTimeout(() => searchInput.focus(), 50);
   }
 
-  /** Render the folder-filter chip bar. */
-  private renderFolderChips() {
+  /** Render the folder list in the sidebar. Optionally filter by query. */
+  private renderFolderChips(filterQuery?: string) {
     if (!this.folderChipsContainer) return;
     this.folderChipsContainer.empty();
 
-    // "All" chip
-    const allChip = this.folderChipsContainer.createEl('button', {
-      cls: `image-selector-folder-chip${this.selectedFolder === '' ? ' is-active' : ''}`,
-      text: '📂 All',
+    // "All" item
+    const allItem = this.folderChipsContainer.createDiv({
+      cls: `image-selector-folder-item${this.selectedFolder === '' ? ' is-active' : ''}`,
     });
-    allChip.addEventListener('click', () => {
+    allItem.createSpan({ text: '📂  All Maps' });
+    allItem.addEventListener('click', () => {
       this.selectedFolder = '';
-      this.renderFolderChips();
+      this.renderFolderChips(filterQuery);
       this.filterAndRender();
     });
 
-    // One chip per subfolder
-    for (const folder of this.folderPaths) {
+    // Filtered folder list
+    const folders = filterQuery
+      ? this.folderPaths.filter(f => f.toLowerCase().includes(filterQuery))
+      : this.folderPaths;
+
+    for (const folder of folders) {
       const label = folder.split('/').pop() || folder;
       const depth = folder.split('/').length;
-      const chip = this.folderChipsContainer.createEl('button', {
-        cls: `image-selector-folder-chip${this.selectedFolder === folder ? ' is-active' : ''}`,
-        text: `${'  '.repeat(depth - 1)}📁 ${label}`,
+      const item = this.folderChipsContainer.createDiv({
+        cls: `image-selector-folder-item${this.selectedFolder === folder ? ' is-active' : ''}`,
       });
-      chip.dataset.folder = folder;
-      chip.addEventListener('click', () => {
+      item.style.paddingLeft = `${8 + (depth - 1) * 14}px`;
+      item.createSpan({ text: `📁  ${label}` });
+      item.dataset.folder = folder;
+      item.addEventListener('click', () => {
         this.selectedFolder = folder;
-        this.renderFolderChips();
+        this.renderFolderChips(filterQuery);
         this.filterAndRender();
       });
+    }
+
+    if (folders.length === 0 && filterQuery) {
+      const empty = this.folderChipsContainer.createDiv({ cls: 'image-selector-folder-empty' });
+      empty.setText('No matching folders');
     }
   }
 
