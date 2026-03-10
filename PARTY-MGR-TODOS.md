@@ -20,4 +20,4 @@ _Created: 2026-03-10_
 
 - [ ] **DM Screen party widget** — The DM Screen is a pure rules reference. Could add an optional party summary panel showing live HP, AC, and status for quick reference during play.
 
-- [ ] **NPC companion/hireling tracking** — NPCs are not registered in PartyManager. If NPC companions or hirelings become a feature, they could be added as a special member type.
+- [x] **NPC companion/hireling tracking** — NPCs and creatures can now be added as companions to any party. Companion cards show an orange accent, role badge, and CR instead of level. The summary bar separates PC and companion counts.
