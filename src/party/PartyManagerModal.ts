@@ -390,6 +390,8 @@ export class PartyManagerModal extends Modal {
         // Animate closed, then re-render
         const panel = card.querySelector(".dnd-pm-detail-panel") as HTMLElement;
         if (panel) {
+          // Reset overflow and pin max-height so transition has a start value
+          panel.style.overflow = "hidden";
           panel.style.maxHeight = panel.scrollHeight + "px";
           // Force reflow so browser registers the starting value
           void panel.offsetHeight;
@@ -582,6 +584,13 @@ export class PartyManagerModal extends Modal {
       requestAnimationFrame(() => {
         detailPanel.addClass("is-open");
         detailPanel.style.maxHeight = detailPanel.scrollHeight + "px";
+        // After transition, remove max-height cap so content is never clipped
+        detailPanel.addEventListener("transitionend", () => {
+          if (detailPanel.hasClass("is-open")) {
+            detailPanel.style.maxHeight = "none";
+            detailPanel.style.overflow = "visible";
+          }
+        }, { once: true });
       });
     }
   }
