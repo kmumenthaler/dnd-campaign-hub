@@ -664,21 +664,21 @@ date: ${currentDate}
       pcContent = pcContent.replace(/^---\n[\s\S]*?\n---/, frontmatter);
       
       // Replace the title
-      pcContent = pcContent.replace(/# <% tp\.frontmatter\.name %>/, `# ${this.pcName}`);
+      pcContent = pcContent.replace(/# {{name}}/, `# ${this.pcName}`);
 
       // Replace template references with actual values
       pcContent = pcContent
-        .replace(/<% tp\.frontmatter\.name %>/g, this.pcName)
-        .replace(/<% tp\.frontmatter\.class %>/g, classString)
-        .replace(/<% tp\.frontmatter\.level %>/g, this.level)
-        .replace(/<% tp\.frontmatter\.hp %>/g, this.hpCurrent || "0")
-        .replace(/<% tp\.frontmatter\.hp_max %>/g, this.hpMax || "0")
-        .replace(/<% tp\.frontmatter\.ac %>/g, this.ac)
-        .replace(/<% tp\.frontmatter\.init_bonus %>/g, this.initBonus)
-        .replace(/<% tp\.frontmatter\.speed %>/g, this.speed)
-        .replace(/<% tp\.frontmatter\.readonlyUrl \? "\[Digital Character Sheet\]\(" \+ tp\.frontmatter\.readonlyUrl \+ "\)" : "_No digital sheet linked_" %>/g, 
+        .replace(/{{name}}/g, this.pcName)
+        .replace(/{{class}}/g, classString)
+        .replace(/{{level}}/g, this.level)
+        .replace(/{{hp}}/g, this.hpCurrent || "0")
+        .replace(/{{hp_max}}/g, this.hpMax || "0")
+        .replace(/{{ac}}/g, this.ac)
+        .replace(/{{init_bonus}}/g, this.initBonus)
+        .replace(/{{speed}}/g, this.speed)
+        .replace(/{{characterSheetLink}}/g, 
           this.characterSheetUrl ? `[Digital Character Sheet](${this.characterSheetUrl})` : "_No digital sheet linked_")
-        .replace(/<% tp\.frontmatter\.characterSheetPdf \? "\[\[" \+ tp\.frontmatter\.characterSheetPdf \+ "\|Character Sheet PDF\]\]" : "_No PDF uploaded_" %>/g,
+        .replace(/{{characterSheetPdf}}/g,
           this.characterSheetPdf ? `[[${this.characterSheetPdf}|Character Sheet PDF]]` : "_No PDF uploaded_");
 
       // When editing, also replace already-rendered content (not just Templater placeholders)

@@ -10,7 +10,7 @@ status: active
 role: player
 system:
 type: world
-template_version: 1.0.0
+template_version: 1.1.0
 fc-calendar: 
 fc-date: 
   year: 
@@ -19,23 +19,12 @@ fc-date:
 ---
 # The World of Your Campaign
 
+\`\`\`dnd-hub
+\`\`\`
+
 ## Player Characters
 
 *Manage player characters in your campaign.*
-
-\`\`\`button
-name Create New PC
-type command
-action D&D Campaign Hub: Create New PC
-\`\`\`
-^button-new-pc
-
-\`\`\`button
-name Import Existing PC
-type command
-action D&D Campaign Hub: Import Existing PC from Another Campaign
-\`\`\`
-^button-import-pc
 
 \`\`\`dataview
 TABLE WITHOUT ID
@@ -57,13 +46,6 @@ SORT name ASC
 
 *Track non-player characters, allies, enemies, and everyone in between.*
 
-\`\`\`button
-name Create New NPC
-type command
-action D&D Campaign Hub: Create New NPC
-\`\`\`
-^button-new-npc
-
 \`\`\`dataview
 TABLE WITHOUT ID
   link(file.path, name) AS "Name",
@@ -78,14 +60,7 @@ SORT name ASC
 
 ## Sessions
 
-*Create new sessions using the button below or the command palette (Ctrl/Cmd+P → "Create New Session").*
-
-\`\`\`button
-name Create New Session
-type command
-action D&D Campaign Hub: Create New Session
-\`\`\`
-^button-new-session
+*Create new sessions using the command palette (Ctrl/Cmd+P → "Create New Session").*
 
 \`\`\`dataview
 table summary as "Summary" from "ttrpgs/{{CAMPAIGN_NAME}}"
@@ -103,13 +78,6 @@ SORT sessionNum ASC
 
 *Manage factions, organizations, and groups that shape your world.*
 
-\`\`\`button
-name Create New Faction
-type command
-action D&D Campaign Hub: Create New Faction
-\`\`\`
-^button-new-faction
-
 \`\`\`dataview
 TABLE WITHOUT ID
   link(file.path, name) AS "Name",
@@ -124,13 +92,6 @@ SORT name ASC
 ## Adventures
 
 *Track multi-session story arcs and adventures.*
-
-\`\`\`button
-name Create New Adventure
-type command
-action D&D Campaign Hub: Create New Adventure
-\`\`\`
-^button-new-adventure
 
 \`\`\`dataview
 TABLE WITHOUT ID
@@ -437,36 +398,36 @@ statblock: ""
 notes: []
 ---
 
-# <% tp.frontmatter.name %>
+# {{name}}
 
 \`\`\`dnd-hub
 \`\`\`
 
 > [!abstract]- Quick Reference
-> **Motivation:** <% tp.frontmatter.motivation %>  
-> **Methods:** <% tp.frontmatter.pursuit %>  
-> **Problem:** <% tp.frontmatter.active_problem %>
+> **Motivation:** {{motivation}}  
+> **Methods:** {{pursuit}}  
+> **Problem:** {{active_problem}}
 
 ## 🎭 Core Engine
 
 ### What They Want
-<% tp.frontmatter.motivation %>
+{{motivation}}
 
 ### How They Pursue It
-<% tp.frontmatter.pursuit %>
+{{pursuit}}
 
 ### Active Problem
-<% tp.frontmatter.active_problem %>
+{{active_problem}}
 
 ---
 
 ## 🎨 Character Details
 
 ### Physical Detail
-<% tp.frontmatter.physical_detail %>
+{{physical_detail}}
 
 ### Speech Pattern
-<% tp.frontmatter.speech_pattern %>
+{{speech_pattern}}
 
 ---
 
@@ -570,21 +531,21 @@ characterSheetPdf:
 date: 
 ---
 
-# <% tp.frontmatter.name %>
+# {{name}}
 
 \`\`\`dnd-hub
 \`\`\`
 
 > [!info] Quick Stats
-> **Class:** <% tp.frontmatter.class %> <% tp.frontmatter.level %>  
-> **HP:** <% tp.frontmatter.hp %>/<% tp.frontmatter.hp_max %>  
-> **AC:** <% tp.frontmatter.ac %> | **Initiative:** +<% tp.frontmatter.init_bonus %> | **Speed:** <% tp.frontmatter.speed %> ft.
+> **Class:** {{class}} {{level}}  
+> **HP:** {{hp}}/{{hp_max}}  
+> **AC:** {{ac}} | **Initiative:** +{{init_bonus}} | **Speed:** {{speed}} ft.
 
 ## Character Sheet Links
 
-<% tp.frontmatter.readonlyUrl ? "[Digital Character Sheet](" + tp.frontmatter.readonlyUrl + ")" : "_No digital sheet linked_" %>
+{{characterSheetLink}}
 
-<% tp.frontmatter.characterSheetPdf ? "[[" + tp.frontmatter.characterSheetPdf + "|Character Sheet PDF]]" : "_No PDF uploaded_" %>
+{{characterSheetPdf}}
 
 ## Description
 
@@ -663,7 +624,7 @@ sessions: []
 date: 
 ---
 
-# <% tp.frontmatter.name %>
+# {{name}}
 
 **Status:** 🎬 Planning  
 **Level:** {{LEVEL_RANGE}} | **Current Act:** 1 of 3  
@@ -897,19 +858,19 @@ countermeasures: []
 date: 
 ---
 
-# <% tp.frontmatter.trap_name || "Unnamed Trap" %>
+# {{trap_name}}
 
 \`\`\`dnd-hub
 \`\`\`
 
 ## Trap Details
 
-**Type:** <% tp.frontmatter.trap_type.charAt(0).toUpperCase() + tp.frontmatter.trap_type.slice(1) %> Trap  
-**Threat Level:** <% tp.frontmatter.threat_level.charAt(0).toUpperCase() + tp.frontmatter.threat_level.slice(1) %>  
-**Level Range:** <% tp.frontmatter.min_level %>-<% tp.frontmatter.max_level %>
+**Type:** {{trap_type}} Trap  
+**Threat Level:** {{threat_level}}  
+**Level Range:** {{min_level}}-{{max_level}}
 
 ### Trigger Condition
-<% tp.frontmatter.trigger || "Not specified" %>
+{{trigger}}
 
 ---
 
@@ -1061,7 +1022,7 @@ if (countermeasures.length === 0) {
 
 ## Session History
 
-**Created:** <% tp.date.now("YYYY-MM-DD") %>
+**Created:** {{DATE}}
 
 *Record when this trap was encountered and what happened*
 5
@@ -1087,7 +1048,7 @@ active_problem: ""
 date: 
 ---
 
-# <% tp.frontmatter.name %>
+# {{name}}
 
 \`\`\`dnd-hub
 \`\`\`
@@ -1095,39 +1056,39 @@ date:
 ## 🎯 Core Engine
 
 ### What do they want?
-<% tp.frontmatter.main_goal %>
+{{main_goal}}
 
 ### How do they pursue it?
-<% tp.frontmatter.pursuit_method %>
+{{pursuit_method}}
 
 ## 📋 Details
 
-**Leader:** <% tp.frontmatter.leader %>
+**Leader:** {{leader}}
 
-**Size & Influence:** <% tp.frontmatter.size %>
+**Size & Influence:** {{size}}
 
 **Resources:**
-<% tp.frontmatter.resources %>
+{{resources}}
 
 **Reputation:**
-<% tp.frontmatter.reputation %>
+{{reputation}}
 
 ## 🗺️ Territories & Operations
 
-<% tp.frontmatter.territories %>
+{{territories}}
 
 ## 🤝 Relationships
 
 ### Allies
-<% tp.frontmatter.allies %>
+{{allies}}
 
 ### Enemies
-<% tp.frontmatter.enemies %>
+{{enemies}}
 
 ## ⚠️ Current Situation
 
 **Active Problem:**
-<% tp.frontmatter.active_problem %>
+{{active_problem}}
 
 ## Members & Key Figures
 
@@ -1268,15 +1229,15 @@ quest-related: false
 danger-level: 
 ---
 
-# <% tp.frontmatter.icon %> <% tp.frontmatter.name %>
+# {{icon}} {{name}}
 
 \`\`\`dnd-hub
 \`\`\`
 
 > [!info] Quick Info
-> **Type:** <% tp.frontmatter["poi-type"] %>  
-> **Region:** <% tp.frontmatter.region || "Unknown" %>  
-> **Status:** <% tp.frontmatter.discovered ? (tp.frontmatter.visited ? "Visited" : "Discovered") : "Undiscovered" %>
+> **Type:** {{poi-type}}  
+> **Region:** {{region}}  
+> **Status:** {{status}}
 
 ## Description
 

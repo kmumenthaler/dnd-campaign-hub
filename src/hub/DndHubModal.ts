@@ -36,10 +36,6 @@ export class DndHubModal extends Modal {
       list.createEl("li", { text: folder });
     });
 
-    container.createEl("p", {
-      text: "⚠️ Note: This will also configure settings for Templater and Hide Folders plugins if they are installed."
-    });
-
     const buttonContainer = container.createDiv({ cls: "dnd-hub-init-buttons" });
     
     const initButton = buttonContainer.createEl("button", {

@@ -4,6 +4,7 @@ import {
   compareVersions,
   addFrontmatterField,
   addFrontmatterFieldAfter,
+  setFrontmatterField,
   replaceDataviewjsBlock,
   insertAfterTitle,
 } from "./frontmatter";
@@ -553,6 +554,30 @@ deleteBtn.addEventListener("click", () => {
       description: "Replace inline buttons with dynamic render block",
       async apply(ctx: MigrationContext) {
         return replaceButtonsWithRenderBlock(ctx.content, "dnd-campaign-hub:edit-poi");
+      },
+    },
+
+    // ── World ────────────────────────────────────────────────────────────
+
+    {
+      id: "world-1.1.0",
+      entityTypes: ["world"],
+      targetVersion: "1.1.0",
+      description: "Replace Buttons-plugin button blocks with dynamic render block",
+      async apply(ctx: MigrationContext) {
+        // Already has the render block — skip
+        if (ctx.content.includes("```dnd-hub")) {
+          return setFrontmatterField(ctx.content, "template_version", "1.1.0");
+        }
+
+        // Remove all ```button ... ``` blocks (Buttons plugin format)
+        let out = ctx.content.replace(/```button\n[\s\S]*?```\n*/g, "");
+
+        // Insert the dnd-hub render block after the title
+        out = insertAfterTitle(out, DND_HUB_BLOCK);
+
+        out = setFrontmatterField(out, "template_version", "1.1.0");
+        return out;
       },
     },
   ];

@@ -1182,13 +1182,12 @@ export class NPCCreationModal extends Modal {
           .replace(/physical_detail: $/m, `physical_detail: "${this.physicalDetail}"`)
           .replace(/speech_pattern: $/m, `speech_pattern: "${this.speechPattern}"`)
           .replace(/active_problem: $/m, `active_problem: "${this.activeProblem}"`)
-          .replace(/# <% tp\.frontmatter\.name %>/g, `# ${this.npcName}`)
-          .replace(/<% tp\.frontmatter\.name %>/g, this.npcName)
-          .replace(/<% tp\.frontmatter\.motivation %>/g, this.motivation)
-          .replace(/<% tp\.frontmatter\.pursuit %>/g, this.pursuit)
-          .replace(/<% tp\.frontmatter\.active_problem %>/g, this.activeProblem)
-          .replace(/<% tp\.frontmatter\.physical_detail %>/g, this.physicalDetail)
-          .replace(/<% tp\.frontmatter\.speech_pattern %>/g, this.speechPattern);
+          .replace(/{{name}}/g, this.npcName)
+          .replace(/{{motivation}}/g, this.motivation)
+          .replace(/{{pursuit}}/g, this.pursuit)
+          .replace(/{{active_problem}}/g, this.activeProblem)
+          .replace(/{{physical_detail}}/g, this.physicalDetail)
+          .replace(/{{speech_pattern}}/g, this.speechPattern);
 
         // If statblock is enabled, inject statblock frontmatter and render block
         if (this.hasStatblock) {

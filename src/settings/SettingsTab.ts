@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { MapManagerModal } from "../map/MapManagerModal";
 import { PurgeConfirmModal } from "../hub/PurgeConfirmModal";
@@ -17,12 +17,6 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     containerEl.createEl("h2", { text: "D&D Campaign Hub Settings" });
-
-    // Plugin Dependencies Section
-    containerEl.createEl("h3", { text: "📦 Plugin Dependencies" });
-    
-    const depsContainer = containerEl.createDiv({ cls: "dnd-dependencies-container" });
-    await this.displayDependencyStatus(depsContainer);
 
     // Campaign Settings
     containerEl.createEl("h3", { text: "⚙️ Campaign Settings" });
@@ -228,78 +222,6 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
           .setWarning()
           .onClick(async () => {
             new PurgeConfirmModal(this.app, this.plugin).open();
-          })
-      );
-  }
-
-  async displayDependencyStatus(container: HTMLElement): Promise<void> {
-    container.empty();
-
-    const deps = await this.plugin.checkDependencies();
-    const allInstalled = deps.missing.length === 0;
-
-    // Status indicator
-    const statusContainer = container.createDiv({ cls: "dnd-dependency-status" });
-    
-    if (allInstalled) {
-      statusContainer.createEl("div", { 
-        text: "✅ All dependencies installed and ready!",
-        cls: "dnd-status-success"
-      });
-    } else {
-      statusContainer.createEl("div", { 
-        text: `⚠️ ${deps.missing.length} dependency plugin(s) missing`,
-        cls: "dnd-status-warning"
-      });
-    }
-
-    // Detailed plugin list
-    const pluginsContainer = container.createDiv({ cls: "dnd-plugins-list" });
-    
-    const requiredPlugins = [
-      { id: "buttons", name: "Buttons", url: "obsidian://show-plugin?id=buttons" },
-      { id: "dataview", name: "Dataview", url: "obsidian://show-plugin?id=dataview" },
-      { id: "calendarium", name: "Calendarium", url: "obsidian://show-plugin?id=calendarium" },
-      { id: "templater-obsidian", name: "Templater", url: "obsidian://show-plugin?id=templater-obsidian" }
-    ];
-
-    for (const plugin of requiredPlugins) {
-      const isInstalled = deps.installed.includes(plugin.name);
-      
-      const pluginRow = pluginsContainer.createDiv({ cls: "dnd-plugin-row" });
-      
-      const statusIcon = pluginRow.createEl("span", { 
-        text: isInstalled ? "✅" : "❌",
-        cls: "dnd-plugin-status-icon"
-      });
-      
-      const pluginName = pluginRow.createEl("span", { 
-        text: plugin.name,
-        cls: isInstalled ? "dnd-plugin-installed" : "dnd-plugin-missing"
-      });
-      
-      if (!isInstalled) {
-        const installButton = pluginRow.createEl("button", {
-          text: "Install",
-          cls: "mod-cta"
-        });
-        installButton.addEventListener("click", () => {
-          // Open Obsidian's plugin browser directly to this plugin
-          window.open(plugin.url, "_blank");
-        });
-      }
-    }
-
-    // Refresh button
-    new Setting(container)
-      .setName("Refresh Status")
-      .setDesc("Check dependency status again")
-      .addButton((button) =>
-        button
-          .setButtonText("Refresh")
-          .onClick(async () => {
-            await this.displayDependencyStatus(container);
-            new Notice("Dependency status refreshed!");
           })
       );
   }

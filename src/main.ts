@@ -1,4 +1,4 @@
-import { App, Editor, ItemView, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TextComponent, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
+import { App, Editor, ItemView, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TextComponent, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import {
   WORLD_TEMPLATE,
   SESSION_GM_TEMPLATE,
@@ -122,7 +122,7 @@ import { SessionCreationModal } from './session/SessionCreationModal';
 import { EndSessionModal } from './session/EndSessionModal';
 import { DMScreenView } from './dm-screen/DMScreenView';
 import { CampaignCreationModal } from './campaign/CampaignCreationModal';
-import { DependencyModal } from './campaign/DependencyModal';
+
 import { CalendarDateInputModal } from './campaign/CalendarDateInputModal';
 import { AdventureCreationModal } from './adventure/AdventureCreationModal';
 import { SceneCreationModal } from './scene/SceneCreationModal';
@@ -1531,6 +1531,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 		};
 
 		switch (type) {
+			case "world":
+				createBtn("🛡️ Create New PC", "dnd-hub-btn-create", cmd("create-pc"));
+				createBtn("📥 Import PC", "dnd-hub-btn-create", cmd("import-pc"));
+				createBtn("👤 Create New NPC", "dnd-hub-btn-create", cmd("create-npc"));
+				createBtn("📜 Create New Session", "dnd-hub-btn-create", cmd("create-session"));
+				createBtn("🏛️ Create New Faction", "dnd-hub-btn-create", cmd("create-faction"));
+				createBtn("🗺️ Create New Adventure", "dnd-hub-btn-create", cmd("create-adventure"));
+				break;
+
 			case "player":
 			case "pc":
 				createBtn("✏️ Edit PC", "dnd-hub-btn-edit", cmd("edit-pc"));
@@ -1753,170 +1762,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 		}
 	}
 
-  /**
-   * Install required community plugins
-   */
-  async installRequiredPlugins() {
-    const requiredPlugins = [
-      {
-        id: "buttons",
-        name: "Buttons",
-        repo: "shabegom/buttons",
-        version: "0.5.1"
-      },
-      {
-        id: "dataview",
-        name: "Dataview",
-        repo: "blacksmithgu/obsidian-dataview",
-        version: "0.5.68"
-      },
-      {
-        id: "calendarium",
-        name: "Calendarium",
-        repo: "javalent/calendarium",
-        version: "2.1.0"
-      }
-    ];
 
-    new Notice("Installing required plugins...");
-
-    for (const plugin of requiredPlugins) {
-      try {
-        await this.installPlugin(plugin);
-      } catch (error) {
-        console.error(`Failed to install ${plugin.name}:`, error);
-        new Notice(`Failed to install ${plugin.name}. Please install manually.`);
-      }
-    }
-
-    // Enable the plugins programmatically
-    await this.enablePlugins(requiredPlugins.map(p => p.id));
-
-    new Notice("Required plugins installed! Please reload Obsidian (Ctrl+R) to activate them.");
-  }
-
-  /**
-   * Install a single plugin from GitHub
-   */
-  async installPlugin(plugin: { id: string; name: string; repo: string; version: string }) {
-    const adapter = this.app.vault.adapter;
-    const pluginsFolder = `.obsidian/plugins`;
-    const pluginPath = `${pluginsFolder}/${plugin.id}`;
-
-    // Check if plugin already exists
-    const exists = await adapter.exists(pluginPath);
-    if (exists) {
-      return;
-    }
-
-    // Create plugin directory
-    await adapter.mkdir(pluginPath);
-
-    // Download manifest.json using Obsidian's requestUrl to bypass CORS
-    const manifestUrl = `https://raw.githubusercontent.com/${plugin.repo}/HEAD/manifest.json`;
-    const manifestResponse = await requestUrl({ url: manifestUrl });
-    const manifest = manifestResponse.text;
-    await adapter.write(`${pluginPath}/manifest.json`, manifest);
-
-    // Download main.js from specific version
-    const mainUrl = `https://github.com/${plugin.repo}/releases/download/${plugin.version}/main.js`;
-    const mainResponse = await requestUrl({
-      url: mainUrl,
-      method: 'GET'
-    });
-    const mainJsArray = new Uint8Array(mainResponse.arrayBuffer);
-    await adapter.writeBinary(`${pluginPath}/main.js`, mainJsArray.buffer);
-
-    // Download styles.css if it exists
-    try {
-      const stylesUrl = `https://github.com/${plugin.repo}/releases/download/${plugin.version}/styles.css`;
-      const stylesResponse = await requestUrl({ url: stylesUrl });
-      await adapter.write(`${pluginPath}/styles.css`, stylesResponse.text);
-    } catch (error) {
-      // styles.css is optional
-    }
-
-  }
-
-  /**
-   * Enable plugins in community-plugins.json
-   */
-  async enablePlugins(pluginIds: string[]) {
-    const adapter = this.app.vault.adapter;
-    const configPath = `.obsidian/community-plugins.json`;
-
-    let enabledPlugins: string[] = [];
-
-    const exists = await adapter.exists(configPath);
-    if (exists) {
-      const content = await adapter.read(configPath);
-      enabledPlugins = JSON.parse(content);
-    }
-
-    // Add new plugins if not already enabled
-    for (const id of pluginIds) {
-      if (!enabledPlugins.includes(id)) {
-        enabledPlugins.push(id);
-      }
-    }
-
-    await adapter.write(configPath, JSON.stringify(enabledPlugins, null, 2));
-  }
-
-  /**
-   * Check if required dependencies are installed
-   */
-  async checkDependencies(): Promise<{ missing: string[]; installed: string[] }> {
-    const requiredPlugins = [
-      { id: "buttons", name: "Buttons" },
-      { id: "dataview", name: "Dataview" },
-      { id: "calendarium", name: "Calendarium" },
-      { id: "templater-obsidian", name: "Templater" }
-    ];
-
-    const installed: string[] = [];
-    const missing: string[] = [];
-    const enabledPlugins: Set<string> = (this.app as any).plugins?.enabledPlugins ?? new Set();
-
-    for (const plugin of requiredPlugins) {
-      if (enabledPlugins.has(plugin.id)) {
-        installed.push(plugin.name);
-      } else {
-        missing.push(plugin.name);
-      }
-    }
-
-    return { missing, installed };
-  }
-
-  /**
-   * Show dependency status to user. Returns dependency summary for caller reuse.
-   */
-  async showDependencyModal(force = false, silentWhenSatisfied = false): Promise<{ missing: string[]; installed: string[] }> {
-    const deps = await this.checkDependencies();
-    if (deps.missing.length > 0 || force) {
-      new DependencyModal(this.app, deps).open();
-    } else if (!silentWhenSatisfied) {
-      new Notice("All required D&D Campaign Hub plugins are already installed.");
-    }
-
-    return deps;
-  }
 
 	/**
 	 * Initialize the vault with the required folder structure and templates
 	 */
   async initializeVault() {
     new Notice("Initializing D&D Campaign Hub vault structure...");
-
-    // Install required plugins first
-    await this.installRequiredPlugins();
-
-    // Verify dependencies before continuing
-    const deps = await this.showDependencyModal(false, true);
-    if (deps.missing.length > 0) {
-      return;
-    }
 
 		// Create all required folders
 		const foldersToCreate = [
@@ -1945,9 +1797,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 		// Create template files
 		await this.createTemplateFiles();
-
-		// Configure plugin settings
-		await this.configurePluginSettings();
 
 		new Notice("Vault initialized successfully!");
 	}
@@ -1985,40 +1834,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 		}
 	}
 
-	/**
-	 * Configure settings for integrated plugins
-	 */
-	async configurePluginSettings() {
-		// Configure Templater
-		try {
-			const templaterSettings = {
-				templates_folder: "z_Templates",
-				user_scripts_folder: "z_Scripts",
-				trigger_on_file_creation: true,
-				enable_folder_templates: true,
-				folder_templates: [
-					{
-						folder: "ttrpgs",
-						template: "z_Templates/world.md"
-					}
-				]
-			};
-			
-			// Note: We can't directly modify other plugin settings, but we can provide guidance
-		} catch (error) {
-			console.error("Failed to configure Templater:", error);
-		}
-
-		// Configure Hide Folders
-		try {
-			const hideFoldersSettings = {
-				attachmentFolderNames: ["startsWith::z_"],
-				matchCaseInsensitive: true
-			};
-		} catch (error) {
-			console.error("Failed to configure Hide Folders:", error);
-		}
-	}
 
 	async createCampaign() {
 		// Open campaign creation modal instead of simple name prompt
@@ -2026,13 +1841,6 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	async createNpc() {
-		// Check dependencies first
-		const deps = await this.checkDependencies();
-		if (deps.missing.length > 0) {
-			new DependencyModal(this.app, deps).open();
-			return;
-		}
-		
 		// Open NPC creation modal instead of simple name prompt
 		new NPCCreationModal(this.app, this).open();
 	}

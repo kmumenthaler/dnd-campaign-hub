@@ -528,21 +528,21 @@ export class PoiCreationModal extends Modal {
 			
 			// Replace heading
 			content = content.replace(
-				'# <% tp.frontmatter.icon %> <% tp.frontmatter.name %>',
+				'# {{icon}} {{name}}',
 				`# ${this.icon} ${this.name}`
 			);
 			
 			// Replace Quick Info section
 			content = content.replace(
-				'**Type:** <% tp.frontmatter["poi-type"] %>',
+				'**Type:** {{poi-type}}',
 				`**Type:** ${this.poiType}`
 			);
 			content = content.replace(
-				'**Region:** <% tp.frontmatter.region || "Unknown" %>',
+				'**Region:** {{region}}',
 				`**Region:** ${this.region || 'Unknown'}`
 			);
 			content = content.replace(
-				'**Status:** <% tp.frontmatter.discovered ? (tp.frontmatter.visited ? "Visited" : "Discovered") : "Undiscovered" %>',
+				'**Status:** {{status}}',
 				'**Status:** Undiscovered'
 			);
 

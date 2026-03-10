@@ -299,17 +299,17 @@ date: ${currentDate}
       
       // Replace the title and template references
       factionContent = factionContent
-        .replace(/# <% tp\.frontmatter\.name %>/g, `# ${this.factionName}`)
-        .replace(/<% tp\.frontmatter\.name %>/g, this.factionName)
-        .replace(/<% tp\.frontmatter\.main_goal %>/g, this.mainGoal)
-        .replace(/<% tp\.frontmatter\.pursuit_method %>/g, this.pursuitMethod)
-        .replace(/<% tp\.frontmatter\.leader %>/g, this.leader || "_No leader specified_")
-        .replace(/<% tp\.frontmatter\.active_problem %>/g, this.activeProblem)
-        .replace(/<% tp\.frontmatter\.resources %>/g, this.resources)
-        .replace(/<% tp\.frontmatter\.reputation %>/g, this.reputation)
-        .replace(/<% tp\.frontmatter\.territories %>/g, this.territories)
-        .replace(/<% tp\.frontmatter\.allies %>/g, this.allies)
-        .replace(/<% tp\.frontmatter\.enemies %>/g, this.enemies);
+        .replace(/{{name}}/g, this.factionName)
+        .replace(/{{main_goal}}/g, this.mainGoal)
+        .replace(/{{pursuit_method}}/g, this.pursuitMethod)
+        .replace(/{{leader}}/g, this.leader || "_No leader specified_")
+        .replace(/{{active_problem}}/g, this.activeProblem)
+        .replace(/{{resources}}/g, this.resources)
+        .replace(/{{reputation}}/g, this.reputation)
+        .replace(/{{territories}}/g, this.territories)
+        .replace(/{{allies}}/g, this.allies)
+        .replace(/{{enemies}}/g, this.enemies)
+        .replace(/{{size}}/g, this.size);
 
       const filePath = `${factionPath}/${this.factionName}.md`;
       await this.app.vault.create(filePath, factionContent);
