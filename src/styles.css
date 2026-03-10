@@ -1821,6 +1821,50 @@
   border-color: var(--text-error);
 }
 
+/* ── Campaign Link Row ── */
+.dnd-pm-campaign-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 12px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.dnd-pm-campaign-label {
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.dnd-pm-campaign-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.dnd-pm-campaign-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+}
+
+.dnd-pm-btn-muted {
+  opacity: 0.7;
+}
+
+.dnd-pm-btn-muted:hover {
+  opacity: 1;
+}
+
 /* ── Summary Bar ── */
 .dnd-pm-summary {
   display: flex;

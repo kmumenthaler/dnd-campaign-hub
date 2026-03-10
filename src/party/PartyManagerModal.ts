@@ -1,4 +1,4 @@
-import { App, Modal, Setting, TFile, Notice, FuzzySuggestModal } from "obsidian";
+import { App, Modal, Setting, TFile, TFolder, Notice, FuzzySuggestModal } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import type { PartyManager } from "./PartyManager";
 import type { Party, ResolvedPartyMember } from "./PartyTypes";
@@ -196,6 +196,9 @@ export class PartyManagerModal extends Modal {
       }
     });
 
+    // ── Campaign link row ──
+    await this.renderCampaignLink(detail, party);
+
     // ── Members section ──
     const members = await this.manager.resolveMembers(party.id);
 
@@ -226,6 +229,91 @@ export class PartyManagerModal extends Modal {
     const addBtn = addRow.createEl("button", { cls: "dnd-pm-add-btn" });
     addBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add PC`;
     addBtn.addEventListener("click", () => this.openPCSelectorForParty(party));
+  }
+
+  /* ──────────────────────── Campaign Link ──────────────────────── */
+
+  private async renderCampaignLink(container: HTMLElement, party: Party) {
+    const row = container.createDiv({ cls: "dnd-pm-campaign-row" });
+
+    if (party.campaignPath) {
+      // Show linked campaign
+      const campaignName = party.campaignPath.split("/").pop() || party.campaignPath;
+      row.createSpan({ text: `📁 Campaign: ${campaignName}`, cls: "dnd-pm-campaign-label" });
+
+      const importBtn = row.createEl("button", { cls: "dnd-pm-campaign-btn", text: "Import PCs" });
+      importBtn.setAttribute("title", "Scan campaign folder for PCs and add them");
+      importBtn.addEventListener("click", async () => {
+        const count = await this.importCampaignPCs(party);
+        if (count > 0) {
+          new Notice(`Imported ${count} PC${count !== 1 ? "s" : ""} from campaign`);
+          this.render();
+        } else {
+          new Notice("No new PCs found to import");
+        }
+      });
+
+      const unlinkBtn = row.createEl("button", { cls: "dnd-pm-campaign-btn dnd-pm-btn-muted", text: "Unlink" });
+      unlinkBtn.setAttribute("title", "Remove campaign binding (keeps members)");
+      unlinkBtn.addEventListener("click", async () => {
+        await this.manager.setCampaignPath(party.id, undefined);
+        this.render();
+      });
+    } else {
+      // Show link button
+      const linkBtn = row.createEl("button", { cls: "dnd-pm-campaign-btn", text: "📁 Link Campaign" });
+      linkBtn.setAttribute("title", "Bind this party to a campaign folder and auto-import PCs");
+      linkBtn.addEventListener("click", () => {
+        const folders = this.findCampaignFolders();
+        if (folders.length === 0) {
+          new Notice("No campaign folders found under ttrpgs/");
+          return;
+        }
+        new CampaignFolderModal(this.app, folders, async (folder) => {
+          await this.manager.setCampaignPath(party.id, folder.path);
+          const count = await this.importCampaignPCs(party);
+          if (count > 0) {
+            new Notice(`Linked campaign and imported ${count} PC${count !== 1 ? "s" : ""}`);
+          } else {
+            new Notice("Campaign linked (no PCs found to import)");
+          }
+          this.render();
+        }).open();
+      });
+    }
+  }
+
+  private findCampaignFolders(): TFolder[] {
+    const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
+    if (!(ttrpgsFolder instanceof TFolder)) return [];
+
+    return ttrpgsFolder.children.filter((c): c is TFolder => c instanceof TFolder);
+  }
+
+  private async importCampaignPCs(party: Party): Promise<number> {
+    if (!party.campaignPath) return 0;
+
+    const pcsPath = `${party.campaignPath}/PCs`;
+    const pcsFolder = this.app.vault.getAbstractFileByPath(pcsPath);
+    if (!(pcsFolder instanceof TFolder)) return 0;
+
+    const existingPaths = new Set(party.members.map((m) => m.notePath));
+    let imported = 0;
+
+    for (const child of pcsFolder.children) {
+      if (!(child instanceof TFile) || child.extension !== "md") continue;
+      if (existingPaths.has(child.path)) continue;
+
+      const cache = this.app.metadataCache.getFileCache(child);
+      const type = cache?.frontmatter?.type;
+      if (type !== "player" && type !== "pc") continue;
+
+      const name = cache?.frontmatter?.name || child.basename;
+      await this.manager.addMember(party.id, child.path, name);
+      imported++;
+    }
+
+    return imported;
   }
 
   /* ──────────────────────── Summary Bar ──────────────────────── */
@@ -592,6 +680,31 @@ class PCSelectorModal extends FuzzySuggestModal<TFile> {
   }
 
   onChooseItem(item: TFile): void {
+    this.onChoose(item);
+  }
+}
+
+/** Fuzzy-search modal to select a campaign folder. */
+class CampaignFolderModal extends FuzzySuggestModal<TFolder> {
+  private folders: TFolder[];
+  private onChoose: (folder: TFolder) => void;
+
+  constructor(app: App, folders: TFolder[], onChoose: (folder: TFolder) => void) {
+    super(app);
+    this.folders = folders;
+    this.onChoose = onChoose;
+    this.setPlaceholder("Search campaigns…");
+  }
+
+  getItems(): TFolder[] {
+    return this.folders;
+  }
+
+  getItemText(item: TFolder): string {
+    return item.name;
+  }
+
+  onChooseItem(item: TFolder): void {
     this.onChoose(item);
   }
 }
