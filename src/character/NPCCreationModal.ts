@@ -313,28 +313,70 @@ export class NPCCreationModal extends Modal {
     const importContainer = contentEl.createDiv({ cls: "npc-statblock-import" });
     importContainer.style.marginBottom = "15px";
 
-    // Copy from existing creature
+    // Copy from existing creature (searchable)
     const copyRow = importContainer.createDiv({ attr: { style: "display: flex; gap: 10px; margin-bottom: 10px; align-items: center;" } });
-    const creatureDropdown = copyRow.createEl("select", {
-      attr: { style: "flex: 1; padding: 6px;" }
+    const searchWrapper = copyRow.createDiv({ cls: "dnd-creature-search-container", attr: { style: "flex: 1; position: relative;" } });
+    const searchInput = searchWrapper.createEl("input", {
+      type: "text",
+      placeholder: "Search creatures to copy from...",
+      cls: "dnd-creature-search-input",
+      attr: { style: "width: 100%; padding: 6px;" }
     });
-    creatureDropdown.createEl("option", { text: "Copy from existing creature...", value: "" });
+    const searchResults = searchWrapper.createDiv({ cls: "dnd-creature-search-results" });
+    searchResults.style.display = "none";
 
-    // Populate async
+    let selectedCreaturePath = "";
+    let allCreatures: Array<{ name: string; path: string; hp: number; ac: number; cr?: string }> = [];
+
+    // Load creatures async
     this.plugin.encounterBuilder.loadAllCreatures().then((creatures) => {
-      for (const c of creatures) {
-        creatureDropdown.createEl("option", { text: `${c.name} (CR ${c.cr || "?"}, HP ${c.hp}, AC ${c.ac})`, value: c.path });
-      }
+      allCreatures = creatures;
     });
+
+    const showResults = (query: string) => {
+      if (!query || query.length < 1) { searchResults.style.display = "none"; return; }
+      const q = query.toLowerCase().trim();
+      const filtered = allCreatures.filter(c => c.name.toLowerCase().includes(q)).slice(0, 10);
+      searchResults.empty();
+      if (filtered.length === 0) {
+        searchResults.createEl("div", { text: "No creatures found", cls: "dnd-creature-search-no-results" });
+      } else {
+        for (const creature of filtered) {
+          const row = searchResults.createDiv({ cls: "dnd-creature-search-result" });
+          row.createDiv({ cls: "dnd-creature-search-result-name", text: creature.name });
+          const parts: string[] = [];
+          if (creature.cr) parts.push(`CR ${creature.cr}`);
+          parts.push(`HP ${creature.hp}`, `AC ${creature.ac}`);
+          row.createDiv({ cls: "dnd-creature-search-result-stats", text: parts.join(" | ") });
+          row.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            selectedCreaturePath = creature.path;
+            searchInput.value = creature.name;
+            searchResults.style.display = "none";
+          });
+        }
+      }
+      searchResults.style.display = "block";
+    };
+
+    searchInput.addEventListener("input", (e) => {
+      selectedCreaturePath = "";
+      showResults((e.target as HTMLInputElement).value);
+    });
+    searchInput.addEventListener("focus", (e) => {
+      const v = (e.target as HTMLInputElement).value;
+      if (v.length >= 1) showResults(v);
+    });
+    searchInput.addEventListener("blur", () => setTimeout(() => { searchResults.style.display = "none"; }, 250));
 
     const copyBtn = copyRow.createEl("button", { text: "📋 Copy Stats" });
     copyBtn.addEventListener("click", async () => {
-      const selectedPath = creatureDropdown.value;
-      if (!selectedPath) {
-        new Notice("Select a creature to copy from");
+      if (!selectedCreaturePath) {
+        new Notice("Search and select a creature to copy from");
         return;
       }
-      await this.copyFromCreature(selectedPath);
+      await this.copyFromCreature(selectedCreaturePath);
       this.refreshUI();
       new Notice("Statblock copied! Review and adjust fields below.");
     });
