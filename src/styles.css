@@ -4426,6 +4426,11 @@
   margin-top: 2px;
 }
 
+.image-grid-sentinel {
+  grid-column: 1 / -1;
+  height: 1px;
+}
+
 /* Map Viewer */
 .dnd-map-viewer {
   width: 100%;

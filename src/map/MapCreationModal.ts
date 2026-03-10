@@ -1171,9 +1171,26 @@ class ImageSelectorModal extends Modal {
     this.renderFileList(filtered);
   }
 
+  /** How many cards to render per batch */
+  private static readonly BATCH_SIZE = 60;
+  /** Observer watching the sentinel for infinite scroll */
+  private scrollObserver: IntersectionObserver | null = null;
+  /** How many cards have been rendered so far */
+  private renderedCount = 0;
+  /** The current filtered file list being rendered progressively */
+  private currentFiles: TFile[] = [];
+
   private renderFileList(files: TFile[]) {
     if (!this.listContainer) return;
     this.listContainer.empty();
+    this.renderedCount = 0;
+    this.currentFiles = files;
+
+    // Tear down previous observer
+    if (this.scrollObserver) {
+      this.scrollObserver.disconnect();
+      this.scrollObserver = null;
+    }
 
     // Update result count
     if (this.resultCountEl) {
@@ -1191,8 +1208,41 @@ class ImageSelectorModal extends Modal {
       return;
     }
 
-    files.forEach(file => {
-      const card = this.listContainer!.createDiv({ cls: 'image-file-card' });
+    // Render first batch immediately
+    this.renderNextBatch();
+
+    // Set up infinite-scroll observer if there are more items
+    if (this.renderedCount < files.length) {
+      const sentinel = this.listContainer.createDiv({ cls: 'image-grid-sentinel' });
+      this.scrollObserver = new IntersectionObserver(
+        (entries) => {
+          if (entries[0]?.isIntersecting) {
+            this.renderNextBatch();
+            // Remove sentinel and re-add at end if more remain
+            if (this.renderedCount >= this.currentFiles.length) {
+              this.scrollObserver?.disconnect();
+              sentinel.remove();
+            } else {
+              // Move sentinel to end
+              this.listContainer?.appendChild(sentinel);
+            }
+          }
+        },
+        { root: this.listContainer, rootMargin: '200px' }
+      );
+      this.scrollObserver.observe(sentinel);
+    }
+  }
+
+  /** Render the next batch of image cards */
+  private renderNextBatch() {
+    if (!this.listContainer) return;
+    const end = Math.min(this.renderedCount + ImageSelectorModal.BATCH_SIZE, this.currentFiles.length);
+    const fragment = document.createDocumentFragment();
+
+    for (let i = this.renderedCount; i < end; i++) {
+      const file = this.currentFiles[i];
+      const card = createDiv({ cls: 'image-file-card' });
 
       // Thumbnail preview
       const thumb = card.createDiv({ cls: 'image-file-card-thumb' });
@@ -1203,21 +1253,18 @@ class ImageSelectorModal extends Modal {
         if (isVideo) {
           const video = thumb.createEl('video', { attr: { src: resourcePath, muted: 'true', preload: 'metadata' } });
           video.addEventListener('loadeddata', () => {
-            // Seek to first frame for thumbnail
             video.currentTime = 0.1;
           });
         } else {
-          thumb.createEl('img', { attr: { src: resourcePath, loading: 'lazy', alt: file.name } });
+          thumb.createEl('img', { attr: { src: resourcePath, alt: file.name } });
         }
       } catch {
-        // Fallback icon when resource cannot be resolved
         thumb.createDiv({ cls: 'image-file-card-thumb-fallback', text: isVideo ? '🎬' : '🖼️' });
       }
 
       // Info bar below thumb
       const info = card.createDiv({ cls: 'image-file-card-info' });
       info.createDiv({ cls: 'image-file-card-name', text: file.basename });
-      // Show subfolder relative to z_Assets/Maps
       const relFolder = (file.parent?.path || '').replace(/^z_Assets\/Maps\/?/, '') || '/';
       info.createDiv({ cls: 'image-file-card-folder', text: `📁 ${relFolder}` });
 
@@ -1225,7 +1272,12 @@ class ImageSelectorModal extends Modal {
         this.onSelect(file);
         this.close();
       });
-    });
+
+      fragment.appendChild(card);
+    }
+
+    this.renderedCount = end;
+    this.listContainer.appendChild(fragment);
   }
 
   /**
@@ -1284,6 +1336,10 @@ class ImageSelectorModal extends Modal {
   }
 
   onClose() {
+    if (this.scrollObserver) {
+      this.scrollObserver.disconnect();
+      this.scrollObserver = null;
+    }
     const { contentEl } = this;
     contentEl.empty();
   }
