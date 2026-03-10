@@ -382,6 +382,18 @@ export class PartyManagerModal extends Modal {
     });
     card.dataset.index = String(index);
 
+    // ── Card click toggles expand ──
+    card.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("button, a, .dnd-pm-drag-handle")) return;
+      if (isExpanded) {
+        this.expandedMembers.delete(member.notePath);
+      } else {
+        this.expandedMembers.add(member.notePath);
+      }
+      this.render();
+    });
+
     // ── Drag handle ──
     const handle = card.createDiv({ cls: "dnd-pm-drag-handle" });
     handle.innerHTML = "⠿";
@@ -451,6 +463,10 @@ export class PartyManagerModal extends Modal {
       nameRow.createSpan({ text: subtitle, cls: "dnd-pm-subtitle" });
     }
 
+    // Expand chevron indicator
+    const expandIndicator = nameRow.createSpan({ cls: "dnd-pm-expand-indicator" });
+    expandIndicator.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+
     // ── Stats row ──
     const statsRow = info.createDiv({ cls: "dnd-pm-stats-row" });
 
@@ -493,21 +509,6 @@ export class PartyManagerModal extends Modal {
 
     // ── Card actions ──
     const actions = card.createDiv({ cls: "dnd-pm-card-actions" });
-
-    // Expand toggle
-    const expandBtn = actions.createEl("button", { cls: "dnd-pm-icon-btn dnd-pm-expand-btn" });
-    expandBtn.innerHTML = isExpanded
-      ? `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="18 15 12 9 6 15"/></svg>`
-      : `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>`;
-    expandBtn.setAttribute("title", isExpanded ? "Collapse" : "Show details");
-    expandBtn.addEventListener("click", () => {
-      if (isExpanded) {
-        this.expandedMembers.delete(member.notePath);
-      } else {
-        this.expandedMembers.add(member.notePath);
-      }
-      this.render();
-    });
 
     // Remove button
     const removeBtn = actions.createEl("button", { cls: "dnd-pm-icon-btn dnd-pm-remove-btn" });
