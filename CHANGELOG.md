@@ -5,6 +5,65 @@ All notable changes to the D&D Campaign Hub plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-10
+
+### Added
+
+#### Combat Tracker
+- Redesigned Combat Tracker with Initiative Tracker-style UI and player view projection
+- D&D 5e death saving throw rules for PCs
+- Unconscious condition auto-managed on HP changes
+- Animated HP changes with bar transitions, ghost bars, damage numbers, and shield break effects
+- Auto-pan player view to active combatant token on turn change
+- Combatant portraits in Combat Player View with smooth auto-scroll
+- Color-coded allies and enemies in Player View
+- Condition labels and color-coded HP for enemies in Player View
+- Combat Projection with fullscreen mode and active combatant glow
+- Visible stop encounter button in combat toolbar
+- Statblock rendering in split leaf with dice roller support
+- Confirmation prompt before clearing saved combat state
+- Vault creature search in Add Creature modal
+- AC displayed inside shield shape
+
+#### Party Management
+- Built-in Party Manager replacing external Initiative Tracker dependency
+- Card-based Party Manager modal with drag-and-drop reordering
+- NPC and creature companion/hireling tracking with role badges
+- Campaign linking for existing campaigns with auto PC import
+- Holistic party-campaign integration across all note types (sessions, scenes, encounters, etc.)
+- Party selector widget for encounters, combat, and session dashboards
+- Collapsible detail panels with smooth expand/collapse animation
+- Compact card layout with left sidebar move buttons and right-side remove button
+- Party tabs redesigned as wrapping chip/pill buttons
+
+#### Battle Maps
+- MapController API for cross-system map manipulation
+- "Place on Map" context menu for combat tracker tokens
+- Color-coded duplicate detection when placing tokens
+- Token appearance editing widget (inline)
+- Collapsible folder tree in map image browser
+- Canvas-based thumbnail downscaling for map browser performance
+
+#### NPCs & Creatures
+- Optional statblock support for NPCs
+- Searchable creature dropdown replacing static select
+- Allow overwriting and removing NPC statblocks
+
+### Fixed
+- Party member vault rename/delete event sync
+- Companion selector finds creatures by `statblock` field instead of `type`
+- Non-PC combatants fall unconscious at 0 HP instead of dying
+- Combat player view overflow and sizing issues
+- Auto-pan restricted to vision-eligible tokens only
+- Token placement resolves via fallback chain for all combatants
+- Smooth pan animation using CSS transitions
+- Various map image browser fixes (lazy loading, thumbnail sizing, large folder handling)
+
+### Changed
+- Documentation updated to reference built-in Party Manager and Combat Tracker
+- Combat Player View scaled and dynamically sized for projection readability
+- HP bar enlarged and text embedded for player view clarity
+
 ## [0.2.0] - 2026-03-04
 
 ### Added
