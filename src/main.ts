@@ -1086,6 +1086,9 @@ export default class DndCampaignHubPlugin extends Plugin {
         // The metadata cache is no longer available for deleted files, so we
         // rely on the fact that the file was just removed and check if any
         // token carries the same name and is no longer referenced by another note.
+        // Remove from any party references
+        await this.partyManager.removeMemberByPath(file.path);
+
         const basename = file.basename;
         const allMarkers = this.markerLibrary.getAllMarkers();
         for (const marker of allMarkers) {
@@ -1114,18 +1117,25 @@ export default class DndCampaignHubPlugin extends Plugin {
       this.app.vault.on('rename', async (file, oldPath) => {
         if (!(file instanceof TFile) || file.extension !== 'md') return;
 
+        // Update party member paths
+        await this.partyManager.updateMemberPath(oldPath, file.path);
+
         // Wait briefly for metadata cache to update after rename
         setTimeout(async () => {
           const cache = this.app.metadataCache.getFileCache(file);
           const fm = cache?.frontmatter;
-          if (!fm || !fm.token_id) return;
+          if (!fm) return;
+
+          // Sync member display name
+          const newName = fm.name || file.basename;
+          await this.partyManager.updateMemberName(file.path, newName);
+
+          if (!fm.token_id) return;
 
           const tokenId: string = fm.token_id;
           const existing = this.markerLibrary.getMarker(tokenId);
           if (!existing) return;
 
-          // If frontmatter has an explicit name field, use that; otherwise use basename
-          const newName = fm.name || file.basename;
           if (existing.name === newName) return;
 
           const updated: MarkerDefinition = {

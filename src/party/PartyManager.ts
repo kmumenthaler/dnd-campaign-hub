@@ -223,6 +223,23 @@ export class PartyManager {
     return true;
   }
 
+  /** Remove a member from all parties by note path (used on file delete). */
+  async removeMemberByPath(notePath: string): Promise<number> {
+    let removed = 0;
+    for (const party of this.data.parties) {
+      const idx = party.members.findIndex((m) => m.notePath === notePath);
+      if (idx >= 0) {
+        party.members.splice(idx, 1);
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      await this.save();
+      this.emit();
+    }
+    return removed;
+  }
+
   /** Update stored note path when a PC note is renamed / moved. */
   async updateMemberPath(oldPath: string, newPath: string): Promise<void> {
     let changed = false;
