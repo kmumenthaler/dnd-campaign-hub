@@ -1172,7 +1172,13 @@ class ImageSelectorModal extends Modal {
   }
 
   /** How many card placeholders to render per batch */
-  private static readonly BATCH_SIZE = 30;
+  private static readonly BATCH_SIZE = 20;
+  /** Concurrent thumbnail loads to prevent browser freeze */
+  private static readonly MAX_CONCURRENT_LOADS = 4;
+  /** Queue of cards waiting for thumbnail load */
+  private thumbLoadQueue: HTMLElement[] = [];
+  /** Number of thumbnails currently loading */
+  private activeLoads = 0;
   /** Observer for infinite-scroll sentinel */
   private scrollObserver: IntersectionObserver | null = null;
   /** Observer for lazy-loading individual card thumbnails */
@@ -1214,17 +1220,22 @@ class ImageSelectorModal extends Modal {
       return;
     }
 
-    // Create observer that lazy-loads thumbnails when cards scroll into view
+    // Reset load queue
+    this.thumbLoadQueue = [];
+    this.activeLoads = 0;
+
+    // Create observer that queues thumbnail loads when cards scroll into view
     this.thumbObserver = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
           const card = entry.target as HTMLElement;
           this.thumbObserver?.unobserve(card);
-          this.loadCardThumbnail(card);
+          this.thumbLoadQueue.push(card);
         }
+        this.drainThumbQueue();
       },
-      { root: this.listContainer, rootMargin: '300px' }
+      { root: this.listContainer, rootMargin: '200px' }
     );
 
     // Render first batch immediately
@@ -1288,17 +1299,32 @@ class ImageSelectorModal extends Modal {
     this.listContainer.appendChild(fragment);
   }
 
+  /** Process queued thumbnail loads, limited to MAX_CONCURRENT_LOADS at a time */
+  private drainThumbQueue() {
+    while (this.activeLoads < ImageSelectorModal.MAX_CONCURRENT_LOADS && this.thumbLoadQueue.length > 0) {
+      const card = this.thumbLoadQueue.shift()!;
+      this.activeLoads++;
+      this.loadCardThumbnail(card);
+    }
+  }
+
+  /** Called when a thumbnail finishes loading (success or error) */
+  private onThumbLoadComplete() {
+    this.activeLoads--;
+    this.drainThumbQueue();
+  }
+
   /** Load the actual thumbnail for a card that has scrolled into view */
   private loadCardThumbnail(card: HTMLElement) {
     const filePath = card.dataset.filePath;
     const idx = Number(card.dataset.fileIndex);
-    if (!filePath || isNaN(idx)) return;
+    if (!filePath || isNaN(idx)) { this.onThumbLoadComplete(); return; }
 
     const file = this.currentFiles[idx];
-    if (!file) return;
+    if (!file) { this.onThumbLoadComplete(); return; }
 
     const thumb = card.querySelector('.image-file-card-thumb') as HTMLElement;
-    if (!thumb) return;
+    if (!thumb) { this.onThumbLoadComplete(); return; }
 
     const ext = file.extension.toLowerCase();
     const isVideo = ['mp4', 'webm'].includes(ext);
@@ -1307,19 +1333,22 @@ class ImageSelectorModal extends Modal {
       const resourcePath = this.app.vault.adapter.getResourcePath(file.path);
       if (isVideo) {
         const video = thumb.createEl('video', { attr: { src: resourcePath, muted: 'true', preload: 'metadata' } });
-        video.addEventListener('loadeddata', () => { video.currentTime = 0.1; });
+        video.addEventListener('loadeddata', () => { video.currentTime = 0.1; this.onThumbLoadComplete(); });
+        video.addEventListener('error', () => this.onThumbLoadComplete());
       } else {
         const img = thumb.createEl('img', { attr: { src: resourcePath, alt: file.name } });
-        img.addEventListener('load', () => thumb.removeClass('image-file-card-skeleton'));
+        img.addEventListener('load', () => { thumb.removeClass('image-file-card-skeleton'); this.onThumbLoadComplete(); });
         img.addEventListener('error', () => {
           img.remove();
           thumb.createDiv({ cls: 'image-file-card-thumb-fallback', text: '🖼️' });
           thumb.removeClass('image-file-card-skeleton');
+          this.onThumbLoadComplete();
         });
         return; // Don't remove skeleton yet — 'load' callback handles it
       }
     } catch {
       thumb.createDiv({ cls: 'image-file-card-thumb-fallback', text: isVideo ? '🎬' : '🖼️' });
+      this.onThumbLoadComplete();
     }
 
     thumb.removeClass('image-file-card-skeleton');
