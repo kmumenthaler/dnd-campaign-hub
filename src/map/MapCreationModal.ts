@@ -1006,6 +1006,8 @@ class ImageSelectorModal extends Modal {
   /** Currently selected folder filter (empty string = all) */
   private selectedFolder: string = '';
   private folderChipsContainer: HTMLElement | null = null;
+  /** Folders the user has expanded in the sidebar tree */
+  private expandedFolders = new Set<string>();
 
   constructor(app: App, files: TFile[], onSelect: (file: TFile) => void) {
     super(app);
@@ -1106,7 +1108,7 @@ class ImageSelectorModal extends Modal {
     setTimeout(() => searchInput.focus(), 50);
   }
 
-  /** Render the folder list in the sidebar. Optionally filter by query. */
+  /** Render the folder list in the sidebar as a collapsible tree. */
   private renderFolderChips(filterQuery?: string) {
     if (!this.folderChipsContainer) return;
     this.folderChipsContainer.empty();
@@ -1122,30 +1124,75 @@ class ImageSelectorModal extends Modal {
       this.filterAndRender();
     });
 
-    // Filtered folder list
-    const folders = filterQuery
-      ? this.folderPaths.filter(f => f.toLowerCase().includes(filterQuery))
-      : this.folderPaths;
+    // When filtering, show flat list (no tree)
+    if (filterQuery) {
+      const folders = this.folderPaths.filter(f => f.toLowerCase().includes(filterQuery));
+      for (const folder of folders) {
+        const label = folder.split('/').pop() || folder;
+        const depth = folder.split('/').length;
+        const item = this.folderChipsContainer.createDiv({
+          cls: `image-selector-folder-item${this.selectedFolder === folder ? ' is-active' : ''}`,
+        });
+        item.style.paddingLeft = `${8 + (depth - 1) * 14}px`;
+        item.createSpan({ text: `📁  ${label}` });
+        item.addEventListener('click', () => {
+          this.selectedFolder = folder;
+          this.renderFolderChips(filterQuery);
+          this.filterAndRender();
+        });
+      }
+      if (folders.length === 0) {
+        const empty = this.folderChipsContainer.createDiv({ cls: 'image-selector-folder-empty' });
+        empty.setText('No matching folders');
+      }
+      return;
+    }
 
-    for (const folder of folders) {
-      const label = folder.split('/').pop() || folder;
-      const depth = folder.split('/').length;
+    // Build tree: only show a folder if it's top-level (depth 1) or its parent is expanded
+    for (const folder of this.folderPaths) {
+      const parts = folder.split('/');
+      const depth = parts.length;
+      const parentPath = parts.slice(0, -1).join('/');
+
+      // Skip if not top-level and parent not expanded
+      if (depth > 1 && !this.expandedFolders.has(parentPath)) continue;
+
+      const label = parts[parts.length - 1] || folder;
+      const hasChildren = this.folderPaths.some(f => f.startsWith(folder + '/'));
+      const isExpanded = this.expandedFolders.has(folder);
+
       const item = this.folderChipsContainer.createDiv({
         cls: `image-selector-folder-item${this.selectedFolder === folder ? ' is-active' : ''}`,
       });
       item.style.paddingLeft = `${8 + (depth - 1) * 14}px`;
-      item.createSpan({ text: `📁  ${label}` });
-      item.dataset.folder = folder;
+
+      if (hasChildren) {
+        const toggle = item.createSpan({ cls: 'image-selector-folder-toggle', text: isExpanded ? '▾' : '▸' });
+        toggle.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (isExpanded) {
+            // Collapse this and all descendants
+            this.expandedFolders.delete(folder);
+            for (const f of this.folderPaths) {
+              if (f.startsWith(folder + '/')) this.expandedFolders.delete(f);
+            }
+          } else {
+            this.expandedFolders.add(folder);
+          }
+          this.renderFolderChips();
+        });
+      } else {
+        item.createSpan({ cls: 'image-selector-folder-toggle', text: ' ' });
+      }
+
+      item.createSpan({ text: `📁 ${label}` });
       item.addEventListener('click', () => {
         this.selectedFolder = folder;
-        this.renderFolderChips(filterQuery);
+        // Also expand this folder so its children become visible
+        if (hasChildren) this.expandedFolders.add(folder);
+        this.renderFolderChips();
         this.filterAndRender();
       });
-    }
-
-    if (folders.length === 0 && filterQuery) {
-      const empty = this.folderChipsContainer.createDiv({ cls: 'image-selector-folder-empty' });
-      empty.setText('No matching folders');
     }
   }
 
