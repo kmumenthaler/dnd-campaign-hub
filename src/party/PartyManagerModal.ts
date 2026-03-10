@@ -387,11 +387,26 @@ export class PartyManagerModal extends Modal {
       const target = e.target as HTMLElement;
       if (target.closest("button, a, .dnd-pm-drag-handle")) return;
       if (isExpanded) {
-        this.expandedMembers.delete(member.notePath);
+        // Animate closed, then re-render
+        const panel = card.querySelector(".dnd-pm-detail-panel") as HTMLElement;
+        if (panel) {
+          panel.style.maxHeight = panel.scrollHeight + "px";
+          // Force reflow so browser registers the starting value
+          void panel.offsetHeight;
+          panel.style.maxHeight = "0";
+          panel.removeClass("is-open");
+          panel.addEventListener("transitionend", () => {
+            this.expandedMembers.delete(member.notePath);
+            this.render();
+          }, { once: true });
+        } else {
+          this.expandedMembers.delete(member.notePath);
+          this.render();
+        }
       } else {
         this.expandedMembers.add(member.notePath);
+        this.render();
       }
-      this.render();
     });
 
     // ── Drag handle ──
