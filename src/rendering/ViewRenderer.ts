@@ -66,6 +66,9 @@ function sceneNum(fm: Record<string, any>, fileName: string): number {
   return parseInt(fm.scene_number || fileName.match(/Scene\s+(\d+)/)?.[1] || "0");
 }
 
+const STATUS_ICON: Record<string, string> = { completed: "✅", "in-progress": "🎬", "not-started": "⬜" };
+const STATUS_NEXT: Record<string, string> = { "not-started": "in-progress", "in-progress": "completed", completed: "not-started" };
+
 // ─── View Dispatcher ────────────────────────────────────────────────────────
 
 /**
@@ -112,7 +115,7 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
     const createBtn = el.createEl("button", { text: "🗺️ Create Adventure", cls: "mod-cta" });
     createBtn.style.marginTop = "10px";
     createBtn.addEventListener("click", () => {
-      app.commands.executeCommandById("dnd-campaign-hub:create-adventure");
+      (app as any).commands.executeCommandById("dnd-campaign-hub:create-adventure");
     });
     return;
   }
@@ -178,7 +181,7 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
     const btnRow = el.createDiv({ cls: "dnd-hub-btn-row" });
     const endBtn = btnRow.createEl("button", { text: "🏁 End Session Here", cls: "dnd-hub-btn" });
     endBtn.addEventListener("click", () => {
-      app.commands.executeCommandById("dnd-campaign-hub:end-session-here");
+      (app as any).commands.executeCommandById("dnd-campaign-hub:end-session-here");
     });
   }
 
@@ -188,20 +191,21 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
     const scene = allScenes[i]!;
     const isStart = i === startIdx;
     const isEnd = i === endIdx;
-    const status = scene.fm.status || "not-started";
-    const icon = status === "completed" ? "✅" : status === "in-progress" ? "🎬" : "⬜";
+    let currentStatus = scene.fm.status || "not-started";
 
     const row = el.createDiv({ cls: "dnd-hub-scene-row" + (isStart ? " dnd-hub-scene-active" : "") });
 
     // Status toggle button
-    const togBtn = row.createEl("button", { text: icon, cls: "dnd-hub-scene-toggle" });
+    const togBtn = row.createEl("button", { text: STATUS_ICON[currentStatus] || "⬜", cls: "dnd-hub-scene-toggle" });
     togBtn.title = "Click to cycle: not-started → in-progress → completed";
     togBtn.addEventListener("click", async () => {
-      const nextMap: Record<string, string> = { "not-started": "in-progress", "in-progress": "completed", completed: "not-started" };
+      const newStatus = STATUS_NEXT[currentStatus] || "not-started";
       const f = app.vault.getAbstractFileByPath(scene.file.path);
       if (f instanceof TFile) {
         const c = await app.vault.read(f);
-        await app.vault.modify(f, c.replace(/^status:\s*.+$/m, `status: ${nextMap[status] || "not-started"}`));
+        await app.vault.modify(f, c.replace(/^status:\s*.+$/m, `status: ${newStatus}`));
+        currentStatus = newStatus;
+        togBtn.textContent = STATUS_ICON[newStatus] || "⬜";
       }
     });
 
@@ -273,8 +277,7 @@ function renderAdventureScenes(el: HTMLElement, app: App, sourcePath: string): v
 
 function renderSceneItems(container: HTMLElement, app: App, scenes: FileMeta[]): void {
   for (const scene of scenes) {
-    const status = scene.fm.status || "not-started";
-    const icon = status === "completed" ? "✅" : status === "in-progress" ? "🎬" : "⬜";
+    let currentStatus = scene.fm.status || "not-started";
     const duration = scene.fm.duration || "?min";
     const type = scene.fm.scene_type || scene.fm.type || "?";
     const difficulty = scene.fm.difficulty || "?";
@@ -282,14 +285,16 @@ function renderSceneItems(container: HTMLElement, app: App, scenes: FileMeta[]):
     const sceneDiv = container.createDiv({ cls: "dnd-hub-scene-item" });
 
     // Status toggle button
-    const statusBtn = sceneDiv.createEl("button", { text: icon, cls: "dnd-hub-scene-toggle" });
+    const statusBtn = sceneDiv.createEl("button", { text: STATUS_ICON[currentStatus] || "⬜", cls: "dnd-hub-scene-toggle" });
     statusBtn.title = "Click to change status";
     statusBtn.addEventListener("click", async () => {
-      const nextMap: Record<string, string> = { "not-started": "in-progress", "in-progress": "completed", completed: "not-started" };
+      const newStatus = STATUS_NEXT[currentStatus] || "not-started";
       const f = app.vault.getAbstractFileByPath(scene.file.path);
       if (f instanceof TFile) {
         const content = await app.vault.read(f);
-        await app.vault.modify(f, content.replace(/^status:\s*.+$/m, `status: ${nextMap[status] || "not-started"}`));
+        await app.vault.modify(f, content.replace(/^status:\s*.+$/m, `status: ${newStatus}`));
+        currentStatus = newStatus;
+        statusBtn.textContent = STATUS_ICON[newStatus] || "⬜";
       }
     });
 
