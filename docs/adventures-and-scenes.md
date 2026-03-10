@@ -58,9 +58,9 @@ Fill in the fields:
 
 For **Combat** scenes, an embedded encounter builder appears below the scene fields:
 
-- Toggle **Create Initiative Tracker Encounter** to save the encounter to Initiative Tracker.
+- Toggle **Create Encounter** to save the encounter to the Party Manager.
 - Toggle **Use Color Names** to assign color suffixes (for example, "Goblin (Red)") instead of numbers to duplicate creatures.
-- Toggle **Include Party Members** and select a party from Initiative Tracker for live difficulty calculation.
+- Toggle **Include Party Members** and select a party from the Party Manager for live difficulty calculation.
 - Add creatures from the vault bestiary or enter custom creatures with HP, AC, and CR.
 - Each creature has **Friendly** and **Hidden** toggles.
 - A live difficulty card shows the rating (Trivial through TPK Risk), estimated rounds, and stat comparison.

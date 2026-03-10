@@ -8,7 +8,7 @@ The encounter builder helps you create balanced combat encounters with live diff
 2. Fill in the fields:
    - **Encounter Name** — a descriptive title.
    - **Include Party Members** — toggle this to factor party stats into difficulty.
-   - **Party** — select a party from Initiative Tracker. Individual members can be toggled with checkboxes.
+   - **Party** — select a party from the Party Manager. Individual members can be toggled with checkboxes.
    - **Use Color Names** — when enabled, duplicate creatures get color suffixes (for example, "Goblin (Red)") instead of numbers.
 
 ### Add creatures
@@ -18,7 +18,7 @@ Use one of two methods to populate the encounter:
 - **Add from Vault** — search the bestiary (`z_Beastiarity/` folder and Fantasy Statblocks plugin). Set the count and select **Add**.
 - **Add Custom Creature** — enter a name, count, HP, AC, and CR manually.
 
-Each creature in the list shows its stats and has toggles for **Friendly** (adds it to the party side) and **Hidden** (hidden from players in Initiative Tracker). Select the rename button to create a copy of the creature note and map token under a new name.
+Each creature in the list shows its stats and has toggles for **Friendly** (adds it to the party side) and **Hidden** (hidden from players in the Combat Tracker). Select the rename button to create a copy of the creature note and map token under a new name.
 
 ### Difficulty display
 
@@ -33,7 +33,7 @@ A live-updating card shows:
 
 3. Select **Create Encounter**.
 
-The plugin creates an encounter note in `z_Encounters/` (or the campaign encounters folder) with YAML frontmatter, action buttons, a difficulty widget, a creature table, and a GM Notes section. The encounter is also saved to Initiative Tracker.
+The plugin creates an encounter note in `z_Encounters/` (or the campaign encounters folder) with YAML frontmatter, action buttons, a difficulty widget, a creature table, and a GM Notes section. The encounter is also saved to the Party Manager.
 
 ## Difficulty calculation
 
@@ -56,7 +56,7 @@ The builder resolves creature stats in priority order:
 2. **Statblock parsing** from vault notes — reads frontmatter `hp`, `ac`, and `actions` arrays. Parses attack bonuses, damage dice, and multiattack text.
 3. **CR-based table** from the DMG (CR 0–30) as a fallback.
 
-Party stats come from Initiative Tracker when available. Otherwise the builder uses a level-based model: base HP = 8 + 5 per level, base AC = 12 with increases every four levels, base DPR = 8 + 2.5 per level.
+Party stats come from the Party Manager when available. Otherwise the builder uses a level-based model: base HP = 8 + 5 per level, base AC = 12 with increases every four levels, base DPR = 8 + 2.5 per level.
 
 ### Action economy
 
@@ -78,7 +78,7 @@ Embed an encounter widget in any note using the `dnd-encounter` code block:
 
 The widget shows the encounter name with a difficulty badge, a stats row (party count, level, enemy count, estimated rounds), and a creature summary. Two buttons appear:
 
-- **Run Encounter** — loads the encounter into Initiative Tracker.
+- **Run Encounter** — loads the encounter into the Combat Tracker.
 - **Edit** — opens the encounter builder modal.
 
 ## Edit or delete an encounter

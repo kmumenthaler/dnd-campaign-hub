@@ -10,7 +10,7 @@ _Created: 2026-03-10_
 
 ## Medium — Documentation / Accuracy
 
-- [ ] **Update docs to remove IT plugin references** — `README.md`, `docs/getting-started.md`, and `docs/battle-maps.md` still list the Initiative Tracker plugin as an optional dependency and credit it for party sync. Now that PartyManager owns party management, update these docs to reflect the new system.
+- [x] **Update docs to remove IT plugin references** — `README.md`, `docs/getting-started.md`, `docs/battle-maps.md`, `docs/party-management.md`, `docs/characters-and-creatures.md`, `docs/encounter-builder.md`, and `docs/adventures-and-scenes.md` updated to reference the built-in Party Manager and Combat Tracker instead of the Initiative Tracker plugin.
 
 ## Nice to Have — Feature Gaps
 

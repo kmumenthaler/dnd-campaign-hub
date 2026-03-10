@@ -62,7 +62,7 @@ Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, enc
 - Add creatures with count, HP, AC, and CR; supports friendly NPCs and hidden creatures.
 - Trap integration: simple and complex traps contribute to encounter difficulty.
 - Random encounter table generator filtered by environment and party level.
-- Initiative Tracker plugin sync for encounter and party loading.
+- Built-in Party Manager for party roster and encounter loading.
 - D&D 5e SRD API integration for monster data.
 
 ### Hexcrawl wilderness travel
@@ -154,7 +154,6 @@ Battle maps work standalone. For full campaign management, these community plugi
 - [Dataview](https://github.com/blacksmithgu/obsidian-dataview) — dynamic tables and queries.
 - [Calendarium](https://github.com/javalent/calendarium) — fantasy calendar integration.
 - [Templater](https://github.com/SilentVoid13/Templater) — template engine for dynamic content.
-- [Initiative Tracker](https://github.com/javalent/initiative-tracker) — encounter and party sync.
 - [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks) — creature and trap stat block rendering.
 
 The plugin prompts you to install missing dependencies when needed.
@@ -323,7 +322,7 @@ Contributions are welcome.
 
 ## Credits
 
-Special thanks to the creators of [Buttons](https://github.com/shabegom/buttons), [Dataview](https://github.com/blacksmithgu/obsidian-dataview), [Calendarium](https://github.com/javalent/calendarium), [Initiative Tracker](https://github.com/javalent/initiative-tracker), and [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks).
+Special thanks to the creators of [Buttons](https://github.com/shabegom/buttons), [Dataview](https://github.com/blacksmithgu/obsidian-dataview), [Calendarium](https://github.com/javalent/calendarium), and [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks).
 
 ## License
 

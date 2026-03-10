@@ -298,12 +298,12 @@ The **Token Vision** section provides a dropdown to select whose vision is shown
 
 Only **player-type tokens** and tokens with **Show to Players** enabled appear in the selector.
 
-### Initiative Tracker integration
+### Combat vision
 
-When using the [Initiative Tracker](https://github.com/javalent/initiative-tracker) plugin, vision automatically syncs with the active combatant:
+Use the **Vision Selector** dropdown in the Token Vision panel to manually switch token perspectives during combat:
 
-- When a **player or friendly creature** becomes active in Initiative Tracker, the vision switches to that token's perspective (matched by `token_id` frontmatter or name).
-- When an **enemy creature** becomes active, vision falls back to **All Players**.
+- Select a **player token** to show only that token's field of view (respects darkvision and carried lights).
+- Select **All Players** to show the combined vision of all player-type tokens.
 
 ## Token context menu
 

@@ -21,7 +21,7 @@ The plugin provides creation modals for player characters, NPCs, and full creatu
 4. Optionally link a character sheet:
    - **Digital Character Sheet Link** — URL to D&D Beyond, Roll20, or another service.
    - **Character Sheet PDF** — browse the vault or import a PDF from your computer. The file is saved to `z_Assets/`.
-5. In GM campaigns, toggle **Register in Initiative Tracker** (enabled by default) to add the PC to Initiative Tracker's party system automatically. See [Party management](party-management.md) for details.
+5. In GM campaigns, toggle **Register in Party Manager** (enabled by default) to add the PC to the campaign party automatically. See [Party management](party-management.md) for details.
 6. Select **Create**.
 
 The note is saved to `<Campaign>/PCs/<Character Name>.md` with `type: player` frontmatter. A blue shield marker token is created for the battle map.
@@ -41,7 +41,7 @@ Run **Import PC** to copy or link a player character from one campaign to anothe
 3. Select PCs from the list. The modal shows name, class, level, campaign, and player. PCs already in the target campaign are flagged with a warning.
 4. Select **Import**.
 
-Both modes auto-register the PC in Initiative Tracker if the target campaign has a GM role.
+Both modes auto-register the PC in the Party Manager if the target campaign has a GM role.
 
 ## NPCs
 

@@ -28,7 +28,6 @@ Battle maps work standalone. For the full campaign management experience, the fo
 | [Dataview](https://github.com/blacksmithgu/obsidian-dataview) | Dynamic tables and queries |
 | [Calendarium](https://github.com/javalent/calendarium) | Fantasy calendar integration |
 | [Templater](https://github.com/SilentVoid13/Templater) | Template engine for dynamic content |
-| [Initiative Tracker](https://github.com/javalent/initiative-tracker) | Encounter and party sync |
 | [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks) | Creature and trap stat block rendering |
 
 The plugin checks for missing dependencies and prompts you to install them when needed. You can also check manually in **Settings** → **D&D Campaign Hub** → **Plugin Dependencies**.
@@ -81,7 +80,7 @@ Press `Ctrl+Shift+M` (Windows/Linux) or `Command+Shift+M` (macOS) to open the hu
 - [Encounter builder](encounter-builder.md) — build balanced encounters with difficulty calculation.
 - [Hexcrawl tracker](hexcrawl.md) — overland travel with terrain, weather, and random encounters.
 - [Music player](music-player.md) — dual-layer audio, soundboard, and scene-linked music.
-- [Party management](party-management.md) — Initiative Tracker party integration.
+- [Party management](party-management.md) — built-in Party Manager for roster and encounter loading.
 - [DM screen](dm-screen.md) — quick-reference rules panel.
 - [Settings and reference](settings-and-reference.md) — plugin settings, commands, code blocks, and vault structure.
  - [Map Manager & Views](map-manager.md) — organize battle maps, map views, and GM/Player map workflows.
