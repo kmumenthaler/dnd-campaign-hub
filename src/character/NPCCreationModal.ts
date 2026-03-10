@@ -18,6 +18,7 @@ export class NPCCreationModal extends Modal {
   isEdit = false;
   originalNPCPath = "";
   originalNPCName = "";
+  private dataLoaded = false;
 
   // Statblock fields (optional combat stats)
   hasStatblock = false;
@@ -61,9 +62,10 @@ export class NPCCreationModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
 
-    // Load existing NPC data if editing
-    if (this.isEdit) {
+    // Load existing NPC data once on first open (not on refreshUI)
+    if (this.isEdit && !this.dataLoaded) {
       await this.loadNPCData();
+      this.dataLoaded = true;
     }
 
     contentEl.createEl("h2", { text: this.isEdit ? "✏️ Edit NPC" : "👤 Create New NPC" });
@@ -1008,8 +1010,44 @@ export class NPCCreationModal extends Modal {
               fm.legendary_actions = this.legendaryActions.filter(a => a.name && a.desc);
             } else {
               fm.statblock = "";
+              // Clean up statblock fields when removing
+              delete fm.size;
+              delete fm.ac;
+              delete fm.hp;
+              delete fm.hit_dice;
+              delete fm.speed;
+              delete fm.stats;
+              delete fm.fage_stats;
+              delete fm.cr;
+              delete fm.damage_vulnerabilities;
+              delete fm.damage_resistances;
+              delete fm.damage_immunities;
+              delete fm.condition_immunities;
+              delete fm.senses;
+              delete fm.languages;
+              delete fm.saves;
+              delete fm.skillsaves;
+              delete fm.traits;
+              delete fm.actions;
+              delete fm.bonus_actions;
+              delete fm.reactions;
+              delete fm.legendary_actions;
             }
           });
+
+          // Remove statblock render block if statblock was disabled
+          if (!this.hasStatblock) {
+            let content = await this.app.vault.read(npcFile);
+            if (content.includes('```statblock\ncreature:')) {
+              content = content.replace(
+                /```statblock\ncreature: .+\n```/,
+                '```statblock\n# Leave empty or add stat block here\n```'
+              );
+              await this.app.vault.modify(npcFile, content);
+            }
+            // Remove from Fantasy Statblocks plugin
+            await this.plugin.deleteCreatureStatblock(this.npcName);
+          }
 
           // Add or update statblock render block in body if statblock is enabled
           if (this.hasStatblock) {
