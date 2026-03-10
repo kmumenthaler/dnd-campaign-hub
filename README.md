@@ -1,6 +1,6 @@
 ﻿# D&D Campaign Hub
 
-Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, encounter building, hexcrawl travel, session dashboards, a DM screen, and an ambient music player.
+Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, a combat tracker, encounter building, party management, hexcrawl travel, session dashboards, a DM screen, and an ambient music player.
 
 > **Project status: early preview.** Core workflows are under active development and may change without notice. Feedback and issue reports are welcome.
 
@@ -30,31 +30,72 @@ Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, enc
 
 ### Interactive battle maps
 
-- Display maps with square, hex-horizontal, hex-vertical, or no grid overlay.
-- Tools: pan, select, highlight, marker, freehand draw, ruler, area of effect, eraser, fog of war.
-- Five annotation layers: Player, DM, Background, Elevated, Subterranean.
-- Token library with creature size support (Tiny through Gargantuan), images, elevation tracking, and darkvision.
+- Display maps with square, hex (flat-top), hex (pointy-top), or no grid overlay with auto-detection.
+- 16 tools across five annotation layers (Player, DM, Background, Elevated, Subterranean).
+- Token library with creature size support (Tiny through Gargantuan), images, elevation tracking (flying and burrowing), darkvision override, and token auras.
 - Fog of war with brush, circle, rectangle, and polygon reveal and hide modes.
-- Wall and light source placement with flicker effects and visibility caching.
+- Six wall types: wall, door, window, secret door, invisible, and terrain.
+- Nine light source presets: candle, torch, lantern, bullseye lantern, Light spell, Dancing Lights, Continual Flame, Daylight, and fluorescent.
 - Area of effect shapes (circle, cone, square, line) with optional token anchoring.
 - GM Map View for editing and Player Map View as a clean popout window with real-time sync.
-- Tabletop miniature mode with physical monitor calibration for 25-32 mm miniature bases.
+- Tabletop miniature mode with physical monitor calibration for 25–32 mm miniature bases.
 - Two-point grid calibration to align grids with pre-gridded map images.
 - Animated map support for video backgrounds (MP4, WebM).
-- Battlemap template system for reusable map setups.
-- Environmental asset library with transform handles for resize, rotate, and pivot.
+- Battlemap template system with tagging for reusable map setups.
+- Environmental asset library (scatter, doors, traps) with transform handles for resize, rotate, and pivot.
 
-| Keyboard shortcut | Tool |
+#### Map keyboard shortcuts
+
+| Key | Tool | Notes |
+| --- | --- | --- |
+| `V` | Pan | Default navigation tool |
+| `S` | Select | Token and object selection |
+| `H` | Highlight | Grid cell highlighting |
+| `P` | POI | Point of Interest (hexcrawl only) |
+| `M` | Marker | Token placement |
+| `D` | Draw | Freehand drawing |
+| `R` | Ruler | Distance measurement |
+| `T` | Token Distance | Point-to-token distance |
+| `A` | AoE | Area of Effect templates |
+| `X` | Eraser | Remove drawings, highlights, and AoE |
+| `F` | Fog | Fog of War (Background layer only) |
+| `W` | Walls | Wall segments (Background layer only) |
+| `L` | Lights | Light sources (Background layer only) |
+| `E` | Tile Elevation | Elevation painting (Background layer only) |
+| `G` | Move Grid | Grid repositioning (Background layer only) |
+| `N` | Env Assets | Environmental assets (Background layer only) |
+
+| Modifier | Action |
 | --- | --- |
-| `Q` | Pan |
-| `W` | Select |
-| `E` | Highlight |
-| `R` | Marker |
-| `D` | Draw |
-| `Z` | Ruler |
-| `X` | Area of effect |
-| `C` | Eraser |
-| `V` | Fog of war |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Y` / `Ctrl+Shift+Z` | Redo |
+| `Escape` | Revert to Select tool / cancel wall drawing |
+| `Enter` | Finish wall chain |
+| Arrow keys | Tunnel navigation (when token is inside a tunnel) |
+
+### Combat tracker
+
+- **GM sidebar view** — initiative order, round counter, HP/AC/status columns, expandable combatant rows.
+- **Player view** — fullscreen projection with HP bar animations, dynamic font sizing, and read-only presentation.
+- HP tracking with current, temporary, and max HP; death save successes and failures.
+- Status effects with name, duration in rounds, and GM notes.
+- Initiative rolling with automatic sorting.
+- Auto-pan to the active combatant's token on the battle map (optional).
+- Vision selector for individual token perspective or combined party view.
+- Darkvision override per combatant (0–300 ft in 5 ft increments).
+- Elevation support for flying and burrowing.
+- Carried light sources affect token vision on the map.
+
+### Party management
+
+- Create, rename, and delete parties with a default party designation.
+- Link a party to a campaign folder for automatic PC discovery.
+- Add PCs from the vault and add companions (retainers, hirelings).
+- Reorder members with drag-and-drop or sidebar move buttons.
+- Live stat display (HP, AC, level) read directly from PC note frontmatter.
+- Expandable member cards with full detail view (one at a time).
+- Sync member names from PC notes and prune orphaned members.
+- Initiative configuration: don't roll, roll automatically, or let players roll.
 
 ### Encounter builder
 
@@ -62,7 +103,7 @@ Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, enc
 - Add creatures with count, HP, AC, and CR; supports friendly NPCs and hidden creatures.
 - Trap integration: simple and complex traps contribute to encounter difficulty.
 - Random encounter table generator filtered by environment and party level.
-- Built-in Party Manager for party roster and encounter loading.
+- Load party roster directly from the Party Manager.
 - D&D 5e SRD API integration for monster data.
 
 ### Hexcrawl wilderness travel
@@ -97,6 +138,7 @@ Tabbed reference panel with eight quick-reference sections: conditions, actions,
 - **Import PCs** from other campaigns.
 - **Creature builder** — full stat block with ability scores, saves, skills, resistances, immunities, traits, actions, legendary actions, and more.
 - Tokens auto-created for PCs, NPCs, and creatures with correct grid size.
+- Edit and delete commands for all character and creature types.
 - Fantasy Statblocks plugin integration for bestiary management.
 
 ### Items, spells, traps, and factions
@@ -105,6 +147,7 @@ Tabbed reference panel with eight quick-reference sections: conditions, actions,
 - **Spells** — import from the D&D 5e SRD API with search, filter, and detail preview.
 - **Traps** — simple and complex types with threat levels, multiple elements, countermeasures, and encounter difficulty contribution.
 - **Factions** — type, alignment, goals, resources, territory, allied and enemy faction tracking.
+- Edit and delete commands for all entity types.
 
 ### Points of interest
 
@@ -129,38 +172,41 @@ Import all D&D 5e SRD content from the dnd5eapi.co API:
 | `` ```dnd-poi``` `` | Point of interest card |
 | `` ```dnd-music``` `` | Scene music controls |
 | `` ```dnd-sfx``` `` | Inline sound effect trigger |
-| `` ```dnd-encounter-table``` `` | Random encounter table |
+| `` ```dnd-encounter-table``` `` | Random encounter table with rollable entries |
 
 ## Installation
 
 ### From community plugins (recommended)
 
 1. Open **Settings** → **Community plugins** → **Browse**.
-2. Search for "D&D Campaign Hub".
+2. Search for **D&D Campaign Hub**.
 3. Select **Install**, then **Enable**.
 
 ### Manual installation
 
-1. Download the latest release from [GitHub Releases](https://github.com/kmumenthaler/dnd-campaign-hub/releases).
-2. Extract the files to your vault's `.obsidian/plugins/dnd-campaign-hub/` folder.
-3. Reload Obsidian.
-4. Enable the plugin in **Settings** → **Community plugins**.
+1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/kmumenthaler/dnd-campaign-hub/releases).
+2. Create a folder called `dnd-campaign-hub` inside your vault's `.obsidian/plugins/` folder.
+3. Copy the three files into that folder.
+4. Reload Obsidian.
+5. Enable the plugin in **Settings** → **Community plugins**.
 
 ## Dependencies
 
 Battle maps work standalone. For full campaign management, these community plugins are recommended:
 
-- [Buttons](https://github.com/shabegom/buttons) — interactive buttons in campaign notes.
-- [Dataview](https://github.com/blacksmithgu/obsidian-dataview) — dynamic tables and queries.
-- [Calendarium](https://github.com/javalent/calendarium) — fantasy calendar integration.
-- [Templater](https://github.com/SilentVoid13/Templater) — template engine for dynamic content.
-- [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks) — creature and trap stat block rendering.
+| Plugin | Purpose |
+| --- | --- |
+| [Buttons](https://github.com/shabegom/buttons) | Interactive buttons in campaign notes |
+| [Dataview](https://github.com/blacksmithgu/obsidian-dataview) | Dynamic tables and queries |
+| [Calendarium](https://github.com/javalent/calendarium) | Fantasy calendar integration |
+| [Templater](https://github.com/SilentVoid13/Templater) | Template engine for dynamic content |
+| [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks) | Creature and trap stat block rendering |
 
-The plugin prompts you to install missing dependencies when needed.
+The plugin checks for missing dependencies and prompts you to install them when needed. You can also check manually in **Settings** → **D&D Campaign Hub** → **Plugin Dependencies**.
 
 ## Quick start
 
-1. Open the Command Palette (`Ctrl+P` on Windows/Linux or `Command+P` on macOS).
+1. Open the Command Palette (`Ctrl+P` on Windows/Linux, `Command+P` on macOS).
 2. Run **Initialize D&D Campaign Hub** to create the vault folder structure.
 3. Run **Create New Campaign**, enter a name, choose your role, and optionally link a calendar.
 4. Open the campaign hub with `Ctrl+Shift+M` (Windows/Linux) or `Command+Shift+M` (macOS) to access all creation tools.
@@ -168,7 +214,7 @@ The plugin prompts you to install missing dependencies when needed.
 
 ## Commands
 
-Access all commands through the Command Palette.
+Access all commands through the Command Palette (`Ctrl+P`). The plugin registers 79 commands organized by category.
 
 ### Core
 
@@ -218,13 +264,31 @@ Access all commands through the Command Palette.
 | Create New Trap | Build a simple or complex trap |
 | Create New Faction | Create a faction with goals and territory |
 
-### Maps and markers
+### Combat
+
+| Command | Description |
+| --- | --- |
+| Open Combat Tracker | Open the combat tracker sidebar |
+| Next Turn | Advance to the next combatant |
+| Previous Turn | Go back to the previous combatant |
+| Roll Initiative | Roll initiative for all combatants |
+| Save Combat State | Persist the current combat state |
+| End Combat | End the active encounter |
+
+### Maps
 
 | Command | Description |
 | --- | --- |
 | Create Battle Map | Create a new interactive map |
+| Insert Battlemap | Embed a map in the current note |
 | Create Battlemap Template | Save a reusable map template |
 | Map Manager | Browse, edit, and delete maps |
+
+### Party management
+
+| Command | Description |
+| --- | --- |
+| Manage Parties | Open the party management modal |
 
 ### Music
 
@@ -236,7 +300,30 @@ Access all commands through the Command Palette.
 | Stop All Music | Stop all audio layers |
 | Search Freesound | Search and download sounds from Freesound.org |
 
+### Points of interest
+
+| Command | Description |
+| --- | --- |
+| Edit Point of Interest | Edit the PoI on the current note |
+| Delete Point of Interest | Delete the PoI on the current note |
+| Insert PoI Code Block | Embed a PoI card in a note |
+
 All campaign entities (adventures, scenes, encounters, PCs, NPCs, creatures, items, traps, factions, PoIs) also have **Edit** and **Delete** commands.
+
+## Settings
+
+Open **Settings** → **D&D Campaign Hub** to configure the plugin.
+
+| Section | Setting | Description |
+| --- | --- | --- |
+| Campaign | Current Campaign | Campaign folder path (e.g., `ttrpgs/Campaign Name`) |
+| Maps | Auto-pan to active combatant | Center the player view on the current combatant during combat |
+| Lighting | Vision update mode | "Update on drop" (faster) or "Update while dragging" (live preview) |
+| SRD Data | Import All SRD Data | Download all 15 SRD categories to system folders |
+| | Import SRD Creatures | Import 334 creatures as tokens with artwork |
+| Dependencies | Plugin Dependencies | Status of recommended plugins (Buttons, Dataview, Calendarium, Templater) |
+| File Management | Migrate Files | Safely update templates to the latest version |
+| Danger Zone | Purge Vault | Remove all plugin data from the vault |
 
 ## Vault structure
 
@@ -257,9 +344,36 @@ z_Beastiarity/            Creature stat blocks and images
 z_BattlemapTemplates/     Reusable battlemap setups
 z_Spells/                 Imported SRD spell notes
 z_Backups/                Timestamped backups from migrations
+z_Databases/              Campaign databases
+z_Tables/                 Random tables
+z_Log/                    Session logs
 ```
 
 Additional SRD data folders (ability scores, classes, conditions, equipment, and more) are created when you import SRD content from the settings tab.
+
+## Documentation
+
+See the [docs/](docs/) folder for detailed guides:
+
+- [Getting started](docs/getting-started.md)
+- [Campaign management](docs/campaign-management.md)
+- [Sessions](docs/sessions.md)
+- [Adventures and scenes](docs/adventures-and-scenes.md)
+- [Characters and creatures](docs/characters-and-creatures.md)
+- [Items, spells, and traps](docs/items-spells-traps.md)
+- [Battle maps](docs/battle-maps.md)
+- [Combat tracker](docs/combat-tracker.md)
+- [Encounter builder](docs/encounter-builder.md)
+- [Encounter system](docs/encounter-system.md)
+- [Hexcrawl tracker](docs/hexcrawl.md)
+- [Party management](docs/party-management.md)
+- [Music player](docs/music-player.md)
+- [DM screen](docs/dm-screen.md)
+- [Map Manager](docs/map-manager.md)
+- [Marker system](docs/marker-system.md)
+- [Environmental assets](docs/envasset.md)
+- [Templates and migration](docs/templates.md)
+- [Settings and reference](docs/settings-and-reference.md)
 
 ## Development
 
@@ -283,6 +397,7 @@ src/
   adventure/            Adventure creation modal
   campaign/             Campaign creation and calendar modals
   character/            PC, NPC, and import modals
+  combat/               Combat tracker, player view, and types
   creature/             Creature builder modal
   dm-screen/            DM Screen reference view
   encounter/            Encounter builder, generator, SRD API client
@@ -291,12 +406,12 @@ src/
   hexcrawl/             Hexcrawl tracker, terrain painter, climate system
   hub/                  Main hub modal and purge confirmation
   item/                 Item creation modal
-  map/                  Map manager, grid overlay, wall tools, persistence
+  map/                  Map manager, grid overlay, wall tools, lighting, persistence
   map-views/            GM and Player map views, tabletop calibration
   marker/               Marker library and picker modals
   migration/            Version migration manager
   music/                Music player, playlists, Freesound integration
-  party/                Party management
+  party/                Party manager and party management modal
   poi/                  Point of interest editing and rendering
   scene/                Scene creation and slash command snippets
   session/              Session dashboards (prep and run)
@@ -322,7 +437,7 @@ Contributions are welcome.
 
 ## Credits
 
-Special thanks to the creators of [Buttons](https://github.com/shabegom/buttons), [Dataview](https://github.com/blacksmithgu/obsidian-dataview), [Calendarium](https://github.com/javalent/calendarium), and [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks).
+Special thanks to the creators of [Buttons](https://github.com/shabegom/buttons), [Dataview](https://github.com/blacksmithgu/obsidian-dataview), [Calendarium](https://github.com/javalent/calendarium), [Templater](https://github.com/SilentVoid13/Templater), and [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks).
 
 ## License
 
