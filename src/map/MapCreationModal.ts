@@ -1041,7 +1041,7 @@ class ImageSelectorModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass('image-selector-modal');
+    this.modalEl.addClass('image-selector-modal');
 
     contentEl.createEl('h2', { text: 'Select Map Image' });
 

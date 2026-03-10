@@ -4087,7 +4087,7 @@
 }
 
 /* Image Selector Modal */
-.image-selector-modal {
+.modal.image-selector-modal {
   max-width: 1000px;
   width: 90vw;
 }
