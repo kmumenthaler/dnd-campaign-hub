@@ -2215,128 +2215,23 @@ date: ${currentDate}
 
 # ${this.encounterName}
 
-\`\`\`dataviewjs
-// Create action buttons
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Open Combat Tracker and load encounter button
-const openTrackerBtn = buttonContainer.createEl("button", { 
-  text: "⚔️ Load in Combat Tracker",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px; background-color: var(--interactive-accent); color: var(--text-on-accent);" }
-});
-openTrackerBtn.addEventListener("click", async () => {
-  app.commands.executeCommandById("dnd-campaign-hub:open-combat-tracker");
-});
-
-// Edit button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-encounter");
-});
-
-// Delete button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-encounter");
-});
+\`\`\`dnd-hub
 \`\`\`
 
 ---
 
 ## Difficulty Analysis
 
-\`\`\`dataviewjs
-const diff = dv.current().difficulty;
-if (!diff) {
-  dv.paragraph("*No difficulty data available.*");
-} else {
-  // Create difficulty card
-  const card = dv.el("div", "", { cls: "dnd-difficulty-card" });
-  
-  // Header with difficulty badge and rounds
-  const header = dv.el("div", "", { cls: "dnd-difficulty-header", container: card });
-  const badge = dv.el("span", diff.rating, { cls: "dnd-difficulty-badge", container: header });
-  badge.style.backgroundColor = diff.color;
-  dv.el("span", \` ~\${diff.rounds_to_defeat} round\${diff.rounds_to_defeat !== 1 ? 's' : ''}\`, { cls: "dnd-rounds-estimate", container: header });
-  
-  // Stats grid
-  const grid = dv.el("div", "", { cls: "dnd-difficulty-stats-grid", container: card });
-  
-  // Party column
-  const partyCol = dv.el("div", "", { cls: "dnd-stats-column", container: grid });
-  dv.el("h5", \`⚔️ Party (\${diff.party_count})\`, { container: partyCol });
-  const partyStats = dv.el("div", "", { container: partyCol });
-  partyStats.innerHTML = \`
-    <div>HP Pool: <strong>\${diff.party_total_hp}</strong></div>
-    <div>Avg AC: <strong>\${Math.round(diff.party_avg_ac)}</strong></div>
-    <div>Total DPR: <strong>\${Math.round(diff.party_total_dpr)}</strong></div>
-    <div>Hit Chance: <strong>\${diff.party_hit_chance}%</strong></div>
-    <div>Effective DPR: <strong>\${diff.party_effective_dpr}</strong></div>
-  \`;
-  
-  // Enemy column
-  const enemyCol = dv.el("div", "", { cls: "dnd-stats-column", container: grid });
-  dv.el("h5", \`👹 Enemies (\${diff.enemy_count})\`, { container: enemyCol });
-  const enemyStats = dv.el("div", "", { container: enemyCol });
-  enemyStats.innerHTML = \`
-    <div>HP Pool: <strong>\${diff.enemy_total_hp}</strong></div>
-    <div>Avg AC: <strong>\${Math.round(diff.enemy_avg_ac)}</strong></div>
-    <div>Total DPR: <strong>\${Math.round(diff.enemy_total_dpr)}</strong></div>
-    <div>Hit Chance: <strong>\${diff.enemy_hit_chance}%</strong></div>
-    <div>Effective DPR: <strong>\${diff.enemy_effective_dpr}</strong></div>
-  \`;
-  
-  // 3-round analysis
-  const analysis = dv.el("div", "", { cls: "dnd-difficulty-analysis", container: card });
-  const partyDamage3 = diff.party_effective_dpr * 3;
-  const enemyDamage3 = diff.enemy_effective_dpr * 3;
-  const partyHPAfter3 = Math.max(0, diff.party_total_hp - enemyDamage3);
-  const enemyHPAfter3 = Math.max(0, diff.enemy_total_hp - partyDamage3);
-  const partyHPPercent = Math.round((partyHPAfter3 / diff.party_total_hp) * 100);
-  const enemyHPPercent = Math.round((enemyHPAfter3 / diff.enemy_total_hp) * 100);
-  
-  analysis.innerHTML = \`
-    <div style="margin-bottom: 8px;"><strong>📊 3-Round Analysis:</strong></div>
-    <div>Party deals: <strong>\${Math.round(partyDamage3)}</strong> damage → Enemies at <strong>\${Math.round(enemyHPAfter3)}</strong> HP (\${enemyHPPercent}%)</div>
-    <div>Enemies deal: <strong>\${Math.round(enemyDamage3)}</strong> damage → Party at <strong>\${Math.round(partyHPAfter3)}</strong> HP (\${partyHPPercent}%)</div>
-    <div style="margin-top: 8px; opacity: 0.8;">
-      Survival Ratio: \${diff.survival_ratio}
-      (Party can survive \${diff.rounds_party_survives} rounds, enemies survive \${diff.rounds_to_defeat} rounds)
-    </div>
-  \`;
-}
+\`\`\`dnd-hub-view
+encounter-difficulty
 \`\`\`
 
 ---
 
 ## Creatures
 
-\`\`\`dataviewjs
-const creatures = dv.current().creatures || [];
-
-if (creatures.length === 0) {
-  dv.paragraph("*No creatures in this encounter.*");
-} else {
-  const table = creatures.map(c => {
-    return [
-      c.name,
-      c.count || 1,
-      c.cr || "?",
-      c.hp || "?",
-      c.ac || "?"
-    ];
-  });
-  
-  dv.table(["Creature", "Count", "CR", "HP", "AC"], table);
-}
+\`\`\`dnd-hub-view
+encounter-creatures
 \`\`\`
 
 ---

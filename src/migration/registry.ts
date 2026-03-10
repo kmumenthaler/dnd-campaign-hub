@@ -6,6 +6,7 @@ import {
   addFrontmatterFieldAfter,
   setFrontmatterField,
   replaceDataviewjsBlock,
+  replaceDataviewTableBlocks,
   insertAfterTitle,
 } from "./frontmatter";
 
@@ -362,6 +363,21 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "session-1.5.0",
+      entityTypes: ["session"],
+      targetVersion: "1.5.0",
+      description: "Replace Dataview scene navigator with native dnd-hub-view block",
+      async apply(ctx: MigrationContext) {
+        if (ctx.content.includes("```dnd-hub-view")) return null;
+        const replacement = "```dnd-hub-view\nscene-navigator\n```";
+        const replaced = replaceDataviewjsBlock(ctx.content, "Session Scene Navigator", replacement)
+                      ?? replaceDataviewjsBlock(ctx.content, "sessionFile.adventure", replacement);
+        if (!replaced) return null;
+        return setFrontmatterField(replaced, "template_version", "1.5.0");
+      },
+    },
+
     // ── Adventure ────────────────────────────────────────────────────────
 
     {
@@ -419,6 +435,21 @@ deleteButton.onclick = () => {
       description: "Replace inline buttons with dynamic render block",
       async apply(ctx: MigrationContext) {
         return replaceButtonsWithRenderBlock(ctx.content, "dnd-campaign-hub:edit-adventure");
+      },
+    },
+
+    {
+      id: "adventure-1.4.0",
+      entityTypes: ["adventure"],
+      targetVersion: "1.4.0",
+      description: "Replace Dataview scene list with native dnd-hub-view block",
+      async apply(ctx: MigrationContext) {
+        if (ctx.content.includes("```dnd-hub-view")) return null;
+        const replacement = "```dnd-hub-view\nadventure-scenes\n```";
+        const replaced = replaceDataviewjsBlock(ctx.content, "Get all scenes for this adventure", replacement)
+                      ?? replaceDataviewjsBlock(ctx.content, "adventureFolder", replacement);
+        if (!replaced) return null;
+        return setFrontmatterField(replaced, "template_version", "1.4.0");
       },
     },
 
@@ -494,6 +525,52 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "encounter-table-1.3.0",
+      entityTypes: ["encounter-table"],
+      targetVersion: "1.3.0",
+      description: "Replace remaining Dataview buttons with dnd-hub render block",
+      async apply(ctx: MigrationContext) {
+        // Some encounter-table notes still have dataviewjs blocks after 1.2.0
+        if (ctx.content.includes("```dnd-hub") && !ctx.content.includes("```dataviewjs")) return null;
+        return replaceButtonsWithRenderBlock(ctx.content, "dnd-campaign-hub:roll-random-encounter");
+      },
+    },
+
+    // ── Encounter ────────────────────────────────────────────────────────
+
+    {
+      id: "encounter-1.1.0",
+      entityTypes: ["encounter"],
+      targetVersion: "1.1.0",
+      description: "Replace Dataview encounter blocks with native dnd-hub render and view blocks",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+
+        // Replace dataviewjs action buttons with dnd-hub render block
+        if (!out.includes("```dnd-hub")) {
+          const replaced = replaceDataviewjsBlock(out, "dnd-campaign-hub:open-combat-tracker", DND_HUB_BLOCK)
+                        ?? replaceDataviewjsBlock(out, "dnd-campaign-hub:edit-encounter", DND_HUB_BLOCK);
+          if (replaced) {
+            out = replaced;
+          } else {
+            out = insertAfterTitle(out, DND_HUB_BLOCK);
+          }
+        }
+
+        // Replace Difficulty Analysis dataviewjs
+        const diffReplaced = replaceDataviewjsBlock(out, "dv.current().difficulty", "```dnd-hub-view\nencounter-difficulty\n```");
+        if (diffReplaced) out = diffReplaced;
+
+        // Replace Creatures table dataviewjs
+        const creaturesReplaced = replaceDataviewjsBlock(out, "dv.current().creatures", "```dnd-hub-view\nencounter-creatures\n```");
+        if (creaturesReplaced) out = creaturesReplaced;
+
+        if (out === ctx.content) return null;
+        return setFrontmatterField(out, "template_version", "1.1.0");
+      },
+    },
+
     // ── Trap ─────────────────────────────────────────────────────────────
 
     {
@@ -503,6 +580,26 @@ deleteBtn.addEventListener("click", () => {
       description: "Replace inline buttons with dynamic render block",
       async apply(ctx: MigrationContext) {
         return replaceButtonsWithRenderBlock(ctx.content, "dnd-campaign-hub:edit-trap");
+      },
+    },
+
+    {
+      id: "trap-1.3.0",
+      entityTypes: ["trap"],
+      targetVersion: "1.3.0",
+      description: "Replace Dataview trap views with native dnd-hub-view blocks",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        if (out.includes("```dnd-hub-view")) return null;
+
+        const elemReplaced = replaceDataviewjsBlock(out, "dv.current().elements", "```dnd-hub-view\ntrap-elements\n```");
+        if (elemReplaced) out = elemReplaced;
+
+        const cmReplaced = replaceDataviewjsBlock(out, "dv.current().countermeasures", "```dnd-hub-view\ntrap-countermeasures\n```");
+        if (cmReplaced) out = cmReplaced;
+
+        if (out === ctx.content) return null;
+        return setFrontmatterField(out, "template_version", "1.3.0");
       },
     },
 
@@ -604,6 +701,21 @@ deleteBtn.addEventListener("click", () => {
 
         out = setFrontmatterField(out, "template_version", "1.2.0");
         return out;
+      },
+    },
+
+    {
+      id: "world-1.3.0",
+      entityTypes: ["world"],
+      targetVersion: "1.3.0",
+      description: "Replace Dataview TABLE blocks with native dnd-hub-table blocks",
+      async apply(ctx: MigrationContext) {
+        if (ctx.content.includes("```dnd-hub-table")) return null;
+
+        const replaced = replaceDataviewTableBlocks(ctx.content);
+        if (!replaced) return null;
+
+        return setFrontmatterField(replaced, "template_version", "1.3.0");
       },
     },
   ];

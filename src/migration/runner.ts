@@ -263,7 +263,7 @@ export class MigrationRunner {
   private shouldHaveRenderBlock(entityType: string): boolean {
     const typesWithRenderBlock = [
       "player", "pc", "npc", "creature", "scene", "adventure",
-      "trap", "item", "spell", "faction", "encounter-table", "point-of-interest",
+      "trap", "item", "spell", "faction", "encounter", "encounter-table", "point-of-interest",
     ];
     return typesWithRenderBlock.includes(entityType);
   }

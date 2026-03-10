@@ -164,6 +164,41 @@ export function replaceDataviewjsBlock(
 }
 
 /**
+ * Replace all ```dataview ... ``` TABLE blocks with dnd-hub-table blocks.
+ * Extracts the folder path from FROM and the entity type from WHERE.
+ * Returns modified content, or null if no changes were made.
+ */
+export function replaceDataviewTableBlocks(content: string): string | null {
+  const dvBlockRegex = /```dataview\n([\s\S]*?)```/g;
+  let out = content;
+  let changed = false;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const match = dvBlockRegex.exec(out);
+    if (!match) break;
+    const body = match[1]!;
+
+    const fromMatch = body.match(/[Ff][Rr][Oo][Mm]\s+"([^"]+)"/);
+    if (!fromMatch) continue;
+
+    let type = "unknown";
+    if (/type\s*=\s*"player"/i.test(body)) type = "player";
+    else if (/type\s*=\s*"npc"/i.test(body)) type = "npc";
+    else if (/contains\s*\(\s*type\s*,\s*"session"\s*\)/i.test(body)) type = "session";
+    else if (/type\s*=\s*"faction"/i.test(body)) type = "faction";
+    else if (/type\s*=\s*"adventure"/i.test(body)) type = "adventure";
+
+    const replacement = "```dnd-hub-table\nsource: " + fromMatch[1] + "\ntype: " + type + "\n```";
+    out = out.replace(match[0], replacement);
+    dvBlockRegex.lastIndex = 0; // Reset since string changed
+    changed = true;
+  }
+
+  return changed ? out : null;
+}
+
+/**
  * Insert a block of text after the first heading (# Title) in a note.
  * If no heading is found, inserts after the frontmatter.
  */

@@ -10,7 +10,7 @@ status: active
 role: player
 system:
 type: world
-template_version: 1.2.0
+template_version: 1.3.0
 fc-calendar: 
 fc-date: 
   year: 
@@ -26,46 +26,27 @@ fc-date:
 
 *Manage player characters in your campaign.*
 
-\`\`\`dataview
-TABLE WITHOUT ID
-  link(file.path, name) AS "Name",
-  class + choice(subclass, " (" + subclass + ")", "") AS "Class",
-  level AS "Level",
-  number(ac) AS "AC",
-  (hp + "/" + default(hp_max, "?")) + choice(default(thp, 0) > 0, " (+" + thp + " THP)", "") AS "HP",
-  default(init_bonus, 0) AS "Initiative",
-  default(speed, 30) AS "Speed",
-  default(passive_perception, "?") AS "PP",
-  choice(readonlyUrl, "[DDB](" + readonlyUrl + ")", "—") AS "D&D Beyond"
-FROM "ttrpgs/{{CAMPAIGN_NAME}}/PCs"
-WHERE type = "player"
-SORT name ASC
+\`\`\`dnd-hub-table
+source: ttrpgs/{{CAMPAIGN_NAME}}/PCs
+type: player
 \`\`\`
 
 ## NPCs
 
 *Track non-player characters, allies, enemies, and everyone in between.*
 
-\`\`\`dataview
-TABLE WITHOUT ID
-  link(file.path, name) AS "Name",
-  default(race, "—") AS "Race",
-  default(location, "—") AS "Location",
-  default(faction, "—") AS "Faction",
-  default(motivation, "—") AS "Wants"
-FROM "ttrpgs/{{CAMPAIGN_NAME}}/NPCs"
-WHERE type = "npc"
-SORT name ASC
+\`\`\`dnd-hub-table
+source: ttrpgs/{{CAMPAIGN_NAME}}/NPCs
+type: npc
 \`\`\`
 
 ## Sessions
 
 *Create new sessions using the command palette (Ctrl/Cmd+P → "Create New Session").*
 
-\`\`\`dataview
-table summary as "Summary" from "ttrpgs/{{CAMPAIGN_NAME}}"
-where contains(type,"session")
-SORT sessionNum ASC
+\`\`\`dnd-hub-table
+source: ttrpgs/{{CAMPAIGN_NAME}}
+type: session
 \`\`\`
 
 ## Truths about the campaign/world
@@ -78,31 +59,18 @@ SORT sessionNum ASC
 
 *Manage factions, organizations, and groups that shape your world.*
 
-\`\`\`dataview
-TABLE WITHOUT ID
-  link(file.path, name) AS "Name",
-  default(main_goal, "—") AS "Main Goal",
-  default(size, "—") AS "Size",
-  default(reputation, "—") AS "Reputation"
-FROM "ttrpgs/{{CAMPAIGN_NAME}}/Factions"
-WHERE type = "faction"
-SORT name ASC
+\`\`\`dnd-hub-table
+source: ttrpgs/{{CAMPAIGN_NAME}}/Factions
+type: faction
 \`\`\`
 
 ## Adventures
 
 *Track multi-session story arcs and adventures.*
 
-\`\`\`dataview
-TABLE WITHOUT ID
-  link(file.path, name) AS "Name",
-  level_range AS "Level",
-  status AS "Status",
-  current_act + "/3" AS "Act",
-  length(sessions) AS "Sessions"
-FROM "ttrpgs/{{CAMPAIGN_NAME}}/Adventures"
-WHERE type = "adventure"
-SORT file.ctime DESC
+\`\`\`dnd-hub-table
+source: ttrpgs/{{CAMPAIGN_NAME}}/Adventures
+type: adventure
 \`\`\`
 
 ## Custom rules
@@ -115,7 +83,7 @@ SORT file.ctime DESC
 
 export const SESSION_GM_TEMPLATE = `---
 type: session
-template_version: 1.4.0
+template_version: 1.5.0
 campaign: 
 world: 
 adventure: 
@@ -159,138 +127,8 @@ art: ""
 
 ## Scenes
 
-\`\`\`dataviewjs
-// Session Scene Navigator
-const sessionFile = dv.current();
-let adventureLink = sessionFile.adventure;
-const startingScene = sessionFile.starting_scene;
-const endingScene   = sessionFile.ending_scene;
-
-// Parse "[[path]]" -> path
-const parseLink = (val) => {
-  if (!val || val === '""' || val === '') return null;
-  if (typeof val === 'string') {
-    const m = val.match(/\[\[(.+?)\]\]/);
-    return m ? m[1] : null;
-  }
-  return val?.path || null;
-};
-
-adventureLink = parseLink(adventureLink) || adventureLink;
-const startPath = parseLink(startingScene);
-const endPath   = parseLink(endingScene);
-
-if (!adventureLink) {
-  dv.paragraph("*No adventure linked to this session.*");
-  const createBtn = dv.el('button', '🗺️ Create Adventure');
-  createBtn.className = 'mod-cta';
-  createBtn.style.marginTop = '10px';
-  createBtn.onclick = () => app.commands.executeCommandById('dnd-campaign-hub:create-adventure');
-} else {
-  const adventurePage = dv.page(adventureLink);
-  if (!adventurePage) {
-    dv.paragraph("*Adventure note not found: " + adventureLink + "*");
-  } else {
-    const adventureName = adventurePage.name || adventurePage.file.name;
-    const adventureFolder = adventurePage.file.folder;
-    const campaignFolder = adventurePage.campaign;
-
-    // Collect scenes from all folder structures (new Scenes/, flat, legacy)
-    let raw = [
-      ...dv.pages(\`"\${adventureFolder}/Scenes"\`).where(p => p.type === 'scene'),
-      ...dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`).where(p => p.file.name.startsWith('Scene')),
-      ...dv.pages(\`"\${adventureFolder}"\`).where(p => p.type === 'scene'),
-    ];
-
-    // Deduplicate and sort by scene number
-    const seen = new Set();
-    let allScenes = raw.filter(s => {
-      if (seen.has(s.file.path)) return false;
-      seen.add(s.file.path);
-      return true;
-    });
-    allScenes.sort((a, b) => {
-      const n = s => parseInt(s.scene_number || s.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
-      return n(a) - n(b);
-    });
-
-    if (allScenes.length === 0) {
-      dv.paragraph("*No scenes found for this adventure. Create a scene from the adventure note.*");
-    } else {
-      const idxOf = (path) => !path ? -1 : allScenes.findIndex(s =>
-        s.file.path === path || s.file.name === path ||
-        s.file.path.endsWith('/' + path + '.md') || s.file.path.endsWith('/' + path)
-      );
-      const startIdx = idxOf(startPath);
-      const endIdx   = idxOf(endPath);
-
-      // Starting scene callout
-      if (startIdx >= 0) {
-        const c = dv.el('div', '');
-        c.style.cssText = 'background:rgba(0,180,0,0.08);border-left:4px solid #00aa44;padding:8px 12px;border-radius:4px;margin-bottom:8px;';
-        c.innerHTML = '<strong>🎬 Session starts at:</strong> ';
-        const a = c.createEl('a', { text: allScenes[startIdx].file.name, href: '#' });
-        a.onclick = (e) => { e.preventDefault(); app.workspace.openLinkText(allScenes[startIdx].file.path, '', false); };
-      }
-
-      // Ending scene callout
-      if (endIdx >= 0) {
-        const c = dv.el('div', '');
-        c.style.cssText = 'background:rgba(255,140,0,0.08);border-left:4px solid #ff8800;padding:8px 12px;border-radius:4px;margin-bottom:8px;';
-        c.innerHTML = '<strong>🏁 Session ended at:</strong> ';
-        const a = c.createEl('a', { text: allScenes[endIdx].file.name, href: '#' });
-        a.onclick = (e) => { e.preventDefault(); app.workspace.openLinkText(allScenes[endIdx].file.path, '', false); };
-      }
-
-      // "End Session Here" button (only if not yet recorded)
-      if (!endPath) {
-        const btnRow = dv.el('div', '');
-        btnRow.style.cssText = 'margin-bottom:12px;';
-        const endBtn = btnRow.createEl('button', { text: '🏁 End Session Here' });
-        endBtn.style.cssText = 'padding:5px 12px;cursor:pointer;border-radius:4px;';
-        endBtn.onclick = () => app.commands.executeCommandById('dnd-campaign-hub:end-session-here');
-      }
-
-      // Scene list
-      dv.header(4, 'Adventure Scenes');
-      for (let i = 0; i < allScenes.length; i++) {
-        const scene = allScenes[i];
-        const isStart = i === startIdx;
-        const isEnd   = i === endIdx;
-        const status  = scene.status || 'not-started';
-        const icon    = status === 'completed' ? '✅' : status === 'in-progress' ? '🎬' : '⬜';
-
-        const row = dv.el('div', '');
-        row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:3px 0;' + (isStart ? 'font-weight:600;' : '');
-
-        // Status toggle button
-        const togBtn = row.createEl('button', { text: icon });
-        togBtn.style.cssText = 'border:none;background:transparent;cursor:pointer;font-size:1.1em;padding:0;width:22px;';
-        togBtn.title = 'Click to cycle: not-started → in-progress → completed';
-        togBtn.onclick = async () => {
-          const next = { 'not-started': 'in-progress', 'in-progress': 'completed', 'completed': 'not-started' };
-          const f = app.vault.getAbstractFileByPath(scene.file.path);
-          if (f) {
-            const c = await app.vault.read(f);
-            await app.vault.modify(f, c.replace(/^status:\s*.+$/m, \`status: \${next[status] || 'not-started'}\`));
-          }
-        };
-
-        // Scene name link
-        const nameEl = row.createEl('span');
-        const link = nameEl.createEl('a', { text: scene.file.name, href: '#' });
-        link.onclick = (e) => { e.preventDefault(); app.workspace.openLinkText(scene.file.path, '', false); };
-
-        // Meta info
-        const meta = row.createEl('span', { text: \` — \${scene.duration || '?'} | \${scene.scene_type || '?'}\` });
-        meta.style.cssText = 'opacity:0.55;font-size:0.82em;';
-
-        if (isStart) { const b = row.createEl('span', { text: ' 📍' }); b.title = 'Session start'; }
-        if (isEnd)   { const b = row.createEl('span', { text: ' 🏁' }); b.title = 'Session end'; }
-      }
-    }
-  }
-}
+\`\`\`dnd-hub-view
+scene-navigator
 \`\`\`
 
 ## Secrets and Clues
@@ -612,7 +450,7 @@ date:
 
 export const ADVENTURE_TEMPLATE = `---
 type: adventure
-template_version: 1.3.0
+template_version: 1.4.0
 name: 
 campaign: 
 world: 
@@ -646,122 +484,8 @@ date:
 
 ## Scenes
 
-\`\`\`dataviewjs
-// Get all scenes for this adventure
-const adventureName = dv.current().name || dv.current().file.name;
-const campaignFolder = dv.current().campaign;
-const adventureFolder = dv.current().file.folder;
-
-// Find scenes in both flat and folder structures
-// Flat: Adventures/Adventure - Scenes/
-// Folder: Adventures/Adventure/ (scenes directly or in Act subfolders)
-let scenesFlat = dv.pages(\`"\${campaignFolder}/Adventures/\${adventureName} - Scenes"\`)
-  .where(p => p.file.name.startsWith("Scene"));
-let scenesFolder = dv.pages(\`"\${adventureFolder}"\`)
-  .where(p => p.file.name.startsWith("Scene"));
-
-let allScenes = [...scenesFlat, ...scenesFolder];
-
-if (allScenes.length === 0) {
-  dv.paragraph("*No scenes created yet. Use the button above to create your first scene.*");
-} else {
-  // Sort by scene number
-  allScenes.sort((a, b) => {
-    const aNum = parseInt(a.scene_number || a.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
-    const bNum = parseInt(b.scene_number || b.file.name.match(/Scene\\s+(\\d+)/)?.[1] || 0);
-    return aNum - bNum;
-  });
-
-  // Group by act if act numbers exist
-  const hasActs = allScenes.some(s => s.act);
-  
-  if (hasActs) {
-    // Display grouped by acts
-    const acts = {1: [], 2: [], 3: []};
-    allScenes.forEach(scene => {
-      const act = scene.act || 1;
-      if (acts[act]) acts[act].push(scene);
-    });
-
-    const actNames = {
-      1: "Act 1: Setup & Inciting Incident",
-      2: "Act 2: Rising Action & Confrontation",
-      3: "Act 3: Climax & Resolution"
-    };
-
-    for (const [actNum, actScenes] of Object.entries(acts)) {
-      if (actScenes.length > 0) {
-        dv.header(3, actNames[actNum]);
-        for (const scene of actScenes) {
-          const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
-          const duration = scene.duration || "?min";
-          const type = scene.type || "?";
-          const difficulty = scene.difficulty || "?";
-          
-          // Create clickable status button
-          const sceneDiv = dv.el('div', '', { cls: 'scene-item' });
-          const statusBtn = dv.el('button', status, { container: sceneDiv });
-          statusBtn.style.border = 'none';
-          statusBtn.style.background = 'transparent';
-          statusBtn.style.cursor = 'pointer';
-          statusBtn.style.fontSize = '1.2em';
-          statusBtn.title = 'Click to change status';
-          statusBtn.onclick = async () => {
-            const file = app.vault.getAbstractFileByPath(scene.file.path);
-            if (file) {
-              const content = await app.vault.read(file);
-              const currentStatus = scene.status || 'not-started';
-              const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
-                                 currentStatus === 'in-progress' ? 'completed' : 'not-started';
-              const newContent = content.replace(
-                /^status:\\s*.+$/m,
-                \`status: \${nextStatus}\`
-              );
-              await app.vault.modify(file, newContent);
-            }
-          };
-          dv.span(' **', { container: sceneDiv });
-          dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
-          dv.span(\`**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`, { container: sceneDiv });
-        }
-      }
-    }
-  } else {
-    // Display as simple list
-    for (const scene of allScenes) {
-      const status = scene.status === "completed" ? "✅" : scene.status === "in-progress" ? "🎬" : "⬜";
-      const duration = scene.duration || "?min";
-      const type = scene.type || "?";
-      const difficulty = scene.difficulty || "?";
-      
-      // Create clickable status button
-      const sceneDiv = dv.el('div', '', { cls: 'scene-item' });
-      const statusBtn = dv.el('button', status, { container: sceneDiv });
-      statusBtn.style.border = 'none';
-      statusBtn.style.background = 'transparent';
-      statusBtn.style.cursor = 'pointer';
-      statusBtn.style.fontSize = '1.2em';
-      statusBtn.title = 'Click to change status';
-      statusBtn.onclick = async () => {
-        const file = app.vault.getAbstractFileByPath(scene.file.path);
-        if (file) {
-          const content = await app.vault.read(file);
-          const currentStatus = scene.status || 'not-started';
-          const nextStatus = currentStatus === 'not-started' ? 'in-progress' : 
-                             currentStatus === 'in-progress' ? 'completed' : 'not-started';
-          const newContent = content.replace(
-            /^status:\\s*.+$/m,
-            \`status: \${nextStatus}\`
-          );
-          await app.vault.modify(file, newContent);
-        }
-      };
-      dv.span(' **', { container: sceneDiv });
-      dv.span(dv.fileLink(scene.file.path, false, scene.file.name), { container: sceneDiv });
-      dv.span(\`**  \\n\\\`\${duration} | \${type} | \${difficulty}\\\`\`, { container: sceneDiv });
-    }
-  }
-}
+\`\`\`dnd-hub-view
+adventure-scenes
 \`\`\`
 
 ---
@@ -842,7 +566,7 @@ date: {{DATE}}
 
 export const TRAP_TEMPLATE = `---
 type: trap
-template_version: 1.2.0
+template_version: 1.3.0
 campaign: 
 adventure: 
 world: 
@@ -876,133 +600,16 @@ date:
 
 ## Trap Elements & Effects
 
-\`\`\`dataviewjs
-const elements = dv.current().elements || [];
-const trapType = dv.current().trap_type || 'simple';
-
-if (elements.length === 0) {
-  dv.paragraph("*No trap elements defined. Add elements to the \`elements\` frontmatter field.*");
-} else {
-  if (trapType === 'simple') {
-    // Simple trap - just show effects
-    for (const element of elements) {
-      dv.header(4, element.name || "Effect");
-      if (element.attack_bonus !== undefined) {
-        dv.paragraph(\`**Attack:** +\${element.attack_bonus} to hit\`);
-      }
-      if (element.save_dc !== undefined) {
-        dv.paragraph(\`**Save:** DC \${element.save_dc} \${element.save_ability || "DEX"}\`);
-      }
-      if (element.damage) {
-        dv.paragraph(\`**Damage:** \${element.damage}\`);
-      }
-      if (element.effect) {
-        dv.paragraph(\`**Effect:** \${element.effect}\`);
-      }
-      dv.paragraph("");
-    }
-  } else {
-    // Complex trap - organize by initiative
-    const byInitiative = new Map();
-    const constant = [];
-    const dynamic = [];
-    
-    for (const element of elements) {
-      if (element.element_type === 'constant') {
-        constant.push(element);
-      } else if (element.element_type === 'dynamic') {
-        dynamic.push(element);
-      } else if (element.initiative !== undefined) {
-        if (!byInitiative.has(element.initiative)) {
-          byInitiative.set(element.initiative, []);
-        }
-        byInitiative.get(element.initiative).push(element);
-      }
-    }
-    
-    // Show initiative-based elements
-    if (byInitiative.size > 0) {
-      dv.header(3, "Initiative Actions");
-      const sortedInit = Array.from(byInitiative.keys()).sort((a, b) => b - a);
-      for (const init of sortedInit) {
-        dv.header(4, \`Initiative \${init}\`);
-        for (const element of byInitiative.get(init)) {
-          dv.paragraph(\`**\${element.name || "Effect"}**\`);
-          if (element.attack_bonus !== undefined) {
-            dv.paragraph(\`  Attack: +\${element.attack_bonus} to hit\`);
-          }
-          if (element.save_dc !== undefined) {
-            dv.paragraph(\`  Save: DC \${element.save_dc} \${element.save_ability || "DEX"}\`);
-          }
-          if (element.damage) {
-            dv.paragraph(\`  Damage: \${element.damage}\`);
-          }
-          if (element.effect) {
-            dv.paragraph(\`  Effect: \${element.effect}\`);
-          }
-          dv.paragraph("");
-        }
-      }
-    }
-    
-    // Show dynamic elements
-    if (dynamic.length > 0) {
-      dv.header(3, "Dynamic Elements");
-      for (const element of dynamic) {
-        dv.paragraph(\`**\${element.name || "Dynamic Effect"}**\`);
-        if (element.condition) {
-          dv.paragraph(\`  Condition: \${element.condition}\`);
-        }
-        if (element.effect) {
-          dv.paragraph(\`  Effect: \${element.effect}\`);
-        }
-        dv.paragraph("");
-      }
-    }
-    
-    // Show constant elements
-    if (constant.length > 0) {
-      dv.header(3, "Constant Effects");
-      for (const element of constant) {
-        dv.paragraph(\`**\${element.name || "Constant Effect"}**\`);
-        if (element.effect) {
-          dv.paragraph(\`  \${element.effect}\`);
-        }
-        dv.paragraph("");
-      }
-    }
-  }
-}
+\`\`\`dnd-hub-view
+trap-elements
 \`\`\`
 
 ---
 
 ## Countermeasures
 
-\`\`\`dataviewjs
-const countermeasures = dv.current().countermeasures || [];
-
-if (countermeasures.length === 0) {
-  dv.paragraph("*No countermeasures defined. Add countermeasures to the \`countermeasures\` frontmatter field.*");
-} else {
-  for (const cm of countermeasures) {
-    dv.header(4, cm.method || "Countermeasure");
-    
-    if (cm.dc !== undefined) {
-      dv.paragraph(\`**DC:** \${cm.dc}\`);
-    }
-    if (cm.checks_needed !== undefined && cm.checks_needed > 1) {
-      dv.paragraph(\`**Checks Needed:** \${cm.checks_needed}\`);
-    }
-    if (cm.description) {
-      dv.paragraph(\`**Description:** \${cm.description}\`);
-    }
-    if (cm.effect) {
-      dv.paragraph(\`**Effect on Success:** \${cm.effect}\`);
-    }
-    dv.paragraph("");
-  }
-}
+\`\`\`dnd-hub-view
+trap-countermeasures
 \`\`\`
 
 ---

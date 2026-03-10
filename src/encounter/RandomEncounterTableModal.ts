@@ -391,47 +391,7 @@ export class RandomEncounterTableModal extends Modal {
     lines.push("");
 
     // ── Action buttons ──
-    lines.push("```dataviewjs");
-    lines.push("// Action buttons for Encounter Table");
-    lines.push('const buttonContainer = dv.el("div", "", {');
-    lines.push('  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" }');
-    lines.push("});");
-    lines.push("");
-    lines.push("// Roll Encounter button");
-    lines.push('const rollBtn = buttonContainer.createEl("button", {');
-    lines.push('  text: "🎲 Roll Encounter",');
-    lines.push('  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }');
-    lines.push("});");
-    lines.push('rollBtn.addEventListener("click", () => {');
-    lines.push('  app.commands.executeCommandById("dnd-campaign-hub:roll-random-encounter");');
-    lines.push("});");
-    lines.push("");
-    lines.push("// Regenerate Table button");
-    lines.push('const regenBtn = buttonContainer.createEl("button", {');
-    lines.push('  text: "🔄 Regenerate Table",');
-    lines.push('  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }');
-    lines.push("});");
-    lines.push('regenBtn.addEventListener("click", () => {');
-    lines.push('  app.commands.executeCommandById("dnd-campaign-hub:create-random-encounter-table");');
-    lines.push("});");
-    lines.push("");
-    lines.push("// Edit (Reroll Entries) button");
-    lines.push('const editBtn = buttonContainer.createEl("button", {');
-    lines.push('  text: "✏️ Edit Table",');
-    lines.push('  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }');
-    lines.push("});");
-    lines.push('editBtn.addEventListener("click", () => {');
-    lines.push('  app.commands.executeCommandById("dnd-campaign-hub:edit-encounter-table");');
-    lines.push("});");
-    lines.push("");
-    lines.push("// Delete button");
-    lines.push('const deleteBtn = buttonContainer.createEl("button", {');
-    lines.push('  text: "🗑️ Delete Table",');
-    lines.push('  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }');
-    lines.push("});");
-    lines.push('deleteBtn.addEventListener("click", () => {');
-    lines.push('  app.commands.executeCommandById("dnd-campaign-hub:delete-encounter-table");');
-    lines.push("});");
+    lines.push("```dnd-hub");
     lines.push("```");
     lines.push("");
 

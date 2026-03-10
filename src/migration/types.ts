@@ -65,19 +65,20 @@ export interface MigrationScanResult {
 
 /** Current target versions for all entity types */
 export const TEMPLATE_VERSIONS: Record<string, string> = {
-  world: "1.2.0",
-  session: "1.4.0",
+  world: "1.3.0",
+  session: "1.5.0",
   npc: "1.4.0",
   pc: "1.3.0",
   player: "1.3.0",
-  adventure: "1.3.0",
+  adventure: "1.4.0",
   scene: "2.3.0",
   faction: "1.1.0",
   item: "1.1.0",
   spell: "1.1.0",
   campaign: "1.1.0",
-  trap: "1.2.0",
+  trap: "1.3.0",
   creature: "1.3.0",
-  "encounter-table": "1.2.0",
+  encounter: "1.1.0",
+  "encounter-table": "1.3.0",
   "point-of-interest": "1.1.0",
 };

@@ -1246,32 +1246,7 @@ fage_stats:
     let content = this.description || `${this.creatureName} creature description.\n`;
     
     // Add edit/delete buttons
-    content += `\n\`\`\`dataviewjs
-// Action buttons for creature management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Edit Creature button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit Creature",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-creature");
-});
-
-// Delete Creature button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete Creature",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-creature");
-});
-\`\`\`
-
-`;
+    content += `\n\`\`\`dnd-hub\n\`\`\`\n\n`;
     
     // Add statblock
     content += `\`\`\`statblock\ncreature: ${this.creatureName}\n\`\`\`\n`;

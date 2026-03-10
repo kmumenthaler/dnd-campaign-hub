@@ -530,32 +530,7 @@ template_version: '1.1.0'
     let content = `# ${this.itemName}\n\n`;
 
     // Add edit/delete buttons
-    content += `\`\`\`dataviewjs
-// Action buttons for item management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Edit Item button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit Item",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-item");
-});
-
-// Delete Item button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete Item",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-item");
-});
-\`\`\`
-
-`;
+    content += `\`\`\`dnd-hub\n\`\`\`\n\n`;
 
     // Item header with rarity and attunement
     const rarityCapitalized = this.rarity.charAt(0).toUpperCase() + this.rarity.slice(1);

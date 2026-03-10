@@ -122,6 +122,8 @@ import { SessionCreationModal } from './session/SessionCreationModal';
 import { EndSessionModal } from './session/EndSessionModal';
 import { DMScreenView } from './dm-screen/DMScreenView';
 import { CampaignCreationModal } from './campaign/CampaignCreationModal';
+import { renderEntityTable } from './rendering/TableRenderer';
+import { renderView } from './rendering/ViewRenderer';
 
 import { CalendarDateInputModal } from './campaign/CalendarDateInputModal';
 import { AdventureCreationModal } from './adventure/AdventureCreationModal';
@@ -350,10 +352,22 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     // Register dnd-hub code block processor — renders entity action buttons
     // dynamically based on the note's frontmatter type. This replaces the old
-    // inline dataviewjs button blocks, so button logic lives in plugin code
+    // inline dataviewjs button blocks. Button logic now lives in plugin code
     // and never needs per-note migration again.
     this.registerMarkdownCodeBlockProcessor('dnd-hub', (source, el, ctx) => {
       this.renderNoteActions(el, ctx);
+    });
+
+    // Register dnd-hub-table code block processor — renders entity tables
+    // using metadataCache (replaces former Dataview TABLE queries).
+    this.registerMarkdownCodeBlockProcessor('dnd-hub-table', (source, el, ctx) => {
+      renderEntityTable(source, el, this.app);
+    });
+
+    // Register dnd-hub-view code block processor — renders interactive widgets
+    // (scene navigators, trap elements, encounter cards) using metadataCache.
+    this.registerMarkdownCodeBlockProcessor('dnd-hub-view', (source, el, ctx) => {
+      renderView(source, el, this.app, ctx.sourcePath);
     });
 
     // Register /dnd slash-command snippets for quick scene authoring
@@ -1594,6 +1608,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 			case "faction":
 				createBtn("✏️ Edit Faction", "dnd-hub-btn-edit", cmd("edit-faction"));
 				createBtn("🗑️ Delete Faction", "dnd-hub-btn-delete", cmd("delete-faction"));
+				break;
+
+			case "encounter":
+				createBtn("⚔️ Load in Combat Tracker", "dnd-hub-btn-extra", cmd("open-combat-tracker"));
+				createBtn("✏️ Edit", "dnd-hub-btn-edit", cmd("edit-encounter"));
+				createBtn("💾 Save Combat", "dnd-hub-btn-extra", cmd("save-combat-state"));
+				createBtn("🔄 Resume Combat", "dnd-hub-btn-extra", cmd("load-combat-state"));
+				createBtn("🗑️ Clear Saved State", "dnd-hub-btn-delete", cmd("clear-combat-state"));
+				createBtn("🗑️ Delete Encounter", "dnd-hub-btn-delete", cmd("delete-encounter"));
 				break;
 
 			case "encounter-table":

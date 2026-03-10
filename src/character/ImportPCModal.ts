@@ -363,7 +363,7 @@ export class ImportPCModal extends Modal {
 
   /**
    * Link: Create a lightweight reference note that embeds the original PC.
-   * The dataview table will pick up the frontmatter stats from this file,
+   * The dnd-hub-table renderer will pick up the frontmatter stats from this file,
    * and the body content transcludes the original PC for reading.
    */
   async linkPC(
@@ -384,7 +384,7 @@ export class ImportPCModal extends Modal {
       }
     }
 
-    // Build frontmatter for the linked note — mirrors the source so dataview works
+    // Build frontmatter for the linked note — mirrors the source so entity tables work
     const linkedContent = `---
 type: player
 name: ${fm.name || pcName}
