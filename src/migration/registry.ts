@@ -565,16 +565,21 @@ deleteBtn.addEventListener("click", () => {
       targetVersion: "1.1.0",
       description: "Replace Buttons-plugin button blocks with dynamic render block",
       async apply(ctx: MigrationContext) {
-        // Already has the render block — skip
-        if (ctx.content.includes("```dnd-hub")) {
-          return setFrontmatterField(ctx.content, "template_version", "1.1.0");
-        }
+        let out = ctx.content;
 
         // Remove all ```button ... ``` blocks (Buttons plugin format)
-        let out = ctx.content.replace(/```button\n[\s\S]*?```\n*/g, "");
+        out = out.replace(/```button\n[\s\S]*?```\n*/g, "");
 
-        // Insert the dnd-hub render block after the title
-        out = insertAfterTitle(out, DND_HUB_BLOCK);
+        // Remove leftover ^button-* block IDs
+        out = out.replace(/^\^button-[\w-]+\n*/gm, "");
+
+        // Insert the dnd-hub render block after the title if not already present
+        if (!out.includes("```dnd-hub")) {
+          out = insertAfterTitle(out, DND_HUB_BLOCK);
+        }
+
+        // Collapse runs of 3+ blank lines left by removals
+        out = out.replace(/\n{3,}/g, "\n\n");
 
         out = setFrontmatterField(out, "template_version", "1.1.0");
         return out;
