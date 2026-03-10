@@ -438,6 +438,7 @@ export class PartyManagerModal extends Modal {
           this.render();
         }
       } else {
+        this.expandedMembers.clear();
         this.expandedMembers.add(member.notePath);
         this.render();
       }
