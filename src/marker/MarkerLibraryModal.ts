@@ -3,7 +3,7 @@ import { MarkerDefinition, MarkerType, CreatureSize, ImageFit } from './MarkerTy
 import { MarkerLibrary } from './MarkerLibrary';
 
 /** Predefined icon options for markers */
-const MARKER_ICONS: { value: string; label: string }[] = [
+export const MARKER_ICONS: { value: string; label: string }[] = [
 	{ value: '', label: 'None' },
 	{ value: '⚔️', label: '⚔️ Swords' },
 	{ value: '🛡️', label: '🛡️ Shield' },
@@ -408,7 +408,7 @@ export class MarkerLibraryModal extends Modal {
 /**
  * Modal for browsing vault image files with preview
  */
-class ImageBrowserModal extends Modal {
+export class ImageBrowserModal extends Modal {
 	private files: TFile[];
 	private onSelect: (file: TFile) => void;
 	private filterText: string = '';

@@ -1,7 +1,8 @@
 import { App, Modal, Notice, Setting, TextComponent, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { PDFFileSuggest, PDFBrowserModal } from "../utils/PDFBrowser";
-import { MarkerDefinition } from '../marker/MarkerTypes';
+import { MarkerDefinition, CreatureSize } from '../marker/MarkerTypes';
+import { TokenEditorWidget } from '../marker/TokenEditorWidget';
 import { PC_TEMPLATE } from '../templates';
 
 export class PCCreationModal extends Modal {
@@ -20,6 +21,9 @@ export class PCCreationModal extends Modal {
   characterSheetPdf = "";
   isGM = false;
   registerInTracker = true;  // Default: register PCs in Initiative Tracker
+
+  // Token appearance widget
+  private tokenEditor: TokenEditorWidget | null = null;
 
   // For editing existing PCs
   isEdit = false;
@@ -375,6 +379,11 @@ export class PCCreationModal extends Modal {
       new PDFFileSuggest(this.app, text.inputEl);
     });
 
+    // ── Token Appearance ──
+    contentEl.createEl("h3", { text: "🎨 Token Appearance" });
+    const tokenContainer = contentEl.createDiv();
+    this.initTokenEditor(tokenContainer);
+
     // Buttons
     const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
 
@@ -402,6 +411,45 @@ export class PCCreationModal extends Modal {
   refresh() {
     const { contentEl } = this;
     this.buildForm(contentEl);
+  }
+
+  /**
+   * Initialise (or re-render) the token appearance widget.
+   * On edit, loads values from the existing MarkerDefinition.
+   */
+  private initTokenEditor(container: HTMLElement): void {
+    let initial: Partial<{ icon: string; backgroundColor: string; borderColor: string; imageFile: string; imageFit: 'cover' | 'contain' }> | undefined;
+
+    if (this.tokenEditor) {
+      // Preserve user's in-progress edits across refresh()
+      initial = this.tokenEditor.getValues();
+    } else if (this.isEdit) {
+      const file = this.app.vault.getAbstractFileByPath(this.originalPCPath) as TFile;
+      if (file) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        const tokenId = cache?.frontmatter?.token_id;
+        if (tokenId) {
+          const marker = this.plugin.markerLibrary.getMarker(tokenId);
+          if (marker) {
+            initial = {
+              icon: marker.icon,
+              backgroundColor: marker.backgroundColor,
+              borderColor: marker.borderColor,
+              imageFile: marker.imageFile,
+              imageFit: marker.imageFit
+            };
+          }
+        }
+      }
+    }
+
+    this.tokenEditor = new TokenEditorWidget(this.app, {
+      initial,
+      creatureSize: 'medium',
+      defaultBackgroundColor: '#4a90d9',
+      defaultBorderColor: '#ffffff'
+    });
+    this.tokenEditor.render(container);
   }
 
   async loadPCData() {
@@ -516,17 +564,20 @@ export class PCCreationModal extends Modal {
           pcFile = this.app.vault.getAbstractFileByPath(newPath) as TFile;
         }
         
-        // Update the map token, preserving existing fields (imageFile, darkvision, etc.)
+        // Update the map token using widget values + computed fields
         const now = Date.now();
         const existingMarker = this.plugin.markerLibrary.getMarker(tokenId);
+        const tokenAppearance = this.tokenEditor?.getValues();
         const tokenDef: MarkerDefinition = {
           ...(existingMarker || {}),
           id: tokenId,
           name: this.pcName,
           type: 'player',
-          icon: existingMarker?.icon || '🛡️',
-          backgroundColor: existingMarker?.backgroundColor || '#4a90d9',
-          borderColor: existingMarker?.borderColor || '#ffffff',
+          icon: tokenAppearance?.icon ?? existingMarker?.icon ?? '',
+          backgroundColor: tokenAppearance?.backgroundColor ?? existingMarker?.backgroundColor ?? '#4a90d9',
+          borderColor: tokenAppearance?.borderColor ?? existingMarker?.borderColor ?? '#ffffff',
+          imageFile: tokenAppearance?.imageFile || undefined,
+          imageFit: tokenAppearance?.imageFit !== 'cover' ? tokenAppearance?.imageFit : undefined,
           creatureSize: existingMarker?.creatureSize || 'medium',
           campaign: campaignName,
           createdAt: existingMarker?.createdAt || now,
@@ -543,16 +594,19 @@ export class PCCreationModal extends Modal {
           return;
         }
 
-        // Create a map token for this PC
+        // Create a map token for this PC using widget values
         const now = Date.now();
         tokenId = this.plugin.markerLibrary.generateId();
+        const tokenAppearance = this.tokenEditor?.getValues();
         const tokenDef: MarkerDefinition = {
           id: tokenId,
           name: this.pcName,
           type: 'player',
-          icon: '🛡️',
-          backgroundColor: '#4a90d9',  // Blue for players
-          borderColor: '#ffffff',
+          icon: tokenAppearance?.icon ?? '',
+          backgroundColor: tokenAppearance?.backgroundColor ?? '#4a90d9',
+          borderColor: tokenAppearance?.borderColor ?? '#ffffff',
+          imageFile: tokenAppearance?.imageFile || undefined,
+          imageFit: tokenAppearance?.imageFit !== 'cover' ? tokenAppearance?.imageFit : undefined,
           creatureSize: 'medium',
           campaign: campaignName,
           createdAt: now,

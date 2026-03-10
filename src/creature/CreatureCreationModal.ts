@@ -1,6 +1,7 @@
 import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { MarkerDefinition, CreatureSize, CREATURE_SIZE_SQUARES } from "../marker/MarkerTypes";
+import { TokenEditorWidget } from '../marker/TokenEditorWidget';
 
 export class CreatureCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -52,6 +53,9 @@ export class CreatureCreationModal extends Modal {
   
   // Description
   description = "";
+
+  // Token appearance widget
+  private tokenEditor: TokenEditorWidget | null = null;
 
   constructor(app: App, plugin: DndCampaignHubPlugin, creaturePath?: string) {
     super(app);
@@ -383,6 +387,11 @@ export class CreatureCreationModal extends Modal {
         text.inputEl.rows = 6;
         text.inputEl.style.width = "100%";
       });
+
+    // ── Token Appearance ──
+    contentEl.createEl("h3", { text: "🎨 Token Appearance" });
+    const tokenContainer = contentEl.createDiv();
+    this.initTokenEditor(tokenContainer);
 
     // Create/Update Button
     new Setting(contentEl)
@@ -823,6 +832,42 @@ export class CreatureCreationModal extends Modal {
     this.onOpen();
   }
 
+  /**
+   * Initialise (or re-render) the token appearance widget.
+   * On edit, loads values from the existing MarkerDefinition.
+   */
+  private initTokenEditor(container: HTMLElement): void {
+    let initial: Partial<{ icon: string; backgroundColor: string; borderColor: string; imageFile: string; imageFit: 'cover' | 'contain' }> | undefined;
+
+    if (this.tokenEditor) {
+      initial = this.tokenEditor.getValues();
+    } else if (this.isEdit && this.tokenId) {
+      const marker = this.plugin.markerLibrary.getMarker(this.tokenId);
+      if (marker) {
+        initial = {
+          icon: marker.icon,
+          backgroundColor: marker.backgroundColor,
+          borderColor: marker.borderColor,
+          imageFile: marker.imageFile,
+          imageFit: marker.imageFit
+        };
+      }
+    }
+
+    const creatureSizeMap: Record<string, CreatureSize> = {
+      'Tiny': 'tiny', 'Small': 'small', 'Medium': 'medium',
+      'Large': 'large', 'Huge': 'huge', 'Gargantuan': 'gargantuan'
+    };
+
+    this.tokenEditor = new TokenEditorWidget(this.app, {
+      initial,
+      creatureSize: creatureSizeMap[this.size] || 'medium',
+      defaultBackgroundColor: '#8b0000',
+      defaultBorderColor: '#ffffff'
+    });
+    this.tokenEditor.render(container);
+  }
+
   async loadCreatureData() {
     try {
       const creatureFile = this.app.vault.getAbstractFileByPath(this.originalCreaturePath);
@@ -984,7 +1029,7 @@ export class CreatureCreationModal extends Modal {
         this.tokenId = this.plugin.markerLibrary.generateId();
       }
       
-      // Preserve existing marker fields (imageFile, darkvision, etc.) on edit
+      // Preserve existing marker fields on edit
       const existingMarker = this.plugin.markerLibrary.getMarker(this.tokenId);
 
       // Extract darkvision range from senses (e.g. "Darkvision 60 ft." → 60)
@@ -996,14 +1041,17 @@ export class CreatureCreationModal extends Modal {
         }
       }
 
+      const tokenAppearance = this.tokenEditor?.getValues();
       const tokenDef: MarkerDefinition = {
         ...(existingMarker || {}),
         id: this.tokenId,
         name: this.creatureName,
         type: 'creature',
-        icon: existingMarker?.icon || '🐉',
-        backgroundColor: existingMarker?.backgroundColor || '#8b0000',
-        borderColor: existingMarker?.borderColor || '#ffffff',
+        icon: tokenAppearance?.icon ?? existingMarker?.icon ?? '',
+        backgroundColor: tokenAppearance?.backgroundColor ?? existingMarker?.backgroundColor ?? '#8b0000',
+        borderColor: tokenAppearance?.borderColor ?? existingMarker?.borderColor ?? '#ffffff',
+        imageFile: tokenAppearance?.imageFile || undefined,
+        imageFit: tokenAppearance?.imageFit !== 'cover' ? tokenAppearance?.imageFit : undefined,
         creatureSize: mappedSize,
         darkvision: parsedDarkvision,
         createdAt: existingMarker?.createdAt || now,

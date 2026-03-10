@@ -2,6 +2,7 @@ import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { PDFFileSuggest, PDFBrowserModal } from "../utils/PDFBrowser";
 import { MarkerDefinition, CreatureSize } from '../marker/MarkerTypes';
+import { TokenEditorWidget } from '../marker/TokenEditorWidget';
 import { NPC_TEMPLATE } from '../templates';
 
 export class NPCCreationModal extends Modal {
@@ -47,6 +48,9 @@ export class NPCCreationModal extends Modal {
   bonusActions: Array<{name: string, desc: string}> = [];
   reactions: Array<{name: string, desc: string}> = [];
   legendaryActions: Array<{name: string, desc: string}> = [];
+
+  // Token appearance widget
+  private tokenEditor: TokenEditorWidget | null = null;
 
   constructor(app: App, plugin: DndCampaignHubPlugin, npcPath?: string) {
     super(app);
@@ -180,6 +184,12 @@ export class NPCCreationModal extends Modal {
         text.inputEl.rows = 3;
       });
 
+    // ── Token Appearance ──
+    contentEl.createEl("h3", { text: "🎨 Token Appearance" });
+
+    const tokenContainer = contentEl.createDiv();
+    this.initTokenEditor(tokenContainer);
+
     // ── Combat Statistics (optional statblock) ──
     contentEl.createEl("h3", { text: "⚔️ Combat Statistics (Optional)" });
 
@@ -308,6 +318,51 @@ export class NPCCreationModal extends Modal {
 
   refreshUI() {
     this.onOpen();
+  }
+
+  /**
+   * Initialise (or re-render) the token appearance widget.
+   * On edit, loads values from the existing MarkerDefinition.
+   */
+  private initTokenEditor(container: HTMLElement): void {
+    let initial: Partial<{ icon: string; backgroundColor: string; borderColor: string; imageFile: string; imageFit: 'cover' | 'contain' }> | undefined;
+
+    if (this.tokenEditor) {
+      // Preserve user's in-progress edits across refreshUI()
+      initial = this.tokenEditor.getValues();
+    } else if (this.isEdit) {
+      // First open in edit mode — read from existing marker
+      const file = this.app.vault.getAbstractFileByPath(this.originalNPCPath) as TFile;
+      if (file) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        const tokenId = cache?.frontmatter?.token_id;
+        if (tokenId) {
+          const marker = this.plugin.markerLibrary.getMarker(tokenId);
+          if (marker) {
+            initial = {
+              icon: marker.icon,
+              backgroundColor: marker.backgroundColor,
+              borderColor: marker.borderColor,
+              imageFile: marker.imageFile,
+              imageFit: marker.imageFit
+            };
+          }
+        }
+      }
+    }
+
+    const creatureSizeMap: Record<string, CreatureSize> = {
+      'Tiny': 'tiny', 'Small': 'small', 'Medium': 'medium',
+      'Large': 'large', 'Huge': 'huge', 'Gargantuan': 'gargantuan'
+    };
+
+    this.tokenEditor = new TokenEditorWidget(this.app, {
+      initial,
+      creatureSize: this.hasStatblock ? (creatureSizeMap[this.size] || 'medium') : 'medium',
+      defaultBackgroundColor: '#6b8e23',
+      defaultBorderColor: '#ffffff'
+    });
+    this.tokenEditor.render(container);
   }
 
   renderStatblockFields(contentEl: HTMLElement) {
@@ -957,17 +1012,20 @@ export class NPCCreationModal extends Modal {
           npcFile = this.app.vault.getAbstractFileByPath(newPath) as TFile;
         }
         
-        // Update the map token, preserving existing fields (imageFile, etc.)
+        // Update the map token using widget values + computed fields
         const now = Date.now();
         const existingMarker = this.plugin.markerLibrary.getMarker(tokenId);
+        const tokenAppearance = this.tokenEditor?.getValues();
         const tokenDef: MarkerDefinition = {
           ...(existingMarker || {}),
           id: tokenId,
           name: this.npcName,
           type: 'npc',
-          icon: existingMarker?.icon || '',
-          backgroundColor: existingMarker?.backgroundColor || '#6b8e23',
-          borderColor: existingMarker?.borderColor || '#ffffff',
+          icon: tokenAppearance?.icon ?? existingMarker?.icon ?? '',
+          backgroundColor: tokenAppearance?.backgroundColor ?? existingMarker?.backgroundColor ?? '#6b8e23',
+          borderColor: tokenAppearance?.borderColor ?? existingMarker?.borderColor ?? '#ffffff',
+          imageFile: tokenAppearance?.imageFile || undefined,
+          imageFit: tokenAppearance?.imageFit !== 'cover' ? tokenAppearance?.imageFit : undefined,
           creatureSize: mappedSize,
           darkvision: darkvision || existingMarker?.darkvision || 0,
           campaign: campaignName,
@@ -1086,16 +1144,19 @@ export class NPCCreationModal extends Modal {
           return;
         }
 
-        // Create a map token for this NPC
+        // Create a map token for this NPC using widget values
         const now = Date.now();
         tokenId = this.plugin.markerLibrary.generateId();
+        const tokenAppearance = this.tokenEditor?.getValues();
         const tokenDef: MarkerDefinition = {
           id: tokenId,
           name: this.npcName,
           type: 'npc',
-          icon: '👤',
-          backgroundColor: '#6b8e23',
-          borderColor: '#ffffff',
+          icon: tokenAppearance?.icon ?? '',
+          backgroundColor: tokenAppearance?.backgroundColor ?? '#6b8e23',
+          borderColor: tokenAppearance?.borderColor ?? '#ffffff',
+          imageFile: tokenAppearance?.imageFile || undefined,
+          imageFit: tokenAppearance?.imageFit !== 'cover' ? tokenAppearance?.imageFit : undefined,
           creatureSize: mappedSize,
           darkvision,
           campaign: campaignName,
