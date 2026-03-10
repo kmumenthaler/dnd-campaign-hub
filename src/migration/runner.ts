@@ -247,7 +247,16 @@ export class MigrationRunner {
     if (existingBackup instanceof TFile) {
       await this.app.vault.modify(existingBackup, content);
     } else {
-      await this.app.vault.create(backupPath, content);
+      try {
+        await this.app.vault.create(backupPath, content);
+      } catch (e) {
+        // Vault cache may not reflect the file yet — fall back to adapter
+        if (e instanceof Error && e.message.includes("File already exists")) {
+          await this.app.vault.adapter.write(backupPath, content);
+        } else {
+          throw e;
+        }
+      }
     }
   }
 
