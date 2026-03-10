@@ -633,8 +633,10 @@ export class PartyManagerModal extends Modal {
     const companionFiles = this.app.vault.getFiles().filter((f) => {
       if (existingPaths.has(f.path)) return false;
       const cache = this.app.metadataCache.getFileCache(f);
-      const type = cache?.frontmatter?.type;
-      return type === "npc" || type === "creature";
+      const fm = cache?.frontmatter;
+      if (!fm) return false;
+      // NPC notes use type: "npc", creature notes use statblock: true
+      return fm.type === "npc" || fm.statblock === true;
     });
 
     if (companionFiles.length === 0) {
@@ -779,9 +781,10 @@ class CompanionSelectorModal extends FuzzySuggestModal<TFile> {
     const cache = this.app.metadataCache.getFileCache(item);
     const fm = cache?.frontmatter;
     const name = fm?.name || item.basename;
-    const type = fm?.type === "creature" ? "Creature" : "NPC";
-    const extra = fm?.type === "creature"
-      ? (fm.cr ? ` CR ${fm.cr}` : "")
+    const isCreature = fm?.statblock === true;
+    const type = isCreature ? "Creature" : "NPC";
+    const extra = isCreature
+      ? (fm?.cr ? ` CR ${fm.cr}` : "")
       : (fm?.occupation ? ` — ${fm.occupation}` : "");
     return `${name} (${type}${extra})`;
   }
