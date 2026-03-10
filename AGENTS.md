@@ -24,7 +24,7 @@ git checkout -b feature/your-feature-name
 ### 2. Make Your Changes
 - **Main code**: [src/main.ts](src/main.ts) (~25,000 lines)
 - **Templates**: [src/templates.ts](src/templates.ts)
-- **Migrations**: [src/migration/MigrationManager.ts](src/migration/MigrationManager.ts)
+- **Migrations**: [src/migration/](src/migration/) (registry.ts, runner.ts, types.ts, frontmatter.ts)
 - **Styles**: [src/styles.css](src/styles.css)
 
 ### 3. Build the Plugin
@@ -62,7 +62,9 @@ git commit -m "feat: descriptive message
 ## Working with Templates
 
 ### Template System Overview
-Templates live in [src/templates.ts](src/templates.ts) and are exported as constants (e.g., `PC_TEMPLATE`, `NPC_TEMPLATE`). Each template has a version tracked in [src/migration/MigrationManager.ts](src/migration/MigrationManager.ts).
+Templates live in [src/templates.ts](src/templates.ts) and are exported as constants (e.g., `PC_TEMPLATE`, `NPC_TEMPLATE`). Each template has a version tracked in `TEMPLATE_VERSIONS` in [src/migration/types.ts](src/migration/types.ts).
+
+Entity action buttons (Edit, Delete, etc.) are rendered at runtime via `dnd-hub` code blocks in each template. The plugin's `renderNoteActions()` method in [src/main.ts](src/main.ts) resolves buttons by frontmatter `type` — so button changes **never** require note migration.
 
 ### When You Modify a Template
 
@@ -72,82 +74,70 @@ Templates live in [src/templates.ts](src/templates.ts) and are exported as const
 ```typescript
 export const PC_TEMPLATE = `---
 type: player
-template_version: 1.2.0  // ← INCREMENT THIS
+template_version: 1.4.0  // ← INCREMENT THIS
 name: 
 ...
 ---
 
 # <% tp.frontmatter.name %>
 
-\`\`\`dataviewjs
-// Your new button or content here
+\`\`\`dnd-hub
 \`\`\`
+
+<!-- Rest of template -->
+`;
 ```
 
-#### Step 2: Update TEMPLATE_VERSIONS in MigrationManager.ts
+#### Step 2: Update TEMPLATE_VERSIONS in types.ts
 ```typescript
-export const TEMPLATE_VERSIONS = {
+// src/migration/types.ts
+export const TEMPLATE_VERSIONS: Record<string, string> = {
   // ... other templates
-  pc: "1.2.0",      // ← MATCH THE TEMPLATE VERSION
-  player: "1.2.0",  // ← Both pc and player use same template
+  pc: "1.4.0",      // ← MATCH THE TEMPLATE VERSION
+  player: "1.4.0",  // ← Both pc and player use same template
   // ... other templates
 };
 ```
 
-#### Step 3: Add Migration Logic (if needed)
-If your template change adds new content (not just frontmatter), add a migration method:
+#### Step 3: Add a MigrationStep in registry.ts
+If your template change adds new content (not just button changes), register a new `MigrationStep` in `getAllMigrations()` inside [src/migration/registry.ts](src/migration/registry.ts):
 
 ```typescript
-/**
- * Migrate PC to v1.2.0 (add edit/delete buttons)
- */
-async migratePCTo1_2_0(file: TFile): Promise<void> {
-  console.log(`Migrating PC ${file.path} to v1.2.0`);
+// src/migration/registry.ts — inside getAllMigrations()
+{
+  entityType: "player",
+  targetVersion: "1.4.0",
+  description: "Add new-field to PC notes",
+  apply(content: string, ctx: MigrationContext): string | null {
+    const fm = parseFrontmatter(content);
+    if (!fm) return null;
 
-  const content = await this.app.vault.read(file);
-  
-  // Check if new content already exists
-  if (content.includes("your-new-content-marker")) {
-    console.log(`PC ${file.path} already has new content`);
-    await this.updateTemplateVersion(file, "1.2.0");
-    return;
-  }
-  
-  // Insert new content
-  const newBlock = `your new template content here`;
-  
-  // Find insertion point and modify file
-  // ... your insertion logic ...
-  
-  await this.updateTemplateVersion(file, "1.2.0");
-  console.log(`PC ${file.path} migrated to v1.2.0`);
-}
-```
-
-#### Step 4: Wire Up Migration in migrateFile()
-```typescript
-async migrateFile(file: TFile): Promise<boolean> {
-  // ... existing code ...
-  
-  if (fileType === "player" || fileType === "pc") {
-    // ... existing version checks ...
-    
-    // Add your new version check
-    if (this.compareVersions(currentVersion, "1.2.0") < 0) {
-      await this.migratePCTo1_2_0(file);
-      return true;
+    // Skip if already present
+    if (fm.fields["new_field"] !== undefined) {
+      return setFrontmatterField(content, "template_version", "1.4.0");
     }
-  }
-  
-  // ... rest of method ...
-}
+
+    let out = content;
+    out = addFrontmatterFieldAfter(out, "existing_field", "new_field", "default_value");
+    out = setFrontmatterField(out, "template_version", "1.4.0");
+    return out;
+  },
+},
 ```
+
+**Key rules for MigrationStep.apply():**
+- Receives the full file content as a string, returns the modified string (or `null` to skip).
+- Must be **idempotent**: check if the change already exists before applying.
+- Must call `setFrontmatterField(content, "template_version", targetVersion)` as the last step.
+- Use helpers from `frontmatter.ts` (`parseFrontmatter`, `addFrontmatterField`, `insertAfterTitle`, etc.).
+- Never use the Obsidian API — work only on the content string.
 
 ### Migration Best Practices
-1. **Never lose user data** - Only add content, never remove/overwrite
-2. **Check before inserting** - Always verify new content doesn't already exist
-3. **Update version last** - Only bump template_version after successful migration
-4. **Test incrementally** - Migrations should work from any previous version (e.g., 1.0.0 → 1.1.0 → 1.2.0)
+1. **Never lose user data** — Only add content, never remove/overwrite
+2. **Check before inserting** — Always verify new content doesn't already exist (idempotent)
+3. **Update version last** — Only bump `template_version` after all changes are applied
+4. **Pure functions** — Migration steps are pure string transforms; file I/O is handled by `MigrationRunner`
+5. **Backups** — `MigrationRunner` creates automatic backups in `.dnd-hub-backups/` before writing
 
 ---
 
@@ -325,8 +315,9 @@ this.addCommand({
 ```
 
 ### 8. Add Buttons to Template
-Add to your template in [src/templates.ts](src/templates.ts):
+Add a `dnd-hub` code block to your template in [src/templates.ts](src/templates.ts) and register the buttons in `renderNoteActions()` in [src/main.ts](src/main.ts):
 ```typescript
+// In templates.ts:
 export const ENTITY_TEMPLATE = `---
 type: entity
 template_version: 1.2.0
@@ -334,33 +325,17 @@ template_version: 1.2.0
 
 # <% tp.frontmatter.name %>
 
-\`\`\`dataviewjs
-// Action buttons for entity management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Edit button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit Entity",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-entity");
-});
-
-// Delete button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete Entity",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-entity");
-});
+\`\`\`dnd-hub
 \`\`\`
 
 <!-- Rest of template -->
 `;
+
+// In main.ts renderNoteActions() switch:
+case "entity":
+  createBtn("✏️ Edit Entity", "dnd-hub-btn-edit", cmd("edit-entity"));
+  createBtn("🗑️ Delete Entity", "dnd-hub-btn-delete", cmd("delete-entity"));
+  break;
 ```
 
 ---
@@ -371,6 +346,7 @@ deleteBtn.addEventListener("click", () => {
 src/
 ├── main.ts               # Core plugin (~25,000 lines)
 │                         # Contains: Plugin class, all modals, views, commands
+│                         # Contains: renderNoteActions() for dnd-hub code blocks
 ├── templates.ts          # All template definitions (WORLD_TEMPLATE, NPC_TEMPLATE, etc.)
 ├── styles.css            # Plugin styles
 ├── map/                  # Battle map system
@@ -379,10 +355,13 @@ src/
 ├── marker/               # Token/marker system
 │   ├── MarkerLibrary.ts  # Token storage
 │   └── MarkerTypes.ts    # Type definitions
-└── migration/            # Template migration system
-    ├── index.ts
-    ├── MigrationManager.ts   # Version tracking, migration logic
-    └── MigrationModal.ts     # Migration UI
+└── migration/            # Template migration system (registry-based)
+    ├── index.ts           # Public exports
+    ├── types.ts           # MigrationStep interface, TEMPLATE_VERSIONS
+    ├── frontmatter.ts     # Content parsing/manipulation utilities
+    ├── registry.ts        # MigrationRegistry + all migration definitions
+    ├── runner.ts          # MigrationRunner (scan, backup, apply, write)
+    └── MigrationModal.ts  # Migration UI
 ```
 
 ---
@@ -493,18 +472,20 @@ Settings use Obsidian's `Setting` class for form controls in modals.
 ```typescript
 TEMPLATE_VERSIONS = {
   world: "1.0.0",
-  session: "1.2.1",
-  npc: "1.2.0",      // Edit/Delete buttons
-  pc: "1.2.0",       // Edit/Delete buttons
-  player: "1.2.0",   // Edit/Delete buttons (same as pc)
-  adventure: "1.1.1",
-  scene: "2.0.0",
-  faction: "1.0.0",
-  item: "1.1.0",     // Edit/Delete buttons
-  spell: "1.0.0",
-  campaign: "1.0.0",
-  trap: "1.1.0",     // Edit/Delete buttons
-  creature: "1.2.0"  // token_id with size
+  session: "1.4.0",      // party_id field
+  npc: "1.4.0",          // dnd-hub render block
+  pc: "1.3.0",           // dnd-hub render block
+  player: "1.3.0",       // dnd-hub render block (same as pc)
+  adventure: "1.3.0",    // dnd-hub render block
+  scene: "2.3.0",        // dnd-hub render block
+  faction: "1.1.0",      // dnd-hub render block
+  item: "1.1.0",         // dnd-hub render block
+  spell: "1.1.0",        // dnd-hub render block
+  campaign: "1.1.0",     // party_id field
+  trap: "1.2.0",         // dnd-hub render block
+  creature: "1.3.0",     // dnd-hub render block
+  "encounter-table": "1.2.0",  // dnd-hub render block
+  "point-of-interest": "1.1.0" // dnd-hub render block
 }
 ```
 
@@ -518,7 +499,7 @@ TEMPLATE_VERSIONS = {
 
 **Changes not appearing**: Make sure you deployed the latest `dist/main.js`, not an old version.
 
-**Migration not running**: Check template version numbers match in both `templates.ts` and `MigrationManager.ts`.
+**Migration not running**: Check template version numbers match in `src/templates.ts` and `src/migration/types.ts`.
 
 ---
 

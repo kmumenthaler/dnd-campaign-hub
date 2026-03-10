@@ -397,7 +397,7 @@ art: ""
 
 export const NPC_TEMPLATE = `---
 type: npc
-template_version: 1.3.0
+template_version: 1.4.0
 name: 
 world: 
 campaign: 
@@ -439,38 +439,7 @@ notes: []
 
 # <% tp.frontmatter.name %>
 
-\`\`\`dataviewjs
-// Action buttons for NPC management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Edit NPC button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit NPC",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-npc");
-});
-
-// Delete NPC button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete NPC",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-npc");
-});
-
-// Manage Statblock button
-const statblockBtn = buttonContainer.createEl("button", { 
-  text: "⚔️ Manage Statblock",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-statblockBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-npc");
-});
+\`\`\`dnd-hub
 \`\`\`
 
 > [!abstract]- Quick Reference
@@ -577,7 +546,7 @@ statblockBtn.addEventListener("click", () => {
 
 export const PC_TEMPLATE = `---
 type: player
-template_version: 1.2.0
+template_version: 1.3.0
 name: 
 player: 
 campaign: 
@@ -603,29 +572,7 @@ date:
 
 # <% tp.frontmatter.name %>
 
-\`\`\`dataviewjs
-// Action buttons for PC management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Edit PC button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit PC",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-pc");
-});
-
-// Delete PC button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete PC",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-pc");
-});
+\`\`\`dnd-hub
 \`\`\`
 
 > [!info] Quick Stats
@@ -704,7 +651,7 @@ deleteBtn.addEventListener("click", () => {
 
 export const ADVENTURE_TEMPLATE = `---
 type: adventure
-template_version: 1.2.0
+template_version: 1.3.0
 name: 
 campaign: 
 world: 
@@ -723,39 +670,7 @@ date:
 **Expected Sessions:** {{EXPECTED_SESSIONS}}  
 **Sessions Played:** 
 
-\`\`\`dataviewjs
-const adventurePath = dv.current().file.path;
-const plugin = app.plugins.plugins['dnd-campaign-hub'];
-
-const sceneButton = dv.el('button', '🎬 Create New Scene');
-sceneButton.className = 'mod-cta';
-sceneButton.onclick = () => {
-  new plugin.SceneCreationModal(app, plugin, adventurePath).open();
-};
-
-const trapButton = dv.el('button', '🪤 Create New Trap', { cls: 'mod-cta' });
-trapButton.style.marginLeft = '10px';
-trapButton.onclick = () => {
-  app.commands.executeCommandById('dnd-campaign-hub:create-trap');
-};
-
-const sessionButton = dv.el('button', '📜 Create Session', { cls: 'mod-cta' });
-sessionButton.style.marginLeft = '10px';
-sessionButton.onclick = async () => {
-  new plugin.SessionCreationModal(app, plugin, adventurePath).open();
-};
-
-const editButton = dv.el('button', '✏️ Edit Adventure');
-editButton.style.marginLeft = '10px';
-editButton.onclick = () => {
-  app.commands.executeCommandById('dnd-campaign-hub:edit-adventure');
-};
-
-const deleteButton = dv.el('button', '🗑️ Delete Adventure');
-deleteButton.style.marginLeft = '10px';
-deleteButton.onclick = () => {
-  app.commands.executeCommandById('dnd-campaign-hub:delete-adventure');
-};
+\`\`\`dnd-hub
 \`\`\`
 
 ## The Problem
@@ -933,7 +848,7 @@ if (allScenes.length === 0) {
 
 export const SCENE_TEMPLATE = `---
 type: scene
-template_version: 2.2.0
+template_version: 2.3.0
 adventure: "{{ADVENTURE_NAME}}"
 campaign: "{{CAMPAIGN}}"
 world: "{{WORLD}}"
@@ -958,29 +873,7 @@ date: {{DATE}}
 **Duration:** {{DURATION}} | **Type:** {{TYPE}} | **Difficulty:** {{DIFFICULTY}}  
 **Act:** {{ACT_NUMBER}} | **Adventure:** [[{{ADVENTURE_NAME}}]]
 
-\`\`\`dataviewjs
-// Action buttons for scene management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Edit Scene button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit Scene",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-scene");
-});
-
-// Delete Scene button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete Scene",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-scene");
-});
+\`\`\`dnd-hub
 \`\`\`
 
 ---
@@ -988,7 +881,7 @@ deleteBtn.addEventListener("click", () => {
 
 export const TRAP_TEMPLATE = `---
 type: trap
-template_version: 1.1.0
+template_version: 1.2.0
 campaign: 
 adventure: 
 world: 
@@ -1006,29 +899,7 @@ date:
 
 # <% tp.frontmatter.trap_name || "Unnamed Trap" %>
 
-\`\`\`dataviewjs
-// Action buttons for trap management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Edit Trap button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit Trap",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-trap");
-});
-
-// Delete Trap button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete Trap",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-trap");
-});
+\`\`\`dnd-hub
 \`\`\`
 
 ## Trap Details
@@ -1199,7 +1070,7 @@ if (countermeasures.length === 0) {
 
 export const FACTION_TEMPLATE = `---
 type: faction
-template_version: 1.0.0
+template_version: 1.1.0
 name: 
 campaign: 
 world: 
@@ -1217,6 +1088,9 @@ date:
 ---
 
 # <% tp.frontmatter.name %>
+
+\`\`\`dnd-hub
+\`\`\`
 
 ## 🎯 Core Engine
 
@@ -1266,12 +1140,15 @@ date:
 
 export const ITEM_TEMPLATE = `---
 type: item
-template_version: 1.0.0
+template_version: 1.1.0
 rarity: common
 attunement: no
 ---
 
 # Item
+
+\`\`\`dnd-hub
+\`\`\`
 
 ## Description
 Item description and appearance.
@@ -1289,7 +1166,7 @@ Where the item is currently located.
 
 export const SPELL_TEMPLATE = `---
 type: spell
-template_version: 1.0.0
+template_version: 1.1.0
 level: 1
 school: 
 casting_time: 1 action
@@ -1299,6 +1176,9 @@ duration:
 ---
 
 # Spell
+
+\`\`\`dnd-hub
+\`\`\`
 
 ## Description
 Spell description and effects.
@@ -1375,7 +1255,7 @@ What happened during the session.
 
 export const POI_TEMPLATE = `---
 type: point-of-interest
-template_version: 1.0.0
+template_version: 1.1.0
 name: 
 poi-type: settlement
 icon: 🏰
@@ -1390,29 +1270,7 @@ danger-level:
 
 # <% tp.frontmatter.icon %> <% tp.frontmatter.name %>
 
-\`\`\`dataviewjs
-// Action buttons for PoI management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Edit PoI button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit PoI",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-poi");
-});
-
-// Delete PoI button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete PoI",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px; background-color: var(--background-modifier-error); color: var(--text-error);" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-poi");
-});
+\`\`\`dnd-hub
 \`\`\`
 
 > [!info] Quick Info
@@ -1489,7 +1347,7 @@ deleteBtn.addEventListener("click", () => {
 
 export const ENCOUNTER_TABLE_TEMPLATE = `---
 type: encounter-table
-template_version: 1.0.0
+template_version: 1.2.0
 name: 
 environment: 
 party_level: 3
@@ -1501,29 +1359,7 @@ date_created:
 
 # 🎲 Random Encounter Table
 
-\`\`\`dataviewjs
-// Action buttons for Encounter Table
-const buttonContainer = dv.el("div", "", {
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" }
-});
-
-// Roll Encounter button
-const rollBtn = buttonContainer.createEl("button", {
-  text: "🎲 Roll Encounter",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-rollBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:roll-random-encounter");
-});
-
-// Regenerate Table button
-const regenBtn = buttonContainer.createEl("button", {
-  text: "🔄 Regenerate Table",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-regenBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:create-random-encounter-table");
-});
+\`\`\`dnd-hub
 \`\`\`
 
 > [!info] Table Info

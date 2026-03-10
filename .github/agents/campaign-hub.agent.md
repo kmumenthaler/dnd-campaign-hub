@@ -64,8 +64,8 @@ Before implementing, check whether an existing controller already covers the nee
 
 When modifying a template in `src/templates.ts`:
 - Increment `template_version` in the template
-- Update `TEMPLATE_VERSIONS` in `src/migration/MigrationManager.ts`
-- Add migration logic if the change adds new content sections
+- Update `TEMPLATE_VERSIONS` in `src/migration/types.ts`
+- Add a `MigrationStep` in `src/migration/registry.ts` if the change adds new content sections
 - Never lose user data — only add, never remove/overwrite existing content
 
 ## Tags & Releases

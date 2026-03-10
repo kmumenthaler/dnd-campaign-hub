@@ -22,7 +22,8 @@ import { TemplatePickerModal } from "./map/TemplatePickerModal";
 import { magicWandDetect } from "./map/MagicWandWallModal";
 import { MarkerLibrary } from "./marker/MarkerLibrary";
 import { MarkerReference, MarkerDefinition, MarkerType, CREATURE_SIZE_SQUARES, CreatureSize, Layer } from "./marker/MarkerTypes";
-import { MigrationManager, MigrationModal, TEMPLATE_VERSIONS } from "./migration";
+import { MigrationRunner, MigrationModal, TEMPLATE_VERSIONS, createMigrationRegistry } from "./migration";
+import type { MigrationRegistry } from "./migration";
 import { MusicPlayer } from "./music/MusicPlayer";
 import { MusicSettingsModal } from "./music/MusicSettingsModal";
 import { FreesoundSearchModal } from "./music/FreesoundSearchModal";
@@ -176,7 +177,8 @@ export default class DndCampaignHubPlugin extends Plugin {
   SessionCreationModal = SessionCreationModal;
   SceneCreationModal = SceneCreationModal;
   AdventureCreationModal = AdventureCreationModal;
-  migrationManager!: MigrationManager;
+  migrationRunner!: MigrationRunner;
+  migrationRegistry!: MigrationRegistry;
   encounterBuilder!: EncounterBuilder;
   combatTracker!: CombatTracker;
   partyManager!: PartyManager;
@@ -284,8 +286,9 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.envAssetLibrary = new EnvAssetLibrary(this.app, this.manifest.id);
     await this.envAssetLibrary.load();
 
-    // Initialize the migration manager (after marker library)
-    this.migrationManager = new MigrationManager(this.app, this.markerLibrary);
+    // Initialize the migration system (registry + runner)
+    this.migrationRegistry = createMigrationRegistry();
+    this.migrationRunner = new MigrationRunner(this.app, this.migrationRegistry, this.markerLibrary);
 
     // Migrate existing isTemplate maps to z_BattlemapTemplates notes (one-time)
     migrateExistingTemplatesToNotesFn(this);
@@ -343,6 +346,14 @@ export default class DndCampaignHubPlugin extends Plugin {
       import('./encounter/EncounterTableBlock').then(({ renderEncounterTableBlock }) => {
         renderEncounterTableBlock(source, el, ctx, this.app, this);
       });
+    });
+
+    // Register dnd-hub code block processor — renders entity action buttons
+    // dynamically based on the note's frontmatter type. This replaces the old
+    // inline dataviewjs button blocks, so button logic lives in plugin code
+    // and never needs per-note migration again.
+    this.registerMarkdownCodeBlockProcessor('dnd-hub', (source, el, ctx) => {
+      this.renderNoteActions(el, ctx);
     });
 
     // Register /dnd slash-command snippets for quick scene authoring
@@ -1492,6 +1503,105 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async migrateTemplates() {
 		// Show migration modal
 		new MigrationModal(this.app, this).open();
+	}
+
+	/**
+	 * Render entity action buttons inside a `dnd-hub` code block.
+	 * Reads the note's frontmatter type and creates appropriate buttons.
+	 * This replaces the old per-note dataviewjs button blocks.
+	 */
+	renderNoteActions(el: HTMLElement, ctx: { sourcePath: string }): void {
+		const file = this.app.vault.getAbstractFileByPath(ctx.sourcePath);
+		if (!(file instanceof TFile)) return;
+
+		const cache = this.app.metadataCache.getFileCache(file);
+		const type = cache?.frontmatter?.type as string | undefined;
+		if (!type) return;
+
+		const container = el.createDiv({ cls: "dnd-hub-actions" });
+
+		const createBtn = (text: string, cls: string, handler: () => void) => {
+			const btn = container.createEl("button", { text, cls: `dnd-hub-btn ${cls}` });
+			btn.addEventListener("click", handler);
+			return btn;
+		};
+
+		const cmd = (id: string) => () => {
+			this.app.commands.executeCommandById(`dnd-campaign-hub:${id}`);
+		};
+
+		switch (type) {
+			case "player":
+			case "pc":
+				createBtn("✏️ Edit PC", "dnd-hub-btn-edit", cmd("edit-pc"));
+				createBtn("🗑️ Delete PC", "dnd-hub-btn-delete", cmd("delete-pc"));
+				break;
+
+			case "npc":
+				createBtn("✏️ Edit NPC", "dnd-hub-btn-edit", cmd("edit-npc"));
+				createBtn("🗑️ Delete NPC", "dnd-hub-btn-delete", cmd("delete-npc"));
+				createBtn("⚔️ Manage Statblock", "dnd-hub-btn-extra", cmd("edit-npc"));
+				break;
+
+			case "creature":
+				createBtn("✏️ Edit Creature", "dnd-hub-btn-edit", cmd("edit-creature"));
+				createBtn("🗑️ Delete Creature", "dnd-hub-btn-delete", cmd("delete-creature"));
+				break;
+
+			case "scene":
+				createBtn("✏️ Edit Scene", "dnd-hub-btn-edit", cmd("edit-scene"));
+				createBtn("🗑️ Delete Scene", "dnd-hub-btn-delete", cmd("delete-scene"));
+				break;
+
+			case "adventure": {
+				const adventurePath = ctx.sourcePath;
+				createBtn("🎬 Create New Scene", "dnd-hub-btn-create", () => {
+					new SceneCreationModal(this.app, this, adventurePath).open();
+				});
+				createBtn("🪤 Create New Trap", "dnd-hub-btn-create", cmd("create-trap"));
+				createBtn("📜 Create Session", "dnd-hub-btn-create", () => {
+					new SessionCreationModal(this.app, this, adventurePath).open();
+				});
+				createBtn("✏️ Edit Adventure", "dnd-hub-btn-edit", cmd("edit-adventure"));
+				createBtn("🗑️ Delete Adventure", "dnd-hub-btn-delete", cmd("delete-adventure"));
+				break;
+			}
+
+			case "trap":
+				createBtn("✏️ Edit Trap", "dnd-hub-btn-edit", cmd("edit-trap"));
+				createBtn("🗑️ Delete Trap", "dnd-hub-btn-delete", cmd("delete-trap"));
+				break;
+
+			case "item":
+				createBtn("✏️ Edit Item", "dnd-hub-btn-edit", cmd("edit-item"));
+				createBtn("🗑️ Delete Item", "dnd-hub-btn-delete", cmd("delete-item"));
+				break;
+
+			case "spell":
+				createBtn("✏️ Edit Spell", "dnd-hub-btn-edit", cmd("edit-spell"));
+				createBtn("🗑️ Delete Spell", "dnd-hub-btn-delete", cmd("delete-spell"));
+				break;
+
+			case "faction":
+				createBtn("✏️ Edit Faction", "dnd-hub-btn-edit", cmd("edit-faction"));
+				createBtn("🗑️ Delete Faction", "dnd-hub-btn-delete", cmd("delete-faction"));
+				break;
+
+			case "encounter-table":
+				createBtn("🎲 Roll Encounter", "dnd-hub-btn-extra", cmd("roll-random-encounter"));
+				createBtn("🔄 Regenerate Table", "dnd-hub-btn-extra", cmd("create-random-encounter-table"));
+				createBtn("✏️ Edit Table", "dnd-hub-btn-edit", cmd("edit-encounter-table"));
+				createBtn("🗑️ Delete Table", "dnd-hub-btn-delete", cmd("delete-encounter-table"));
+				break;
+
+			case "point-of-interest":
+				createBtn("✏️ Edit PoI", "dnd-hub-btn-edit", cmd("edit-poi"));
+				createBtn("🗑️ Delete PoI", "dnd-hub-btn-delete", cmd("delete-poi"));
+				break;
+
+			default:
+				break;
+		}
 	}
 
 	/**
