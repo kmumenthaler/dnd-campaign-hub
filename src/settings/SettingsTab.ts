@@ -3,6 +3,58 @@ import type DndCampaignHubPlugin from "../main";
 import { MapManagerModal } from "../map/MapManagerModal";
 import { PurgeConfirmModal } from "../hub/PurgeConfirmModal";
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/** Create a collapsible section with a chevron toggle and smooth animation. */
+function addSection(
+  parent: HTMLElement,
+  title: string,
+  description: string,
+  opts: { startOpen?: boolean; cls?: string } = {},
+): HTMLElement {
+  const open = opts.startOpen ?? false;
+  const section = parent.createDiv({ cls: `dnd-settings-section ${opts.cls ?? ""}` });
+
+  const header = section.createDiv({ cls: "dnd-settings-section-header" });
+  header.setAttribute("role", "button");
+  header.setAttribute("tabindex", "0");
+  header.setAttribute("aria-expanded", String(open));
+
+  const chevron = header.createEl("span", { cls: "dnd-settings-chevron" });
+  chevron.textContent = "▶";
+  header.createEl("span", { text: title, cls: "dnd-settings-section-title" });
+
+  if (description) {
+    section.createEl("p", { text: description, cls: "dnd-settings-section-desc" });
+  }
+
+  const body = section.createDiv({ cls: "dnd-settings-section-body" });
+
+  const toggle = () => {
+    const expanding = !body.hasClass("is-open");
+    body.toggleClass("is-open", expanding);
+    chevron.toggleClass("is-open", expanding);
+    header.setAttribute("aria-expanded", String(expanding));
+  };
+
+  if (open) {
+    body.addClass("is-open");
+    chevron.addClass("is-open");
+  }
+
+  header.addEventListener("click", toggle);
+  header.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggle();
+    }
+  });
+
+  return body;
+}
+
+// ─── Settings Tab ───────────────────────────────────────────────────────────
+
 export class DndCampaignHubSettingTab extends PluginSettingTab {
   plugin: DndCampaignHubPlugin;
 
@@ -13,17 +65,23 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
 
   async display(): Promise<void> {
     const { containerEl } = this;
-
     containerEl.empty();
+    containerEl.addClass("dnd-settings-root");
 
-    containerEl.createEl("h2", { text: "D&D Campaign Hub Settings" });
+    // ── Header ──────────────────────────────────────────────────────────
+    const hero = containerEl.createDiv({ cls: "dnd-settings-hero" });
+    hero.createEl("h2", { text: "D&D Campaign Hub" });
+    hero.createEl("span", {
+      text: `v${this.plugin.manifest.version}`,
+      cls: "dnd-settings-version",
+    });
 
-    // Campaign Settings
-    containerEl.createEl("h3", { text: "⚙️ Campaign Settings" });
+    // ── 1. General ──────────────────────────────────────────────────────
+    const general = addSection(containerEl, "General", "Core plugin settings.", { startOpen: true });
 
-    new Setting(containerEl)
-      .setName("Current Campaign")
-      .setDesc("The currently active campaign for quick access")
+    new Setting(general)
+      .setName("Current campaign")
+      .setDesc("Vault path to your active campaign folder (e.g. ttrpgs/My Campaign).")
       .addText((text) =>
         text
           .setPlaceholder("ttrpgs/Campaign Name")
@@ -34,52 +92,70 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
           })
       );
 
-    // Map Management Section
-    containerEl.createEl("h3", { text: "🗺️ Map Management" });
+    // ── 2. Battle Maps & Combat ─────────────────────────────────────────
+    const maps = addSection(containerEl, "Battle Maps & Combat", "Map management, combat behaviour, and dynamic lighting.");
 
-    const mapMgmtContainer = containerEl.createDiv({ cls: "dnd-about-container" });
-    mapMgmtContainer.createEl("p", {
-      text: "Create, edit, and delete your battle maps and world maps."
-    });
-
-    new Setting(containerEl)
-      .setName("Open Map Manager")
-      .setDesc("View and manage all maps in your campaign")
-      .addButton((button) =>
-        button
-          .setButtonText("🗺️ Map Manager")
+    new Setting(maps)
+      .setName("Map Manager")
+      .setDesc("Create, edit, and delete your battle maps and world maps.")
+      .addButton((btn) =>
+        btn
+          .setButtonText("Open Map Manager")
           .setCta()
           .onClick(() => {
             new MapManagerModal(this.app, this.plugin, this.plugin.mapManager).open();
           })
       );
 
-    // SRD Data Import Section
-    containerEl.createEl("h3", { text: "📥 SRD Data Import" });
-    
-    const srdContainer = containerEl.createDiv({ cls: "dnd-about-container" });
-    srdContainer.createEl("p", { 
-      text: "Download and import D&D 5e SRD data from the official API. Data will be saved to system folders in your vault." 
-    });
+    new Setting(maps)
+      .setName("Auto-pan to active combatant")
+      .setDesc(
+        "Smoothly pan the projected player view to center on the active combatant's token each time the turn changes."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.combatAutoPan)
+          .onChange(async (value) => {
+            this.plugin.settings.combatAutoPan = value;
+            await this.plugin.saveSettings();
+          })
+      );
 
-    new Setting(containerEl)
-      .setName("Import All SRD Data")
-      .setDesc("Downloads all available SRD content (conditions, equipment, races, features, etc.) and saves to system folders (e.g., z_Conditions, z_Equipment). This may take several minutes.")
-      .addButton((button) =>
-        button
-          .setButtonText("Import All SRD Data")
+    new Setting(maps)
+      .setName("Vision update mode")
+      .setDesc(
+        "Controls when fog of war recalculates during token movement."
+      )
+      .addDropdown((dd) =>
+        dd
+          .addOption("on-drop", "Update on drop (fast)")
+          .addOption("while-dragging", "Update while dragging (live)")
+          .setValue(this.plugin.settings.visionUpdateMode)
+          .onChange(async (value) => {
+            this.plugin.settings.visionUpdateMode = value as "on-drop" | "while-dragging";
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // ── 3. SRD Data Import ──────────────────────────────────────────────
+    const srd = addSection(containerEl, "SRD Data Import", "Download D&D 5e System Reference Document data from the official API.");
+
+    new Setting(srd)
+      .setName("Import all SRD reference data")
+      .setDesc("Downloads conditions, equipment, races, features, and more into system folders (z_Conditions, z_Equipment, …).")
+      .addButton((btn) =>
+        btn
+          .setButtonText("Import All")
           .setCta()
           .onClick(async () => {
             await this.plugin.importAllSRDData();
           })
       );
 
-    new Setting(containerEl)
-      .setName("Import Individual Categories")
-      .setDesc("Import specific SRD data categories")
-      .setHeading();
+    // Individual categories inside a nested collapsible
+    const catBody = addSection(srd, "Individual Categories", "Import a single SRD category.");
 
-    const srdCategories = [
+    const srdCategories: { key: string; folder: string; name: string }[] = [
       { key: "ability-scores", folder: "z_AbilityScores", name: "Ability Scores" },
       { key: "classes", folder: "z_Classes", name: "Classes" },
       { key: "conditions", folder: "z_Conditions", name: "Conditions" },
@@ -94,133 +170,86 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
       { key: "subclasses", folder: "z_Subclasses", name: "Subclasses" },
       { key: "subraces", folder: "z_Subraces", name: "Subraces" },
       { key: "traits", folder: "z_Traits", name: "Traits" },
-      { key: "weapon-properties", folder: "z_WeaponProperties", name: "Weapon Properties" }
+      { key: "weapon-properties", folder: "z_WeaponProperties", name: "Weapon Properties" },
     ];
 
-    srdCategories.forEach(category => {
-      new Setting(containerEl)
-        .setName(category.name)
-        .addButton((button) =>
-          button
-            .setButtonText(`Import ${category.name}`)
-            .onClick(async () => {
-              await this.plugin.importSRDCategory(category.key, category.folder, category.name);
-            })
-        );
-    });
+    // Render categories as a compact 2-column grid of buttons
+    const catGrid = catBody.createDiv({ cls: "dnd-settings-srd-grid" });
+    for (const cat of srdCategories) {
+      const cell = catGrid.createEl("button", { text: cat.name, cls: "dnd-settings-srd-btn" });
+      cell.addEventListener("click", async () => {
+        cell.disabled = true;
+        cell.textContent = `⏳ ${cat.name}…`;
+        try {
+          await this.plugin.importSRDCategory(cat.key, cat.folder, cat.name);
+        } finally {
+          cell.disabled = false;
+          cell.textContent = cat.name;
+        }
+      });
+    }
 
-    // SRD Creature Token Import
-    containerEl.createEl("h3", { text: "🐉 SRD Creature Token Import" });
-
-    const creatureImportContainer = containerEl.createDiv({ cls: "dnd-about-container" });
-    creatureImportContainer.createEl("p", {
-      text: "Import all 334 SRD creatures as battlemap tokens with artwork. Each creature gets a note in z_Beastiarity with full stats, a token in the marker library with the correct size and darkvision, and its SRD artwork saved locally. Already-existing creatures will be overwritten."
-    });
-
-    const creatureImportStatusEl = containerEl.createDiv();
-
-    new Setting(containerEl)
-      .setName("Import All SRD Creature Tokens")
-      .setDesc("Downloads all SRD monsters, their images, creates creature notes and battlemap tokens. This may take a few minutes.")
-      .addButton((button) =>
-        button
-          .setButtonText("🐉 Import SRD Creatures")
+    // Creature token bulk import
+    new Setting(srd)
+      .setName("Import SRD creature tokens")
+      .setDesc(
+        "Downloads all 334 SRD creatures with artwork, creating creature notes and battlemap tokens. " +
+        "Existing creatures will be overwritten."
+      )
+      .addButton((btn) => {
+        const statusEl = srd.createDiv({ cls: "dnd-settings-import-status" });
+        btn
+          .setButtonText("Import Creatures")
           .setCta()
           .onClick(async () => {
-            button.setDisabled(true);
-            button.setButtonText("⏳ Importing…");
-            creatureImportStatusEl.empty();
-            creatureImportStatusEl.createEl("p", { text: "Import in progress… check Obsidian notices for updates." });
-
+            btn.setDisabled(true);
+            btn.setButtonText("⏳ Importing…");
+            statusEl.empty();
+            statusEl.createEl("p", { text: "Import in progress — check notices for updates." });
             try {
               const result = await this.plugin.importSRDCreatureTokens();
-              creatureImportStatusEl.empty();
-              creatureImportStatusEl.createEl("p", {
-                text: `✅ Done! ${result.imported} creatures imported, ${result.errors} errors.`
+              statusEl.empty();
+              statusEl.createEl("p", {
+                text: `✅ ${result.imported} creatures imported, ${result.errors} errors.`,
               });
             } catch (err) {
-              creatureImportStatusEl.empty();
-              creatureImportStatusEl.createEl("p", {
-                text: `❌ Import failed: ${err instanceof Error ? err.message : String(err)}`
+              statusEl.empty();
+              statusEl.createEl("p", {
+                text: `❌ Import failed: ${err instanceof Error ? err.message : String(err)}`,
               });
             } finally {
-              button.setDisabled(false);
-              button.setButtonText("🐉 Import SRD Creatures");
+              btn.setDisabled(false);
+              btn.setButtonText("Import Creatures");
             }
-          })
-      );
+          });
+      });
 
-    // Battle Map Settings
-    containerEl.createEl("h3", { text: "�️ Battle Maps" });
+    // ── 4. Maintenance ──────────────────────────────────────────────────
+    const maintenance = addSection(containerEl, "Maintenance", "Migration tools and plugin information.");
 
-    new Setting(containerEl)
-      .setName("Auto-pan to active combatant")
-      .setDesc(
-        "When combat is running, smoothly pan the projected player view " +
-        "to center on the active combatant's token each time the turn changes."
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.combatAutoPan)
-          .onChange(async (value) => {
-            this.plugin.settings.combatAutoPan = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    containerEl.createEl("h3", { text: "�🔦 Dynamic Lighting" });
-
-    new Setting(containerEl)
-      .setName("Vision update mode")
-      .setDesc(
-        "Controls when fog of war updates during token movement. " +
-        "'Update on drop' freezes the fog while dragging and recomputes when you release the token. " +
-        "'Update while dragging' recomputes the fog each time the token crosses a grid cell boundary."
-      )
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("on-drop", "Update on drop (fast)")
-          .addOption("while-dragging", "Update while dragging (live)")
-          .setValue(this.plugin.settings.visionUpdateMode)
-          .onChange(async (value) => {
-            this.plugin.settings.visionUpdateMode = value as 'on-drop' | 'while-dragging';
-            await this.plugin.saveSettings();
-          })
-      );
-
-    // About Section
-    containerEl.createEl("h3", { text: "ℹ️ About" });
-    
-    const aboutContainer = containerEl.createDiv({ cls: "dnd-about-container" });
-    aboutContainer.createEl("p", { 
-      text: `D&D Campaign Hub v${this.plugin.manifest.version}` 
-    });
-    aboutContainer.createEl("p", { 
-      text: "A comprehensive plugin for managing D&D campaigns in Obsidian." 
-    });
-    
-    new Setting(containerEl)
-      .setName("Migrate Files")
-      .setDesc("Safely migrate campaign files to the latest template versions (preserves all your content)")
-      .addButton((button) =>
-        button
-          .setButtonText("Migrate Files")
+    new Setting(maintenance)
+      .setName("Migrate campaign files")
+      .setDesc("Safely update your notes to the latest template versions. All content is preserved; backups are created automatically.")
+      .addButton((btn) =>
+        btn
+          .setButtonText("Run Migrations")
           .setCta()
-          .onClick(async () => {
+          .onClick(() => {
             this.plugin.migrateTemplates();
           })
       );
 
-    containerEl.createEl("h3", { text: "Danger Zone" });
+    // ── 5. Danger Zone ──────────────────────────────────────────────────
+    const danger = addSection(containerEl, "Danger Zone", "Destructive actions — use with caution.", { cls: "dnd-settings-danger" });
 
-    new Setting(containerEl)
-      .setName("Purge D&D Campaign Hub")
-      .setDesc("⚠️ Remove all D&D Campaign Hub folders and files from this vault. This cannot be undone!")
-      .addButton((button) =>
-        button
+    new Setting(danger)
+      .setName("Purge all plugin data")
+      .setDesc("Permanently remove all D&D Campaign Hub folders and files from this vault. This cannot be undone.")
+      .addButton((btn) =>
+        btn
           .setButtonText("Purge Vault")
           .setWarning()
-          .onClick(async () => {
+          .onClick(() => {
             new PurgeConfirmModal(this.app, this.plugin).open();
           })
       );

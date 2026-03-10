@@ -97,83 +97,142 @@
   background-color: var(--interactive-accent-hover);
 }
 
-/* Settings - Dependency Status Styles */
-.dnd-dependencies-container {
-  background-color: var(--background-secondary);
-  border-radius: 8px;
-  padding: 15px;
-  margin: 15px 0;
+/* ─── Settings Page ────────────────────────────────────────────────────── */
+
+/* Root container */
+.dnd-settings-root {
+  max-width: 720px;
+  margin: 0 auto;
 }
 
-.dnd-dependency-status {
-  margin-bottom: 15px;
-  padding: 12px;
-  border-radius: 6px;
-  font-weight: 500;
-}
-
-.dnd-status-success {
-  background-color: rgba(46, 160, 67, 0.15);
-  color: var(--text-success);
-  border: 1px solid rgba(46, 160, 67, 0.3);
-}
-
-.dnd-status-warning {
-  background-color: rgba(229, 153, 56, 0.15);
-  color: var(--text-warning);
-  border: 1px solid rgba(229, 153, 56, 0.3);
-}
-
-.dnd-plugins-list {
+/* Hero header */
+.dnd-settings-hero {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 15px;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 12px;
+}
+.dnd-settings-hero h2 {
+  margin: 0;
+}
+.dnd-settings-version {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  font-weight: 400;
 }
 
-.dnd-plugin-row {
+/* Collapsible section */
+.dnd-settings-section {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+.dnd-settings-section-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px;
-  background-color: var(--background-primary);
+  gap: 8px;
+  padding: 12px 16px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--background-secondary);
+  transition: background 120ms ease;
+}
+.dnd-settings-section-header:hover {
+  background: var(--background-modifier-hover);
+}
+.dnd-settings-section-header:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+.dnd-settings-section-title {
+  font-weight: 600;
+  font-size: var(--font-ui-medium);
+}
+.dnd-settings-chevron {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 200ms ease;
+  color: var(--text-muted);
+}
+.dnd-settings-chevron.is-open {
+  transform: rotate(90deg);
+}
+.dnd-settings-section-desc {
+  margin: 0;
+  padding: 4px 16px 8px;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.dnd-settings-section-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 300ms ease, padding 200ms ease;
+  padding: 0 16px;
+}
+.dnd-settings-section-body.is-open {
+  max-height: 2000px;
+  padding: 8px 16px 16px;
+}
+.dnd-settings-section-body .setting-item {
+  border-top: none;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--background-modifier-border-focus);
+}
+.dnd-settings-section-body .setting-item:last-child {
+  border-bottom: none;
+}
+
+/* Nested section (e.g. Individual SRD Categories inside SRD Import) */
+.dnd-settings-section-body .dnd-settings-section {
+  margin-top: 8px;
+  border-color: var(--background-modifier-border-focus);
+}
+
+/* SRD category button grid */
+.dnd-settings-srd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+  margin: 8px 0;
+}
+.dnd-settings-srd-btn {
+  padding: 6px 12px;
   border-radius: 6px;
   border: 1px solid var(--background-modifier-border);
-}
-
-.dnd-plugin-status-icon {
-  font-size: 16px;
-  min-width: 20px;
-}
-
-.dnd-plugin-installed {
-  flex: 1;
+  background: var(--background-secondary);
   color: var(--text-normal);
-  font-weight: 500;
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+  text-align: center;
+}
+.dnd-settings-srd-btn:hover:not(:disabled) {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+.dnd-settings-srd-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
-.dnd-plugin-missing {
-  flex: 1;
+/* Import status messages */
+.dnd-settings-import-status p {
+  margin: 8px 0 0;
+  font-size: var(--font-ui-small);
   color: var(--text-muted);
-  font-weight: 500;
 }
 
-.dnd-plugin-row button {
-  padding: 6px 14px;
-  font-size: 13px;
+/* Danger zone red accent */
+.dnd-settings-danger > .dnd-settings-section-header {
+  border-left: 3px solid var(--text-error);
 }
-
-/* About Container */
-.dnd-about-container {
-  background-color: var(--background-secondary);
-  border-radius: 6px;
-  padding: 15px;
-  margin: 15px 0;
-}
-
-.dnd-about-container p {
-  margin: 8px 0;
-  color: var(--text-muted);
+.dnd-settings-danger .dnd-settings-section-title {
+  color: var(--text-error);
 }
 
 /* Encounter Builder Styles */
