@@ -2242,9 +2242,20 @@
 /* Expanded Detail Panel */
 .dnd-pm-detail-panel {
   grid-column: 1 / -1;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.25s ease, opacity 0.2s ease, margin-top 0.25s ease, padding-top 0.25s ease;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 1px solid transparent;
+}
+
+.dnd-pm-detail-panel.is-open {
+  opacity: 1;
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px solid var(--background-modifier-border);
+  border-top-color: var(--background-modifier-border);
 }
 
 .dnd-pm-detail-grid {

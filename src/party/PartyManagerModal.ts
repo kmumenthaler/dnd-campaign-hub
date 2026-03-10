@@ -540,29 +540,34 @@ export class PartyManagerModal extends Modal {
       });
     }
 
-    // ── Expanded detail panel ──
+    // ── Detail panel (always rendered, animated via CSS) ──
+    const detailPanel = card.createDiv({ cls: "dnd-pm-detail-panel" });
+    const grid = detailPanel.createDiv({ cls: "dnd-pm-detail-grid" });
+
+    const addDetail = (label: string, value: string | undefined) => {
+      if (!value) return;
+      const row = grid.createDiv({ cls: "dnd-pm-detail-row" });
+      row.createSpan({ text: label, cls: "dnd-pm-detail-label" });
+      row.createSpan({ text: value, cls: "dnd-pm-detail-value" });
+    };
+
+    addDetail("Player", member.player);
+    addDetail("Race", member.race);
+    addDetail("Class", member.class);
+    addDetail("Level", member.level > 0 ? String(member.level) : undefined);
+    addDetail("CR", member.cr);
+    addDetail("Role", isCompanion ? "Companion" : "PC");
+    addDetail("Temp HP", member.thp > 0 ? String(member.thp) : undefined);
+    addDetail("Init Bonus", initVal);
+    addDetail("Token", member.tokenId ? "Assigned" : "None");
+    addDetail("Note", member.notePath.split("/").pop()?.replace(".md", ""));
+
+    // Animate open after layout
     if (isExpanded) {
-      const detailPanel = card.createDiv({ cls: "dnd-pm-detail-panel" });
-
-      const grid = detailPanel.createDiv({ cls: "dnd-pm-detail-grid" });
-
-      const addDetail = (label: string, value: string | undefined) => {
-        if (!value) return;
-        const row = grid.createDiv({ cls: "dnd-pm-detail-row" });
-        row.createSpan({ text: label, cls: "dnd-pm-detail-label" });
-        row.createSpan({ text: value, cls: "dnd-pm-detail-value" });
-      };
-
-      addDetail("Player", member.player);
-      addDetail("Race", member.race);
-      addDetail("Class", member.class);
-      addDetail("Level", member.level > 0 ? String(member.level) : undefined);
-      addDetail("CR", member.cr);
-      addDetail("Role", isCompanion ? "Companion" : "PC");
-      addDetail("Temp HP", member.thp > 0 ? String(member.thp) : undefined);
-      addDetail("Init Bonus", initVal);
-      addDetail("Token", member.tokenId ? "Assigned" : "None");
-      addDetail("Note", member.notePath.split("/").pop()?.replace(".md", ""));
+      requestAnimationFrame(() => {
+        detailPanel.addClass("is-open");
+        detailPanel.style.maxHeight = detailPanel.scrollHeight + "px";
+      });
     }
   }
 
