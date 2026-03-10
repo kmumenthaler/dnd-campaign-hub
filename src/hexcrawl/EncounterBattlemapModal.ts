@@ -680,73 +680,28 @@ export class EncounterBattlemapModal extends Modal {
         return;
       }
 
-      // Read campaign note frontmatter for selected_party_id
-      const campaignFiles = this.app.vault.getFiles().filter(f =>
-        f.path.startsWith(campaignPath + '/') && f.basename.toLowerCase().includes('world')
-      );
-      // Also check for the campaign folder's root note
-      const rootNote = this.app.vault.getAbstractFileByPath(`${campaignPath}/${campaignPath.split('/').pop()}.md`);
+      const campaignName = campaignPath.split('/').pop() || '';
+      const pm = this.plugin.partyManager;
 
-      let selectedPartyId = '';
-      // Try campaign root note first, then world note
-      const notesToCheck = rootNote instanceof TFile ? [rootNote, ...campaignFiles] : campaignFiles;
-      for (const noteFile of notesToCheck) {
-        if (!(noteFile instanceof TFile)) continue;
-        const cache = this.app.metadataCache.getFileCache(noteFile);
-        if (cache?.frontmatter?.selected_party_id) {
-          selectedPartyId = cache.frontmatter.selected_party_id;
-          break;
-        }
-      }
-
-      // Fetch party from Initiative Tracker
-      const initiativePlugin = (this.app as any).plugins?.plugins?.['initiative-tracker'];
-      if (!initiativePlugin?.data) {
+      // Resolve the party via PartyManager (handles selected_party_id → campaign name → default fallback)
+      const party = pm.resolveParty(undefined, campaignName);
+      if (!party) {
         this.partyLoading = false;
         this.render();
         return;
       }
 
-      const parties: any[] = initiativePlugin.data.parties || [];
-      let party: any = null;
-
-      // Try selected_party_id first
-      if (selectedPartyId) {
-        party = parties.find((p: any) => (p.id || p.name) === selectedPartyId);
-      }
-
-      // Fallback: try "<CampaignName> Party"
-      if (!party && campaignPath) {
-        const campaignName = campaignPath.split('/').pop() || '';
-        party = parties.find((p: any) => p.name === `${campaignName} Party`);
-      }
-
-      // Fallback: default party
-      if (!party && initiativePlugin.data.defaultParty) {
-        party = parties.find((p: any) => p.id === initiativePlugin.data.defaultParty);
-      }
-
-      // Fallback: first party
-      if (!party && parties.length > 0) {
-        party = parties[0];
-      }
-
-      if (party?.players) {
-        const allPlayers: any[] = initiativePlugin.data.players || [];
-        const playerById = new Map(allPlayers.map((p: any) => [p.id, p]));
-        const playerByName = new Map(allPlayers.map((p: any) => [p.name, p]));
-
-        for (const entry of party.players) {
-          const player = playerById.get(entry) || playerByName.get(entry);
-          if (player) {
-            this.partyMembers.push({
-              name: player.name || 'Unknown',
-              level: player.level || 1,
-              hp: player.hp || player.currentMaxHP || 20,
-              ac: player.ac || player.currentAC || 14,
-              notePath: player.path || player.note || undefined,
-            });
-          }
+      // Resolve live stats from PC notes
+      const resolved = await pm.resolveMembers(party.id);
+      for (const m of resolved) {
+        if (m.enabled) {
+          this.partyMembers.push({
+            name: m.name,
+            level: m.level,
+            hp: m.maxHp,
+            ac: m.ac,
+            notePath: m.notePath || undefined,
+          });
         }
       }
     } catch (err) {

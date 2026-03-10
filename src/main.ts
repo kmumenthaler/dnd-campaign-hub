@@ -108,6 +108,8 @@ import { EncounterBuilderModal } from './encounter/EncounterBuilderModal';
 import { EncounterBuilder } from './encounter/EncounterBuilder';
 import { CombatTracker } from './combat/CombatTracker';
 import { CombatTrackerView } from './combat/CombatTrackerView';
+import { PartyManager } from './party/PartyManager';
+import { PartyManagerModal } from './party/PartyManagerModal';
 import { CombatPlayerView } from './combat/CombatPlayerView';
 import { PCCreationModal } from './character/PCCreationModal';
 import { ImportPCModal } from './character/ImportPCModal';
@@ -177,6 +179,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   migrationManager!: MigrationManager;
   encounterBuilder!: EncounterBuilder;
   combatTracker!: CombatTracker;
+  partyManager!: PartyManager;
   mapManager!: MapManager;
   mapController!: MapController;
   markerLibrary!: MarkerLibrary;
@@ -262,6 +265,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     // Initialize the combat tracker engine
     this.combatTracker = new CombatTracker(this.app, this);
+
+    // Initialize the party manager
+    this.partyManager = new PartyManager(this.app, this.manifest.id);
+    await this.partyManager.load();
 
     // Initialize the map manager
     this.mapManager = new MapManager(this.app);
@@ -717,6 +724,12 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "manage-parties",
+      name: "⚔️ Party Manager",
+      callback: () => new PartyManagerModal(this.app, this).open(),
+    });
+
+    this.addCommand({
       id: "create-scene",
       name: "Create New Scene",
       callback: () => this.createScene(),
@@ -750,27 +763,10 @@ export default class DndCampaignHubPlugin extends Plugin {
               // Delete from vault
               await this.app.vault.delete(file);
               
-              // Remove encounter from Initiative Tracker if it exists
+              // Remove encounter from Party Manager if it exists
               if (encounterName) {
-                const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-                
-                if (initiativeTracker?.data?.encounters) {
-                  
-                  if (initiativeTracker.data.encounters[encounterName]) {
-                    delete initiativeTracker.data.encounters[encounterName];
-                    
-                    if (initiativeTracker.saveSettings) {
-                      await initiativeTracker.saveSettings();
-                      new Notice(`✔ Scene "${sceneName}" and its encounter deleted`);
-                    } else {
-                      new Notice(`⚠️ Scene deleted but could not persist encounter deletion`);
-                    }
-                  } else {
-                    new Notice(`✔ Scene "${sceneName}" deleted from vault`);
-                  }
-                } else {
-                  new Notice(`✔ Scene "${sceneName}" deleted from vault`);
-                }
+                await this.partyManager.deleteEncounter(encounterName);
+                new Notice(`✔ Scene "${sceneName}" and its encounter deleted`);
               } else {
                 new Notice(`✔ Scene "${sceneName}" deleted from vault`);
               }
@@ -1156,26 +1152,9 @@ export default class DndCampaignHubPlugin extends Plugin {
               // Delete from vault
               await this.app.vault.delete(file);
               
-              // Remove from Initiative Tracker
-              const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-              
-              if (initiativeTracker?.data?.encounters) {
-                
-                if (initiativeTracker.data.encounters[encounterName]) {
-                  delete initiativeTracker.data.encounters[encounterName];
-                  
-                  if (initiativeTracker.saveSettings) {
-                    await initiativeTracker.saveSettings();
-                    new Notice(`✔ Encounter "${encounterName}" deleted from vault and Initiative Tracker`);
-                  } else {
-                    new Notice(`⚠️ Encounter deleted from vault but could not persist deletion to Initiative Tracker`);
-                  }
-                } else {
-                  new Notice(`⚠️ Encounter deleted from vault but not found in Initiative Tracker`);
-                }
-              } else {
-                new Notice(`⚠️ Encounter deleted from vault but Initiative Tracker data not accessible`);
-              }
+              // Remove from Party Manager
+              await this.partyManager.deleteEncounter(encounterName);
+              new Notice(`✔ Encounter "${encounterName}" deleted`);
             }
           } else {
             new Notice("This is not an encounter note");
@@ -1676,12 +1655,6 @@ export default class DndCampaignHubPlugin extends Plugin {
         name: "Calendarium",
         repo: "javalent/calendarium",
         version: "2.1.0"
-      },
-      {
-        id: "initiative-tracker",
-        name: "Initiative Tracker",
-        repo: "javalent/initiative-tracker",
-        version: "9.2.5"
       }
     ];
 
@@ -1778,8 +1751,7 @@ export default class DndCampaignHubPlugin extends Plugin {
       { id: "buttons", name: "Buttons" },
       { id: "dataview", name: "Dataview" },
       { id: "calendarium", name: "Calendarium" },
-      { id: "templater-obsidian", name: "Templater" },
-      { id: "initiative-tracker", name: "Initiative Tracker" }
+      { id: "templater-obsidian", name: "Templater" }
     ];
 
     const installed: string[] = [];
@@ -2291,7 +2263,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Update Initiative Tracker encounter
-			await this.updateInitiativeTrackerEncounter(encounterName, encounterCreatures, selectedPartyId, useColorNames);
+			await this.updateEncounterData(encounterName, encounterCreatures, selectedPartyId, useColorNames);
 
 			if (scenesLinking.length > 0) {
 				new Notice(`✅ Encounter "${encounterName}" synced to ${scenesLinking.length} scene(s)`);
@@ -2340,109 +2312,78 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	/**
-	 * Update Initiative Tracker encounter data
+	 * Update encounter data in PartyManager
 	 */
-	async updateInitiativeTrackerEncounter(encounterName: string, creatures: any[], selectedPartyId: string | null, useColorNames: boolean = false) {
+	async updateEncounterData(encounterName: string, creatures: any[], selectedPartyId: string | null, useColorNames: boolean = false) {
 		try {
-
-			const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-			if (!initiativePlugin?.data?.encounters) {
-				return;
-			}
-
-			// Check if encounter exists in Initiative Tracker
-			if (!initiativePlugin.data.encounters[encounterName]) {
-				return;
-			}
-
-			// Helper function to generate unique IDs like Initiative Tracker does
-			const generateId = () => {
-				const chars = '0123456789abcdef';
-				let id = 'ID_';
-				for (let i = 0; i < 12; i++) {
-					id += chars[Math.floor(Math.random() * chars.length)];
-				}
-				return id;
-			};
+			const pm = this.partyManager;
+			const existing = pm.getEncounter(encounterName);
+			if (!existing) return;
 
 			// Get party members if a party is selected
-			let partyMembers: any[] = [];
-			if (selectedPartyId && initiativePlugin.data.parties) {
-				const party = Object.values(initiativePlugin.data.parties).find((p: any) => p.id === selectedPartyId);
-				if (party && (party as any).players) {
-					partyMembers = (party as any).players.map((player: any) => ({
-						...player,
-						id: player.id || generateId(),
-						status: player.status || [],
-						friendly: false,  // Party members should NOT be marked as friendly
-						player: true  // Ensure player flag is set
-					}));
+			const partyCreatures: import("./party/PartyTypes").StoredEncounterCreature[] = [];
+			if (selectedPartyId) {
+				const party = pm.getParty(selectedPartyId);
+				if (party) {
+					const resolved = await pm.resolveMembers(party.id);
+					for (const m of resolved) {
+						if (m.enabled) {
+							partyCreatures.push(pm.memberToEncounterCreature(m));
+						}
+					}
 				}
 			}
 
-			// Convert creatures to Initiative Tracker format
+			// Convert creatures to StoredEncounterCreature format
 			const colors = ['Red', 'Blue', 'Green', 'Yellow', 'Purple', 'Orange', 'Pink', 'Brown'];
 			
-			const trackerCreatures = await Promise.all(creatures.map(async (c: any) => {
-				const instances: any[] = [];
+			const enemyCreatures: import("./party/PartyTypes").StoredEncounterCreature[] = [];
+			for (const c of creatures) {
 				const count = c.count || 1;
-				
-				
 				for (let i = 0; i < count; i++) {
 					let creatureName = c.name;
 					let displayName = c.name;
 
-					// Use the encounter-level useColorNames setting
 					if (count > 1 && useColorNames) {
 						const colorIndex = i % colors.length;
 						creatureName = `${c.name} (${colors[colorIndex]})`;
 						displayName = creatureName;
 					}
 
-					instances.push({
+					enemyCreatures.push({
 						name: creatureName,
 						display: displayName,
 						initiative: 0,
-						static: false,
 						modifier: 0,
 						hp: c.hp || 1,
-						currentMaxHP: c.hp || 1,
+						maxHP: c.hp || 1,
+						currentHP: c.hp || 1,
+						tempHP: 0,
 						cr: c.cr || undefined,
 						ac: c.ac || 10,
 						currentAC: c.ac || 10,
-						id: generateId(),
-						currentHP: c.hp || 1,
-						tempHP: 0,
-						status: [],  // CRITICAL: Initialize empty status array
+						id: pm.generateId(),
 						enabled: true,
-						active: false,
 						hidden: c.isHidden || false,
 						friendly: c.isFriendly || false,
-						rollHP: false,
-						note: c.path || '',
-						path: c.path || ''
+						player: false,
+						notePath: c.path || undefined,
+						statuses: [],
 					});
 				}
-				return instances;
-			}));
+			}
 
-			const flatCreatures = trackerCreatures.flat();
-			const allCombatants = [...partyMembers, ...flatCreatures];
+			const allCombatants = [...partyCreatures, ...enemyCreatures];
 
-
-			// Update the encounter in Initiative Tracker
-			initiativePlugin.data.encounters[encounterName] = {
-				...initiativePlugin.data.encounters[encounterName],
-				creatures: allCombatants
+			const updated: import("./party/PartyTypes").StoredEncounter = {
+				...existing,
+				creatures: allCombatants,
 			};
 
-			// Save settings
-			if (initiativePlugin.saveSettings) {
-				await initiativePlugin.saveSettings();
-				new Notice(`✅ Initiative Tracker updated with latest encounter data`);
-			}
+			await pm.saveEncounter(encounterName, updated);
+			new Notice(`✅ Encounter data updated`);
 		} catch (error) {
-			console.error('[UpdateTracker] Error updating Initiative Tracker:', error);
+			console.error('[UpdateEncounter] Error updating encounter:', error);
 		}
 	}
 

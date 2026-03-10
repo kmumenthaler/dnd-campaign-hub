@@ -1931,8 +1931,8 @@ export class EncounterBuilderModal extends Modal {
         fileToOpen = newFile;
       }
 
-      // Save to Initiative Tracker
-      await this.saveToInitiativeTracker(encounterPath);
+      // Save to Party Manager
+      await this.saveToPartyManager(encounterPath);
 
       this.close();
       
@@ -2080,41 +2080,13 @@ const buttonContainer = dv.el("div", "", {
   attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
 });
 
-// Open Initiative Tracker and load encounter button
+// Open Combat Tracker and load encounter button
 const openTrackerBtn = buttonContainer.createEl("button", { 
-  text: "⚔️ Open & Load in Tracker",
+  text: "⚔️ Load in Combat Tracker",
   attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px; background-color: var(--interactive-accent); color: var(--text-on-accent);" }
 });
 openTrackerBtn.addEventListener("click", async () => {
-  const encounterName = dv.current().name;
-  const initiativeTracker = app.plugins?.plugins?.["initiative-tracker"];
-  
-  if (!initiativeTracker) {
-    new Notice("Initiative Tracker plugin not found");
-    return;
-  }
-  
-  const encounter = initiativeTracker.data?.encounters?.[encounterName];
-  if (!encounter) {
-    new Notice("Encounter \\"" + encounterName + "\\" not found. Try recreating it.");
-    return;
-  }
-  
-  // Use Initiative Tracker's internal tracker API to load the encounter
-  try {
-    if (initiativeTracker.tracker?.new) {
-      initiativeTracker.tracker.new(initiativeTracker, encounter);
-      new Notice("✅ Loaded encounter: " + encounterName);
-    } else {
-      new Notice("⚠️ Could not load encounter. Try using Load Encounter from Initiative Tracker menu.");
-    }
-  } catch (e) {
-    console.error("Error loading encounter:", e);
-    new Notice("⚠️ Could not load encounter: " + e.message);
-  }
-  
-  // Open Initiative Tracker view
-  app.commands.executeCommandById("initiative-tracker:open-tracker");
+  app.commands.executeCommandById("dnd-campaign-hub:open-combat-tracker");
 });
 
 // Edit button
@@ -2263,61 +2235,23 @@ _Add notes about tactics, environment, or special conditions here._
     return content;
   }
 
-  async saveToInitiativeTracker(encounterPath: string) {
+  async saveToPartyManager(encounterPath: string) {
     try {
-      const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-      if (!initiativeTracker) {
-        new Notice("⚠️ Initiative Tracker not found. Encounter saved to vault only.");
-        return;
-      }
+      const pm = this.plugin.partyManager;
 
-      // Build creature list for initiative tracker
-      const creatures: any[] = [];
+      // Build creature list
+      const creatures: import("../party/PartyTypes").StoredEncounterCreature[] = [];
 
       // Add party members if requested
       if (this.includeParty && this.selectedPartyMembers.length > 0) {
         try {
           this.syncEncounterBuilder();
-          const selectedPlayers = await this.encounterBuilder.getSelectedPartyPlayers();
-          for (const player of selectedPlayers) {
-            const hp = player.hp || player.currentMaxHP || 20;
-            const ac = player.ac || player.currentAC || 14;
-            creatures.push({
-              name: player.name || "Player",
-              display: "",
-              initiative: 0,
-              static: false,
-              modifier: Math.floor(((player.level || 1) - 1) / 4) + 2,
-              hp: hp,
-              currentMaxHP: hp,
-              currentHP: hp,
-              tempHP: player.thp || 0,
-              ac: ac,
-              currentAC: ac,
-              id: this.generateUniqueId(),
-              status: [],
-              enabled: true,
-              active: false,
-              hidden: false,
-              friendly: false,  // Party members should NOT be marked as friendly
-              player: true,
-              rollHP: false
-            });
-          }
+          const partyCreatures = await this.encounterBuilder.getCampaignPartyCreatures();
+          creatures.push(...partyCreatures);
         } catch (error) {
-          console.error("Error getting party members for Initiative Tracker:", error);
+          console.error("Error getting party members for encounter:", error);
         }
       }
-
-      // Helper function to generate unique IDs like Initiative Tracker does
-      const generateId = () => {
-        const chars = '0123456789abcdef';
-        let id = 'ID_';
-        for (let i = 0; i < 12; i++) {
-          id += chars[Math.floor(Math.random() * chars.length)];
-        }
-        return id;
-      };
 
       // Color names for duplicate creatures
       const colors = [
@@ -2327,94 +2261,55 @@ _Add notes about tactics, environment, or special conditions here._
         "Silver", "Bronze"
       ];
 
-      // Build creature data in Initiative Tracker format using flatMap
-      const enemyCreatures = this.creatures.flatMap(c => {
-        const instances = [];
+      // Build creature data
+      const enemyCreatures: import("../party/PartyTypes").StoredEncounterCreature[] = this.creatures.flatMap(c => {
+        const instances: import("../party/PartyTypes").StoredEncounterCreature[] = [];
         for (let i = 0; i < c.count; i++) {
           const hp = c.hp || 1;
           const ac = c.ac || 10;
 
-          // Determine name and display based on useColorNames setting
-          // IMPORTANT: 'name' is used for bestiary lookup and must be the base creature name
-          // 'display' is used for visual representation in the tracker
-          // Initiative Tracker will auto-number duplicate display names (Zombie -> Zombie 1, Zombie 2)
-          let displayName = c.name;  // Always show at least the creature name
-
+          let displayName = c.name;
           if (c.count > 1 && this.useColorNames) {
             const colorIndex = i % colors.length;
-            // Use display for color names
             displayName = `${c.name} (${colors[colorIndex]})`;
           }
-          // For single creatures or multiple without colors, display is just the creature name
-          // Initiative Tracker will add numbers automatically for duplicates
 
-          const creature: any = {
-            name: c.name,  // Base creature name for bestiary lookup
-            display: displayName,  // Display name (always has a value now)
+          const creature: import("../party/PartyTypes").StoredEncounterCreature = {
+            name: c.name,
+            display: displayName,
             initiative: 0,
-            static: false,
-            modifier: 0,  // Initiative modifier
+            modifier: 0,
             hp: hp,
-            currentMaxHP: hp,  // Initiative Tracker uses currentMaxHP, not max
+            maxHP: hp,
+            currentHP: hp,
+            tempHP: 0,
             cr: c.cr || undefined,
-            ac: ac,  // AC as number
-            currentAC: ac,  // Initiative Tracker also tracks currentAC
-            id: generateId(),  // CRITICAL: Unique ID for each creature instance
-            currentHP: hp,  // Initiative Tracker uses currentHP, not hp
-            tempHP: 0,  // Initiative Tracker uses tempHP, not temp
-            status: [],  // Array of status effects
+            ac: ac,
+            currentAC: ac,
+            id: pm.generateId(),
             enabled: true,
-            active: false,  // Whether this creature is currently active in turn order
-            hidden: c.isHidden || false,  // Hidden from players
-            friendly: c.isFriendly || false,  // Friendly to players
-            rollHP: false  // Whether to roll HP when adding to tracker
+            hidden: c.isHidden || false,
+            friendly: c.isFriendly || false,
+            player: false,
+            statuses: [],
           };
-          // Include vault path so the map token import can resolve the creature's note
           if (c.path && c.path !== '[SRD]') {
-            creature.note = c.path;
+            creature.notePath = c.path;
           }
           instances.push(creature);
         }
         return instances;
       });
 
-      // Add enemy creatures to the main creatures array
       creatures.push(...enemyCreatures);
 
-
-      // Save encounter to Initiative Tracker's data structure
-      if (initiativeTracker.data) {
-        // Initialize encounters object if it doesn't exist
-        if (!initiativeTracker.data.encounters) {
-          initiativeTracker.data.encounters = {};
-        }
-
-
-        // Save encounter in Initiative Tracker format
-        initiativeTracker.data.encounters[this.encounterName] = {
-          creatures: creatures,
-          state: false,
-          name: this.encounterName,
-          round: 1,
-          logFile: null,
-          rollHP: false
-        };
-
-
-        // Persist the data
-        if (initiativeTracker.saveSettings) {
-          await initiativeTracker.saveSettings();
-          new Notice(`✓ Encounter saved to Initiative Tracker with ${creatures.length} creatures`);
-        } else {
-          new Notice("⚠️ Could not persist encounter to Initiative Tracker");
-        }
-      } else {
-        new Notice("⚠️ Initiative Tracker data not accessible - encounter saved to vault only");
-      }
+      const encounter = pm.buildEncounter(this.encounterName, creatures, encounterPath);
+      await pm.saveEncounter(this.encounterName, encounter);
+      new Notice(`✓ Encounter saved with ${creatures.length} creatures`);
     } catch (error) {
-      console.error("Error saving to Initiative Tracker:", error);
+      console.error("Error saving encounter:", error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      new Notice(`⚠️ Error saving to Initiative Tracker: ${errorMessage}`);
+      new Notice(`⚠️ Error saving encounter: ${errorMessage}`);
     }
   }
 
@@ -2426,7 +2321,7 @@ _Add notes about tactics, environment, or special conditions here._
       modal.contentEl.createEl("h3", { text: "Delete Encounter?" });
       modal.contentEl.createEl("p", { text: `Are you sure you want to delete "${this.encounterName}"?` });
       modal.contentEl.createEl("p", { 
-        text: "This will remove the encounter file and remove it from the Initiative Tracker.", 
+        text: "This will remove the encounter file and its saved data.", 
         cls: "mod-warning" 
       });
 
@@ -2460,28 +2355,10 @@ _Add notes about tactics, environment, or special conditions here._
         await this.app.vault.delete(file);
       }
 
-      // Remove from Initiative Tracker
-      const initiativeTracker = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-      
-      if (initiativeTracker?.data?.encounters) {
-        
-        if (initiativeTracker.data.encounters[this.encounterName]) {
-          delete initiativeTracker.data.encounters[this.encounterName];
-          
-          if (initiativeTracker.saveSettings) {
-            await initiativeTracker.saveSettings();
-            new Notice(`✓ Encounter deleted from Initiative Tracker`);
-          } else {
-            new Notice("⚠️ Could not persist deletion to Initiative Tracker");
-          }
-        } else {
-          new Notice("⚠️ Encounter not found in Initiative Tracker");
-        }
-      } else {
-        new Notice("⚠️ Initiative Tracker data not accessible");
-      }
+      // Remove from Party Manager encounters
+      await this.plugin.partyManager.deleteEncounter(this.encounterName);
 
-      new Notice(`Encounter "${this.encounterName}" deleted from vault`);
+      new Notice(`✓ Encounter "${this.encounterName}" deleted`);
       this.close();
     } catch (error) {
       console.error("Error deleting encounter:", error);

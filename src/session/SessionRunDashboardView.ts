@@ -378,14 +378,10 @@ export class SessionRunDashboardView extends ItemView {
       await this.collapseProperties(mainLeaf);
     }
 
-    // Try to open Initiative Tracker if available
-    const initiativePlugin = (this.app as any).plugins?.getPlugin("initiative-tracker");
-    if (initiativePlugin) {
-      // Give a moment for the layout to settle, then open tracker
-      setTimeout(() => {
-        (this.app as any).commands?.executeCommandById("initiative-tracker:open-tracker");
-      }, 500);
-    }
+    // Open our Combat Tracker
+    setTimeout(() => {
+      (this.app as any).commands?.executeCommandById("dnd-campaign-hub:open-combat-tracker");
+    }, 500);
 
     // Enable read-only mode for the opened files
     setTimeout(() => {
@@ -878,69 +874,14 @@ export class SessionRunDashboardView extends ItemView {
     
     const actions = section.createEl("div", { cls: "quick-actions-compact" });
 
-    // Initiative Tracker
+    // Combat Tracker
     const initiativeBtn = actions.createEl("button", {
-      text: "⚔️ Open Initiative Tracker",
+      text: "⚔️ Open Combat Tracker",
       cls: "quick-action-button"
     });
     initiativeBtn.addEventListener("click", async (e) => {
       e.preventDefault();
-      
-      const initiativePlugin = (this.app as any).plugins?.getPlugin("initiative-tracker");
-      
-      if (!initiativePlugin) {
-        new Notice("Initiative Tracker plugin not installed or enabled");
-        return;
-      }
-      
-      // Try method 1: Look for existing Initiative Tracker view and reveal it
-      const existingLeaves = this.app.workspace.getLeavesOfType("initiative-tracker-view");
-      if (existingLeaves.length > 0 && existingLeaves[0]) {
-        this.app.workspace.revealLeaf(existingLeaves[0]);
-        new Notice("Initiative Tracker opened");
-        return;
-      }
-      
-      // Try method 2: Execute the command to open the tracker
-      try {
-        const commands = (this.app as any).commands;
-        if (commands) {
-          // Try different possible command IDs
-          const commandIds = [
-            "initiative-tracker:open-tracker",
-            "initiative-tracker:toggle-encounter",
-            "obsidian-initiative-tracker:open-tracker"
-          ];
-          
-          for (const cmdId of commandIds) {
-            const executed = commands.executeCommandById(cmdId);
-            if (executed) {
-              new Notice("Initiative Tracker opened");
-              return;
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Error executing command:", error);
-      }
-      
-      // Try method 3: Create a new leaf in the right sidebar with the tracker view
-      try {
-        const leaf = this.app.workspace.getRightLeaf(false);
-        if (leaf) {
-          await leaf.setViewState({
-            type: "initiative-tracker-view",
-            active: true
-          });
-          this.app.workspace.revealLeaf(leaf);
-          new Notice("Initiative Tracker opened");
-          return;
-        }
-      } catch (error) {
-        console.error("Error creating tracker view:", error);
-      }
-      
-      new Notice("Could not open Initiative Tracker. Try opening it manually from the command palette.");
+      (this.app as any).commands?.executeCommandById("dnd-campaign-hub:open-combat-tracker");
     });
 
     // Create Encounter

@@ -1,5 +1,4 @@
-﻿import { App, Notice, TFile } from "obsidian";
-import type DndCampaignHubPlugin from "../main";
+﻿import type DndCampaignHubPlugin from "../main";
 
 /**
  * Renders the dnd-party code block.
@@ -7,20 +6,12 @@ import type DndCampaignHubPlugin from "../main";
 
 export async function renderPartyView(plugin: DndCampaignHubPlugin, source: string, el: HTMLElement, ctx: any) {
 	try {
-		// Get party members from Initiative Tracker plugin
-		const initiativeTracker = (plugin.app as any).plugins?.plugins?.["initiative-tracker"];
-		if (!initiativeTracker) {
-			el.createEl('div', {
-				text: '\u26a0\ufe0f Initiative Tracker plugin not found',
-				cls: 'dnd-party-block-error'
-			});
-			return;
-		}
+		const pm = plugin.partyManager;
+		const allParties = pm.getParties();
 
-		const allParties = initiativeTracker.data?.parties || [];
 		if (allParties.length === 0) {
 			el.createEl('div', {
-				text: '\u26a0\ufe0f No parties found in Initiative Tracker',
+				text: '\u26a0\ufe0f No parties found. Use the "Manage Parties" command to create one.',
 				cls: 'dnd-party-block-error'
 			});
 			return;
@@ -34,29 +25,23 @@ export async function renderPartyView(plugin: DndCampaignHubPlugin, source: stri
 				const config = JSON.parse(trimmedSource);
 				requestedPartyId = config.partyId || config.party;
 			} catch {
-				// If not JSON, check for YAML-style "party: PartyName" format
 				if (trimmedSource.startsWith('party:')) {
 					requestedPartyId = trimmedSource.substring(6).trim();
 				} else if (trimmedSource.startsWith('partyId:')) {
 					requestedPartyId = trimmedSource.substring(8).trim();
 				} else {
-					// Plain party name
 					requestedPartyId = trimmedSource;
 				}
 			}
 		}
 
-		// Resolve party using campaign context
+		// Resolve party
 		let party = null;
 
 		if (requestedPartyId) {
-			// Find party by ID or name
-			party = allParties.find((p: any) =>
-				p.id === requestedPartyId || p.name === requestedPartyId
-			);
+			party = pm.getParty(requestedPartyId) || pm.getPartyByName(requestedPartyId);
 
 			if (!party) {
-				// Party not found - show helpful error with available parties
 				const errorDiv = el.createDiv({ cls: 'dnd-party-block-error' });
 				errorDiv.createEl('div', { text: `\u26a0\ufe0f Party "${requestedPartyId}" not found` });
 				errorDiv.createEl('div', {
@@ -64,18 +49,15 @@ export async function renderPartyView(plugin: DndCampaignHubPlugin, source: stri
 					cls: 'dnd-party-error-hint'
 				});
 				const partyList = errorDiv.createEl('ul', { cls: 'dnd-party-list' });
-				allParties.forEach((p: any) => {
+				allParties.forEach((p) => {
 					partyList.createEl('li', { text: `\u2022 ${p.name}` });
 				});
 				return;
 			}
 		} else {
-			// No party specified - resolve from campaign context
-			// Detect campaign from the note's folder path
+			// Resolve from campaign context
 			let campaignName = "";
 			if (ctx.sourcePath) {
-				// Parse path to find campaign folder under ttrpgs/
-				// Example: "ttrpgs/Frozen Sick (SOLINA)/Sessions/note.md" -> "Frozen Sick (SOLINA)"
 				const pathParts = ctx.sourcePath.split('/');
 				const ttrpgsIndex = pathParts.indexOf('ttrpgs');
 				if (ttrpgsIndex >= 0 && ttrpgsIndex < pathParts.length - 1) {
@@ -83,21 +65,7 @@ export async function renderPartyView(plugin: DndCampaignHubPlugin, source: stri
 				}
 			}
 
-			// Try to find party matching campaign
-			if (campaignName) {
-				const partyName = `${campaignName} Party`;
-				party = allParties.find((p: any) => p.name === partyName);
-			}
-
-			// Fallback to default party or first available
-			if (!party) {
-				if (initiativeTracker.data?.defaultParty) {
-					party = allParties.find((p: any) => p.id === initiativeTracker.data.defaultParty);
-				}
-				if (!party) {
-					party = allParties[0];
-				}
-			}
+			party = pm.resolveParty(undefined, campaignName || undefined);
 		}
 
 		if (!party) {
@@ -108,22 +76,15 @@ export async function renderPartyView(plugin: DndCampaignHubPlugin, source: stri
 			return;
 		}
 
-		// Get party members
-		const members = [];
-		if (party.players) {
-			for (const playerName of party.players) {
-				const player = initiativeTracker.data?.players?.find((p: any) => p.name === playerName);
-				if (player) {
-					members.push({
-						name: player.display || player.name || "Unknown",
-						level: player.level || 1,
-						hp: player.currentHP ?? player.hp ?? player.currentMaxHP ?? 20,
-						maxHp: player.currentMaxHP ?? player.hp ?? 20,
-						ac: player.currentAC ?? player.ac ?? 14
-					});
-				}
-			}
-		}
+		// Resolve live stats from PC notes
+		const resolved = await pm.resolveMembers(party.id);
+		const members = resolved.filter(m => m.enabled).map(m => ({
+			name: m.name,
+			level: m.level,
+			hp: m.hp,
+			maxHp: m.maxHp,
+			ac: m.ac,
+		}));
 
 		if (members.length === 0) {
 			el.createEl('div', {

@@ -354,8 +354,8 @@ export class ImportPCModal extends Modal {
     await this.app.vault.create(targetFilePath, clonedContent);
     new Notice(`✅ PC "${pcName}" cloned into ${targetCampaignName}!`);
 
-    // Auto-register in Initiative Tracker
-    await this.autoRegisterInTracker(pcName, fm, targetFilePath, targetCampaignName);
+    // Auto-register in Party Manager
+    await this.autoRegisterInPartyManager(pcName, targetFilePath, targetCampaignName);
 
     // Open the new file
     await this.app.workspace.openLinkText(targetFilePath, "", false);
@@ -424,29 +424,22 @@ date: ${new Date().toISOString().split("T")[0]}
     await this.app.vault.create(targetFilePath, linkedContent);
     new Notice(`✅ PC "${pcName}" linked into ${targetCampaignName}!`);
 
-    // Auto-register in Initiative Tracker
-    await this.autoRegisterInTracker(pcName, fm, targetFilePath, targetCampaignName);
+    // Auto-register in Party Manager
+    await this.autoRegisterInPartyManager(pcName, targetFilePath, targetCampaignName);
 
     // Open the new file
     await this.app.workspace.openLinkText(targetFilePath, "", false);
   }
 
   /**
-   * Auto-register the imported PC in Initiative Tracker under the target campaign's party.
+   * Auto-register the imported PC in the built-in Party Manager.
    */
-  async autoRegisterInTracker(
+  async autoRegisterInPartyManager(
     pcName: string,
-    fm: Record<string, any>,
     pcFilePath: string,
     campaignName: string
   ) {
     try {
-      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-      if (!initiativePlugin) {
-        // Initiative Tracker not installed — that's fine, just skip
-        return;
-      }
-
       // Check GM role for target campaign
       const worldFile = this.app.vault.getAbstractFileByPath(`${this.targetCampaign}/World.md`);
       if (worldFile instanceof TFile) {
@@ -458,94 +451,12 @@ date: ${new Date().toISOString().split("T")[0]}
         }
       }
 
-      if (!initiativePlugin.data.players) {
-        initiativePlugin.data.players = [];
-      }
-
-      // Check for duplicate
-      const existingPlayer = initiativePlugin.data.players.find((p: any) =>
-        p.name === pcName || p.path === pcFilePath
-      );
-      if (existingPlayer) {
-        new Notice(`⚠️ ${pcName} already registered in Initiative Tracker.`);
-        return;
-      }
-
-      const initMod = parseInt(String(fm.init_bonus || "0").replace(/[^-\d]/g, "")) || 0;
-      const currentHP = parseInt(fm.hp) || parseInt(fm.hp_max) || 1;
-      const maxHP = parseInt(fm.hp_max) || currentHP;
-      const armorClass = parseInt(fm.ac) || 10;
-      const charLevel = parseInt(fm.level) || 1;
-
-      const playerId = this.generatePlayerId();
-      const playerData = {
-        name: pcName,
-        display: pcName,
-        id: playerId,
-        initiative: 0,
-        static: false,
-        modifier: initMod,
-        hp: maxHP,
-        currentMaxHP: maxHP,
-        currentHP: currentHP,
-        tempHP: 0,
-        ac: armorClass,
-        currentAC: armorClass,
-        level: charLevel,
-        path: pcFilePath,
-        note: pcFilePath,
-        player: true,
-        marker: "default",
-        status: [],
-        enabled: true,
-        active: false,
-        hidden: false,
-        friendly: true,
-        rollHP: false
-      };
-
-      initiativePlugin.data.players.push(playerData);
-
-      // Get or create party
-      const partyName = `${campaignName} Party`;
-      if (!initiativePlugin.data.parties) {
-        initiativePlugin.data.parties = [];
-      }
-
-      let party = initiativePlugin.data.parties.find((p: any) => p.name === partyName);
-      if (!party) {
-        party = {
-          name: partyName,
-          id: this.generatePlayerId(),
-          players: []
-        };
-        initiativePlugin.data.parties.push(party);
-        if (!initiativePlugin.data.defaultParty) {
-          initiativePlugin.data.defaultParty = party.id;
-        }
-      }
-
-      if (!party.players.includes(pcName)) {
-        party.players.push(pcName);
-      }
-
-      if (initiativePlugin.saveSettings) {
-        await initiativePlugin.saveSettings();
-        new Notice(`✅ ${pcName} registered in ${partyName}!`);
-      }
+      await this.plugin.partyManager.registerPC(pcName, pcFilePath, campaignName);
+      new Notice(`✅ ${pcName} registered in ${campaignName} Party!`);
     } catch (error) {
-      console.error("Error auto-registering imported PC in Initiative Tracker:", error);
-      new Notice("⚠️ PC imported but could not register in Initiative Tracker.");
+      console.error("Error auto-registering imported PC in Party Manager:", error);
+      new Notice("⚠️ PC imported but could not register in party.");
     }
-  }
-
-  generatePlayerId(): string {
-    const chars = "0123456789abcdef";
-    let id = "ID_";
-    for (let i = 0; i < 12; i++) {
-      id += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return id;
   }
 
   getAllCampaigns(): Array<{ path: string; name: string }> {

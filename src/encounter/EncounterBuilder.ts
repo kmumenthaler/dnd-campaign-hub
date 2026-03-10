@@ -82,25 +82,13 @@ export class EncounterBuilder {
   }
 
   /**
-   * Refresh party data from Initiative Tracker by reloading its settings
-   * This attempts to sync the latest player stats from Character Notes through Initiative Tracker
+   * Refresh party data from vault frontmatter
    */
   async refreshPartyData(): Promise<boolean> {
     try {
-      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-      if (!initiativePlugin) {
-        return false;
-      }
-
-      // Check if the plugin has a loadSettings method (standard Obsidian plugin pattern)
-      if (typeof initiativePlugin.loadSettings === 'function') {
-        await initiativePlugin.loadSettings();
-        new Notice("✅ Party stats refreshed from Initiative Tracker");
-        return true;
-      } else {
-        new Notice("⚠️ Cannot refresh party stats - Initiative Tracker doesn't support refresh API");
-        return false;
-      }
+      await this.plugin.partyManager.syncAllMemberNames();
+      new Notice("✅ Party stats refreshed from vault notes");
+      return true;
     } catch (error) {
       console.error("[RefreshPartyData] Error refreshing party data:", error);
       new Notice("❌ Failed to refresh party stats");
@@ -125,19 +113,16 @@ export class EncounterBuilder {
     const members: Array<{ name: string; level: number; hp: number; ac: number }> = [];
 
     try {
-      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-      if (!initiativePlugin?.data) return members;
+      const party = this.resolveParty();
+      if (!party) return members;
 
-      const party = this.resolveParty(initiativePlugin);
-      if (!party?.players) return members;
-
-      const players = this.getPartyPlayersFromParty(initiativePlugin, party, false);
-      for (const player of players) {
+      const resolved = await this.plugin.partyManager.resolveMembers(party.id);
+      for (const m of resolved) {
         members.push({
-          name: player.name || "Unknown",
-          level: player.level || 1,
-          hp: player.hp || player.currentMaxHP || 20,
-          ac: player.ac || player.currentAC || 14
+          name: m.name,
+          level: m.level,
+          hp: m.maxHp,
+          ac: m.ac,
         });
       }
     } catch (error) {
@@ -148,34 +133,18 @@ export class EncounterBuilder {
   }
 
   async getAvailableParties(): Promise<Array<{ id: string; name: string }>> {
-    const parties: Array<{ id: string; name: string }> = [];
-
     try {
-      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-      if (!initiativePlugin?.data?.parties) return parties;
-
-      for (const party of initiativePlugin.data.parties) {
-        const id = party.id || party.name;
-        const name = party.name || "Unnamed Party";
-        parties.push({ id, name });
-      }
-
-      parties.sort((a, b) => a.name.localeCompare(b.name));
+      return this.plugin.partyManager.getParties().map((p) => ({ id: p.id, name: p.name }));
     } catch (error) {
       console.error("Error getting available parties:", error);
+      return [];
     }
-
-    return parties;
   }
 
   async getResolvedParty(): Promise<{ id: string; name: string } | null> {
-    const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-    if (!initiativePlugin?.data) return null;
-
-    const party = this.resolveParty(initiativePlugin);
+    const party = this.resolveParty();
     if (!party) return null;
-
-    return { id: party.id || party.name, name: party.name || "Unnamed Party" };
+    return { id: party.id, name: party.name };
   }
 
   async getPartyForDifficulty(): Promise<Array<{ level: number; hp?: number; ac?: number }>> {
@@ -184,18 +153,15 @@ export class EncounterBuilder {
     const partyMembers: Array<{ level: number; hp?: number; ac?: number }> = [];
 
     try {
-      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-      if (!initiativePlugin?.data) return partyMembers;
+      const party = this.resolveParty();
+      if (!party) return partyMembers;
 
-      const party = this.resolveParty(initiativePlugin);
-      if (!party?.players) return partyMembers;
-
-      const players = this.getPartyPlayersFromParty(initiativePlugin, party, true);
-      for (const player of players) {
+      const resolved = await this.plugin.partyManager.resolveMembers(party.id);
+      for (const m of resolved) {
         partyMembers.push({
-          level: player.level || 1,
-          hp: player.hp || player.currentMaxHP,
-          ac: player.ac || player.currentAC
+          level: m.level,
+          hp: m.maxHp,
+          ac: m.ac,
         });
       }
     } catch (error) {
@@ -207,25 +173,41 @@ export class EncounterBuilder {
 
   async getSelectedPartyPlayers(): Promise<any[]> {
     try {
-      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-      if (!initiativePlugin?.data) return [];
+      const party = this.resolveParty();
+      if (!party) return [];
 
-      const party = this.resolveParty(initiativePlugin);
-      if (!party?.players) return [];
+      const resolved = await this.plugin.partyManager.resolveMembers(party.id);
+      const selectedNames = this.selectedPartyMembers.length > 0
+        ? new Set(this.selectedPartyMembers)
+        : null;
 
-      return this.getPartyPlayersFromParty(initiativePlugin, party, true);
+      return resolved
+        .filter((m) => !selectedNames || selectedNames.has(m.name))
+        .map((m) => ({
+          name: m.name,
+          level: m.level,
+          hp: m.maxHp,
+          currentMaxHP: m.maxHp,
+          currentHP: m.hp,
+          ac: m.ac,
+          currentAC: m.ac,
+          thp: m.thp,
+          path: m.notePath,
+          note: m.notePath,
+          tokenId: m.tokenId,
+          initBonus: m.initBonus,
+        }));
     } catch (error) {
       console.error("Error getting selected party players:", error);
       return [];
     }
   }
 
-  resolveParty(initiativePlugin: any, campaignNameOverride?: string): any | null {
-    const parties: any[] = initiativePlugin?.data?.parties || [];
-    if (parties.length === 0) return null;
+  resolveParty(campaignNameOverride?: string): any | null {
+    const pm = this.plugin.partyManager;
 
     if (this.selectedPartyId) {
-      const selected = parties.find((p: any) => (p.id || p.name) === this.selectedPartyId);
+      const selected = pm.getParty(this.selectedPartyId) || pm.getPartyByName(this.selectedPartyId);
       if (selected) return selected;
     }
 
@@ -249,41 +231,11 @@ export class EncounterBuilder {
 
     if (campaignName) {
       const partyName = `${campaignName} Party`;
-      const namedParty = parties.find((p: any) => p.name === partyName);
-      if (namedParty) {
-        return namedParty;
-      } else {
-      }
+      const namedParty = pm.getPartyByName(partyName);
+      if (namedParty) return namedParty;
     }
 
-    if (initiativePlugin?.data?.defaultParty) {
-      const defaultParty = parties.find((p: any) => p.id === initiativePlugin.data.defaultParty);
-      if (defaultParty) {
-        return defaultParty;
-      }
-    }
-
-    return parties[0] || null;
-  }
-
-  getPartyPlayersFromParty(initiativePlugin: any, party: any, filterSelected = true): any[] {
-    const players: any[] = initiativePlugin?.data?.players || [];
-    const playerById = new Map(players.map(p => [p.id, p]));
-    const playerByName = new Map(players.map(p => [p.name, p]));
-
-    const selectedNames = filterSelected && this.selectedPartyMembers.length > 0
-      ? new Set(this.selectedPartyMembers)
-      : null;
-
-    const results: any[] = [];
-    for (const entry of party.players || []) {
-      const player = playerById.get(entry) || playerByName.get(entry);
-      if (!player) continue;
-      if (selectedNames && !selectedNames.has(player.name)) continue;
-      results.push(player);
-    }
-
-    return results;
+    return pm.getDefaultParty() || null;
   }
 
   getCRStats(cr: string | undefined): { hp: number; ac: number; dpr: number; attackBonus: number; xp: number } {
@@ -1342,28 +1294,11 @@ export class EncounterBuilder {
     return creatures;
   }
 
-  async createInitiativeTrackerEncounter(scenePath: string) {
+  async createEncounter(scenePath: string) {
     if (this.creatures.length === 0) return;
 
     try {
-      const initiativePlugin = (this.app as any).plugins?.plugins?.["initiative-tracker"];
-      if (!initiativePlugin) {
-        new Notice("⚠️ Initiative Tracker plugin not found. Encounter data saved to scene frontmatter only.");
-        return;
-      }
-
-
-      // Debug: Log creature data before building encounter
-
-      // Helper function to generate unique IDs like Initiative Tracker does
-      const generateId = () => {
-        const chars = '0123456789abcdef';
-        let id = 'ID_';
-        for (let i = 0; i < 12; i++) {
-          id += chars[Math.floor(Math.random() * chars.length)];
-        }
-        return id;
-      };
+      const pm = this.plugin.partyManager;
 
       // Color names for duplicate creatures
       const colors = [
@@ -1374,98 +1309,75 @@ export class EncounterBuilder {
       ];
 
       // Get campaign party members if requested
-      let partyMembers: any[] = [];
+      let partyCreatures: import("../party/PartyTypes").StoredEncounterCreature[] = [];
       if (this.includeParty) {
-        partyMembers = await this.getCampaignPartyMembers(initiativePlugin);
+        partyCreatures = await this.getCampaignPartyCreatures();
       }
 
-      // Build creature data in Initiative Tracker format
-      const creatures = this.creatures.flatMap(c => {
-        const instances = [];
+      // Build creature data
+      const creatures: import("../party/PartyTypes").StoredEncounterCreature[] = this.creatures.flatMap(c => {
+        const instances: import("../party/PartyTypes").StoredEncounterCreature[] = [];
         for (let i = 0; i < c.count; i++) {
           const hp = c.hp || 1;
           const ac = c.ac || 10;
 
-          // Determine name and display based on useColorNames setting
-          // IMPORTANT: 'name' must be unique to prevent auto-numbering
-          // 'display' is used for visual representation in the tracker
-          // Initiative Tracker will auto-number duplicate names
-          let creatureName = c.name;  // Start with base name for bestiary lookup
-          let displayName = c.name;  // Always show at least the creature name
+          let creatureName = c.name;
+          let displayName = c.name;
 
           if (c.count > 1 && this.useColorNames) {
             const colorIndex = i % colors.length;
-            // Make name unique to prevent Initiative Tracker from auto-numbering
             creatureName = `${c.name} (${colors[colorIndex]})`;
             displayName = creatureName;
           }
-          // For single creatures or multiple without colors, name and display are just the creature name
-          // Initiative Tracker will add numbers automatically for duplicates
 
-          const creature = {
-            name: creatureName,  // Unique name for each creature instance
-            display: displayName,  // Display name (always has a value now)
+          instances.push({
+            name: creatureName,
+            display: displayName,
             initiative: 0,
-            static: false,
-            modifier: 0,  // Initiative modifier
+            modifier: 0,
             hp: hp,
-            currentMaxHP: hp,  // Initiative Tracker uses currentMaxHP, not max
+            maxHP: hp,
+            currentHP: hp,
+            tempHP: 0,
             cr: c.cr || undefined,
-            ac: ac,  // AC as number
-            currentAC: ac,  // Initiative Tracker also tracks currentAC
-            id: generateId(),  // CRITICAL: Unique ID for each creature instance
-            currentHP: hp,  // Initiative Tracker uses currentHP, not hp
-            tempHP: 0,  // Initiative Tracker uses tempHP, not temp
-            status: [],  // Array of status effects
+            ac: ac,
+            currentAC: ac,
+            id: pm.generateId(),
             enabled: true,
-            active: false,  // Whether this creature is currently active in turn order
-            hidden: false,  // Hidden from players
-            friendly: false,  // Friendly to players
-            rollHP: false,  // Whether to roll HP when adding to tracker
-            note: c.path || "",  // Path to statblock file for Fantasy Statblock plugin
-            path: c.path || ""   // Also store path field for compatibility
-          };
-          instances.push(creature);
+            hidden: false,
+            friendly: false,
+            player: false,
+            notePath: c.path || undefined,
+            statuses: [],
+          });
         }
         return instances;
       });
 
-      // Save encounter to Initiative Tracker's data.encounters for later loading
-      if (initiativePlugin.data && typeof initiativePlugin.data.encounters === 'object') {
+      const allCombatants = [...partyCreatures, ...creatures];
 
-        // Combine party members and creatures
-        const allCombatants = [...partyMembers, ...creatures];
+      const encounter = pm.buildEncounter(
+        this.encounterName,
+        allCombatants,
+        scenePath,
+      );
 
-        // Initiative Tracker stores encounters as: data.encounters[name] = { creatures, state, name, round, ... }
-        initiativePlugin.data.encounters[this.encounterName] = {
-          creatures: allCombatants,
-          state: false,
-          name: this.encounterName,
-          round: 1,
-          logFile: null,
-          rollHP: false
-        };
-
-        // Save settings to persist the encounter
-        if (initiativePlugin.saveSettings) {
-          await initiativePlugin.saveSettings();
-          new Notice(`✅ Encounter "${this.encounterName}" saved! Use "Load Encounter" in Initiative Tracker to start combat.`);
-        }
-      } else {
-        new Notice(`⚠️ Encounter data saved to scene frontmatter only. Load manually in Initiative Tracker.`);
-      }
+      await pm.saveEncounter(this.encounterName, encounter);
+      new Notice(`✅ Encounter "${this.encounterName}" saved!`);
 
       // Link encounter to scene
       await this.linkEncounterToScene(scenePath);
 
     } catch (error) {
-      console.error("Error creating Initiative Tracker encounter:", error);
-      new Notice("⚠️ Could not save encounter to Initiative Tracker. Check console for details.");
+      console.error("Error creating encounter:", error);
+      new Notice("⚠️ Could not save encounter. Check console for details.");
     }
   }
 
-  async getCampaignPartyMembers(initiativePlugin: any): Promise<any[]> {
+  async getCampaignPartyCreatures(): Promise<import("../party/PartyTypes").StoredEncounterCreature[]> {
     try {
+      const pm = this.plugin.partyManager;
+
       // Get campaign name from adventure path
       const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
       if (!(adventureFile instanceof TFile)) return [];
@@ -1475,25 +1387,20 @@ export class EncounterBuilder {
       const campaignName = (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
 
       // Find the campaign's party
-      const party = this.resolveParty(initiativePlugin, campaignName);
+      const party = this.resolveParty(campaignName);
+      if (!party || party.members.length === 0) return [];
 
-      if (!party || !party.players || party.players.length === 0) {
-        return [];
-      }
+      // Resolve live stats and convert to encounter creatures
+      const resolved = await pm.resolveMembers(party.id);
 
-      // Get all player data for party members
-      const partyMembers: any[] = [];
-      const players = this.getPartyPlayersFromParty(initiativePlugin, party, true);
-      for (const player of players) {
-        partyMembers.push({
-          ...player,
-          initiative: 0,
-          active: false,
-          enabled: true
-        });
-      }
+      // Filter by selected party members if applicable
+      const selectedNames = this.selectedPartyMembers.length > 0
+        ? new Set(this.selectedPartyMembers)
+        : null;
 
-      return partyMembers;
+      return resolved
+        .filter(m => m.enabled && (!selectedNames || selectedNames.has(m.name)))
+        .map(m => pm.memberToEncounterCreature(m));
     } catch (error) {
       console.error("Error fetching party members:", error);
       return [];

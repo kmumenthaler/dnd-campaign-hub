@@ -1399,88 +1399,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		// Initial population
 		refreshVisionSelector();
 
-		// === INITIATIVE TRACKER INTEGRATION ===
-		// Sync vision token selection with Initiative Tracker's active combatant.
-		// When the GM advances turns in Initiative Tracker, automatically toggle
-		// the vision to the matching token if it's a player or has "Show to Players".
-		// When the active creature has no eligible vision token, fall back to "All Players".
-		
-		// Use registerEvent for proper Obsidian lifecycle management.
-		// The event listener lives as long as the plugin, but we guard with el.isConnected
-		// to only act when this specific map view is still active.
-		plugin.registerEvent(
-			plugin.app.workspace.on('initiative-tracker:save-state' as any, (state: any) => {
-				// Only process if this map view is still in the DOM
-				if (!el.isConnected) return;
-				
-				if (!state || !Array.isArray(state.creatures)) return;
-				
-				// Find the active creature (whose turn it is)
-				const activeCreature = state.creatures.find((c: any) => c.active);
-				if (!activeCreature) return;
-				
-				// Collect vision-eligible tokens (player tokens + "Show to Players" tokens)
-				const visionTokens = (config.markers || []).filter((m: any) => {
-					const markerDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
-					if (!markerDef) return false;
-					return markerDef.type === 'player' || m.visibleToPlayers;
-				});
-				
-				// Only attempt token matching for player or friendly creatures.
-				// Enemy creatures will never match and vision falls to "All Players".
-				let matchedMarker: any = null;
-				if (activeCreature.player || activeCreature.friendly) {
-					// First try precise token_id match via creature's vault note path
-					const creaturePath = activeCreature.path || activeCreature.note;
-					if (creaturePath && typeof creaturePath === 'string') {
-						const noteFile = plugin.app.vault.getAbstractFileByPath(creaturePath);
-						if (noteFile instanceof TFile) {
-							const noteCache = plugin.app.metadataCache.getFileCache(noteFile);
-							const noteTokenId = noteCache?.frontmatter?.token_id;
-							if (noteTokenId) {
-								matchedMarker = visionTokens.find((m: any) => m.markerId === noteTokenId);
-							}
-						}
-					}
-
-					// Fallback: name-based matching
-					//   1. Exact match with IT creature's display name
-					//   2. Exact match with IT creature's base name
-					//   3. Display name starts with marker name (handles "Zombie (Red)" matching "Zombie")
-					if (!matchedMarker) {
-						matchedMarker = visionTokens.find((m: any) => {
-							const markerDef = plugin.markerLibrary.getMarker(m.markerId);
-							if (!markerDef) return false;
-							const markerName = markerDef.name.toLowerCase();
-							const displayName = (activeCreature.display || '').toLowerCase();
-							const baseName = (activeCreature.name || '').toLowerCase();
-							return displayName === markerName || baseName === markerName || displayName.startsWith(markerName);
-						});
-					}
-				}
-				
-				if (matchedMarker && selectedVisionTokenId !== matchedMarker.id) {
-					// Active creature matched a vision-eligible token → switch to it
-					selectedVisionTokenId = matchedMarker.id;
-					refreshVisionSelector();
-					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-					const markerDef = plugin.markerLibrary.getMarker(matchedMarker.markerId);
-					const icon = markerDef?.type === 'player' ? '👤' : markerDef?.type === 'creature' ? '👹' : '🧑';
-					new Notice(`Vision synced: ${icon} ${markerDef?.name || matchedMarker.id}`);
-				} else if (!matchedMarker && selectedVisionTokenId !== null) {
-					// No eligible token matched (enemy creature, or no map token) → "All Players"
-					selectedVisionTokenId = null;
-					refreshVisionSelector();
-					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
-					new Notice('Vision synced: 👥 All Players');
-				}
-			})
-		);
-
 		// === COMBAT TRACKER VISION SYNC ===
-		// Mirror the IT integration above but driven by our built-in CombatTracker.
-		// When the GM advances turns, automatically switch the "View as" to the
-		// matching player token so the projected player view shows that PC's vision.
+		// When the GM advances turns in the Combat Tracker, automatically switch
+		// the "View as" to the matching player token so the projected player view
+		// shows that PC's vision. Enemy creatures fall back to "All Players".
 		if (plugin.combatTracker) {
 			let ctPrevTurnIndex = -1;
 			let ctPrevRound = -1;
@@ -12118,9 +12040,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					'#ff66cc', '#00cccc', '#ff00ff', '#88ff00', '#009999', '#ffd700',
 				];
 
-				const initiativeTracker = (plugin.app as any).plugins?.plugins?.["initiative-tracker"];
-
-				// Prefer our Combat Tracker's active state; fall back to IT
+				// Use our Combat Tracker's active state
 				const combatState = plugin.combatTracker.getState();
 				let creatures: any[];
 
@@ -12135,13 +12055,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						note: c.notePath,
 						tokenId: c.tokenId,
 					}));
-				} else if (initiativeTracker) {
-					const itState = initiativeTracker.data?.state;
-					if (!itState || !Array.isArray(itState.creatures) || itState.creatures.length === 0) {
-						new Notice('\u26a0\ufe0f No active combat or encounter loaded');
-						return;
-					}
-					creatures = itState.creatures;
 				} else {
 					new Notice('\u26a0\ufe0f No active combat — run an encounter first');
 					return;
@@ -12159,7 +12072,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 				});
 
-				// Group IT creatures by base name to detect duplicates
+				// Group creatures by base name to detect duplicates
 				const creaturesByName = new Map<string, any[]>();
 				for (const c of creatures) {
 					const baseName = c.name || c.display || 'Unknown';

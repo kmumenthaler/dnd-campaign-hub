@@ -645,9 +645,9 @@ date: ${currentDate}
           await this.app.vault.delete(originalFile);
         }
 
-        // Update Initiative Tracker encounter
+        // Save encounter via PartyManager
         if (this.createEncounter && this.creatures.length > 0) {
-          await this.encounterBuilder.createInitiativeTrackerEncounter(targetPath);
+          await this.saveEncounterData(targetPath);
         }
 
         // Open the updated scene
@@ -756,9 +756,9 @@ date: ${currentDate}
 
       await this.createSceneNote(scenePath, sceneData, campaignName, worldName, adventureFile.basename, currentDate, encounterFilePath);
 
-      // Save to Initiative Tracker after scene is created
+      // Save encounter via PartyManager after scene is created
       if (this.createEncounter && this.creatures.length > 0) {
-        await this.encounterBuilder.createInitiativeTrackerEncounter(scenePath);
+        await this.saveEncounterData(scenePath);
       }
 
       // Open the new scene
@@ -2181,16 +2181,15 @@ date: ${currentDate}
   }
 
   /**
-   * Create encounter in Initiative Tracker and link to scene
+   * Save encounter via PartyManager and link to scene
    * Note: The encounter file is saved earlier in createSceneFile
    */
-  async createInitiativeTrackerEncounter(scenePath: string) {
+  async saveEncounterData(scenePath: string) {
     if (!this.createEncounter || this.creatures.length === 0) return;
 
     this.syncEncounterBuilder();
     
-    // Save to Initiative Tracker plugin
-    await this.encounterBuilder.createInitiativeTrackerEncounter(scenePath);
+    await this.encounterBuilder.createEncounter(scenePath);
   }
 
   /**
@@ -2330,41 +2329,13 @@ const buttonContainer = dv.el("div", "", {
   attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
 });
 
-// Open Initiative Tracker and load encounter button
+// Open Combat Tracker and load encounter button
 const openTrackerBtn = buttonContainer.createEl("button", { 
-  text: "⚔️ Open & Load in Tracker",
+  text: "⚔️ Load in Combat Tracker",
   attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px; background-color: var(--interactive-accent); color: var(--text-on-accent);" }
 });
 openTrackerBtn.addEventListener("click", async () => {
-  const encounterName = dv.current().name;
-  const initiativeTracker = app.plugins?.plugins?.["initiative-tracker"];
-  
-  if (!initiativeTracker) {
-    new Notice("Initiative Tracker plugin not found");
-    return;
-  }
-  
-  const encounter = initiativeTracker.data?.encounters?.[encounterName];
-  if (!encounter) {
-    new Notice("Encounter \\"" + encounterName + "\\" not found. Try recreating it.");
-    return;
-  }
-  
-  // Use Initiative Tracker's internal tracker API to load the encounter
-  try {
-    if (initiativeTracker.tracker?.new) {
-      initiativeTracker.tracker.new(initiativeTracker, encounter);
-      new Notice("✅ Loaded encounter: " + encounterName);
-    } else {
-      new Notice("⚠️ Could not load encounter. Try using Load Encounter from Initiative Tracker menu.");
-    }
-  } catch (e) {
-    console.error("Error loading encounter:", e);
-    new Notice("⚠️ Could not load encounter: " + e.message);
-  }
-  
-  // Open Initiative Tracker view
-  app.commands.executeCommandById("initiative-tracker:open-tracker");
+  app.commands.executeCommandById("dnd-campaign-hub:open-combat-tracker");
 });
 
 // Edit button
@@ -2487,11 +2458,11 @@ _Add notes about tactics, environment, or special conditions here._
   }
 
   /**
-   * Get party members for the current campaign
+   * Get party member creatures for the current campaign
    */
-  async getCampaignPartyMembers(initiativePlugin: any): Promise<any[]> {
+  async getCampaignPartyCreatures(): Promise<import("../party/PartyTypes").StoredEncounterCreature[]> {
     this.syncEncounterBuilder();
-    return this.encounterBuilder.getCampaignPartyMembers(initiativePlugin);
+    return this.encounterBuilder.getCampaignPartyCreatures();
   }
 
   /**

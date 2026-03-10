@@ -260,8 +260,7 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
       { id: "buttons", name: "Buttons", url: "obsidian://show-plugin?id=buttons" },
       { id: "dataview", name: "Dataview", url: "obsidian://show-plugin?id=dataview" },
       { id: "calendarium", name: "Calendarium", url: "obsidian://show-plugin?id=calendarium" },
-      { id: "templater-obsidian", name: "Templater", url: "obsidian://show-plugin?id=templater-obsidian" },
-      { id: "initiative-tracker", name: "Initiative Tracker", url: "obsidian://show-plugin?id=initiative-tracker" }
+      { id: "templater-obsidian", name: "Templater", url: "obsidian://show-plugin?id=templater-obsidian" }
     ];
 
     for (const plugin of requiredPlugins) {
