@@ -1,15 +1,20 @@
 /* ── Party Management Data Model ─────────────────────────────── */
 
-/** A reference to a PC in a party. The vault note is the source of truth;
+/** Role of a party member. */
+export type PartyMemberRole = "pc" | "companion";
+
+/** A reference to a member in a party. The vault note is the source of truth;
  *  we only store the path here and resolve stats on demand. */
 export interface PartyMemberRef {
-  /** Vault path to the PC note (e.g. "ttrpgs/Campaign/PCs/Alara.md"). */
+  /** Vault path to the note (e.g. "ttrpgs/Campaign/PCs/Alara.md"). */
   notePath: string;
   /** Cached display name (updated on sync). */
   name: string;
+  /** Member role — "pc" (default) or "companion" (NPC / creature). */
+  role?: PartyMemberRole;
 }
 
-/** Resolved stats for a party member — fetched live from PC note frontmatter. */
+/** Resolved stats for a party member — fetched live from note frontmatter. */
 export interface ResolvedPartyMember {
   name: string;
   notePath: string;
@@ -29,6 +34,10 @@ export interface ResolvedPartyMember {
   class?: string;
   /** Active — false if the PC has been retired or killed. */
   enabled: boolean;
+  /** Member role — "pc" (default) or "companion". */
+  role: PartyMemberRole;
+  /** Challenge rating (creatures only). */
+  cr?: string;
 }
 
 /** A named party — a group of PCs that adventure together. */

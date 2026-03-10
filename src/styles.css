@@ -1959,6 +1959,35 @@
   opacity: 0.5;
 }
 
+.dnd-pm-card.is-companion {
+  border-left: 3px solid var(--color-orange, #e89c30);
+}
+
+/* Role badge (Companion label) */
+.dnd-pm-role-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(var(--color-orange-rgb, 232, 156, 48), 0.15);
+  color: var(--color-orange, #e89c30);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+/* Companion add button accent */
+.dnd-pm-add-companion-btn {
+  border-color: var(--color-orange, #e89c30) !important;
+  color: var(--color-orange, #e89c30) !important;
+}
+
+.dnd-pm-add-companion-btn:hover {
+  background: rgba(var(--color-orange-rgb, 232, 156, 48), 0.12) !important;
+}
+
 /* Drag Handle */
 .dnd-pm-drag-handle {
   grid-row: 1 / -1;
@@ -2230,6 +2259,8 @@
 .dnd-pm-add-row {
   display: flex;
   justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .dnd-pm-add-btn {

@@ -2,6 +2,7 @@ import { App, TFile, Notice } from "obsidian";
 import type {
   Party,
   PartyMemberRef,
+  PartyMemberRole,
   ResolvedPartyMember,
   StoredEncounter,
   StoredEncounterCreature,
@@ -166,17 +167,24 @@ export class PartyManager {
 
   /* ────────────────── Member Management ────────────────── */
 
-  async addMember(partyId: string, notePath: string, name: string): Promise<boolean> {
+  async addMember(partyId: string, notePath: string, name: string, role?: PartyMemberRole): Promise<boolean> {
     const party = this.getParty(partyId);
     if (!party) return false;
 
     // Prevent duplicates
     if (party.members.some((m) => m.notePath === notePath)) return false;
 
-    party.members.push({ notePath, name });
+    const ref: PartyMemberRef = { notePath, name };
+    if (role && role !== "pc") ref.role = role;
+    party.members.push(ref);
     await this.save();
     this.emit();
     return true;
+  }
+
+  /** Convenience: add an NPC or creature as a companion. */
+  async addCompanion(partyId: string, notePath: string, name: string): Promise<boolean> {
+    return this.addMember(partyId, notePath, name, "companion");
   }
 
   async removeMember(partyId: string, notePath: string): Promise<boolean> {
@@ -378,7 +386,7 @@ export class PartyManager {
 
     const results: ResolvedPartyMember[] = [];
     for (const ref of party.members) {
-      const resolved = await this.resolveMemberFromNote(ref.notePath);
+      const resolved = await this.resolveMemberFromNote(ref.notePath, ref.role);
       if (resolved) {
         results.push(resolved);
       }
@@ -387,9 +395,9 @@ export class PartyManager {
   }
 
   /**
-   * Resolve a single PC's stats from their vault note frontmatter.
+   * Resolve a single member's stats from their vault note frontmatter.
    */
-  async resolveMemberFromNote(notePath: string): Promise<ResolvedPartyMember | null> {
+  async resolveMemberFromNote(notePath: string, role?: PartyMemberRole): Promise<ResolvedPartyMember | null> {
     const file = this.app.vault.getAbstractFileByPath(notePath);
     if (!(file instanceof TFile)) return null;
 
@@ -400,17 +408,19 @@ export class PartyManager {
     return {
       name: fm.name || file.basename,
       notePath,
-      level: parseInt(fm.level) || 1,
-      hp: parseInt(fm.hp) || parseInt(fm.hp_max) || 1,
-      maxHp: parseInt(fm.hp_max) || parseInt(fm.hp) || 1,
+      level: parseInt(fm.level) || (fm.cr ? 0 : 1),
+      hp: parseInt(fm.hp) || parseInt(fm.hp_max) || 0,
+      maxHp: parseInt(fm.hp_max) || parseInt(fm.hp) || 0,
       thp: parseInt(fm.thp) || 0,
       ac: parseInt(fm.ac) || 10,
       initBonus: parseInt(String(fm.init_bonus || "0").replace(/[^-\d]/g, "")) || 0,
       tokenId: fm.token_id || undefined,
       player: fm.player || undefined,
-      race: fm.race || undefined,
-      class: fm.class || undefined,
+      race: fm.race || fm.type || undefined,
+      class: fm.class || fm.subtype || undefined,
       enabled: fm.enabled !== false,
+      role: role || "pc",
+      cr: fm.cr != null ? String(fm.cr) : undefined,
     };
   }
 

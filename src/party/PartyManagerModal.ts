@@ -206,11 +206,17 @@ export class PartyManagerModal extends Modal {
       const emptyMembers = detail.createDiv({ cls: "dnd-pm-empty-members" });
       emptyMembers.createEl("div", { text: "👥", cls: "dnd-pm-empty-icon" });
       emptyMembers.createEl("p", { text: "No members in this party" });
-      const addHint = emptyMembers.createEl("button", {
+      const emptyRow = emptyMembers.createDiv({ cls: "dnd-pm-add-row" });
+      const addHint = emptyRow.createEl("button", {
         cls: "dnd-pm-add-btn",
         text: "Add a PC",
       });
       addHint.addEventListener("click", () => this.openPCSelectorForParty(party));
+      const addCompHint = emptyRow.createEl("button", {
+        cls: "dnd-pm-add-btn dnd-pm-add-companion-btn",
+        text: "Add Companion",
+      });
+      addCompHint.addEventListener("click", () => this.openCompanionSelectorForParty(party));
       return;
     }
 
@@ -224,11 +230,15 @@ export class PartyManagerModal extends Modal {
       this.renderMemberCard(cardsContainer, party, members[i]!, i, members.length);
     }
 
-    // ── Add member button at bottom ──
+    // ── Add member buttons at bottom ──
     const addRow = detail.createDiv({ cls: "dnd-pm-add-row" });
     const addBtn = addRow.createEl("button", { cls: "dnd-pm-add-btn" });
     addBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add PC`;
     addBtn.addEventListener("click", () => this.openPCSelectorForParty(party));
+
+    const addCompanionBtn = addRow.createEl("button", { cls: "dnd-pm-add-btn dnd-pm-add-companion-btn" });
+    addCompanionBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Companion`;
+    addCompanionBtn.addEventListener("click", () => this.openCompanionSelectorForParty(party));
   }
 
   /* ──────────────────────── Campaign Link ──────────────────────── */
@@ -321,11 +331,13 @@ export class PartyManagerModal extends Modal {
   private renderSummaryBar(container: HTMLElement, members: ResolvedPartyMember[]) {
     const bar = container.createDiv({ cls: "dnd-pm-summary" });
 
+    const pcs = members.filter((m) => m.role !== "companion");
+    const companions = members.filter((m) => m.role === "companion");
     const totalHP = members.reduce((s, m) => s + m.hp, 0);
     const totalMaxHP = members.reduce((s, m) => s + m.maxHp, 0);
     const hpPct = totalMaxHP > 0 ? Math.round((totalHP / totalMaxHP) * 100) : 0;
     const avgAC = members.length > 0 ? Math.round(members.reduce((s, m) => s + m.ac, 0) / members.length) : 0;
-    const avgLevel = members.length > 0 ? (members.reduce((s, m) => s + m.level, 0) / members.length) : 0;
+    const avgLevel = pcs.length > 0 ? (pcs.reduce((s, m) => s + m.level, 0) / pcs.length) : 0;
 
     // Members count
     const stat = (icon: string, label: string, value: string) => {
@@ -336,7 +348,10 @@ export class PartyManagerModal extends Modal {
       return s;
     };
 
-    stat("👥", "Members", String(members.length));
+    const memberStr = companions.length > 0
+      ? `${pcs.length} PC${pcs.length !== 1 ? "s" : ""} + ${companions.length}`
+      : String(members.length);
+    stat("👥", "Members", memberStr);
 
     // Party HP with mini bar
     const hpStat = stat("❤️", "HP", `${totalHP}/${totalMaxHP}`);
@@ -361,8 +376,9 @@ export class PartyManagerModal extends Modal {
     total: number,
   ) {
     const isExpanded = this.expandedMembers.has(member.notePath);
+    const isCompanion = member.role === "companion";
     const card = container.createDiv({
-      cls: `dnd-pm-card${isExpanded ? " is-expanded" : ""}${!member.enabled ? " is-disabled" : ""}`,
+      cls: `dnd-pm-card${isExpanded ? " is-expanded" : ""}${!member.enabled ? " is-disabled" : ""}${isCompanion ? " is-companion" : ""}`,
     });
     card.dataset.index = String(index);
 
@@ -415,6 +431,9 @@ export class PartyManagerModal extends Modal {
 
     // Name row
     const nameRow = info.createDiv({ cls: "dnd-pm-name-row" });
+    if (isCompanion) {
+      nameRow.createSpan({ text: "Companion", cls: "dnd-pm-role-badge" });
+    }
     const nameLink = nameRow.createEl("a", { text: member.name, cls: "dnd-pm-name" });
     nameLink.addEventListener("click", (e) => {
       e.preventDefault();
@@ -424,8 +443,10 @@ export class PartyManagerModal extends Modal {
       }
     });
 
-    // Sub-text: class + race
-    const subtitle = [member.class, member.race].filter(Boolean).join(" · ");
+    // Sub-text: class + race, or CR for creatures
+    const subtitleParts = [member.class, member.race].filter(Boolean);
+    if (isCompanion && member.cr) subtitleParts.push(`CR ${member.cr}`);
+    const subtitle = subtitleParts.join(" · ");
     if (subtitle) {
       nameRow.createSpan({ text: subtitle, cls: "dnd-pm-subtitle" });
     }
@@ -433,10 +454,15 @@ export class PartyManagerModal extends Modal {
     // ── Stats row ──
     const statsRow = info.createDiv({ cls: "dnd-pm-stats-row" });
 
-    // Level badge
+    // Level / CR badge
     const lvl = statsRow.createDiv({ cls: "dnd-pm-badge dnd-pm-level-badge" });
-    lvl.createSpan({ text: "Lvl", cls: "dnd-pm-badge-label" });
-    lvl.createSpan({ text: String(member.level), cls: "dnd-pm-badge-value" });
+    if (isCompanion && member.cr) {
+      lvl.createSpan({ text: "CR", cls: "dnd-pm-badge-label" });
+      lvl.createSpan({ text: member.cr, cls: "dnd-pm-badge-value" });
+    } else {
+      lvl.createSpan({ text: "Lvl", cls: "dnd-pm-badge-label" });
+      lvl.createSpan({ text: String(member.level), cls: "dnd-pm-badge-value" });
+    }
 
     // HP
     const hpPct = member.maxHp > 0 ? Math.max(0, Math.min(100, (member.hp / member.maxHp) * 100)) : 0;
@@ -529,7 +555,9 @@ export class PartyManagerModal extends Modal {
       addDetail("Player", member.player);
       addDetail("Race", member.race);
       addDetail("Class", member.class);
-      addDetail("Level", String(member.level));
+      addDetail("Level", member.level > 0 ? String(member.level) : undefined);
+      addDetail("CR", member.cr);
+      addDetail("Role", isCompanion ? "Companion" : "PC");
       addDetail("Temp HP", member.thp > 0 ? String(member.thp) : undefined);
       addDetail("Init Bonus", initVal);
       addDetail("Token", member.tokenId ? "Assigned" : "None");
@@ -596,6 +624,28 @@ export class PartyManagerModal extends Modal {
       const cache = this.app.metadataCache.getFileCache(file);
       const name = cache?.frontmatter?.name || file.basename;
       await this.manager.addMember(party.id, file.path, name);
+      this.render();
+    }).open();
+  }
+
+  private openCompanionSelectorForParty(party: Party) {
+    const existingPaths = new Set(party.members.map((m) => m.notePath));
+    const companionFiles = this.app.vault.getFiles().filter((f) => {
+      if (existingPaths.has(f.path)) return false;
+      const cache = this.app.metadataCache.getFileCache(f);
+      const type = cache?.frontmatter?.type;
+      return type === "npc" || type === "creature";
+    });
+
+    if (companionFiles.length === 0) {
+      new Notice("No NPC or creature notes found");
+      return;
+    }
+
+    new CompanionSelectorModal(this.app, companionFiles, async (file) => {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const name = cache?.frontmatter?.name || file.basename;
+      await this.manager.addCompanion(party.id, file.path, name);
       this.render();
     }).open();
   }
@@ -705,6 +755,38 @@ class CampaignFolderModal extends FuzzySuggestModal<TFolder> {
   }
 
   onChooseItem(item: TFolder): void {
+    this.onChoose(item);
+  }
+}
+
+/** Fuzzy-search modal to select an NPC or creature note as a companion. */
+class CompanionSelectorModal extends FuzzySuggestModal<TFile> {
+  private files: TFile[];
+  private onChoose: (file: TFile) => void;
+
+  constructor(app: App, files: TFile[], onChoose: (file: TFile) => void) {
+    super(app);
+    this.files = files;
+    this.onChoose = onChoose;
+    this.setPlaceholder("Search NPCs and creatures…");
+  }
+
+  getItems(): TFile[] {
+    return this.files;
+  }
+
+  getItemText(item: TFile): string {
+    const cache = this.app.metadataCache.getFileCache(item);
+    const fm = cache?.frontmatter;
+    const name = fm?.name || item.basename;
+    const type = fm?.type === "creature" ? "Creature" : "NPC";
+    const extra = fm?.type === "creature"
+      ? (fm.cr ? ` CR ${fm.cr}` : "")
+      : (fm?.occupation ? ` — ${fm.occupation}` : "");
+    return `${name} (${type}${extra})`;
+  }
+
+  onChooseItem(item: TFile): void {
     this.onChoose(item);
   }
 }
