@@ -67,6 +67,9 @@ export class SessionRunDashboardView extends ItemView {
   async onOpen() {
     // Find current session file
     await this.detectCurrentSession();
+
+    // Load existing quick notes from the session file
+    await this.loadQuickNotes();
     
     await this.render();
     
@@ -140,13 +143,27 @@ export class SessionRunDashboardView extends ItemView {
     return 0;
   }
 
-  enableReadOnlyMode() {
-    this.readOnlyMode = true;
-    // Set all markdown views to read mode
+  /** Detect whether any open markdown leaves are currently in source/edit mode. */
+  private detectActualEditMode(): boolean {
+    let anyEditable = false;
     this.app.workspace.iterateAllLeaves((leaf) => {
       if (leaf.view.getViewType() === "markdown") {
         const view = leaf.view as any;
-        if (view.getMode && view.getMode() === "source") {
+        if (typeof view.getMode === 'function' && view.getMode() === 'source') {
+          anyEditable = true;
+        }
+      }
+    });
+    return anyEditable;
+  }
+
+  enableReadOnlyMode() {
+    this.readOnlyMode = true;
+    // Set all markdown views to read/preview mode
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (leaf.view.getViewType() === "markdown") {
+        const view = leaf.view as any;
+        if (typeof view.getMode === 'function' && view.getMode() === 'source') {
           const state = view.getState();
           view.setState({ ...state, mode: "preview" }, {});
         }
@@ -156,7 +173,16 @@ export class SessionRunDashboardView extends ItemView {
 
   disableReadOnlyMode() {
     this.readOnlyMode = false;
-    // User can manually switch views back to edit mode
+    // Switch all markdown views back to source/edit mode
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (leaf.view.getViewType() === "markdown") {
+        const view = leaf.view as any;
+        if (typeof view.getMode === 'function' && view.getMode() === 'preview') {
+          const state = view.getState();
+          view.setState({ ...state, mode: "source" }, {});
+        }
+      }
+    });
   }
 
   startAutoSave() {
@@ -178,8 +204,8 @@ export class SessionRunDashboardView extends ItemView {
       const quickNotesMarker = "## Quick Notes (During Session)";
       
       if (content.includes(quickNotesMarker)) {
-        // Update existing section
-        const regex = /## Quick Notes \(During Session\)\s*\n([\s\S]*?)(?=\n##|$)/;
+        // Update existing section — match until next heading or end of file
+        const regex = /(## Quick Notes \(During Session\)\s*\n)[\s\S]*?(?=\n## |$)/;
         const newContent = content.replace(
           regex,
           `## Quick Notes (During Session)\n\n${this.quickNotesContent}\n`
@@ -187,11 +213,31 @@ export class SessionRunDashboardView extends ItemView {
         await this.app.vault.modify(this.currentSessionFile, newContent);
       } else {
         // Add new section at the end
-        const newContent = content + `\n\n${quickNotesMarker}\n\n${this.quickNotesContent}\n`;
+        const newContent = content.trimEnd() + `\n\n${quickNotesMarker}\n\n${this.quickNotesContent}\n`;
         await this.app.vault.modify(this.currentSessionFile, newContent);
       }
     } catch (error) {
       console.error("Error saving quick notes:", error);
+    }
+  }
+
+  /** Load existing quick notes from the session file on startup. */
+  async loadQuickNotes() {
+    if (!this.currentSessionFile) return;
+
+    try {
+      const content = await this.app.vault.read(this.currentSessionFile);
+      const marker = "## Quick Notes (During Session)";
+      const idx = content.indexOf(marker);
+      if (idx === -1) return;
+
+      // Extract text between the marker and the next heading or end of file
+      const afterMarker = content.slice(idx + marker.length);
+      const nextHeading = afterMarker.search(/\n## /);
+      const section = nextHeading === -1 ? afterMarker : afterMarker.slice(0, nextHeading);
+      this.quickNotesContent = section.trim();
+    } catch (error) {
+      console.error("Error loading quick notes:", error);
     }
   }
 
@@ -299,7 +345,13 @@ export class SessionRunDashboardView extends ItemView {
       cls: "session-name-compact"
     });
 
-    // Read-only mode toggle
+    // Read-only mode toggle — sync with actual workspace state
+    const anyEditable = this.detectActualEditMode();
+    if (anyEditable && this.readOnlyMode) {
+      // Workspace drifted — a leaf was manually switched to edit mode
+      this.readOnlyMode = false;
+    }
+
     const modeToggle = header.createEl("div", { cls: "mode-toggle-compact" });
     const toggleBtn = modeToggle.createEl("button", {
       text: this.readOnlyMode ? "🔒 Read-Only" : "🔓 Editable",
@@ -923,6 +975,15 @@ export class SessionRunDashboardView extends ItemView {
     section.createEl("h3", { text: "⚡ Quick Actions" });
     
     const actions = section.createEl("div", { cls: "quick-actions-compact" });
+
+    // Session Projection Hub
+    const projectionBtn = actions.createEl("button", {
+      text: "🎬 Projection Hub",
+      cls: "quick-action-button"
+    });
+    projectionBtn.addEventListener("click", () => {
+      (this.app as any).commands?.executeCommandById("dnd-campaign-hub:session-projection-hub");
+    });
 
     // Combat Tracker
     const initiativeBtn = actions.createEl("button", {
