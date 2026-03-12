@@ -129,7 +129,7 @@ export class DndHubModal extends Modal {
   private campaignFromPath(filePath: string): string {
     if (!filePath.startsWith("ttrpgs/")) return "";
     const parts = filePath.split("/");
-    return parts.length >= 2 ? parts[1] : "";
+    return parts.length >= 2 ? (parts[1] ?? "") : "";
   }
 
   /** Query a single folder and return results tagged with campaign origin. */
@@ -400,7 +400,7 @@ export class DndHubModal extends Modal {
 
   private hasMixedCampaigns(entities: EntityResult[]): boolean {
     if (entities.length === 0) return false;
-    const first = entities[0].campaign;
+    const first = entities[0]?.campaign;
     return entities.some((e) => e.campaign !== first);
   }
 

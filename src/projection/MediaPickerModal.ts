@@ -189,6 +189,7 @@ export class MediaPickerModal extends Modal {
     const fragment = document.createDocumentFragment();
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      if (!file) continue;
       const card = createDiv({ cls: 'image-file-card' });
       card.dataset.filePath = file.path;
       card.dataset.fileIndex = String(i);
