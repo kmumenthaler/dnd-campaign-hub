@@ -142,7 +142,7 @@ import { DeleteMapConfirmModal } from './map-views/DeleteMapConfirmModal';
 import { TabletopCalibrationModal } from './map-views/TabletopCalibrationModal';
 import { GmMapView } from './map-views/GmMapView';
 import { PlayerMapView } from './map-views/PlayerMapView';
-import { ProjectionManager } from './map-views/ProjectionManager';
+import { ProjectionManager } from './projection/ProjectionManager';
 import { SessionProjectionManager, IdleScreenView, SessionProjectionHubModal } from './projection';
 
 // ── Extracted function modules ──
