@@ -10,7 +10,7 @@
 import { Modal, Notice, Setting } from 'obsidian';
 import type DndCampaignHubPlugin from '../main';
 import { enumerateScreens, screenKey, type ScreenInfo } from '../utils/ScreenEnumeration';
-import type { IdleContentConfig, IdleContentType, ManagedScreenConfig } from './types';
+import type { IdleContentConfig, IdleContentType, ManagedScreenConfig, ProjectionProfile } from './types';
 import { DEFAULT_IDLE_CONTENT } from './types';
 import { MediaPickerModal, type MediaPickerFilter } from './MediaPickerModal';
 
@@ -20,6 +20,9 @@ export class SessionProjectionHubModal extends Modal {
 
   /** Configs being edited, keyed by screenKey. */
   private selectedScreens: Map<string, ManagedScreenConfig> = new Map();
+
+  /** Currently active profile ID (null = ad-hoc). */
+  private activeProfileId: string | null = null;
 
   constructor(plugin: DndCampaignHubPlugin) {
     super(plugin.app);
@@ -32,8 +35,9 @@ export class SessionProjectionHubModal extends Modal {
     this.modalEl.addClass('dnd-session-projection-modal');
 
     // Load saved config
-    const saved = this.plugin.settings.sessionProjection.managedScreens;
-    for (const cfg of saved) {
+    const sp = this.plugin.settings.sessionProjection;
+    this.activeProfileId = sp.activeProfileId;
+    for (const cfg of sp.managedScreens) {
       this.selectedScreens.set(cfg.screenKey, { ...cfg });
     }
 
@@ -114,6 +118,8 @@ export class SessionProjectionHubModal extends Modal {
   // ── Setup / configure view ──────────────────────────────────────
 
   private renderSetup(container: HTMLElement): void {
+    this.renderProfileBar(container);
+
     if (this.screens.length === 0) {
       container.createEl('p', {
         text: 'No screens detected. Make sure your monitors are connected and try again.',
@@ -201,6 +207,166 @@ export class SessionProjectionHubModal extends Modal {
           this.render();
         }),
     );
+  }
+
+  // ── Profile management ──────────────────────────────────────────
+
+  private renderProfileBar(container: HTMLElement): void {
+    const profiles = this.plugin.settings.sessionProjection.profiles ?? [];
+
+    const bar = container.createDiv({ cls: 'profile-bar' });
+
+    // Dropdown
+    new Setting(bar)
+      .setName('Profile')
+      .addDropdown((dd) => {
+        dd.addOption('', '— None —');
+        for (const p of profiles) {
+          dd.addOption(p.id, p.name);
+        }
+        dd.setValue(this.activeProfileId ?? '');
+        dd.onChange((id) => {
+          if (id) {
+            this.loadProfile(id);
+          } else {
+            this.activeProfileId = null;
+          }
+          this.render();
+        });
+      })
+      .addExtraButton((btn) => {
+        btn.setIcon('save').setTooltip('Save to profile').onClick(async () => {
+          if (!this.activeProfileId) {
+            this.promptSaveAs();
+            return;
+          }
+          this.saveToProfile(this.activeProfileId);
+          await this.saveConfig();
+          new Notice('Profile saved');
+        });
+      })
+      .addExtraButton((btn) => {
+        btn.setIcon('plus').setTooltip('Save as new profile').onClick(() => {
+          this.promptSaveAs();
+        });
+      })
+      .addExtraButton((btn) => {
+        btn.setIcon('pencil').setTooltip('Rename profile').onClick(() => {
+          if (!this.activeProfileId) {
+            new Notice('No profile selected');
+            return;
+          }
+          const profile = profiles.find((p) => p.id === this.activeProfileId);
+          if (profile) this.promptRename(profile);
+        });
+      })
+      .addExtraButton((btn) => {
+        btn.setIcon('trash').setTooltip('Delete profile').onClick(async () => {
+          if (!this.activeProfileId) {
+            new Notice('No profile selected');
+            return;
+          }
+          await this.deleteProfile(this.activeProfileId);
+          this.render();
+        });
+      });
+  }
+
+  /** Populate selectedScreens from a saved profile. */
+  private loadProfile(profileId: string): void {
+    const profiles = this.plugin.settings.sessionProjection.profiles ?? [];
+    const profile = profiles.find((p) => p.id === profileId);
+    if (!profile) return;
+    this.activeProfileId = profile.id;
+    this.selectedScreens.clear();
+    for (const cfg of profile.screens) {
+      this.selectedScreens.set(cfg.screenKey, { ...cfg, idleContent: { ...cfg.idleContent } });
+    }
+  }
+
+  /** Write current selectedScreens into an existing profile. */
+  private saveToProfile(profileId: string): void {
+    const sp = this.plugin.settings.sessionProjection;
+    const profile = (sp.profiles ?? []).find((p) => p.id === profileId);
+    if (!profile) return;
+    profile.screens = Array.from(this.selectedScreens.values()).map((c) => ({
+      ...c, idleContent: { ...c.idleContent },
+    }));
+  }
+
+  /** Prompt user for a name, then create a new profile from current config. */
+  private promptSaveAs(): void {
+    const modal = new Modal(this.app);
+    modal.titleEl.setText('Save Profile As');
+    let name = '';
+    new Setting(modal.contentEl)
+      .setName('Profile name')
+      .addText((text) => {
+        text.setPlaceholder('e.g. Main Campaign').onChange((v) => { name = v; });
+        // Auto-focus
+        setTimeout(() => text.inputEl.focus(), 50);
+      });
+    new Setting(modal.contentEl)
+      .addButton((btn) => {
+        btn.setButtonText('Save').setCta().onClick(async () => {
+          const trimmed = name.trim();
+          if (!trimmed) { new Notice('Please enter a name'); return; }
+          const id = Date.now().toString(36);
+          const newProfile: ProjectionProfile = {
+            id,
+            name: trimmed,
+            screens: Array.from(this.selectedScreens.values()).map((c) => ({
+              ...c, idleContent: { ...c.idleContent },
+            })),
+          };
+          const sp = this.plugin.settings.sessionProjection;
+          if (!sp.profiles) sp.profiles = [];
+          sp.profiles.push(newProfile);
+          this.activeProfileId = id;
+          await this.saveConfig();
+          modal.close();
+          new Notice(`Profile "${trimmed}" created`);
+          this.render();
+        });
+      });
+    modal.open();
+  }
+
+  /** Prompt user to rename an existing profile. */
+  private promptRename(profile: ProjectionProfile): void {
+    const modal = new Modal(this.app);
+    modal.titleEl.setText('Rename Profile');
+    let name = profile.name;
+    new Setting(modal.contentEl)
+      .setName('Profile name')
+      .addText((text) => {
+        text.setValue(name).onChange((v) => { name = v; });
+        setTimeout(() => { text.inputEl.focus(); text.inputEl.select(); }, 50);
+      });
+    new Setting(modal.contentEl)
+      .addButton((btn) => {
+        btn.setButtonText('Rename').setCta().onClick(async () => {
+          const trimmed = name.trim();
+          if (!trimmed) { new Notice('Please enter a name'); return; }
+          profile.name = trimmed;
+          await this.saveConfig();
+          modal.close();
+          new Notice(`Profile renamed to "${trimmed}"`);
+          this.render();
+        });
+      });
+    modal.open();
+  }
+
+  /** Delete a profile by ID. */
+  private async deleteProfile(profileId: string): Promise<void> {
+    const sp = this.plugin.settings.sessionProjection;
+    sp.profiles = (sp.profiles ?? []).filter((p) => p.id !== profileId);
+    if (this.activeProfileId === profileId) {
+      this.activeProfileId = null;
+    }
+    await this.saveConfig();
+    new Notice('Profile deleted');
   }
 
   // ── Idle content configuration per screen ───────────────────────
@@ -319,8 +485,9 @@ export class SessionProjectionHubModal extends Modal {
   // ── Persistence ─────────────────────────────────────────────────
 
   private async saveConfig(): Promise<void> {
-    this.plugin.settings.sessionProjection.managedScreens =
-      Array.from(this.selectedScreens.values());
+    const sp = this.plugin.settings.sessionProjection;
+    sp.managedScreens = Array.from(this.selectedScreens.values());
+    sp.activeProfileId = this.activeProfileId;
     await this.plugin.saveSettings();
   }
 }

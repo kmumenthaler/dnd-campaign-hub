@@ -60,14 +60,32 @@ export interface ManagedScreenState {
   mediaPath?: string;
 }
 
+// ── Profiles ───────────────────────────────────────────────────────────
+
+/** A named, saveable collection of managed-screen configurations. */
+export interface ProjectionProfile {
+  /** Unique identifier (generated once on creation). */
+  id: string;
+  /** User-visible name (e.g. "Main Campaign", "One-Shot Setup"). */
+  name: string;
+  /** The managed-screen configurations in this profile. */
+  screens: ManagedScreenConfig[];
+}
+
 // ── Settings extension ─────────────────────────────────────────────────
 
 /** Persisted session projection settings (embedded in DndCampaignHubSettings). */
 export interface SessionProjectionSettings {
   /** Screens the GM has configured as player-facing projectors. */
   managedScreens: ManagedScreenConfig[];
+  /** Saved projection profiles. */
+  profiles: ProjectionProfile[];
+  /** The ID of the currently-active profile (null = ad-hoc / none). */
+  activeProfileId: string | null;
 }
 
 export const DEFAULT_SESSION_PROJECTION_SETTINGS: SessionProjectionSettings = {
   managedScreens: [],
+  profiles: [],
+  activeProfileId: null,
 };

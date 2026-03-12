@@ -11,6 +11,7 @@ export type {
   ManagedScreenConfig,
   ManagedScreenState,
   ManagedScreenStatus,
+  ProjectionProfile,
   SessionProjectionSettings,
 } from './types';
 export { DEFAULT_IDLE_CONTENT, DEFAULT_SESSION_PROJECTION_SETTINGS } from './types';

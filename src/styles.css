@@ -10564,6 +10564,18 @@
   color: var(--text-muted);
 }
 
+.dnd-session-projection-modal .profile-bar {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--background-secondary);
+  border-radius: var(--radius-s);
+}
+
+.dnd-session-projection-modal .profile-bar .setting-item {
+  padding: 4px 0;
+  border-top: none;
+}
+
 /* ── Media Picker Modal ────────────────────────────────────────── */
 
 .dnd-media-picker-modal {
