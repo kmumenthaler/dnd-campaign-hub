@@ -5,6 +5,49 @@ All notable changes to the D&D Campaign Hub plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-12
+
+### Added
+
+#### Session Projection System
+- Persistent managed player screens with configurable idle content (black, solid color, image/GIF, looping video)
+- Session Projection Hub modal for GM setup — enumerate monitors, select player-facing screens, configure idle content, start/stop sessions
+- Visual Media Picker with lazy-loading thumbnail grid, search filter, and OS file upload to vault
+- Projection profiles — save, load, rename, and delete named screen configurations for different campaigns
+- Idle Screen View with automatic chrome-hiding for distraction-free player displays
+
+#### Campaign Hub
+- Redesigned browse section with inline expandable entity browser
+- Multi-campaign browsing with campaign origin indicators
+- Projection Hub quick-action button in Session Running dashboard
+
+#### Session Running Dashboard
+- Quick Notes now load existing content from the session file on dashboard open
+- Read-Only toggle syncs with actual workspace edit state (detects manual mode switches)
+
+### Changed
+- Moved ProjectionManager to centralized `src/projection/` module
+- Removed Dataview dependency — replaced all dataview/dataviewjs blocks with native renderers
+- Overhauled migration system with registry pattern and `dnd-hub` code blocks
+- Removed third-party plugin dependencies (Dataview, Buttons, Templater fallbacks)
+- Removed `currentCampaign` global setting in favor of per-view campaign pickers
+- Reworked settings page with collapsible categories
+
+### Fixed
+- Graceful degradation when Fantasy Statblocks plugin is missing
+- Scene status toggles not updating after click
+- Vault cache lag when overwriting backup files during migration
+- `Folder already exists` race condition in migration backup
+- Leftover `^button-*` block IDs cleaned up in world migration
+- Grey border eliminated on idle screen, map, and combat tracker projections
+- Session projection modal width and content clipping
+- Strict-null TypeScript errors in DndHubModal and MediaPickerModal
+- Quick Notes save regex to correctly match section boundaries
+- Read-Only mode now actively switches leaves back to source mode on disable
+
+### Docs
+- Rewrote README with accurate feature documentation
+
 ## [0.3.0] - 2026-03-10
 
 ### Added
