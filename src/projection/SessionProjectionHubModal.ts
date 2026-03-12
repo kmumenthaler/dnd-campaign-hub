@@ -12,6 +12,7 @@ import type DndCampaignHubPlugin from '../main';
 import { enumerateScreens, screenKey, type ScreenInfo } from '../utils/ScreenEnumeration';
 import type { IdleContentConfig, IdleContentType, ManagedScreenConfig } from './types';
 import { DEFAULT_IDLE_CONTENT } from './types';
+import { MediaPickerModal, type MediaPickerFilter } from './MediaPickerModal';
 
 export class SessionProjectionHubModal extends Modal {
   private plugin: DndCampaignHubPlugin;
@@ -240,16 +241,55 @@ export class SessionProjectionHubModal extends Modal {
         break;
 
       case 'image':
-      case 'video':
-        new Setting(section)
-          .setName('Vault path')
-          .setDesc(cfg.idleContent.type === 'image' ? 'Image or animated GIF' : 'Video file')
-          .addText((text) => {
-            text
-              .setPlaceholder('Assets/idle-screen.mp4')
-              .setValue(cfg.idleContent.filePath || '')
-              .onChange((val) => { cfg.idleContent.filePath = val; });
+      case 'video': {
+        const mediaFilter: MediaPickerFilter = cfg.idleContent.type === 'video' ? 'video' : 'image';
+        const mediaLabel = cfg.idleContent.type === 'image' ? 'Image / GIF' : 'Video file';
+
+        // File path display + browse button
+        const fileSetting = new Setting(section).setName(mediaLabel);
+
+        // Show current path as description if set
+        if (cfg.idleContent.filePath) {
+          fileSetting.setDesc(cfg.idleContent.filePath);
+        }
+
+        fileSetting.addButton((btn) => {
+          btn.setButtonText('🔍 Browse Vault').onClick(() => {
+            new MediaPickerModal(this.app, (vaultPath) => {
+              cfg.idleContent.filePath = vaultPath;
+              this.render();
+            }, mediaFilter).open();
           });
+        });
+
+        // Thumbnail preview of selected file
+        if (cfg.idleContent.filePath) {
+          const previewContainer = section.createDiv({ cls: 'idle-config-preview' });
+          const resourcePath = this.app.vault.adapter.getResourcePath(cfg.idleContent.filePath);
+
+          if (cfg.idleContent.type === 'video') {
+            const video = previewContainer.createEl('video', {
+              cls: 'idle-config-preview-media',
+              attr: { src: resourcePath, muted: 'true', preload: 'metadata' },
+            });
+            video.addEventListener('loadeddata', () => { video.currentTime = 0.1; });
+          } else {
+            previewContainer.createEl('img', {
+              cls: 'idle-config-preview-media',
+              attr: { src: resourcePath },
+            });
+          }
+
+          // Clear button
+          const clearBtn = previewContainer.createEl('button', {
+            cls: 'idle-config-preview-clear',
+            text: '✕ Remove',
+          });
+          clearBtn.addEventListener('click', () => {
+            cfg.idleContent.filePath = undefined;
+            this.render();
+          });
+        }
 
         if (cfg.idleContent.type === 'video') {
           new Setting(section)
@@ -272,6 +312,7 @@ export class SessionProjectionHubModal extends Modal {
             });
           });
         break;
+      }
     }
   }
 

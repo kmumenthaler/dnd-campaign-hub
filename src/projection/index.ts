@@ -1,6 +1,8 @@
 export { SessionProjectionManager } from './SessionProjectionManager';
 export { IdleScreenView } from './IdleScreenView';
 export { SessionProjectionHubModal } from './SessionProjectionHubModal';
+export { MediaPickerModal } from './MediaPickerModal';
+export type { MediaPickerFilter } from './MediaPickerModal';
 export type {
   IdleContentType,
   IdleContentConfig,

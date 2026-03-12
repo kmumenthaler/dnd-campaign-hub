@@ -10509,6 +10509,41 @@
   border-top: 1px solid var(--background-modifier-border);
 }
 
+.dnd-session-projection-modal .idle-config-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 8px;
+  padding: 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+}
+
+.dnd-session-projection-modal .idle-config-preview-media {
+  width: 120px;
+  height: 70px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.dnd-session-projection-modal .idle-config-preview-clear {
+  padding: 4px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  transition: color 0.15s;
+}
+
+.dnd-session-projection-modal .idle-config-preview-clear:hover {
+  color: var(--text-error);
+  border-color: var(--text-error);
+}
+
 .dnd-session-projection-modal .session-status {
   display: flex;
   align-items: center;
@@ -10527,6 +10562,73 @@
 .dnd-session-projection-modal .session-status.inactive {
   background: var(--background-secondary);
   color: var(--text-muted);
+}
+
+/* ── Media Picker Modal ────────────────────────────────────────── */
+
+.dnd-media-picker-modal {
+  width: 700px;
+  max-width: 90vw;
+  height: 75vh;
+  max-height: 80vh;
+}
+
+.dnd-media-picker-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.dnd-media-picker-top-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.dnd-media-picker-search {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 13px;
+}
+
+.dnd-media-picker-search:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.dnd-media-picker-upload-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.dnd-media-picker-upload-btn:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+
+.dnd-media-picker-result-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+
+.dnd-media-picker-modal .image-file-grid {
+  flex: 1;
+  min-height: 0;
 }
 
 .hex-desc-settings-subtitle {
