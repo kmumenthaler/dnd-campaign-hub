@@ -112,8 +112,11 @@ export class ProjectionManager {
       }
     }
 
-    // ── Open a fresh popout window ────────────────────────────────
-    const popoutLeaf = this.plugin.app.workspace.openPopoutLeaf({
+    // ── Open a fresh popout window (or reuse managed session leaf) ──
+    const spm = this.plugin.sessionProjectionManager;
+    const managedLeaf = spm?.isActive() ? spm.getManagedLeaf(sKey) : null;
+
+    const popoutLeaf = managedLeaf ?? this.plugin.app.workspace.openPopoutLeaf({
       size: { width: screen.width, height: screen.height },
     });
 
@@ -129,13 +132,18 @@ export class ProjectionManager {
 
     this.activeProjections.set(sKey, { leaf: popoutLeaf, screen, mapId, mode, contentType: 'map' });
 
+    // Update session state tracking
+    if (spm?.isActive()) spm.setScreenStatus(sKey, 'map');
+
     // Save last-used screen preference
     this.plugin.settings.lastProjectionScreenKey = sKey;
     await this.plugin.saveSettings();
 
-    // Position + fullscreen after a short delay to let the window open
+    // Position + fullscreen after a short delay (skip for managed leaves — already positioned)
     setTimeout(async () => {
-      await this.positionAndFullscreen(popoutLeaf, screen);
+      if (!managedLeaf) {
+        await this.positionAndFullscreen(popoutLeaf, screen);
+      }
 
       const pv = popoutLeaf.view as PlayerMapView | undefined;
       if (pv) {
@@ -171,7 +179,11 @@ export class ProjectionManager {
       this.stopProjectionOnScreen(sKey);
     }
 
-    const popoutLeaf = this.plugin.app.workspace.openPopoutLeaf({
+    // Reuse managed session leaf if available
+    const spm = this.plugin.sessionProjectionManager;
+    const managedLeaf = spm?.isActive() ? spm.getManagedLeaf(sKey) : null;
+
+    const popoutLeaf = managedLeaf ?? this.plugin.app.workspace.openPopoutLeaf({
       size: { width: screen.width, height: screen.height },
     });
 
@@ -188,10 +200,15 @@ export class ProjectionManager {
       contentType: 'combat',
     });
 
-    // Position and fullscreen
-    setTimeout(async () => {
-      await this.positionAndFullscreen(popoutLeaf, screen);
-    }, 300);
+    // Update session state tracking
+    if (spm?.isActive()) spm.setScreenStatus(sKey, 'combat');
+
+    // Position and fullscreen (skip for managed leaves — already positioned)
+    if (!managedLeaf) {
+      setTimeout(async () => {
+        await this.positionAndFullscreen(popoutLeaf, screen);
+      }, 300);
+    }
 
     new Notice(`⚔️ Combat view projected to ${screen.label}`);
   }
@@ -240,20 +257,39 @@ export class ProjectionManager {
     if (first) await this.swapMapOnScreen(first, mapId, mapConfig, imageResourcePath);
   }
 
-  /** Stop a specific projection by screenKey. */
+  /** Stop a specific projection by screenKey.
+   *  If a session is active and this screen is managed, transitions to idle
+   *  instead of closing the popout window.
+   */
   stopProjectionOnScreen(sKey: string): void {
     const proj = this.activeProjections.get(sKey);
-    if (proj) {
-      try { proj.leaf.detach(); } catch { /* leaf may already be gone */ }
+    if (!proj) return;
+
+    // Session-aware: transition to idle instead of detaching
+    const spm = this.plugin.sessionProjectionManager;
+    if (spm?.isActive() && spm.isManagedScreen(sKey)) {
       this.activeProjections.delete(sKey);
-      new Notice(`Projection stopped — ${proj.screen.label}`);
+      spm.transitionToIdle(sKey);
+      new Notice(`Returned to idle — ${proj.screen.label}`);
+      return;
     }
+
+    try { proj.leaf.detach(); } catch { /* leaf may already be gone */ }
+    this.activeProjections.delete(sKey);
+    new Notice(`Projection stopped — ${proj.screen.label}`);
   }
 
-  /** Stop all active projections. */
+  /** Stop all active projections.
+   *  Managed screens transition to idle; non-managed screens are detached.
+   */
   stopAllProjections(): void {
+    const spm = this.plugin.sessionProjectionManager;
     for (const [sKey, proj] of this.activeProjections) {
-      try { proj.leaf.detach(); } catch { /* leaf may already be gone */ }
+      if (spm?.isActive() && spm.isManagedScreen(sKey)) {
+        spm.transitionToIdle(sKey);
+      } else {
+        try { proj.leaf.detach(); } catch { /* leaf may already be gone */ }
+      }
     }
     this.activeProjections.clear();
     new Notice('All projections stopped');
@@ -432,7 +468,7 @@ export class ProjectionManager {
    *
    * Strategy 3: moveTo/resizeTo with retries + manual fullscreen.
    */
-  private async positionAndFullscreen(leaf: WorkspaceLeaf, screen: ScreenInfo): Promise<void> {
+  async positionAndFullscreen(leaf: WorkspaceLeaf, screen: ScreenInfo): Promise<void> {
     try {
       const win: Window | null = (leaf as any).containerEl?.win
         ?? leaf.view?.containerEl?.ownerDocument?.defaultView
@@ -510,7 +546,7 @@ export class ProjectionManager {
   }
 
   /** Hide Obsidian chrome (tabs, title bar, status bar) in a popout window. */
-  private hidePopoutChrome(win: Window): void {
+  hidePopoutChrome(win: Window): void {
     const doc = win.document;
     const existingStyle = doc.getElementById('dnd-projection-chrome-hide');
     if (existingStyle) return;
@@ -534,7 +570,7 @@ export class ProjectionManager {
    * Attempt to obtain the Electron `BrowserWindow` handle for a popout
    * window.  Uses dynamic require to avoid esbuild bundling issues.
    */
-  private getElectronBrowserWindow(popoutWin: Window): any {
+  getElectronBrowserWindow(popoutWin: Window): any {
     // Dynamic require so esbuild doesn't try to resolve Electron modules.
     const _require: NodeRequire | undefined =
       (popoutWin as any).require ?? (globalThis as any).require;

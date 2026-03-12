@@ -92,6 +92,7 @@ import {
   GM_MAP_VIEW_TYPE,
   COMBAT_TRACKER_VIEW_TYPE,
   COMBAT_PLAYER_VIEW_TYPE,
+  IDLE_SCREEN_VIEW_TYPE,
 } from './constants';
 import type { MapMediaElement } from './constants';
 
@@ -142,6 +143,7 @@ import { TabletopCalibrationModal } from './map-views/TabletopCalibrationModal';
 import { GmMapView } from './map-views/GmMapView';
 import { PlayerMapView } from './map-views/PlayerMapView';
 import { ProjectionManager } from './map-views/ProjectionManager';
+import { SessionProjectionManager, IdleScreenView, SessionProjectionHubModal } from './projection';
 
 // ── Extracted function modules ──
 import { renderMapView as renderMapViewFn } from './map-views/renderMapView';
@@ -190,6 +192,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   envAssetLibrary!: EnvAssetLibrary;
   musicPlayer!: MusicPlayer;
   projectionManager!: ProjectionManager;
+  sessionProjectionManager!: SessionProjectionManager;
   private _musicStatusBarEl: HTMLElement | null = null;
   private _musicStatusBarCleanup: (() => void) | null = null;
   _playerMapViews: Set<PlayerMapView> = new Set();
@@ -264,6 +267,12 @@ export default class DndCampaignHubPlugin extends Plugin {
       (leaf) => new CombatPlayerView(leaf, this)
     );
 
+    // Register the Idle Screen View (session projection)
+    this.registerView(
+      IDLE_SCREEN_VIEW_TYPE,
+      (leaf) => new IdleScreenView(leaf, this)
+    );
+
     // Initialize the encounter builder
     this.encounterBuilder = new EncounterBuilder(this.app, this);
 
@@ -303,6 +312,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     // Initialize the projection manager (OBS-style project-to-monitor)
     this.projectionManager = new ProjectionManager(this);
+
+    // Initialize the session projection manager (persistent player screens)
+    this.sessionProjectionManager = new SessionProjectionManager(this);
 
     // Auto-pan player view to active PC's token on turn change
     this.registerCombatAutoPan();
@@ -1346,6 +1358,43 @@ export default class DndCampaignHubPlugin extends Plugin {
       },
     });
 
+    // ── Session Projection commands ──
+    this.addCommand({
+      id: "session-projection-hub",
+      name: "🎬 Session Projection",
+      callback: () => {
+        new SessionProjectionHubModal(this).open();
+      },
+    });
+
+    this.addCommand({
+      id: "start-session-projection",
+      name: "▶ Start Projection Session",
+      callback: async () => {
+        const spm = this.sessionProjectionManager;
+        if (spm.isActive()) {
+          new Notice('Session is already active');
+          return;
+        }
+        const configs = this.settings.sessionProjection.managedScreens;
+        if (configs.length === 0) {
+          new SessionProjectionHubModal(this).open();
+          return;
+        }
+        const { enumerateScreens } = await import('./utils/ScreenEnumeration');
+        const screens = await enumerateScreens();
+        await spm.startSession(screens, configs);
+      },
+    });
+
+    this.addCommand({
+      id: "stop-session-projection",
+      name: "⏹ Stop Projection Session",
+      callback: () => {
+        this.sessionProjectionManager.stopSession();
+      },
+    });
+
     // ── Random Encounter Table commands ──
     this.addCommand({
       id: "create-random-encounter-table",
@@ -1450,6 +1499,8 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.musicPlayer?.destroy();
     // Stop active projection
     this.projectionManager?.stopProjection();
+    // Stop active session projection
+    this.sessionProjectionManager?.stopSession();
     // Close all player-view popout windows to prevent orphaned Electron windows
     if (this._playerMapViews) {
       this._playerMapViews.forEach((pv: any) => {

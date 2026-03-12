@@ -1,6 +1,8 @@
 import type { MusicSettings, MusicPlaybackState } from "./music/types";
 import { DEFAULT_MUSIC_SETTINGS, DEFAULT_PLAYBACK_STATE } from "./music/types";
 import type { CombatState } from "./combat/types";
+import type { SessionProjectionSettings } from "./projection/types";
+import { DEFAULT_SESSION_PROJECTION_SETTINGS } from "./projection/types";
 
 export interface TabletopCalibration {
   monitorDiagonalInch: number;
@@ -39,6 +41,8 @@ export interface DndCampaignHubSettings {
   combatStates: Record<string, CombatState>;
   /** Auto-pan projected player view to the active combatant's token on turn change. */
   combatAutoPan: boolean;
+  /** Session projection system — managed monitors and idle screen config. */
+  sessionProjection: SessionProjectionSettings;
 }
 
 export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
@@ -51,4 +55,5 @@ export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   visionUpdateMode: 'on-drop',
   combatStates: {},
   combatAutoPan: false,
+  sessionProjection: { ...DEFAULT_SESSION_PROJECTION_SETTINGS },
 };
