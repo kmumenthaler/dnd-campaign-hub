@@ -28,7 +28,7 @@ export class SessionProjectionHubModal extends Modal {
   async onOpen(): Promise<void> {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass('dnd-session-projection-modal');
+    this.modalEl.addClass('dnd-session-projection-modal');
 
     // Load saved config
     const saved = this.plugin.settings.sessionProjection.managedScreens;

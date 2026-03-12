@@ -10456,8 +10456,12 @@
 /* ── Session Projection Hub Modal ──────────────────────────────── */
 
 .dnd-session-projection-modal {
-  width: 560px;
+  width: 620px;
   max-width: 90vw;
+}
+
+.dnd-session-projection-modal .modal-content {
+  padding: 16px 24px 20px;
 }
 
 .dnd-session-projection-modal .screen-list {
