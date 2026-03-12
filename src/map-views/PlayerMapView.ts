@@ -723,43 +723,50 @@ export class PlayerMapView extends ItemView {
     const style = doc.createElement('style');
     style.id = 'dnd-player-view-chrome-hide';
     style.textContent = `
-      /* Hide the tab header bar completely */
-      .workspace-tab-header-container {
-        display: none !important;
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #000 !important;
+        overflow: hidden !important;
       }
-
-      /* Hide the view header (title bar) completely */
-      .view-header {
-        display: none !important;
+      .app-container {
+        padding: 0 !important;
+        background: #000 !important;
       }
-
-      /* Hide titlebar / window decorations */
-      .titlebar {
-        display: none !important;
+      .workspace {
+        padding: 0 !important;
+        background: #000 !important;
       }
-
-      /* Hide sidebar toggles if any */
-      .sidebar-toggle-button {
-        display: none !important;
+      .workspace-split {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #000 !important;
       }
-
-      /* Hide status bar */
-      .status-bar {
-        display: none !important;
-      }
-
-      /* Ensure content fills the full window from the very top */
+      .workspace-tab-header-container { display: none !important; }
+      .view-header { display: none !important; }
+      .titlebar { display: none !important; }
+      .sidebar-toggle-button { display: none !important; }
+      .status-bar { display: none !important; }
       .mod-root {
         top: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        background: #000 !important;
       }
-
+      .workspace-leaf {
+        padding: 0 !important;
+        margin: 0 !important;
+      }
       .workspace-leaf-content {
         position: relative !important;
+        padding: 0 !important;
+        margin: 0 !important;
       }
-
-      /* Remove any hover trigger zones */
-      .workspace-leaf-content::before {
-        display: none !important;
+      .workspace-leaf-content::before { display: none !important; }
+      .view-content {
+        padding: 0 !important;
+        margin: 0 !important;
+        height: 100% !important;
       }
     `;
     doc.head.appendChild(style);
