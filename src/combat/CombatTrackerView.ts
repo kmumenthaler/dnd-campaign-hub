@@ -262,11 +262,11 @@ export class CombatTrackerView extends ItemView {
         this.openNote(c.notePath!);
       });
     } else if (!c.player) {
-      // Creatures/NPCs: show Fantasy Statblock in split leaf
+      // Creatures/NPCs: show Fantasy Statblock in split leaf (or note fallback)
       nameEl.addClass("dnd-ct-name-link");
       nameEl.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.openStatblockLeaf(c.name);
+        this.openStatblockLeaf(c.name, c.notePath);
       });
     }
 
@@ -369,8 +369,23 @@ export class CombatTrackerView extends ItemView {
 
   private static readonly STATBLOCK_TEMP_PATH = "_statblock_preview.md";
 
+  /** Check whether the Fantasy Statblocks plugin is installed and enabled. */
+  private hasFantasyStatblocks(): boolean {
+    return !!(this.app as any).plugins?.getPlugin?.("obsidian-5e-statblocks");
+  }
+
   /** Open a creature statblock in a split leaf using a real MarkdownView. */
-  private async openStatblockLeaf(creatureName: string) {
+  private async openStatblockLeaf(creatureName: string, notePath?: string) {
+    // If Fantasy Statblocks is not available, fall back to the creature note
+    if (!this.hasFantasyStatblocks()) {
+      if (notePath) {
+        await this.openNote(notePath);
+        return;
+      }
+      new Notice("Install the \"Fantasy Statblocks\" plugin to view rendered statblocks.");
+      return;
+    }
+
     const tempPath = CombatTrackerView.STATBLOCK_TEMP_PATH;
     const content = "```statblock\ncreature: " + creatureName + "\n```";
 
