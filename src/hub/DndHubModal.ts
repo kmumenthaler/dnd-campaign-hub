@@ -6,9 +6,12 @@ import type DndCampaignHubPlugin from "../main";
 interface BrowseCategory {
   label: string;
   icon: string;
-  /** Resolve the folder path(s) that contain notes of this type. */
-  folder: (campaign: string) => string;
-  /** Frontmatter `type` value(s) to match. undefined = accept any .md file. */
+  /**
+   * Return one or more folder paths to scan.
+   * Receives the list of all campaign paths (e.g. ["ttrpgs/Eberron", "ttrpgs/Greyhawk"]).
+   */
+  folders: (campaigns: string[]) => string[];
+  /** Frontmatter `type` value(s) to match. */
   types?: string[];
   /** Search subfolders? */
   recursive?: boolean;
@@ -16,13 +19,19 @@ interface BrowseCategory {
   subtitle?: (fm: Record<string, any>) => string;
 }
 
+/** Single query result with campaign origin. */
+interface EntityResult {
+  file: TFile;
+  fm: Record<string, any>;
+  /** Campaign display name (empty for global entities). */
+  campaign: string;
+}
+
 /* ── The modal ───────────────────────────────────────────────── */
 
 export class DndHubModal extends Modal {
   plugin: DndCampaignHubPlugin;
-  /** Currently expanded browse category key (null = none). */
   private expandedCategory: string | null = null;
-  /** Cached search filter per category. */
   private categoryFilters: Record<string, string> = {};
 
   constructor(app: App, plugin: DndCampaignHubPlugin) {
@@ -37,64 +46,65 @@ export class DndHubModal extends Modal {
       campaigns: {
         label: "Campaigns",
         icon: "📁",
-        folder: () => "ttrpgs",
-        types: ["campaign"],
-        recursive: true,
-        subtitle: (fm) => fm.setting || fm.system || "",
+        folders: (cs) => cs,
+        types: ["world"],
+        recursive: false,
+        subtitle: (fm) => [fm.system, fm.status].filter(Boolean).join(" · "),
       },
       npcs: {
         label: "NPCs",
         icon: "👥",
-        folder: (c) => `${c}/NPCs`,
+        folders: (cs) => cs.map((c) => `${c}/NPCs`),
         types: ["npc"],
         subtitle: (fm) => [fm.race, fm.location].filter(Boolean).join(" · "),
       },
       pcs: {
         label: "PCs",
         icon: "🛡️",
-        folder: (c) => `${c}/PCs`,
+        folders: (cs) => cs.map((c) => `${c}/PCs`),
         types: ["player", "pc"],
         subtitle: (fm) => [fm.class, fm.level ? `Lvl ${fm.level}` : ""].filter(Boolean).join(" · "),
       },
       adventures: {
         label: "Adventures",
         icon: "🗺️",
-        folder: (c) => `${c}/Adventures`,
+        folders: (cs) => cs.map((c) => `${c}/Adventures`),
         types: ["adventure"],
         subtitle: (fm) => [fm.status, fm.level_range].filter(Boolean).join(" · "),
       },
       sessions: {
         label: "Sessions",
         icon: "📜",
-        folder: (c) => c,
+        folders: (cs) => cs,
         types: ["session-gm", "session-player"],
+        recursive: true,
         subtitle: (fm) => fm.session_date || fm.summary?.slice(0, 60) || "",
       },
       factions: {
         label: "Factions",
         icon: "🏛️",
-        folder: (c) => `${c}/Factions`,
+        folders: (cs) => cs.map((c) => `${c}/Factions`),
         types: ["faction"],
         subtitle: (fm) => fm.main_goal || "",
       },
       items: {
         label: "Items",
         icon: "⚔️",
-        folder: (c) => `${c}/Items`,
+        folders: (cs) => cs.map((c) => `${c}/Items`),
         types: ["item"],
         subtitle: (fm) => [fm.rarity, fm.item_type].filter(Boolean).join(" · "),
       },
       spells: {
         label: "Spells",
         icon: "✨",
-        folder: () => "z_Spells",
+        folders: () => ["z_Spells"],
         types: ["spell"],
         subtitle: (fm) => [fm.level ? `Level ${fm.level}` : "Cantrip", fm.school].filter(Boolean).join(" · "),
       },
       creatures: {
         label: "Creatures",
         icon: "🐉",
-        folder: () => "z_Beastiarity",
+        folders: () => ["z_Beastiarity"],
         types: ["creature"],
         recursive: true,
         subtitle: (fm) => [fm.size, fm.type, fm.cr ? `CR ${fm.cr}` : ""].filter(Boolean).join(" · "),
@@ -102,7 +112,7 @@ export class DndHubModal extends Modal {
       traps: {
         label: "Traps",
         icon: "🪤",
-        folder: (c) => c,
+        folders: (cs) => cs,
         types: ["trap"],
         recursive: true,
         subtitle: (fm) => [fm.trap_severity, fm.trap_type].filter(Boolean).join(" · "),
@@ -112,7 +122,18 @@ export class DndHubModal extends Modal {
 
   /* ── Query helpers ──────────────────────────────────────────── */
 
-  private queryFolder(folderPath: string, types?: string[], recursive = false): { file: TFile; fm: Record<string, any> }[] {
+  /**
+   * Resolve campaign name from a file path.
+   * E.g. "ttrpgs/Eberron/NPCs/Gobbo.md" → "Eberron"
+   */
+  private campaignFromPath(filePath: string): string {
+    if (!filePath.startsWith("ttrpgs/")) return "";
+    const parts = filePath.split("/");
+    return parts.length >= 2 ? parts[1] : "";
+  }
+
+  /** Query a single folder and return results tagged with campaign origin. */
+  private queryFolder(folderPath: string, types?: string[], recursive = false): EntityResult[] {
     const folder = this.app.vault.getAbstractFileByPath(folderPath);
     if (!(folder instanceof TFolder)) return [];
 
@@ -125,14 +146,31 @@ export class DndHubModal extends Modal {
     };
     walk(folder);
 
-    const results: { file: TFile; fm: Record<string, any> }[] = [];
+    const results: EntityResult[] = [];
     for (const file of files) {
       const cache = this.app.metadataCache.getFileCache(file);
       const fm = cache?.frontmatter;
       if (!fm) continue;
       if (types && types.length > 0 && !types.includes(fm.type)) continue;
-      results.push({ file, fm });
+      results.push({ file, fm, campaign: this.campaignFromPath(file.path) });
     }
+    return results;
+  }
+
+  /** Query across multiple folders, deduplicate, and sort. */
+  private queryCategory(cat: BrowseCategory, campaignPaths: string[]): EntityResult[] {
+    const folders = cat.folders(campaignPaths);
+    const seen = new Set<string>();
+    const results: EntityResult[] = [];
+
+    for (const folder of folders) {
+      for (const r of this.queryFolder(folder, cat.types, cat.recursive)) {
+        if (seen.has(r.file.path)) continue;
+        seen.add(r.file.path);
+        results.push(r);
+      }
+    }
+
     results.sort((a, b) => (a.fm.name || a.file.basename).localeCompare(b.fm.name || b.file.basename));
     return results;
   }
@@ -224,13 +262,12 @@ export class DndHubModal extends Modal {
   /* ── Browse section with expandable categories ─────────────── */
 
   private renderBrowseSection(root: HTMLElement) {
-    const campaign = this.plugin.resolveCampaign();
+    const campaignPaths = this.plugin.getAllCampaigns().map((c) => c.path);
     const categories = this.getBrowseCategories();
     const browseContainer = root.createDiv({ cls: "dnd-hub-browse-section" });
 
     for (const [key, cat] of Object.entries(categories)) {
-      const folderPath = cat.folder(campaign);
-      const entities = this.queryFolder(folderPath, cat.types, cat.recursive);
+      const entities = this.queryCategory(cat, campaignPaths);
       const isExpanded = this.expandedCategory === key;
 
       // Category header row
@@ -250,7 +287,7 @@ export class DndHubModal extends Modal {
       // Expanded panel
       if (isExpanded) {
         const panel = browseContainer.createDiv({ cls: "dnd-hub-cat-panel" });
-        this.renderCategoryPanel(panel, key, cat, entities);
+        this.renderCategoryPanel(panel, key, cat, entities, campaignPaths.length > 1);
       }
     }
   }
@@ -268,7 +305,8 @@ export class DndHubModal extends Modal {
     panel: HTMLElement,
     key: string,
     cat: BrowseCategory,
-    entities: { file: TFile; fm: Record<string, any> }[],
+    entities: EntityResult[],
+    showCampaignOrigin: boolean,
   ) {
     // Search / filter input
     const filterRow = panel.createDiv({ cls: "dnd-hub-filter-row" });
@@ -288,7 +326,8 @@ export class DndHubModal extends Modal {
         ? entities.filter((e) => {
             const name = (e.fm.name || e.file.basename).toLowerCase();
             const sub = cat.subtitle?.(e.fm)?.toLowerCase() || "";
-            return name.includes(lowerFilter) || sub.includes(lowerFilter);
+            const camp = e.campaign.toLowerCase();
+            return name.includes(lowerFilter) || sub.includes(lowerFilter) || camp.includes(lowerFilter);
           })
         : entities;
 
@@ -300,22 +339,21 @@ export class DndHubModal extends Modal {
         return;
       }
 
-      for (const { file, fm } of filtered) {
-        const row = listEl.createDiv({ cls: "dnd-hub-entity-row" });
-        const link = row.createEl("a", {
-          cls: "dnd-hub-entity-link internal-link",
-          text: fm.name || file.basename,
-          href: file.path,
-        });
-        link.addEventListener("click", (e) => {
-          e.preventDefault();
-          this.close();
-          this.app.workspace.openLinkText(file.path, "", false);
-        });
-
-        const subtitle = cat.subtitle?.(fm);
-        if (subtitle) {
-          row.createEl("span", { cls: "dnd-hub-entity-sub", text: subtitle });
+      // Group by campaign when showing origin
+      if (showCampaignOrigin && this.hasMixedCampaigns(filtered)) {
+        const groups = this.groupByCampaign(filtered);
+        for (const [campaign, items] of groups) {
+          const groupLabel = campaign || "Global";
+          const groupHeader = listEl.createDiv({ cls: "dnd-hub-campaign-bar" });
+          groupHeader.createEl("span", { cls: "dnd-hub-campaign-bar-label", text: groupLabel });
+          groupHeader.createEl("span", { cls: "dnd-hub-campaign-bar-count", text: String(items.length) });
+          for (const entity of items) {
+            this.renderEntityRow(listEl, entity, cat);
+          }
+        }
+      } else {
+        for (const entity of filtered) {
+          this.renderEntityRow(listEl, entity, cat, showCampaignOrigin);
         }
       }
     };
@@ -329,6 +367,51 @@ export class DndHubModal extends Modal {
 
     // Auto-focus the search when category opens
     filterInput.focus();
+  }
+
+  /* ── Entity row rendering ──────────────────────────────────── */
+
+  private renderEntityRow(parent: HTMLElement, entity: EntityResult, cat: BrowseCategory, showTag = false) {
+    const { file, fm } = entity;
+    const row = parent.createDiv({ cls: "dnd-hub-entity-row" });
+
+    const link = row.createEl("a", {
+      cls: "dnd-hub-entity-link internal-link",
+      text: fm.name || file.basename,
+      href: file.path,
+    });
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      this.close();
+      this.app.workspace.openLinkText(file.path, "", false);
+    });
+
+    if (showTag && entity.campaign) {
+      row.createEl("span", { cls: "dnd-hub-entity-tag", text: entity.campaign });
+    }
+
+    const subtitle = cat.subtitle?.(fm);
+    if (subtitle) {
+      row.createEl("span", { cls: "dnd-hub-entity-sub", text: subtitle });
+    }
+  }
+
+  /* ── Grouping helpers ──────────────────────────────────────── */
+
+  private hasMixedCampaigns(entities: EntityResult[]): boolean {
+    if (entities.length === 0) return false;
+    const first = entities[0].campaign;
+    return entities.some((e) => e.campaign !== first);
+  }
+
+  private groupByCampaign(entities: EntityResult[]): [string, EntityResult[]][] {
+    const map = new Map<string, EntityResult[]>();
+    for (const e of entities) {
+      const key = e.campaign;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(e);
+    }
+    return Array.from(map.entries());
   }
 
   /* ── Helpers ────────────────────────────────────────────────── */
