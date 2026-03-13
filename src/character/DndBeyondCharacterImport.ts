@@ -34,6 +34,15 @@ export interface DndBeyondPcImportData {
   reactions: StatblockEntry[];
 }
 
+interface AbilityScores {
+  str: number;
+  dex: number;
+  con: number;
+  int: number;
+  wis: number;
+  cha: number;
+}
+
 interface DndBeyondResponse {
   success?: boolean;
   data?: any;
@@ -133,6 +142,11 @@ function withDdbLink(name: string, section: "spells" | "feats"): string {
   return slug ? `[${name}](https://www.dndbeyond.com/${section}/${slug})` : name;
 }
 
+function withSearchLink(name: string): string {
+  const query = encodeURIComponent(name);
+  return `[${name}](https://www.dndbeyond.com/search?q=${query})`;
+}
+
 function resolveDescription(item: any): string {
   const raw = String(item?.definition?.description || item?.definition?.snippet || item?.snippet || "").trim();
   return raw ? stripHtml(raw) : "No description provided.";
@@ -181,7 +195,17 @@ function collectSenses(data: any): string {
   return Array.from(parts).join(", ");
 }
 
-function collectSkillSaves(data: any, abilities: { str: number; dex: number; con: number; int: number; wis: number; cha: number }): Array<Record<string, string>> {
+function getTotalLevel(data: any): number {
+  return Array.isArray(data?.classes)
+    ? data.classes.reduce((sum: number, c: any) => sum + asNumber(c?.level), 0)
+    : 0;
+}
+
+function getProficiencyBonus(level: number): number {
+  return Math.max(2, Math.ceil(Math.max(level, 1) / 4) + 1);
+}
+
+function collectSkillSaves(data: any, abilities: AbilityScores, totalLevel: number): Array<Record<string, string>> {
   const skillAbilities: Record<string, number> = {
     athletics: 0,
     acrobatics: 1,
@@ -204,7 +228,7 @@ function collectSkillSaves(data: any, abilities: { str: number; dex: number; con
   };
 
   const statByIndex = [abilities.str, abilities.dex, abilities.con, abilities.int, abilities.wis, abilities.cha];
-  const proficiencyBonus = Math.max(2, Math.ceil((asNumber(data?.classes?.reduce?.((sum: number, c: any) => sum + asNumber(c?.level), 0)) || 1) / 4) + 1);
+  const proficiencyBonus = getProficiencyBonus(totalLevel);
   const modifiers = collectModifiers(data);
   const results: Array<Record<string, string>> = [];
 
@@ -226,6 +250,20 @@ function collectSkillSaves(data: any, abilities: { str: number; dex: number; con
   }
 
   return Array.from(dedup.entries()).map(([key, value]) => ({ [key]: value }));
+}
+
+function collectSkillsTrait(skillsaves: Array<Record<string, string>>): StatblockEntry[] {
+  if (skillsaves.length === 0) return [];
+  const parts: string[] = [];
+  for (const entry of skillsaves) {
+    const key = Object.keys(entry)[0];
+    if (!key) continue;
+    const bonus = entry[key] || "0";
+    const title = key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
+    const signed = bonus.startsWith("-") ? bonus : `+${bonus}`;
+    parts.push(`${withSearchLink(title)} ${signed}`);
+  }
+  return [{ name: "Skill Proficiencies", desc: parts.join(", ") }];
 }
 
 function collectSpellTrait(data: any): StatblockEntry[] {
@@ -261,6 +299,84 @@ function collectFeatTraits(data: any): StatblockEntry[] {
       desc: `${withDdbLink(name, "feats")}: ${resolveDescription(feat)}`,
     });
   }
+  return out;
+}
+
+function collectOptionTraits(data: any): StatblockEntry[] {
+  const options = Array.isArray(data?.options?.class) ? data.options.class : [];
+  const out: StatblockEntry[] = [];
+  for (const opt of options) {
+    const name = String(opt?.definition?.name || "").trim();
+    if (!name) continue;
+    const desc = resolveDescription(opt);
+    out.push({ name, desc: `${withSearchLink(name)}: ${desc}` });
+  }
+  return out;
+}
+
+function isWeaponProficient(weapon: any, modifiers: any[]): boolean {
+  const weaponName = String(weapon?.definition?.name || "").toLowerCase();
+  const categoryId = asNumber(weapon?.definition?.categoryId);
+
+  for (const mod of modifiers) {
+    if (String(mod?.type || "").toLowerCase() !== "proficiency") continue;
+    const subType = String(mod?.subType || "").toLowerCase();
+    const friendly = String(mod?.friendlySubtypeName || "").toLowerCase();
+    if (!subType && !friendly) continue;
+
+    if (subType.includes(weaponName) || friendly.includes(weaponName)) return true;
+    if (categoryId === 1 && (subType.includes("simple-weapons") || friendly.includes("simple weapons"))) return true;
+    if (categoryId === 2 && (subType.includes("martial-weapons") || friendly.includes("martial weapons"))) return true;
+  }
+
+  return false;
+}
+
+function collectWeaponActions(data: any, abilities: AbilityScores, proficiencyBonus: number): StatblockEntry[] {
+  const inventory = Array.isArray(data?.inventory) ? data.inventory : [];
+  const modifiers = collectModifiers(data);
+
+  const weapons = inventory.filter((item: any) => String(item?.definition?.filterType || "").toLowerCase() === "weapon");
+  if (weapons.length === 0) return [];
+
+  const selected = weapons.filter((w: any) => w?.equipped === true);
+  const source = selected.length > 0 ? selected : weapons;
+  const out: StatblockEntry[] = [];
+
+  for (const weapon of source) {
+    const name = String(weapon?.definition?.name || "").trim();
+    if (!name) continue;
+
+    const properties = Array.isArray(weapon?.definition?.properties)
+      ? weapon.definition.properties.map((p: any) => String(p?.name || "").toLowerCase())
+      : [];
+
+    const isRanged = asNumber(weapon?.definition?.attackType) === 2;
+    const isFinesse = properties.includes("finesse");
+    const attackAbility = isRanged ? abilities.dex : (isFinesse ? Math.max(abilities.str, abilities.dex) : abilities.str);
+    const attackMod = abilityModifier(attackAbility || 10);
+    const proficient = isWeaponProficient(weapon, modifiers);
+    const toHit = attackMod + (proficient ? proficiencyBonus : 0);
+
+    const dice = String(weapon?.definition?.damage?.diceString || "1").trim();
+    const dmgType = String(weapon?.definition?.damageType || "bludgeoning").toLowerCase();
+    const damageValue = attackMod;
+    const signedDamage = damageValue >= 0 ? `+ ${damageValue}` : `- ${Math.abs(damageValue)}`;
+
+    const range = asNumber(weapon?.definition?.range);
+    const longRange = asNumber(weapon?.definition?.longRange);
+    const rangeText = isRanged
+      ? `${range > 0 ? range : 20}/${longRange > 0 ? longRange : 60} ft.`
+      : `${range > 0 ? range : 5} ft.`;
+
+    const prefix = isRanged ? "Ranged Weapon Attack" : "Melee Weapon Attack";
+    const signedHit = toHit >= 0 ? `+${toHit}` : String(toHit);
+    const propertiesText = properties.length > 0 ? ` Properties: ${properties.join(", ")}.` : "";
+    const desc = `${prefix}: ${signedHit} to hit, range ${rangeText}, one target. Hit: ${dice} ${signedDamage} ${dmgType} damage.${propertiesText}`;
+
+    out.push({ name: withSearchLink(name), desc });
+  }
+
   return out;
 }
 
@@ -322,9 +438,7 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
         .filter((c: unknown): c is string => typeof c === "string" && c.trim().length > 0)
     : [];
 
-  const totalLevel = Array.isArray(data.classes)
-    ? data.classes.reduce((sum: number, c: any) => sum + asNumber(c?.level), 0)
-    : 0;
+  const totalLevel = getTotalLevel(data);
 
   const conScore = resolveAbilityScore(data, 3);
   const conModifier = abilityModifier(conScore || 10);
@@ -349,7 +463,12 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
 
   const spellTrait = collectSpellTrait(data);
   const featTraits = collectFeatTraits(data);
+  const optionTraits = collectOptionTraits(data);
+  const proficiencyBonus = getProficiencyBonus(totalLevel);
+  const skillsaves = collectSkillSaves(data, abilities, totalLevel);
+  const skillTraits = collectSkillsTrait(skillsaves);
   const actionEntries = collectActionEntries(data);
+  const weaponActions = collectWeaponActions(data, abilities, proficiencyBonus);
 
   return {
     characterId,
@@ -366,9 +485,9 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
     abilities,
     senses: collectSenses(data),
     languages: collectLanguages(data),
-    skillsaves: collectSkillSaves(data, abilities),
-    traits: [...spellTrait, ...featTraits],
-    actions: actionEntries.actions,
+    skillsaves,
+    traits: [...skillTraits, ...spellTrait, ...featTraits, ...optionTraits],
+    actions: [...weaponActions, ...actionEntries.actions],
     bonusActions: actionEntries.bonusActions,
     reactions: actionEntries.reactions,
   };
