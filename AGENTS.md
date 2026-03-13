@@ -1,13 +1,13 @@
 # AI Agent Development Guide: D&D Campaign Hub
 
-_Last updated: 2026-02-15_
+_Last updated: 2026-03-13_
 
 ## Quick Reference
 
 - **Location**: `C:/Users/kevin/SynologyDrive/Plugins/dnd-campaign-hub`
 - **Main branch**: `main`
 - **Remote**: `https://github.com/kmumenthaler/dnd-campaign-hub.git`
-- **Build**: Use Node from `../nodejs/node.exe` (portable Node installation)
+- **Build**: Run `npm run check`, `npm run test`, then `npm run build`
 - **Deploy Target**: `C:\Users\kevin\SynologyDrive\TTRPG Vault\.obsidian\plugins\dnd-campaign-hub\`
 
 ---
@@ -27,9 +27,11 @@ git checkout -b feature/your-feature-name
 - **Migrations**: [src/migration/](src/migration/) (registry.ts, runner.ts, types.ts, frontmatter.ts)
 - **Styles**: [src/styles.css](src/styles.css)
 
-### 3. Build the Plugin
+### 3. Validate and Build the Plugin
 ```powershell
-..\nodejs\node.exe esbuild.config.mjs
+npm run check
+npm run test
+npm run build
 ```
 This creates `dist/main.js` and `dist/main.js.map`.
 
@@ -42,7 +44,7 @@ Copy-Item -Path "src\styles.css" -Destination "C:\Users\kevin\SynologyDrive\TTRP
 
 Or combine build and deploy:
 ```powershell
-..\nodejs\node.exe esbuild.config.mjs; Copy-Item -Path "dist\main.js" -Destination "C:\Users\kevin\SynologyDrive\TTRPG Vault\.obsidian\plugins\dnd-campaign-hub\" -Force
+npm run check; npm run test; npm run build; Copy-Item -Path "dist\main.js" -Destination "C:\Users\kevin\SynologyDrive\TTRPG Vault\.obsidian\plugins\dnd-campaign-hub\" -Force
 ```
 
 ### 5. Test in Obsidian
@@ -409,9 +411,9 @@ class YourModal extends Modal {
 ```
 
 ### Check for TypeScript Errors
-The build will fail if there are errors, so just run:
+Run strict typecheck directly:
 ```powershell
-..\nodejs\node.exe esbuild.config.mjs
+npm run check
 ```
 
 ---
@@ -441,11 +443,13 @@ git branch -d feature/your-feature-name
 
 ## Testing Changes
 
-1. Build: `..\nodejs\node.exe esbuild.config.mjs`
-2. Deploy to test vault (see deploy command above)
-3. Reload Obsidian: Ctrl+P → "Reload app without saving"
-4. Test your feature
-5. Check browser console (Ctrl+Shift+I) for errors
+1. Typecheck: `npm run check`
+2. Unit tests: `npm run test`
+3. Build: `npm run build`
+4. Deploy to test vault (see deploy command above)
+5. Reload Obsidian: Ctrl+P → "Reload app without saving"
+6. Test your feature
+7. Check browser console (Ctrl+Shift+I) for errors
 
 ---
 
