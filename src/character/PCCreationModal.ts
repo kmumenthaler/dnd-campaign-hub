@@ -4,6 +4,7 @@ import { PDFFileSuggest, PDFBrowserModal } from "../utils/PDFBrowser";
 import { MarkerDefinition, CreatureSize } from '../marker/MarkerTypes';
 import { TokenEditorWidget } from '../marker/TokenEditorWidget';
 import { PC_TEMPLATE } from '../templates';
+import { TEMPLATE_VERSIONS } from '../migration';
 
 export class PCCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -633,9 +634,10 @@ export class PCCreationModal extends Modal {
       const classString = this.classes.filter(c => c.trim()).join("/");
 
       // Build complete frontmatter
+      const playerTemplateVersion = TEMPLATE_VERSIONS.player || TEMPLATE_VERSIONS.pc || "1.3.0";
       const frontmatter = `---
 type: player
-template_version: 1.2.0
+    template_version: ${playerTemplateVersion}
 name: ${this.pcName}
 player: ${this.playerName}
 campaign: ${campaignName}
