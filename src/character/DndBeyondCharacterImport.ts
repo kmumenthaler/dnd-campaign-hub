@@ -28,7 +28,7 @@ function asNumber(value: unknown): number {
   return 0;
 }
 
-function dexModifier(score: number): number {
+function abilityModifier(score: number): number {
   return Math.floor((score - 10) / 2);
 }
 
@@ -123,15 +123,17 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
     ? data.classes.reduce((sum: number, c: any) => sum + asNumber(c?.level), 0)
     : 0;
 
+  const conScore = resolveAbilityScore(data, 3);
+  const conModifier = abilityModifier(conScore || 10);
   const hpMaxBase =
     asNumber(data.overrideHitPoints) > 0
       ? asNumber(data.overrideHitPoints)
-      : asNumber(data.baseHitPoints) + asNumber(data.bonusHitPoints);
+      : asNumber(data.baseHitPoints) + asNumber(data.bonusHitPoints) + conModifier * Math.max(0, totalLevel);
   const hpRemoved = asNumber(data.removedHitPoints);
   const hpCurrent = Math.max(0, hpMaxBase - hpRemoved);
 
   const dexScore = resolveAbilityScore(data, 2);
-  const initBonusNum = dexModifier(dexScore || 10);
+  const initBonusNum = abilityModifier(dexScore || 10);
   const initBonus = initBonusNum >= 0 ? `+${initBonusNum}` : String(initBonusNum);
 
   return {
