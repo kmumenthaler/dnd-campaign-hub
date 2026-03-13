@@ -255,11 +255,11 @@ export class CombatTrackerView extends ItemView {
     });
 
     if (c.player && c.notePath) {
-      // PCs: open full note in split leaf
+      // PCs: show Fantasy Statblock if available, otherwise open full note
       nameEl.addClass("dnd-ct-name-link");
       nameEl.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.openNote(c.notePath!);
+        this.openStatblockLeaf(c.name, c.notePath);
       });
     } else if (!c.player) {
       // Creatures/NPCs: show Fantasy Statblock in split leaf (or note fallback)
