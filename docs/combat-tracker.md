@@ -1,42 +1,64 @@
 
 # Combat Tracker
 
-Overview
+The Combat Tracker manages initiative order, combatant state, and integration with battle map tokens. It provides a full GM sidebar view and a read-only Player view for projection to external screens.
 
-The Combat Tracker manages initiative, combatant state, and integration with map tokens. It provides a full GM view and a limited Player view for remote participants.
+## Open the Combat Tracker
 
-Key files
+Run **Open Combat Tracker** from the Command Palette. The tracker opens as a sidebar panel.
 
-- Core: [src/combat/CombatTracker.ts](src/combat/CombatTracker.ts)
-- Views: [src/combat/CombatTrackerView.ts](src/combat/CombatTrackerView.ts) and [src/combat/CombatPlayerView.ts](src/combat/CombatPlayerView.ts)
-- Types: [src/combat/types.ts](src/combat/types.ts)
+## GM view
 
-Basic usage
+The GM sidebar shows:
 
-- Start combat: Open the Combat Tracker UI from the hub and click **Start Combat**. Add combatants manually or import from an encounter.
-- Add combatant: Use **Add Combatant** and select a creature, NPC, or PC; supplying a `token_id` will allow the tracker to link the combatant to a map token.
-- Advance turn: Use **Next Turn** or hotkeys provided by the view.
+- **Initiative order** — combatants sorted by initiative roll with round counter.
+- **Combatant rows** — each row displays name, HP (current / max), AC, and active status effects. Rows are expandable for detailed editing.
+- **HP tracking** — current, temporary, and max HP. Death save successes and failures for PCs at 0 HP.
+- **Status effects** — add named effects with duration in rounds and optional GM notes.
+- **PC statblocks** — click a PC name to open their Fantasy Statblocks statblock in a split pane. If Fantasy Statblocks is not installed, the PC note opens instead.
 
-Commands / API
+## Player view
 
-- Start combat programmatically: `this.plugin.combatTracker.startCombat()`
-- Add a combatant: `this.plugin.combatTracker.addCombatant({ name, hp, token_id, sourcePath })`
-- End combat: `this.plugin.combatTracker.endCombat()`
+The Player view is a fullscreen projection window designed for an external monitor or projector:
 
-Integration notes
+- HP bar animations with color-coded health.
+- Dynamic font sizing based on combatant count.
+- Hidden combatants and sensitive GM data (exact HP values, notes) are not shown.
 
-- When adding combatants with `token_id`, the map controller will attempt to place or highlight the corresponding token on the active map.
-- The Player view intentionally hides sensitive fields (HP, hidden status) depending on settings; use `CombatPlayerView` when broadcasting minimal info.
+The session projection system can automatically display the Player view during active combat. See [Sessions — Session Projection](sessions.md#session-projection).
 
-Developer notes
+## Running combat
 
-- Keep combat state mutations inside `CombatTracker` so UI views can remain thin and subscribe to state changes.
-- If you need to persist combat logs, use the session logging helpers to write to `z_Log/` or the active session note.
+1. Select **Start Combat** to begin a new encounter.
+2. Add combatants manually or import from an encounter note.
+3. Select **Roll Initiative** to roll for all combatants with automatic sorting.
+4. Use **Next Turn** and **Previous Turn** to advance through the initiative order.
+5. Select **End Combat** when the encounter is resolved.
 
-Related docs
+## Map integration
 
-- Marker system: [docs/marker-system.md](docs/marker-system.md)
-- Map Manager & Views: [docs/map-manager.md](docs/map-manager.md)
- - Encounter System: [docs/encounter-system.md](docs/encounter-system.md)
- - Encounter builder: [docs/encounter-builder.md](docs/encounter-builder.md)
+- Combatants linked to a `token_id` are highlighted on the active battle map.
+- **Auto-pan** (optional) — the player map view centers on the active combatant's token each turn.
+- **Vision selector** — switch between individual token perspective or combined party view.
+- **Darkvision override** — set per-combatant darkvision range (0–300 ft in 5 ft increments).
+- **Elevation** — flying and burrowing states are tracked and shown on map tokens.
+- **Carried light sources** — tokens with light sources affect the vision system on the map.
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| Open Combat Tracker | Open the combat tracker sidebar |
+| Next Turn | Advance to the next combatant |
+| Previous Turn | Go back to the previous combatant |
+| Roll Initiative | Roll initiative for all combatants |
+| Save Combat State | Persist the current combat state |
+| End Combat | End the active encounter |
+
+## Related docs
+
+- [Marker system](marker-system.md)
+- [Map Manager](map-manager.md)
+- [Encounter system](encounter-system.md)
+- [Encounter builder](encounter-builder.md)
 

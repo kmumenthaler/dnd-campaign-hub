@@ -26,6 +26,33 @@ The plugin provides creation modals for player characters, NPCs, and full creatu
 
 The note is saved to `<Campaign>/PCs/<Character Name>.md` with `type: player` frontmatter. A blue shield marker token is created for the battle map.
 
+### Import from D&D Beyond
+
+From the PC creation modal, paste a D&D Beyond character URL or character ID and select **Import from D&D Beyond**. The plugin pulls:
+
+- Name, player name, classes, and level.
+- Hit points (current and max), armor class (computed from equipped armor, shields, and magic items), initiative bonus, and speed.
+- All six ability scores with modifiers.
+- Skills and saving throw proficiencies.
+- Senses, languages, and traits.
+- Actions, bonus actions, reactions, and spell list.
+- A Fantasy Statblocks–compatible statblock embedded in the note for quick viewing in the combat tracker.
+
+The character's read-only D&D Beyond URL is stored in frontmatter for reference.
+
+### Import from PDF character sheet
+
+From the PC creation modal, select a PDF file from the vault or upload one from your computer. The plugin auto-detects the best matching profile and fills in all fields. Four profiles are supported:
+
+| Profile | Description |
+| --- | --- |
+| WotC Official 5e | Standard Wizards of the Coast character sheet PDF |
+| D&D Beyond PDF Export | Character sheets exported from D&D Beyond |
+| MPMB Automated Sheet | MorePurpleMoreBetter automated character sheets |
+| German 5e (Deutsch) | Full German-language field support with bilingual mappings |
+
+Extracted data includes name, class, level, player, race, background, HP, AC, initiative, speed, ability scores, skills, saving throws, features, equipment, and personality traits.
+
 ### Edit a PC
 
 Run **Edit PC** while viewing a PC note. All fields are pre-filled from frontmatter. Renaming updates the file name and marker.

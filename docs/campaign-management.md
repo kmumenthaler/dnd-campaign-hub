@@ -53,11 +53,12 @@ The hub shows a grid of creation buttons:
 
 ### Browse vault
 
-Below the quick actions, a browse section lets you navigate to:
+Below the quick actions, a browse section lets you explore all campaign content by category:
 
-- Campaigns, NPCs, PCs, Adventures, Sessions, Items, Spells, Factions.
+- **Campaign content** — Campaigns, NPCs, PCs, Adventures, Sessions, Factions, Items, Spells, Creatures, Traps.
+- **SRD Reference** — Equipment, Classes, Subclasses, Races, Subraces, Features, Traits, Conditions, Skills, Proficiencies, Languages, Ability Scores, Damage Types, Magic Schools, Weapon Properties. This section appears after you import SRD data from the settings page.
 
-Selecting an entry opens the corresponding note in the editor.
+Each category shows a result count and expands inline with a search bar. When multiple campaigns exist, results are grouped by campaign with origin labels. Selecting an entry opens the note in the editor.
 
 ## Purge campaign data
 

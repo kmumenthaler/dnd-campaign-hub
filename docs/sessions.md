@@ -35,6 +35,13 @@ Run **Open Session Prep Dashboard** from the Command Palette. The panel opens in
 ### Sections
 
 - **Adventure Progress** — shows adventure cards with status badges, progress bars (scenes completed out of total), the next upcoming scene with its duration, type, and difficulty, and a list of remaining scenes.
+- **Readiness Score** — a 0–100 readiness indicator based on five criteria:
+  - Active adventure selected (30 pts)
+  - Party members exist (25 pts)
+  - Session notes prepared (20 pts)
+  - NPCs available (10 pts)
+  - Next scene has a goal (15 pts)
+  Each item shows a check or cross with a hint. Incomplete items include an action button (e.g. **Create Adventure**, **Manage Parties**, **Create Session**, **Add NPCs**) that opens the relevant creation modal.
 - **Quick Actions** — creation buttons for sessions, scenes, encounters, adventures, NPCs, PCs, creatures, factions, items, spells, and traps.
 - **Party Overview** — PC cards with name, HP bars (color-coded green, orange, or red based on health percentage), and AC.
 - **Recent NPCs** — the eight most recently modified NPCs as clickable links.
@@ -60,3 +67,26 @@ Run **Open Session Run Dashboard** from the Command Palette.
 - **SRD Quick Search** — search across imported SRD data (spells, equipment, classes). Results appear as cards with a type badge, name, and preview text. Select a result to open it in a new tab.
 - **Quick Actions** — the same creation buttons as the Prep Dashboard.
 - **Setup Session Layout** — select this to auto-open the scene, adventure, and session notes in a split layout, open the Initiative Tracker, and collapse frontmatter properties for a clean workspace.
+
+## Session Projection
+
+The session projection system manages persistent player-facing screens across multiple displays, automatically transitioning between idle, map, and combat states.
+
+### Set up projection
+
+1. Run **Session Projection** from the Command Palette to open the GM setup modal.
+2. Configure each screen:
+   - **Idle content** — choose solid black, a custom color, a static image, or a looping video. Use the media picker to browse vault images and videos with thumbnail previews.
+   - **Mode** — "battle" for auto-calibrated grid alignment or "free" for manual pan and zoom.
+3. Optionally save the configuration as a **projection profile** for quick loading in future sessions.
+4. Select **Start** or run **Start Projection Session** from the Command Palette.
+
+During a session, the plugin automatically switches projected screens between the idle content, the active battle map, and the combat tracker player view as needed.
+
+### Commands
+
+| Command | Description |
+| --- | --- |
+| Session Projection | Open the projection setup modal |
+| Start Projection Session | Launch all configured screens |
+| Stop Projection Session | Close all managed projection screens |

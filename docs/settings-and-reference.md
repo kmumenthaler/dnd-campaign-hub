@@ -6,21 +6,17 @@ Open **Settings > D&D Campaign Hub** to configure the plugin. The settings page 
 
 ### Plugin dependencies
 
-Shows the installation status of each required plugin. A green check indicates the plugin is installed and enabled; a red cross means it is missing. Select **Install** to open the Obsidian plugin browser for any missing plugin.
+Shows the installation status of each optional plugin. A green check indicates the plugin is installed and enabled; a yellow warning means it is missing. Select **Install** to open the Obsidian plugin browser for any missing plugin.
 
 | Plugin | Purpose |
 | --- | --- |
-| Buttons | Action buttons in generated notes |
-| Dataview | DataviewJS queries for dashboards and widgets |
 | Calendarium | In-game calendar and date tracking |
 | Templater | Template processing for note creation |
-| Initiative Tracker | Combat tracking, party management, and encounter loading |
-
-**Fantasy Statblocks** is also recommended for creature and trap stat block rendering.
+| Fantasy Statblocks | Creature and PC stat block rendering |
 
 ### Campaign settings
 
-- **Current Campaign** — the vault path of the active campaign. Most creation commands default to this campaign.
+- **Active Campaign** — auto-detected from the currently open note. Use the campaign picker in creation modals to target a different campaign.
 
 ### Map management
 
@@ -86,6 +82,9 @@ All commands are available from the Command Palette (`Ctrl+P` on Windows/Linux, 
 | End Session Here | Record the ending scene for the current session |
 | Open Session Prep Dashboard | Open the pre-session preparation panel |
 | Open Session Run Dashboard | Open the in-session management panel |
+| Session Projection | Open the projection setup modal for managed player screens |
+| Start Projection Session | Launch configured projection screens |
+| Stop Projection Session | Close all managed projection screens |
 
 ### Adventures and scenes
 
@@ -184,6 +183,7 @@ The plugin registers seven custom code block types:
 | `dnd-map` | Renders an interactive battle map | [Battle maps](battle-maps.md) |
 | `dnd-encounter` | Renders an encounter summary widget | [Encounter builder](encounter-builder.md) |
 | `dnd-encounter-table` | Renders a random encounter table widget | [Encounter builder](encounter-builder.md) |
+| `dnd-hub` | Renders entity action buttons (edit, delete) | Included automatically in all entity templates |
 | `dnd-music` | Renders a scene music loader card | [Music player](music-player.md) |
 | `dnd-sfx` | Renders a sound effect trigger button | [Music player](music-player.md) |
 | `dnd-poi` | Renders a list of points of interest | [Items, spells, traps, and factions](items-spells-traps.md) |
@@ -235,11 +235,29 @@ After initialization, the plugin creates the following top-level folders:
 | `z_Encounters/` | Standalone encounter notes |
 | `z_Traps/` | Trap notes |
 | `z_Spells/` | SRD spell imports |
-| `z_Conditions/` | SRD condition notes |
-| `z_DamageTypes/` | SRD damage type notes |
 | `z_Databases/` | Campaign databases |
 | `z_Tables/` | Random tables |
 | `z_Log/` | Session logs |
 | `z_Backups/` | Migration backups |
+
+Additional SRD data folders are created when you import SRD content from the settings page:
+
+| Folder | SRD Category |
+| --- | --- |
+| `z_AbilityScores/` | Ability Scores |
+| `z_Classes/` | Classes |
+| `z_Conditions/` | Conditions |
+| `z_DamageTypes/` | Damage Types |
+| `z_Equipment/` | Equipment |
+| `z_Features/` | Features |
+| `z_Languages/` | Languages |
+| `z_MagicSchools/` | Magic Schools |
+| `z_Proficiencies/` | Proficiencies |
+| `z_Races/` | Races |
+| `z_Skills/` | Skills |
+| `z_Subclasses/` | Subclasses |
+| `z_Subraces/` | Subraces |
+| `z_Traits/` | Traits |
+| `z_WeaponProperties/` | Weapon Properties |
 
 Each campaign folder under `ttrpgs/` contains subfolders for Adventures, Sessions, NPCs, PCs, Factions, Items, Spells, and locations.

@@ -25,8 +25,9 @@ Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, a c
 ### Session tracking
 
 - Auto-numbered, date-stamped session notes linked to adventures.
-- **Session prep dashboard** — sidebar panel for pre-session planning with adventure and scene overview.
+- **Session prep dashboard** — sidebar panel for pre-session planning with adventure and scene overview, readiness score, and actionable checklist.
 - **Session run dashboard** — live session panel with named timers, dice history, quick notes, and automatic DM Screen opening.
+- **Session projection** — persistent managed player screens with idle content (images, videos, solid colors), automatic transitions between idle, map, and combat states, and saveable projection profiles.
 
 ### Interactive battle maps
 
@@ -77,6 +78,7 @@ Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, a c
 
 - **GM sidebar view** — initiative order, round counter, HP/AC/status columns, expandable combatant rows.
 - **Player view** — fullscreen projection with HP bar animations, dynamic font sizing, and read-only presentation.
+- Click a PC name to open their Fantasy Statblocks statblock in a split pane.
 - HP tracking with current, temporary, and max HP; death save successes and failures.
 - Status effects with name, duration in rounds, and GM notes.
 - Initiative rolling with automatic sorting.
@@ -134,6 +136,8 @@ Tabbed reference panel with eight quick-reference sections: conditions, actions,
 ### Characters and creatures
 
 - **PC creation** — name, player, class, subclass, level, HP, AC, initiative, speed, passive perception, D&D Beyond link.
+- **D&D Beyond import** — paste a character URL or ID to pull stats, abilities, actions, spells, equipment, and AC calculation directly into a PC note with Fantasy Statblocks integration.
+- **PDF character sheet import** — drag-and-drop a PDF to auto-fill PC fields. Four profiles auto-detected: WotC Official 5e, D&D Beyond PDF Export, MPMB Automated Sheet, and German (Deutsch) 5e.
 - **NPC creation** — name, race, location, faction, motivation, personality.
 - **Import PCs** from other campaigns.
 - **Creature builder** — full stat block with ability scores, saves, skills, resistances, immunities, traits, actions, legendary actions, and more.
@@ -161,6 +165,7 @@ Import all D&D 5e SRD content from the dnd5eapi.co API:
 
 - 15 data categories: ability scores, classes, conditions, damage types, equipment, features, languages, magic schools, proficiencies, races, skills, subclasses, subraces, traits, weapon properties.
 - Batch creature token import (334 SRD monsters) with stat block notes, artwork, and correctly sized battlemap tokens.
+- Imported SRD data is browsable in the Campaign Hub under a dedicated **SRD Reference** section with search and filtering.
 
 ### Embeddable code blocks
 
@@ -173,6 +178,7 @@ Import all D&D 5e SRD content from the dnd5eapi.co API:
 | `` ```dnd-music``` `` | Scene music controls |
 | `` ```dnd-sfx``` `` | Inline sound effect trigger |
 | `` ```dnd-encounter-table``` `` | Random encounter table with rollable entries |
+| `` ```dnd-hub``` `` | Entity action buttons (edit, delete) rendered by the plugin |
 
 ## Installation
 
@@ -192,17 +198,15 @@ Import all D&D 5e SRD content from the dnd5eapi.co API:
 
 ## Dependencies
 
-Battle maps work standalone. For full campaign management, these community plugins are recommended:
+The plugin works standalone with no required dependencies. The following community plugins are recommended for enhanced features:
 
 | Plugin | Purpose |
 | --- | --- |
-| [Buttons](https://github.com/shabegom/buttons) | Interactive buttons in campaign notes |
-| [Dataview](https://github.com/blacksmithgu/obsidian-dataview) | Dynamic tables and queries |
 | [Calendarium](https://github.com/javalent/calendarium) | Fantasy calendar integration |
 | [Templater](https://github.com/SilentVoid13/Templater) | Template engine for dynamic content |
-| [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks) | Creature and trap stat block rendering |
+| [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks) | Creature and PC stat block rendering |
 
-The plugin checks for missing dependencies and prompts you to install them when needed. You can also check manually in **Settings** → **D&D Campaign Hub** → **Plugin Dependencies**.
+The plugin checks for missing optional plugins on startup and in **Settings** → **D&D Campaign Hub**.
 
 ## Quick start
 
@@ -234,6 +238,9 @@ Access all commands through the Command Palette (`Ctrl+P`). The plugin registers
 | End Session Here | Record the ending scene for the active session |
 | Open Session Prep Dashboard | Open the pre-session planning sidebar |
 | Open Session Run Dashboard | Open the live session sidebar |
+| Session Projection | Open the projection setup modal for managed player screens |
+| Start Projection Session | Launch all configured projection screens |
+| Stop Projection Session | Close all managed projection screens |
 
 ### Adventures, scenes, and encounters
 
@@ -316,12 +323,12 @@ Open **Settings** → **D&D Campaign Hub** to configure the plugin.
 
 | Section | Setting | Description |
 | --- | --- | --- |
-| Campaign | Current Campaign | Campaign folder path (e.g., `ttrpgs/Campaign Name`) |
+| Campaign | Active Campaign | Auto-detected from the open note or selectable via picker |
 | Maps | Auto-pan to active combatant | Center the player view on the current combatant during combat |
 | Lighting | Vision update mode | "Update on drop" (faster) or "Update while dragging" (live preview) |
 | SRD Data | Import All SRD Data | Download all 15 SRD categories to system folders |
 | | Import SRD Creatures | Import 334 creatures as tokens with artwork |
-| Dependencies | Plugin Dependencies | Status of recommended plugins (Buttons, Dataview, Calendarium, Templater) |
+| Dependencies | Plugin Dependencies | Status of optional plugins (Calendarium, Templater, Fantasy Statblocks) |
 | File Management | Migrate Files | Safely update templates to the latest version |
 | Danger Zone | Purge Vault | Remove all plugin data from the vault |
 
@@ -413,8 +420,10 @@ src/
   music/                Music player, playlists, Freesound integration
   party/                Party manager and party management modal
   poi/                  Point of interest editing and rendering
+  projection/           Session projection manager and media picker
+  rendering/            Shared render utilities
   scene/                Scene creation and slash command snippets
-  session/              Session dashboards (prep and run)
+  session/              Session dashboards (prep and run), readiness checklist
   settings/             Settings tab with SRD import
   spell/                Spell import and detail modals
   srd/                  SRD data import utilities
@@ -437,7 +446,7 @@ Contributions are welcome.
 
 ## Credits
 
-Special thanks to the creators of [Buttons](https://github.com/shabegom/buttons), [Dataview](https://github.com/blacksmithgu/obsidian-dataview), [Calendarium](https://github.com/javalent/calendarium), [Templater](https://github.com/SilentVoid13/Templater), and [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks).
+Special thanks to the creators of [Calendarium](https://github.com/javalent/calendarium), [Templater](https://github.com/SilentVoid13/Templater), and [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks).
 
 ## License
 

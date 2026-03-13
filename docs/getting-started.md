@@ -20,17 +20,15 @@ This guide walks you through installing D&D Campaign Hub and setting up your fir
 
 ## Install recommended plugins
 
-Battle maps work standalone. For the full campaign management experience, the following community plugins are recommended:
+The plugin works standalone with no required dependencies. The following community plugins are recommended for enhanced features:
 
 | Plugin | Purpose |
 | --- | --- |
-| [Buttons](https://github.com/shabegom/buttons) | Interactive buttons in campaign notes |
-| [Dataview](https://github.com/blacksmithgu/obsidian-dataview) | Dynamic tables and queries |
 | [Calendarium](https://github.com/javalent/calendarium) | Fantasy calendar integration |
 | [Templater](https://github.com/SilentVoid13/Templater) | Template engine for dynamic content |
-| [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks) | Creature and trap stat block rendering |
+| [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks) | Creature and PC stat block rendering |
 
-The plugin checks for missing dependencies and prompts you to install them when needed. You can also check manually in **Settings** → **D&D Campaign Hub** → **Plugin Dependencies**.
+The plugin checks for missing optional plugins on startup and in **Settings** → **D&D Campaign Hub**.
 
 ## Initialize the vault
 
