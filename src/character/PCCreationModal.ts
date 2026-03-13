@@ -6,7 +6,7 @@ import { TokenEditorWidget } from '../marker/TokenEditorWidget';
 import { PC_TEMPLATE } from '../templates';
 import { TEMPLATE_VERSIONS } from '../migration';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
-import { importFromDndBeyond, StatblockEntry } from './DndBeyondCharacterImport';
+import { createVaultSrdLinkResolver, importFromDndBeyond, StatblockEntry } from './DndBeyondCharacterImport';
 
 export class PCCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -557,7 +557,9 @@ export class PCCreationModal extends Modal {
     }
 
     try {
-      const imported = await importFromDndBeyond(source);
+      const imported = await importFromDndBeyond(source, {
+        linkResolver: createVaultSrdLinkResolver(this.app),
+      });
 
       this.pcName = imported.name;
       if (imported.playerName) this.playerName = imported.playerName;

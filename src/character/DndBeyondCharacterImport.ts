@@ -1,4 +1,4 @@
-import { requestUrl } from "obsidian";
+import { requestUrl, TFile, TFolder, type App } from "obsidian";
 
 export interface StatblockEntry {
   name: string;
@@ -33,6 +33,14 @@ export interface DndBeyondPcImportData {
   bonusActions: StatblockEntry[];
   reactions: StatblockEntry[];
   spells: string[];
+}
+
+type LinkKind = "spell" | "feat" | "skill" | "feature" | "trait" | "class" | "race";
+
+type LinkResolver = (name: string, kinds: LinkKind[]) => string;
+
+interface ImportOptions {
+  linkResolver?: LinkResolver;
 }
 
 interface AbilityScores {
@@ -167,14 +175,81 @@ function slugify(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-function withDdbLink(name: string, section: "spells" | "feats"): string {
-  const slug = slugify(name);
-  return slug ? `[${name}](https://www.dndbeyond.com/${section}/${slug})` : name;
+function stripMdExtension(path: string): string {
+  return path.toLowerCase().endsWith(".md") ? path.slice(0, -3) : path;
 }
 
-function withSearchLink(name: string): string {
-  const query = encodeURIComponent(name);
-  return `[${name}](https://www.dndbeyond.com/search?q=${query})`;
+function escapeWikiAlias(value: string): string {
+  return value.replace(/\|/g, "\\|");
+}
+
+function defaultLinkResolver(name: string): string {
+  return name;
+}
+
+function withResolvedLink(name: string, kinds: LinkKind[], resolver?: LinkResolver): string {
+  const normalized = name.trim();
+  if (!normalized) return "";
+  return (resolver || defaultLinkResolver)(normalized, kinds);
+}
+
+export function createVaultSrdLinkResolver(app: App): LinkResolver {
+  const kindToFolders: Record<LinkKind, string[]> = {
+    spell: ["z_Spells"],
+    feat: ["z_Features", "z_Traits"],
+    skill: ["z_Skills"],
+    feature: ["z_Features", "z_Traits"],
+    trait: ["z_Traits", "z_Features"],
+    class: ["z_Classes", "z_Subclasses"],
+    race: ["z_Races", "z_Subraces"],
+  };
+
+  const folderIndexes = new Map<string, Map<string, string>>();
+
+  const normalizeKey = (value: string): string => slugify(value).replace(/-/g, "");
+
+  const getFolderIndex = (folderPath: string): Map<string, string> => {
+    const cached = folderIndexes.get(folderPath);
+    if (cached) return cached;
+
+    const index = new Map<string, string>();
+    const folder = app.vault.getAbstractFileByPath(folderPath);
+    if (folder && folder instanceof TFolder) {
+      for (const child of folder.children) {
+        if (!(child instanceof TFile)) continue;
+        const childPath = child.path;
+        const childName = child.basename;
+        if (!childPath.toLowerCase().endsWith(".md")) continue;
+        const key = normalizeKey(childName);
+        if (key) index.set(key, stripMdExtension(childPath));
+      }
+    }
+
+    folderIndexes.set(folderPath, index);
+    return index;
+  };
+
+  return (name: string, kinds: LinkKind[]): string => {
+    const key = normalizeKey(name);
+    if (!key) return name;
+
+    const candidateFolders = new Set<string>();
+    for (const kind of kinds) {
+      for (const folder of kindToFolders[kind] || []) {
+        candidateFolders.add(folder);
+      }
+    }
+
+    for (const folder of candidateFolders) {
+      const index = getFolderIndex(folder);
+      const matchPath = index.get(key);
+      if (matchPath) {
+        return `[[${matchPath}|${escapeWikiAlias(name)}]]`;
+      }
+    }
+
+    return name;
+  };
 }
 
 function resolveTemplateToken(tokenRaw: string, ctx: ImportContext): string {
@@ -402,7 +477,7 @@ function collectScopedSkillTraits(data: any, abilities: AbilityScores, totalLeve
       const display = key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
       const bonus = abilityModifier(scores[abilityIndex] || 10) + proficiencyBonus;
       const signed = bonus >= 0 ? `+${bonus}` : String(bonus);
-      items.push(`${withSearchLink(display)} ${signed}`);
+      items.push(`${display} ${signed}`);
     }
     if (items.length > 0) {
       const unique = Array.from(new Set(items)).sort((a, b) => a.localeCompare(b));
@@ -451,7 +526,7 @@ function collectSpellLines(data: any, abilities: AbilityScores, totalLevel: numb
 
     const level = asNumber(spell?.definition?.level);
     if (!grouped.has(level)) grouped.set(level, new Set<string>());
-    grouped.get(level)!.add(withDdbLink(name, "spells"));
+    grouped.get(level)!.add(name);
   }
 
   const lines: string[] = [header];
@@ -481,7 +556,29 @@ function collectSpellLines(data: any, abilities: AbilityScores, totalLevel: numb
   return lines;
 }
 
-function collectFeatTraits(data: any, ctx: ImportContext): StatblockEntry[] {
+function linkSpellDisplayLines(lines: string[], resolver?: LinkResolver): string[] {
+  return lines.map((line) => {
+    const colonIndex = line.indexOf(":");
+    if (colonIndex < 0) return line;
+
+    const prefix = line.slice(0, colonIndex + 1);
+    const body = line.slice(colonIndex + 1).trim();
+    if (!body) return line;
+
+    const linked = body
+      .split(",")
+      .map((part) => {
+        const name = part.trim();
+        if (!name) return part;
+        return withResolvedLink(name, ["spell"], resolver);
+      })
+      .join(", ");
+
+    return `${prefix} ${linked}`.trim();
+  });
+}
+
+function collectFeatTraits(data: any, ctx: ImportContext, resolver?: LinkResolver): StatblockEntry[] {
   const feats = Array.isArray(data?.feats) ? data.feats : [];
   const out: StatblockEntry[] = [];
   for (const feat of feats) {
@@ -489,13 +586,13 @@ function collectFeatTraits(data: any, ctx: ImportContext): StatblockEntry[] {
     if (!name) continue;
     out.push({
       name,
-      desc: `${withDdbLink(name, "feats")}: ${resolveDescription(feat, ctx)}`,
+      desc: `${withResolvedLink(name, ["feat", "feature", "trait"], resolver)}: ${resolveDescription(feat, ctx)}`,
     });
   }
   return out;
 }
 
-function collectOptionTraits(data: any, ctx: ImportContext): StatblockEntry[] {
+function collectOptionTraits(data: any, ctx: ImportContext, resolver?: LinkResolver): StatblockEntry[] {
   const options = Array.isArray(data?.options?.class) ? data.options.class : [];
   const out: StatblockEntry[] = [];
   for (const opt of options) {
@@ -504,12 +601,12 @@ function collectOptionTraits(data: any, ctx: ImportContext): StatblockEntry[] {
     const requiredLevel = asNumber(opt?.definition?.requiredLevel);
     if (requiredLevel > 0 && requiredLevel > ctx.totalLevel) continue;
     const desc = resolveDescription(opt, ctx);
-    out.push({ name, desc: `${withSearchLink(name)}: ${desc}` });
+    out.push({ name, desc: `${withResolvedLink(name, ["feature", "trait", "class"], resolver)}: ${desc}` });
   }
   return out;
 }
 
-function collectClassAndSpeciesTraits(data: any, ctx: ImportContext): { classTraits: StatblockEntry[]; speciesTraits: StatblockEntry[] } {
+function collectClassAndSpeciesTraits(data: any, ctx: ImportContext, resolver?: LinkResolver): { classTraits: StatblockEntry[]; speciesTraits: StatblockEntry[] } {
   const classTraits: StatblockEntry[] = [];
   const speciesTraits: StatblockEntry[] = [];
   const seenClass = new Set<string>();
@@ -525,9 +622,10 @@ function collectClassAndSpeciesTraits(data: any, ctx: ImportContext): { classTra
     const desc = summarizeDescription(resolveDdbTemplateExpressions(descRaw || "", ctx));
     if (!desc) return;
 
+    const kinds: LinkKind[] = bucket === "class" ? ["feature", "class", "trait"] : ["trait", "race", "feature"];
     const trait = {
       name,
-      desc: `${withSearchLink(name)}: ${desc}`,
+      desc: `${withResolvedLink(name, kinds, resolver)}: ${desc}`,
     };
     if (bucket === "class") classTraits.push(trait);
     else speciesTraits.push(trait);
@@ -575,7 +673,7 @@ function collectClassAndSpeciesTraits(data: any, ctx: ImportContext): { classTra
   return { classTraits, speciesTraits };
 }
 
-function collectFeatureActionEntries(data: any, ctx: ImportContext): { actions: StatblockEntry[]; bonusActions: StatblockEntry[]; reactions: StatblockEntry[] } {
+function collectFeatureActionEntries(data: any, ctx: ImportContext, resolver?: LinkResolver): { actions: StatblockEntry[]; bonusActions: StatblockEntry[]; reactions: StatblockEntry[] } {
   const actions: StatblockEntry[] = [];
   const bonusActions: StatblockEntry[] = [];
   const reactions: StatblockEntry[] = [];
@@ -602,7 +700,7 @@ function collectFeatureActionEntries(data: any, ctx: ImportContext): { actions: 
     if (seen.has(key)) return;
     seen.add(key);
 
-    const item: StatblockEntry = { name: withSearchLink(name), desc };
+    const item: StatblockEntry = { name: withResolvedLink(name, ["feature", "trait", "class", "race"], resolver), desc };
     if (activationType === 3) bonusActions.push(item);
     else if (activationType === 4) reactions.push(item);
     else actions.push(item);
@@ -630,13 +728,21 @@ function mergeUniqueEntries(...groups: StatblockEntry[][]): StatblockEntry[] {
   const seen = new Set<string>();
   for (const group of groups) {
     for (const entry of group) {
-      const key = `${entry.name.toLowerCase()}::${entry.desc.toLowerCase()}`;
+      const key = stripLinkMarkup(entry.name).toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(entry);
     }
   }
   return out;
+}
+
+function stripLinkMarkup(value: string): string {
+  return value
+    .replace(/\[\[[^\]|]*\|([^\]]+)\]\]/g, "$1")
+    .replace(/\[\[([^\]]+)\]\]/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .trim();
 }
 
 function isWeaponProficient(weapon: any, modifiers: any[]): boolean {
@@ -664,11 +770,9 @@ function collectWeaponActions(data: any, abilities: AbilityScores, proficiencyBo
   const weapons = inventory.filter((item: any) => String(item?.definition?.filterType || "").toLowerCase() === "weapon");
   if (weapons.length === 0) return [];
 
-  const selected = weapons.filter((w: any) => w?.equipped === true);
-  const source = selected.length > 0 ? selected : weapons;
   const out: StatblockEntry[] = [];
 
-  for (const weapon of source) {
+  for (const weapon of weapons) {
     const name = String(weapon?.definition?.name || "").trim();
     if (!name) continue;
 
@@ -699,7 +803,7 @@ function collectWeaponActions(data: any, abilities: AbilityScores, proficiencyBo
     const propertiesText = properties.length > 0 ? ` Properties: ${properties.join(", ")}.` : "";
     const desc = `${prefix}: ${signedHit} to hit, range ${rangeText}, one target. Hit: ${dice} ${signedDamage} ${dmgType} damage.${propertiesText}`;
 
-    out.push({ name: withSearchLink(name), desc });
+    out.push({ name, desc });
   }
 
   return out;
@@ -732,7 +836,96 @@ function collectActionEntries(data: any, ctx: ImportContext): { actions: Statblo
   return { actions, bonusActions, reactions };
 }
 
-export async function importFromDndBeyond(source: string): Promise<DndBeyondPcImportData> {
+function collectSpellAttackActions(
+  data: any,
+  abilities: AbilityScores,
+  totalLevel: number,
+  resolver?: LinkResolver,
+): StatblockEntry[] {
+  const classSpells = Array.isArray(data?.classSpells) ? data.classSpells : [];
+  const allSpells: any[] = classSpells.flatMap((c: any) => (Array.isArray(c?.spells) ? c.spells : []));
+  if (allSpells.length === 0) return [];
+
+  const casterClass = Array.isArray(data?.classes) && data.classes.length > 0 ? data.classes[0] : null;
+  const spellcastingAbilityId = asNumber(casterClass?.definition?.spellCastingAbilityId);
+  const abilityScore = spellcastingAbilityId > 0
+    ? resolveAbilityScore(data, spellcastingAbilityId)
+    : abilities.wis;
+  const abilityMod = abilityModifier(abilityScore || 10);
+  const proficiencyBonus = getProficiencyBonus(totalLevel);
+  const spellAttack = abilityMod + proficiencyBonus;
+  const spellSaveDc = 8 + proficiencyBonus + abilityMod;
+  const signedAttack = spellAttack >= 0 ? `+${spellAttack}` : String(spellAttack);
+
+  const out: StatblockEntry[] = [];
+  const seen = new Set<string>();
+
+  for (const spell of allSpells) {
+    const def = spell?.definition;
+    if (!def) continue;
+
+    const isPrepared = !!spell?.prepared || !!spell?.alwaysPrepared || !!spell?.countsAsKnownSpell;
+    if (!isPrepared) continue;
+
+    const level = asNumber(def.level);
+    const isCantrip = level === 0;
+    const requiresSavingThrow = !!def.requiresSavingThrow;
+    const requiresAttackRoll = !!def.requiresAttackRoll;
+    if (!requiresAttackRoll && !requiresSavingThrow) continue;
+
+    const name = String(def.name || "").trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const rangeValue = asNumber(def.range?.rangeValue);
+    const rangeUnit = rangeValue > 0 ? `${rangeValue} ft.` : "Self";
+    const school = String(def.school || "").trim();
+    const tags: string[] = [];
+    if (isCantrip) tags.push("cantrip");
+    else tags.push(`${ordinal(level)}-level`);
+    if (school) tags.push(school.toLowerCase());
+
+    const damageParts: string[] = [];
+    if (def.damage?.diceString) {
+      const dmgType = String(def.damage?.damageType || "").toLowerCase();
+      damageParts.push(`${def.damage.diceString}${dmgType ? ` ${dmgType}` : ""}`);
+    }
+
+    let hitText: string;
+    if (requiresAttackRoll) {
+      hitText = `Spell Attack: ${signedAttack} to hit, range ${rangeUnit}`;
+    } else {
+      const saveType = String(def.saveDcAbilityId ? ABILITY_NAMES[asNumber(def.saveDcAbilityId)] || "" : "").substring(0, 3).toUpperCase();
+      hitText = `DC ${spellSaveDc}${saveType ? ` ${saveType}` : ""} save, range ${rangeUnit}`;
+    }
+
+    const damageText = damageParts.length > 0 ? ` Hit: ${damageParts.join(" + ")} damage.` : "";
+    const tagText = tags.length > 0 ? ` (${tags.join(", ")})` : "";
+    const linkedName = withResolvedLink(name, ["spell"], resolver);
+    const desc = `${hitText}, one target.${damageText}${tagText}`;
+
+    out.push({ name: linkedName, desc });
+  }
+
+  return out;
+}
+
+function deduplicateTraits(traits: StatblockEntry[], actionNames: Set<string>): StatblockEntry[] {
+  const out: StatblockEntry[] = [];
+  const seen = new Set<string>();
+  for (const trait of traits) {
+    const plainName = stripLinkMarkup(trait.name).toLowerCase();
+    if (seen.has(plainName)) continue;
+    if (actionNames.has(plainName)) continue;
+    seen.add(plainName);
+    out.push(trait);
+  }
+  return out;
+}
+
+export async function importFromDndBeyond(source: string, options?: ImportOptions): Promise<DndBeyondPcImportData> {
   const characterId = parseCharacterId(source);
   if (!characterId) {
     throw new Error("Could not parse D&D Beyond character ID from input.");
@@ -787,16 +980,46 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
   };
 
   const importCtx: ImportContext = { abilities, totalLevel };
-  const featTraits = collectFeatTraits(data, importCtx);
-  const optionTraits = collectOptionTraits(data, importCtx);
-  const classSpeciesTraits = collectClassAndSpeciesTraits(data, importCtx);
+  const linkResolver = options?.linkResolver;
+  const featTraits = collectFeatTraits(data, importCtx, linkResolver);
+  const optionTraits = collectOptionTraits(data, importCtx, linkResolver);
+  const classSpeciesTraits = collectClassAndSpeciesTraits(data, importCtx, linkResolver);
   const proficiencyBonus = getProficiencyBonus(totalLevel);
   const skillsaves = collectSkillSaves(data, abilities, totalLevel);
   const scopedSkillTraits = collectScopedSkillTraits(data, abilities, totalLevel);
   const actionEntries = collectActionEntries(data, importCtx);
   const weaponActions = collectWeaponActions(data, abilities, proficiencyBonus);
-  const featureActions = collectFeatureActionEntries(data, importCtx);
-  const spells = collectSpellLines(data, abilities, totalLevel);
+
+  const strMod = abilityModifier(abilities.str);
+  const unarmedDamage = Math.max(1, 1 + strMod);
+  const unarmedHit = strMod + proficiencyBonus;
+  const signedUnarmed = unarmedHit >= 0 ? `+${unarmedHit}` : String(unarmedHit);
+  const unarmedAction: StatblockEntry = {
+    name: "Unarmed Strike",
+    desc: `Melee Weapon Attack: ${signedUnarmed} to hit, reach 5 ft., one target. Hit: ${unarmedDamage} bludgeoning damage.`,
+  };
+
+  const featureActions = collectFeatureActionEntries(data, importCtx, linkResolver);
+  const spellAttackActions = collectSpellAttackActions(data, abilities, totalLevel, linkResolver);
+  const spells = linkSpellDisplayLines(collectSpellLines(data, abilities, totalLevel), linkResolver);
+
+  const allActions = mergeUniqueEntries(weaponActions, [unarmedAction], spellAttackActions, featureActions.actions, actionEntries.actions);
+  const allBonusActions = mergeUniqueEntries(featureActions.bonusActions, actionEntries.bonusActions);
+  const allReactions = mergeUniqueEntries(featureActions.reactions, actionEntries.reactions);
+
+  const actionNames = new Set<string>();
+  for (const a of [...allActions, ...allBonusActions, ...allReactions]) {
+    actionNames.add(stripLinkMarkup(a.name).toLowerCase());
+  }
+
+  const rawTraits = [
+    ...classSpeciesTraits.classTraits,
+    ...classSpeciesTraits.speciesTraits,
+    ...scopedSkillTraits,
+    ...featTraits,
+    ...optionTraits,
+  ];
+  const dedupedTraits = deduplicateTraits(rawTraits, actionNames);
 
   return {
     characterId,
@@ -814,16 +1037,10 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
     senses: collectSenses(data),
     languages: collectLanguages(data),
     skillsaves,
-    traits: [
-      ...classSpeciesTraits.classTraits,
-      ...classSpeciesTraits.speciesTraits,
-      ...scopedSkillTraits,
-      ...featTraits,
-      ...optionTraits,
-    ],
-    actions: mergeUniqueEntries(weaponActions, featureActions.actions, actionEntries.actions),
-    bonusActions: mergeUniqueEntries(featureActions.bonusActions, actionEntries.bonusActions),
-    reactions: mergeUniqueEntries(featureActions.reactions, actionEntries.reactions),
+    traits: dedupedTraits,
+    actions: allActions,
+    bonusActions: allBonusActions,
+    reactions: allReactions,
     spells,
   };
 }
