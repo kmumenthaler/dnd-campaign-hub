@@ -3,7 +3,9 @@ import type DndCampaignHubPlugin from "../main";
 import { PDFFileSuggest, PDFBrowserModal } from "../utils/PDFBrowser";
 import { MarkerDefinition, CreatureSize } from '../marker/MarkerTypes';
 import { TokenEditorWidget } from '../marker/TokenEditorWidget';
+import { TEMPLATE_VERSIONS } from "../migration";
 import { NPC_TEMPLATE } from '../templates';
+import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 
 export class NPCCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -1170,18 +1172,26 @@ export class NPCCreationModal extends Modal {
 
         // Get current date
         const currentDate = new Date().toISOString().split('T')[0];
+        const npcTemplateVersion = TEMPLATE_VERSIONS.npc || "1.4.0";
 
-        // Replace placeholders in template
+        npcContent = updateYamlFrontmatter(npcContent, (fm) => ({
+          ...fm,
+          type: 'npc',
+          template_version: npcTemplateVersion,
+          name: this.npcName,
+          world: worldName,
+          campaign: campaignName,
+          date: currentDate,
+          token_id: tokenId,
+          motivation: this.motivation,
+          pursuit: this.pursuit,
+          physical_detail: this.physicalDetail,
+          speech_pattern: this.speechPattern,
+          active_problem: this.activeProblem,
+        }));
+
+        // Replace body placeholders in template
         npcContent = npcContent
-          .replace(/name: $/m, `name: ${this.npcName}`)
-          .replace(/world: $/m, `world: ${worldName}`)
-          .replace(/campaign: $/m, `campaign: ${campaignName}`)
-          .replace(/date: $/m, `date: ${currentDate}\ntoken_id: ${tokenId}`)
-          .replace(/motivation: $/m, `motivation: "${this.motivation}"`)
-          .replace(/pursuit: $/m, `pursuit: "${this.pursuit}"`)
-          .replace(/physical_detail: $/m, `physical_detail: "${this.physicalDetail}"`)
-          .replace(/speech_pattern: $/m, `speech_pattern: "${this.speechPattern}"`)
-          .replace(/active_problem: $/m, `active_problem: "${this.activeProblem}"`)
           .replace(/{{name}}/g, this.npcName)
           .replace(/{{motivation}}/g, this.motivation)
           .replace(/{{pursuit}}/g, this.pursuit)
@@ -1220,80 +1230,40 @@ export class NPCCreationModal extends Modal {
    */
   injectStatblockIntoContent(content: string, tokenId: string): string {
     const calcMod = (score: number) => Math.floor((score - 10) / 2);
+    const stats = [this.str, this.dex, this.con, this.int, this.wis, this.cha];
+    const fageStats = stats.map(calcMod);
+    const traits = this.traits.filter(t => t.name && t.desc);
+    const actions = this.actions.filter(a => a.name && a.desc);
+    const bonusActions = this.bonusActions.filter(a => a.name && a.desc);
+    const reactions = this.reactions.filter(a => a.name && a.desc);
+    const legendaryActions = this.legendaryActions.filter(a => a.name && a.desc);
 
-    // Build statblock frontmatter lines to inject before the closing ---
-    let statblockFm = `statblock: true\nsize: ${this.size}`;
-    statblockFm += `\nac: ${parseInt(this.ac) || 10}`;
-    statblockFm += `\nhp: ${parseInt(this.hp) || 1}`;
-    statblockFm += `\nhit_dice: "${this.hitDice}"`;
-    statblockFm += `\nspeed: "${this.speed}"`;
-    statblockFm += `\nstats:\n  - ${this.str}\n  - ${this.dex}\n  - ${this.con}\n  - ${this.int}\n  - ${this.wis}\n  - ${this.cha}`;
-    statblockFm += `\nfage_stats:\n  - ${calcMod(this.str)}\n  - ${calcMod(this.dex)}\n  - ${calcMod(this.con)}\n  - ${calcMod(this.int)}\n  - ${calcMod(this.wis)}\n  - ${calcMod(this.cha)}`;
-
-    // Saves
-    statblockFm += `\nsaves:`;
-    if (this.saves.length > 0) {
-      for (const save of this.saves) {
-        const parts = save.trim().split(/\s+/);
-        if (parts.length >= 2 && parts[0]) {
-          statblockFm += `\n  - ${parts[0].toLowerCase().substring(0, 3)}: ${parts.slice(1).join('').replace(/\+/g, '')}`;
-        }
-      }
-    }
-
-    // Skills
-    statblockFm += `\nskillsaves:`;
-    if (this.skills.length > 0) {
-      for (const skill of this.skills) {
-        const { name: sName, bonus: sBonus } = this.parseSkillEntry(skill);
-        if (sName && sBonus) {
-          statblockFm += `\n  - ${sName}: ${sBonus}`;
-        }
-      }
-    }
-
-    statblockFm += `\ndamage_vulnerabilities: "${this.vulnerabilities}"`;
-    statblockFm += `\ndamage_resistances: "${this.resistances}"`;
-    statblockFm += `\ndamage_immunities: "${this.immunities}"`;
-    statblockFm += `\ncondition_immunities: "${this.conditionImmunities}"`;
-    statblockFm += `\nsenses: "${this.senses}"`;
-    statblockFm += `\nlanguages: "${this.languages}"`;
-    statblockFm += `\ncr: "${this.cr}"`;
-
-    // Traits
-    statblockFm += `\ntraits:`;
-    for (const t of this.traits.filter(t => t.name && t.desc)) {
-      statblockFm += `\n  - name: "${t.name}"`;
-      statblockFm += `\n    desc: "${t.desc.replace(/"/g, '\\"')}"`;
-    }
-
-    // Actions
-    statblockFm += `\nactions:`;
-    for (const a of this.actions.filter(a => a.name && a.desc)) {
-      statblockFm += `\n  - name: "${a.name}"`;
-      statblockFm += `\n    desc: "${a.desc.replace(/"/g, '\\"')}"`;
-    }
-
-    statblockFm += `\nbonus_actions:`;
-    for (const a of this.bonusActions.filter(a => a.name && a.desc)) {
-      statblockFm += `\n  - name: "${a.name}"`;
-      statblockFm += `\n    desc: "${a.desc.replace(/"/g, '\\"')}"`;
-    }
-
-    statblockFm += `\nreactions:`;
-    for (const a of this.reactions.filter(a => a.name && a.desc)) {
-      statblockFm += `\n  - name: "${a.name}"`;
-      statblockFm += `\n    desc: "${a.desc.replace(/"/g, '\\"')}"`;
-    }
-
-    statblockFm += `\nlegendary_actions:`;
-    for (const a of this.legendaryActions.filter(a => a.name && a.desc)) {
-      statblockFm += `\n  - name: "${a.name}"`;
-      statblockFm += `\n    desc: "${a.desc.replace(/"/g, '\\"')}"`;
-    }
-
-    // Replace `statblock: ""` with full statblock data in frontmatter
-    content = content.replace(/^statblock: ""$/m, statblockFm);
+    content = updateYamlFrontmatter(content, (fm) => ({
+      ...fm,
+      statblock: true,
+      size: this.size,
+      ac: parseInt(this.ac) || 10,
+      hp: parseInt(this.hp) || 1,
+      hit_dice: this.hitDice,
+      speed: this.speed,
+      stats,
+      fage_stats: fageStats,
+      saves: this.buildSavesObj(),
+      skillsaves: this.buildSkillsObj(),
+      damage_vulnerabilities: this.vulnerabilities,
+      damage_resistances: this.resistances,
+      damage_immunities: this.immunities,
+      condition_immunities: this.conditionImmunities,
+      senses: this.senses,
+      languages: this.languages,
+      cr: this.cr,
+      traits,
+      actions,
+      bonus_actions: bonusActions,
+      reactions,
+      legendary_actions: legendaryActions,
+      token_id: tokenId,
+    }));
 
     // Replace the placeholder statblock code block with the creature reference
     content = content.replace(
