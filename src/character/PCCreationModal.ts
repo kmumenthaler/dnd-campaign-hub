@@ -33,6 +33,7 @@ export class PCCreationModal extends Modal {
   actions: StatblockEntry[] = [];
   bonusActions: StatblockEntry[] = [];
   reactions: StatblockEntry[] = [];
+  spells: string[] = [];
   characterSheetUrl = "";
   characterSheetPdf = "";
   dndBeyondSource = "";
@@ -536,6 +537,7 @@ export class PCCreationModal extends Modal {
         this.actions = Array.isArray(fm.actions) ? fm.actions : [];
         this.bonusActions = Array.isArray(fm.bonus_actions) ? fm.bonus_actions : [];
         this.reactions = Array.isArray(fm.reactions) ? fm.reactions : [];
+        this.spells = Array.isArray(fm.spells) ? fm.spells : [];
         this.characterSheetUrl = fm.readonlyUrl || "";
         this.characterSheetPdf = fm.characterSheetPdf || "";
         this.dndBeyondSource = this.characterSheetUrl || "";
@@ -579,6 +581,7 @@ export class PCCreationModal extends Modal {
       this.actions = imported.actions;
       this.bonusActions = imported.bonusActions;
       this.reactions = imported.reactions;
+      this.spells = imported.spells;
       this.characterSheetUrl = imported.readonlyUrl;
       this.dndBeyondSource = imported.characterId;
 
@@ -740,6 +743,7 @@ export class PCCreationModal extends Modal {
       const bonusActions = this.bonusActions.length > 0 ? this.bonusActions : [];
       const reactions = this.reactions.length > 0 ? this.reactions : [];
       const skillsaves = this.skillsaves.length > 0 ? this.skillsaves : [];
+      const spells = this.spells.length > 0 ? this.spells : [];
       pcContent = updateYamlFrontmatter(pcContent, (fm) => ({
         ...fm,
         type: 'player',
@@ -770,6 +774,7 @@ export class PCCreationModal extends Modal {
         bonus_actions: bonusActions,
         reactions,
         legendary_actions: [],
+        spells,
         readonlyUrl: this.characterSheetUrl,
         characterSheetPdf: this.characterSheetPdf,
         token_id: tokenId,
@@ -895,6 +900,7 @@ export class PCCreationModal extends Modal {
         bonus_actions: this.bonusActions,
         reactions: this.reactions,
         legendary_actions: [],
+        spells: this.spells,
         cr: "0",
         source: `PC: ${this.pcName}`,
       };

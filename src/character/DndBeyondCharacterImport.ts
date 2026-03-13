@@ -32,6 +32,7 @@ export interface DndBeyondPcImportData {
   actions: StatblockEntry[];
   bonusActions: StatblockEntry[];
   reactions: StatblockEntry[];
+  spells: string[];
 }
 
 interface AbilityScores {
@@ -42,6 +43,15 @@ interface AbilityScores {
   wis: number;
   cha: number;
 }
+
+const ABILITY_NAMES: Record<number, string> = {
+  1: "Strength",
+  2: "Dexterity",
+  3: "Constitution",
+  4: "Intelligence",
+  5: "Wisdom",
+  6: "Charisma",
+};
 
 interface DndBeyondResponse {
   success?: boolean;
@@ -288,6 +298,74 @@ function collectSpellTrait(data: any): StatblockEntry[] {
   ];
 }
 
+function ordinal(num: number): string {
+  const mod10 = num % 10;
+  const mod100 = num % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${num}st`;
+  if (mod10 === 2 && mod100 !== 12) return `${num}nd`;
+  if (mod10 === 3 && mod100 !== 13) return `${num}rd`;
+  return `${num}th`;
+}
+
+function collectSpellLines(data: any, abilities: AbilityScores, totalLevel: number): string[] {
+  const classSpells = Array.isArray(data?.classSpells) ? data.classSpells : [];
+  const allSpells: any[] = classSpells.flatMap((c: any) => Array.isArray(c?.spells) ? c.spells : []);
+  if (allSpells.length === 0) return [];
+
+  const casterClass = Array.isArray(data?.classes) && data.classes.length > 0 ? data.classes[0] : null;
+  const spellcastingAbilityId = asNumber(casterClass?.definition?.spellCastingAbilityId);
+  const abilityName = ABILITY_NAMES[spellcastingAbilityId] || "Wisdom";
+  const abilityScore = spellcastingAbilityId > 0
+    ? resolveAbilityScore(data, spellcastingAbilityId)
+    : abilities.wis;
+  const abilityMod = abilityModifier(abilityScore || 10);
+  const proficiencyBonus = getProficiencyBonus(totalLevel);
+  const spellSaveDc = 8 + proficiencyBonus + abilityMod;
+  const spellAttack = abilityMod + proficiencyBonus;
+  const spellAttackText = spellAttack >= 0 ? `+${spellAttack}` : String(spellAttack);
+
+  const header = `The character is a ${ordinal(Math.max(totalLevel, 1))}-level spellcaster. Spellcasting ability is ${abilityName} (spell save DC ${spellSaveDc}, ${spellAttackText} to hit with spell attacks).`;
+
+  const grouped = new Map<number, Set<string>>();
+  for (const spell of allSpells) {
+    const name = String(spell?.definition?.name || "").trim();
+    if (!name) continue;
+
+    const isPrepared = !!spell?.prepared || !!spell?.alwaysPrepared || !!spell?.countsAsKnownSpell;
+    if (!isPrepared) continue;
+
+    const level = asNumber(spell?.definition?.level);
+    if (!grouped.has(level)) grouped.set(level, new Set<string>());
+    grouped.get(level)!.add(withDdbLink(name, "spells"));
+  }
+
+  const lines: string[] = [header];
+
+  const cantrips = grouped.get(0);
+  if (cantrips && cantrips.size > 0) {
+    lines.push(`Cantrips (at will): ${Array.from(cantrips).sort((a, b) => a.localeCompare(b)).join(", ")}`);
+  }
+
+  const slotMap = new Map<number, number>();
+  const slots = Array.isArray(data?.spellSlots) ? data.spellSlots : [];
+  for (const slot of slots) {
+    const level = asNumber(slot?.level);
+    const available = asNumber(slot?.available);
+    const used = asNumber(slot?.used);
+    const total = available + used;
+    if (level > 0 && total > 0) slotMap.set(level, total);
+  }
+
+  for (let level = 1; level <= 9; level++) {
+    const names = grouped.get(level);
+    if (!names || names.size === 0) continue;
+    const slotText = slotMap.has(level) ? ` (${slotMap.get(level)} slots)` : "";
+    lines.push(`${level}${level === 1 ? "st" : level === 2 ? "nd" : level === 3 ? "rd" : "th"} level${slotText}: ${Array.from(names).sort((a, b) => a.localeCompare(b)).join(", ")}`);
+  }
+
+  return lines;
+}
+
 function collectFeatTraits(data: any): StatblockEntry[] {
   const feats = Array.isArray(data?.feats) ? data.feats : [];
   const out: StatblockEntry[] = [];
@@ -461,7 +539,6 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
     cha: resolveAbilityScore(data, 6) || 10,
   };
 
-  const spellTrait = collectSpellTrait(data);
   const featTraits = collectFeatTraits(data);
   const optionTraits = collectOptionTraits(data);
   const proficiencyBonus = getProficiencyBonus(totalLevel);
@@ -469,6 +546,7 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
   const skillTraits = collectSkillsTrait(skillsaves);
   const actionEntries = collectActionEntries(data);
   const weaponActions = collectWeaponActions(data, abilities, proficiencyBonus);
+  const spells = collectSpellLines(data, abilities, totalLevel);
 
   return {
     characterId,
@@ -486,9 +564,10 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
     senses: collectSenses(data),
     languages: collectLanguages(data),
     skillsaves,
-    traits: [...skillTraits, ...spellTrait, ...featTraits, ...optionTraits],
+    traits: [...skillTraits, ...featTraits, ...optionTraits],
     actions: [...weaponActions, ...actionEntries.actions],
     bonusActions: actionEntries.bonusActions,
     reactions: actionEntries.reactions,
+    spells,
   };
 }
