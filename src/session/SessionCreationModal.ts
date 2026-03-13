@@ -4,6 +4,7 @@ import { CalendarDateInputModal } from '../campaign/CalendarDateInputModal';
 import { SESSION_GM_TEMPLATE, SESSION_PLAYER_TEMPLATE } from '../templates';
 import { ConfirmModal } from '../utils/ConfirmModal';
 import { PartySelector } from '../party/PartySelector';
+import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 
 export class SessionCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -615,25 +616,14 @@ export class SessionCreationModal extends Modal {
         existingSessions.push(linkStr);
       }
 
-      // Build the new sessions value
-      const sessionsValue = `[${existingSessions.map(s => {
-        const normalized = s.startsWith('[[') ? s : `[[${s}]]`;
-        return `"${normalized}"`;
-      }).join(', ')}]`;
-
-      // Remove ALL occurrences of sessions: from frontmatter, then insert canonical one
-      const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-      if (fmMatch && fmMatch[1] !== undefined) {
-        let body = fmMatch[1];
-        // Remove inline sessions: [...]
-        body = body.replace(/^sessions:\s*\[.*$/gm, '');
-        // Remove YAML list sessions:\n  - ...
-        body = body.replace(/^sessions:\s*\n(?:\s+-\s+.*\n?)*/gm, '');
-        // Clean up multiple blank lines
-        body = body.replace(/\n{3,}/g, '\n');
-        body = body.replace(/\s+$/, '');
-        content = content.replace(/^---\n[\s\S]*?\n---/, `---\n${body}\nsessions: ${sessionsValue}\n---`);
-      }
+      // Canonicalize each entry as a wikilink and write via YAML helper.
+      const normalizedSessions = existingSessions.map((s) =>
+        s.startsWith('[[') ? s : `[[${s}]]`
+      );
+      content = updateYamlFrontmatter(content, (fm) => ({
+        ...fm,
+        sessions: normalizedSessions,
+      }));
 
       await this.app.vault.modify(advFile, content);
     } catch (e) {
@@ -696,25 +686,14 @@ export class SessionCreationModal extends Modal {
         existingSessions.push(linkStr);
       }
 
-      // Build the new sessions value
-      const sessionsValue = `[${existingSessions.map(s => {
-        const normalized = s.startsWith('[[') ? s : `[[${s}]]`;
-        return `"${normalized}"`;
-      }).join(', ')}]`;
-
-      // Remove ALL occurrences of sessions: from frontmatter, then insert canonical one
-      const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-      if (fmMatch && fmMatch[1] !== undefined) {
-        let body = fmMatch[1];
-        // Remove inline sessions: [...]
-        body = body.replace(/^sessions:\s*\[.*$/gm, '');
-        // Remove YAML list sessions:\n  - ...
-        body = body.replace(/^sessions:\s*\n(?:\s+-\s+.*\n?)*/gm, '');
-        // Clean up multiple blank lines
-        body = body.replace(/\n{3,}/g, '\n');
-        body = body.replace(/\s+$/, '');
-        content = content.replace(/^---\n[\s\S]*?\n---/, `---\n${body}\nsessions: ${sessionsValue}\n---`);
-      }
+      // Canonicalize each entry as a wikilink and write via YAML helper.
+      const normalizedSessions = existingSessions.map((s) =>
+        s.startsWith('[[') ? s : `[[${s}]]`
+      );
+      content = updateYamlFrontmatter(content, (fm) => ({
+        ...fm,
+        sessions: normalizedSessions,
+      }));
 
       await this.app.vault.modify(sceneFile, content);
     } catch (e) {
@@ -733,7 +712,11 @@ export class SessionCreationModal extends Modal {
       if (!(file instanceof TFile)) continue;
       try {
         const c = await this.app.vault.read(file);
-        await this.app.vault.modify(file, c.replace(/^status:\s*.+$/m, 'status: completed'));
+        const updated = updateYamlFrontmatter(c, (fm) => ({
+          ...fm,
+          status: 'completed',
+        }));
+        await this.app.vault.modify(file, updated);
       } catch (_e) { /* skip */ }
     }
     const startScene = scenes[startIdx];
@@ -742,7 +725,11 @@ export class SessionCreationModal extends Modal {
       if (file instanceof TFile) {
         try {
           const c = await this.app.vault.read(file);
-          await this.app.vault.modify(file, c.replace(/^status:\s*.+$/m, 'status: in-progress'));
+          const updated = updateYamlFrontmatter(c, (fm) => ({
+            ...fm,
+            status: 'in-progress',
+          }));
+          await this.app.vault.modify(file, updated);
         } catch (_e) { /* skip */ }
       }
     }
