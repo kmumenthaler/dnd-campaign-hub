@@ -2,6 +2,7 @@ import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { ADVENTURE_TEMPLATE } from "../templates";
 import { TEMPLATE_VERSIONS } from "../migration";
+import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
 
 export class AdventureCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -268,26 +269,28 @@ export class AdventureCreationModal extends Modal {
           sessionsArr.push(String(raw));
         }
       }
-      const sessions = sessionsArr.length > 0
-        ? `[${sessionsArr.map(s => { const n = s.startsWith('[[') ? s : `[[${s}]]`; return `"${n}"`; }).join(', ')}]`
-        : '[]';
       const currentAct = existingFm?.current_act || 1;
 
-      const updatedFrontmatter = `---
-type: adventure
-name: ${this.adventureName}
-campaign: ${campaignName}
-world: ${worldName}
-status: ${this.originalStatus}
-level_range: ${this.levelFrom}-${this.levelTo}
-current_act: ${currentAct}
-expected_sessions: ${this.expectedSessions}
-sessions: ${sessions}
-date: ${currentDate}
----`;
+      const adventureTemplateVersion = TEMPLATE_VERSIONS.adventure || "1.4.0";
+      const sessionsValue = sessionsArr.length > 0
+        ? sessionsArr.map((s) => (s.startsWith("[[") ? s : `[[${s}]]`))
+        : [];
 
       // Replace frontmatter
-      let updatedContent = existingContent.replace(/^---\n[\s\S]*?\n---/, updatedFrontmatter);
+      let updatedContent = updateYamlFrontmatter(existingContent, (fm) => ({
+        ...fm,
+        type: "adventure",
+        template_version: adventureTemplateVersion,
+        name: this.adventureName,
+        campaign: campaignName,
+        world: worldName,
+        status: this.originalStatus,
+        level_range: `${this.levelFrom}-${this.levelTo}`,
+        current_act: currentAct,
+        expected_sessions: this.expectedSessions,
+        sessions: sessionsValue,
+        date: currentDate,
+      }));
 
       // Update title
       updatedContent = updatedContent.replace(
@@ -440,23 +443,20 @@ date: ${currentDate}
       adventureContent = ADVENTURE_TEMPLATE;
     }
 
-    // Build complete frontmatter
-    const frontmatter = `---
-type: adventure
-  template_version: ${adventureTemplateVersion}
-name: ${this.adventureName}
-campaign: ${campaignName}
-world: ${worldName}
-status: planning
-level_range: ${this.levelFrom}-${this.levelTo}
-current_act: 1
-expected_sessions: ${this.expectedSessions}
-sessions: []
-date: ${currentDate}
----`;
-
-    // Replace the frontmatter
-    adventureContent = adventureContent.replace(/^---\n[\s\S]*?\n---/, frontmatter);
+    adventureContent = updateYamlFrontmatter(adventureContent, (fm) => ({
+      ...fm,
+      type: "adventure",
+      template_version: adventureTemplateVersion,
+      name: this.adventureName,
+      campaign: campaignName,
+      world: worldName,
+      status: "planning",
+      level_range: `${this.levelFrom}-${this.levelTo}`,
+      current_act: 1,
+      expected_sessions: this.expectedSessions,
+      sessions: [],
+      date: currentDate,
+    }));
     
     // Replace template placeholders
     adventureContent = adventureContent
@@ -470,7 +470,6 @@ date: ${currentDate}
       .replace(/<% tp\.frontmatter\.level_range %>/g, `${this.levelFrom}-${this.levelTo}`)
       .replace(/<% tp\.frontmatter\.expected_sessions %>/g, this.expectedSessions)
       .replace(/<% tp\.frontmatter\.current_act %>/g, "1");
-
     await this.app.vault.create(filePath, adventureContent);
   }
 

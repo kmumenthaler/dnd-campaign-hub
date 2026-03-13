@@ -3,6 +3,7 @@ import type DndCampaignHubPlugin from "../main";
 import { WORLD_TEMPLATE } from "../templates";
 import { CalendarDateInputModal } from './CalendarDateInputModal';
 import { TEMPLATE_VERSIONS } from "../migration";
+import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
 
 export class CampaignCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -360,16 +361,24 @@ export class CampaignCreationModal extends Modal {
 
       const worldTemplateVersion = TEMPLATE_VERSIONS.world || "1.3.0";
 
+      worldContent = updateYamlFrontmatter(worldContent, (fm) => ({
+        ...fm,
+        world: campaignName,
+        campaign: campaignName,
+        status: fm.status || "active",
+        role: this.role,
+        system: this.system,
+        type: "world",
+        template_version: worldTemplateVersion,
+        "fc-calendar": this.calendarName,
+        "fc-date": {
+          year: this.startYear,
+          month: this.startMonth,
+          day: this.startDay,
+        },
+      }));
+
       worldContent = worldContent
-        .replace(/world: $/m, `world: ${campaignName}`)
-        .replace(/campaign: $/m, `campaign: ${campaignName}`)
-        .replace(/^template_version:\s*.*$/m, `template_version: ${worldTemplateVersion}`)
-        .replace(/role: player$/m, `role: ${this.role}`)
-        .replace(/system:$/m, `system: ${this.system}`)
-        .replace(/fc-calendar:\s*([^\r\n]\w*)$/m, `fc-calendar: ${this.calendarName}`)
-        .replace(/fc-date:\s*\n\s*year:\s*([^\r\n]\w*)$/m, `fc-date:\n  year: ${this.startYear}`)
-        .replace(/(fc-date:\s*\n\s*year:.+\n\s*)month:\s*([^\r\n]\w*)$/m, `$1month: ${this.startMonth}`)
-        .replace(/(fc-date:\s*\n\s*year:.+\n\s*month:.+\n\s*)day:\s*([^\r\n]\w*)$/m, `$1day: ${this.startDay}`)
         .replace(/# The World of Your Campaign/g, `# The World of ${campaignName}`)
         .replace(/{{CAMPAIGN_NAME}}/g, campaignName);
 
