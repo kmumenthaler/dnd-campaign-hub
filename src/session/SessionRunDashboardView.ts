@@ -3,6 +3,7 @@ import type DndCampaignHubPlugin from "../main";
 import { SESSION_RUN_VIEW_TYPE } from "../constants";
 import { TimerNameModal } from "./TimerNameModal";
 import type { SceneMusicConfig } from '../music/types';
+import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 
 export class SessionRunDashboardView extends ItemView {
   plugin: DndCampaignHubPlugin;
@@ -1126,10 +1127,10 @@ export class SessionRunDashboardView extends ItemView {
 
     try {
       const content = await this.app.vault.read(file);
-      const newContent = content.replace(
-        /status:\s*[^\n]+/,
-        'status: completed'
-      );
+      const newContent = updateYamlFrontmatter(content, (fm) => ({
+        ...fm,
+        status: 'completed',
+      }));
       await this.app.vault.modify(file, newContent);
       new Notice("Scene marked as completed!");
     } catch (error) {
