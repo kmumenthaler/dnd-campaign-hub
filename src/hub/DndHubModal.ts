@@ -124,6 +124,117 @@ export class DndHubModal extends Modal {
     };
   }
 
+  /** SRD reference categories — shown under a separate header in the browser. */
+  private getSrdBrowseCategories(): Record<string, BrowseCategory> {
+    return {
+      srd_equipment: {
+        label: "Equipment",
+        icon: "🛠️",
+        folders: () => ["z_Equipment"],
+        types: ["srd-equipment"],
+        subtitle: () => "",
+      },
+      srd_classes: {
+        label: "Classes",
+        icon: "📚",
+        folders: () => ["z_Classes"],
+        types: ["srd-classes"],
+        subtitle: () => "",
+      },
+      srd_subclasses: {
+        label: "Subclasses",
+        icon: "📖",
+        folders: () => ["z_Subclasses"],
+        types: ["srd-subclasses"],
+        subtitle: () => "",
+      },
+      srd_races: {
+        label: "Races",
+        icon: "🧝",
+        folders: () => ["z_Races"],
+        types: ["srd-races"],
+        subtitle: () => "",
+      },
+      srd_subraces: {
+        label: "Subraces",
+        icon: "🧬",
+        folders: () => ["z_Subraces"],
+        types: ["srd-subraces"],
+        subtitle: () => "",
+      },
+      srd_features: {
+        label: "Features",
+        icon: "⭐",
+        folders: () => ["z_Features"],
+        types: ["srd-features"],
+        subtitle: () => "",
+      },
+      srd_traits: {
+        label: "Traits",
+        icon: "🧩",
+        folders: () => ["z_Traits"],
+        types: ["srd-traits"],
+        subtitle: () => "",
+      },
+      srd_conditions: {
+        label: "Conditions",
+        icon: "💀",
+        folders: () => ["z_Conditions"],
+        types: ["srd-conditions"],
+        subtitle: () => "",
+      },
+      srd_skills: {
+        label: "Skills",
+        icon: "🎯",
+        folders: () => ["z_Skills"],
+        types: ["srd-skills"],
+        subtitle: () => "",
+      },
+      srd_proficiencies: {
+        label: "Proficiencies",
+        icon: "🏅",
+        folders: () => ["z_Proficiencies"],
+        types: ["srd-proficiencies"],
+        subtitle: () => "",
+      },
+      srd_languages: {
+        label: "Languages",
+        icon: "🗣️",
+        folders: () => ["z_Languages"],
+        types: ["srd-languages"],
+        subtitle: () => "",
+      },
+      srd_ability_scores: {
+        label: "Ability Scores",
+        icon: "📊",
+        folders: () => ["z_AbilityScores"],
+        types: ["srd-ability-scores"],
+        subtitle: () => "",
+      },
+      srd_damage_types: {
+        label: "Damage Types",
+        icon: "💥",
+        folders: () => ["z_DamageTypes"],
+        types: ["srd-damage-types"],
+        subtitle: () => "",
+      },
+      srd_magic_schools: {
+        label: "Magic Schools",
+        icon: "🔮",
+        folders: () => ["z_MagicSchools"],
+        types: ["srd-magic-schools"],
+        subtitle: () => "",
+      },
+      srd_weapon_properties: {
+        label: "Weapon Properties",
+        icon: "⚙️",
+        folders: () => ["z_WeaponProperties"],
+        types: ["srd-weapon-properties"],
+        subtitle: () => "",
+      },
+    };
+  }
+
   /* ── Query helpers ──────────────────────────────────────────── */
 
   /**
@@ -268,14 +379,36 @@ export class DndHubModal extends Modal {
   private renderBrowseSection(root: HTMLElement) {
     const campaignPaths = this.plugin.getAllCampaigns().map((c) => c.path);
     const categories = this.getBrowseCategories();
+    const srdCategories = this.getSrdBrowseCategories();
     const browseContainer = root.createDiv({ cls: "dnd-hub-browse-section" });
 
+    // ── Campaign content ──
+    this.renderCategoryGroup(browseContainer, categories, campaignPaths);
+
+    // ── SRD Reference ──
+    // Only show the section if at least one SRD folder has content
+    const srdEntries = Object.entries(srdCategories);
+    const hasSrdContent = srdEntries.some(
+      ([, cat]) => this.queryCategory(cat, campaignPaths).length > 0,
+    );
+    if (hasSrdContent) {
+      browseContainer.createEl("h3", { text: "SRD Reference", cls: "dnd-hub-section-divider" });
+      this.renderCategoryGroup(browseContainer, Object.fromEntries(srdEntries), campaignPaths);
+    }
+  }
+
+  /** Render a group of browse categories into the container. */
+  private renderCategoryGroup(
+    container: HTMLElement,
+    categories: Record<string, BrowseCategory>,
+    campaignPaths: string[],
+  ) {
     for (const [key, cat] of Object.entries(categories)) {
       const entities = this.queryCategory(cat, campaignPaths);
       const isExpanded = this.expandedCategory === key;
 
       // Category header row
-      const header = browseContainer.createDiv({
+      const header = container.createDiv({
         cls: `dnd-hub-cat-header ${isExpanded ? "is-expanded" : ""}`,
       });
       header.createEl("span", { cls: "dnd-hub-cat-chevron", text: isExpanded ? "▾" : "▸" });
@@ -285,12 +418,12 @@ export class DndHubModal extends Modal {
 
       header.addEventListener("click", () => {
         this.expandedCategory = this.expandedCategory === key ? null : key;
-        this.refreshBrowse(root);
+        this.refreshBrowse(container.closest(".dnd-hub-modal") as HTMLElement || container.parentElement!);
       });
 
       // Expanded panel
       if (isExpanded) {
-        const panel = browseContainer.createDiv({ cls: "dnd-hub-cat-panel" });
+        const panel = container.createDiv({ cls: "dnd-hub-cat-panel" });
         this.renderCategoryPanel(panel, key, cat, entities, campaignPaths.length > 1);
       }
     }

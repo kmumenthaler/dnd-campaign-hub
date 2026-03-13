@@ -40,6 +40,17 @@
   margin-top: 8px;
 }
 
+.dnd-hub-section-divider {
+  margin: 16px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
 .dnd-hub-cat-header {
   display: flex;
   align-items: center;
