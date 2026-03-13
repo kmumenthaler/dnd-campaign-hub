@@ -1,6 +1,8 @@
 import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { TrapElement, TrapCountermeasure } from "../encounter/EncounterBuilder";
+import { TRAP_TEMPLATE } from "../templates";
+import { TEMPLATE_VERSIONS } from "../migration";
 
 export class TrapCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -741,7 +743,8 @@ export class TrapCreationModal extends Modal {
   }
 
   createTrapContent(campaignName: string, worldName: string): string {
-    const now = new Date().toISOString().split('T')[0];
+    const now = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
+    const trapTemplateVersion = TEMPLATE_VERSIONS.trap || "1.3.0";
     
     // Generate statblock content
     const statblockContent = this.generateStatblockContent();
@@ -756,10 +759,9 @@ export class TrapCreationModal extends Modal {
       .split('\n')
       .map((line, idx) => idx === 0 ? line : '  ' + line)
       .join('\n');
-
-    return `---
+    const frontmatter = `---
 type: trap
-template_version: 1.1.0
+template_version: ${trapTemplateVersion}
 campaign: ${campaignName}
 adventure: ${this.adventurePath?.split('/').pop()?.replace('.md', '') || ''}
 world: ${worldName}
@@ -773,217 +775,26 @@ trigger: ${this.trigger}
 elements: ${elementsYaml}
 countermeasures: ${countermeasuresYaml}
 date: ${now}
----
+---`;
 
-# ${this.trapName}
+    let content = TRAP_TEMPLATE
+      .replace(/^---\n[\s\S]*?\n---/, frontmatter)
+      .replace(/{{trap_name}}/g, this.trapName)
+      .replace(/{{trap_type}}/g, this.trapType)
+      .replace(/{{threat_level}}/g, this.threatLevel)
+      .replace(/{{min_level}}/g, this.minLevel.toString())
+      .replace(/{{max_level}}/g, this.maxLevel.toString())
+      .replace(/{{trigger}}/g, this.trigger || "Not specified")
+      .replace(/{{DATE}}/g, now);
 
-\`\`\`dataviewjs
-// Action buttons for trap management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
+    // Keep generated statblock output for GM reference while action/elements rendering
+    // is handled by dnd-hub and dnd-hub-view blocks from the canonical trap template.
+    content = content.replace(
+      "## Trap Elements & Effects",
+      `## Statblocks\n\n${statblockContent}\n\n---\n\n## Trap Elements & Effects`
+    );
 
-// Edit Trap button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit Trap",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-trap");
-});
-
-// Delete Trap button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete Trap",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-trap");
-});
-\`\`\`
-
-## Trap Details
-
-**Type:** ${this.trapType.charAt(0).toUpperCase() + this.trapType.slice(1)} Trap  
-**Threat Level:** ${this.threatLevel.charAt(0).toUpperCase() + this.threatLevel.slice(1)}  
-**Level Range:** ${this.minLevel}-${this.maxLevel}
-
-### Trigger Condition
-${this.trigger || "Not specified"}
-
----
-
-## Statblocks
-
-${statblockContent}
-
----
-
-## Trap Elements & Effects
-
-\`\`\`dataviewjs
-const elements = dv.current().elements || [];
-const trapType = dv.current().trap_type || 'simple';
-
-if (elements.length === 0) {
-  dv.paragraph("*No trap elements defined.*");
-} else {
-  if (trapType === 'simple') {
-    for (const element of elements) {
-      dv.header(4, element.name || "Effect");
-      if (element.attack_bonus !== undefined) {
-        dv.paragraph(\`**Attack:** +\${element.attack_bonus} to hit\${element.range ? \`, \${element.range}\` : ""}\`);
-      }
-      if (element.save_dc !== undefined) {
-        dv.paragraph(\`**Save:** DC \${element.save_dc} \${element.save_ability || "DEX"}\`);
-      }
-      if (element.damage) {
-        dv.paragraph(\`**Damage:** \${element.damage}\`);
-      }
-      if (element.additional_damage) {
-        dv.paragraph(\`**Additional Damage:** \${element.additional_damage}\`);
-      }
-      if (element.on_success) {
-        dv.paragraph(\`**On Success:** \${element.on_success}\`);
-      }
-      if (element.on_failure) {
-        dv.paragraph(\`**On Failure:** \${element.on_failure}\`);
-      }
-      if (element.effect) {
-        dv.paragraph(\`**Effect:** \${element.effect}\`);
-      }
-      dv.paragraph("");
-    }
-  } else {
-    const byInitiative = new Map();
-    const constant = [];
-    const dynamic = [];
-    
-    for (const element of elements) {
-      if (element.element_type === 'constant') {
-        constant.push(element);
-      } else if (element.element_type === 'dynamic') {
-        dynamic.push(element);
-      } else if (element.initiative !== undefined) {
-        if (!byInitiative.has(element.initiative)) {
-          byInitiative.set(element.initiative, []);
-        }
-        byInitiative.get(element.initiative).push(element);
-      }
-    }
-    
-    if (byInitiative.size > 0) {
-      dv.header(3, "Initiative Actions");
-      const sortedInit = Array.from(byInitiative.keys()).sort((a, b) => b - a);
-      for (const init of sortedInit) {
-        dv.header(4, \`Initiative \${init}\`);
-        for (const element of byInitiative.get(init)) {
-          dv.paragraph(\`**\${element.name || "Effect"}**\`);
-          if (element.attack_bonus !== undefined) {
-            dv.paragraph(\`  Attack: +\${element.attack_bonus} to hit\${element.range ? \`, \${element.range}\` : ""}\`);
-          }
-          if (element.save_dc !== undefined) {
-            dv.paragraph(\`  Save: DC \${element.save_dc} \${element.save_ability || "DEX"}\`);
-          }
-          if (element.damage) {
-            dv.paragraph(\`  Damage: \${element.damage}\`);
-          }
-          if (element.additional_damage) {
-            dv.paragraph(\`  Additional Damage: \${element.additional_damage}\`);
-          }
-          if (element.on_success) {
-            dv.paragraph(\`  On Success: \${element.on_success}\`);
-          }
-          if (element.on_failure) {
-            dv.paragraph(\`  On Failure: \${element.on_failure}\`);
-          }
-          if (element.effect) {
-            dv.paragraph(\`  Effect: \${element.effect}\`);
-          }
-          dv.paragraph("");
-        }
-      }
-    }
-    
-    if (dynamic.length > 0) {
-      dv.header(3, "Dynamic Elements");
-      for (const element of dynamic) {
-        dv.paragraph(\`**\${element.name || "Dynamic Effect"}**\`);
-        if (element.condition) {
-          dv.paragraph(\`  Condition: \${element.condition}\`);
-        }
-        if (element.effect) {
-          dv.paragraph(\`  Effect: \${element.effect}\`);
-        }
-        dv.paragraph("");
-      }
-    }
-    
-    if (constant.length > 0) {
-      dv.header(3, "Constant Effects");
-      for (const element of constant) {
-        dv.paragraph(\`**\${element.name || "Constant Effect"}**\`);
-        if (element.effect) {
-          dv.paragraph(\`  \${element.effect}\`);
-        }
-        dv.paragraph("");
-      }
-    }
-  }
-}
-\`\`\`
-
----
-
-## Countermeasures
-
-\`\`\`dataviewjs
-const countermeasures = dv.current().countermeasures || [];
-
-if (countermeasures.length === 0) {
-  dv.paragraph("*No countermeasures defined.*");
-} else {
-  for (const cm of countermeasures) {
-    dv.header(4, cm.method || "Countermeasure");
-    
-    if (cm.dc !== undefined) {
-      dv.paragraph(\`**DC:** \${cm.dc}\`);
-    }
-    if (cm.checks_needed !== undefined && cm.checks_needed > 1) {
-      dv.paragraph(\`**Checks Needed:** \${cm.checks_needed}\`);
-    }
-    if (cm.description) {
-      dv.paragraph(\`**Description:** \${cm.description}\`);
-    }
-    if (cm.effect) {
-      dv.paragraph(\`**Effect on Success:** \${cm.effect}\`);
-    }
-    dv.paragraph("");
-  }
-}
-\`\`\`
-
----
-
-## GM Notes
-
-### Setup
-*How to describe and introduce this trap*
-
-### Running the Trap
-*Tips for managing the trap in combat*
-
-### Disabling
-*Additional notes on countermeasures and player creativity*
-
----
-
-## Session History
-
-**Created:** ${now}
-
-*Record when this trap was encountered and what happened*
-`;
+    return content;
   }
 
   async saveStatblocks() {

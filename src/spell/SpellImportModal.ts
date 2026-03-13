@@ -1,6 +1,7 @@
 import { App, Modal, Notice, Setting, TFile, TFolder, requestUrl } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { SpellDetailsModal } from "./SpellDetailsModal";
+import { buildSpellContent } from "./buildSpellContent";
 
 export class SpellImportModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -347,57 +348,7 @@ export class SpellImportModal extends Modal {
             continue;
           }
 
-          // Build spell content
-          const levelText = spell.level === 0 ? "Cantrip" : spell.level.toString();
-          const components = spell.components.join(", ");
-          const material = spell.material ? `\nMaterials: ${spell.material}` : "";
-          
-          const description = spell.desc.join("\n\n");
-          const higherLevel = spell.higher_level && spell.higher_level.length > 0 
-            ? spell.higher_level.join("\n\n")
-            : "N/A";
-
-          const classes = spell.classes && spell.classes.length > 0
-            ? spell.classes.map((c: any) => c.name).join(", ")
-            : "N/A";
-
-          const content = `---
-type: spell
-template_version: 1.0.0
-name: ${spell.name}
-level: ${spell.level}
-school: ${spell.school.name}
-casting_time: ${spell.casting_time}
-range: ${spell.range}
-components: ${components}
-duration: ${spell.duration}
-concentration: ${spell.concentration || false}
-ritual: ${spell.ritual || false}
-classes: ${classes}
-source: SRD
----
-
-# ${spell.name}
-
-**${levelText} ${spell.school.name}**
-
-**Casting Time:** ${spell.casting_time}  
-**Range:** ${spell.range}  
-**Components:** ${components}${material}  
-**Duration:** ${spell.duration}${spell.concentration ? " (Concentration)" : ""}${spell.ritual ? " (Ritual)" : ""}
-
-## Description
-
-${description}
-
-## At Higher Levels
-
-${higherLevel}
-
-## Classes
-
-${classes}
-`;
+          const content = buildSpellContent(spell);
 
           await this.app.vault.create(filePath, content);
           successCount++;
