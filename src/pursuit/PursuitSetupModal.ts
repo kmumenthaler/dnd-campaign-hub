@@ -5,9 +5,8 @@
  * Lets the GM:
  *  - Name the chase
  *  - Configure the environment (cover, obscurement, crowd, etc.)
- *  - Add participants from vault notes (PCs, NPCs, creatures)
- *  - Assign roles (quarry / pursuer)
- *  - Review speeds, carry pairings, and stealth/perception stats
+ *  - Add participants via inline search (like the encounter builder)
+ *  - Assign roles (quarry / pursuer), review stats from statblocks
  *  - Initiate the chase
  */
 
@@ -61,6 +60,8 @@ interface VaultEntity {
   tokenId?: string;
 }
 
+type Participant = VaultEntity & { role: PursuitRole; initiative: number; hasCunningAction: boolean };
+
 export class PursuitSetupModal extends Modal {
   private plugin: DndCampaignHubPlugin;
 
@@ -78,10 +79,17 @@ export class PursuitSetupModal extends Modal {
   private hasRangerPursuer = false;
 
   // ── Participants ──
-  private participants: Array<VaultEntity & { role: PursuitRole; initiative: number; hasCunningAction: boolean }> = [];
+  private participants: Participant[] = [];
+
+  // ── Vault entities cache ──
+  private vaultEntities: VaultEntity[] = [];
+  private vaultEntitiesLoaded = false;
 
   // ── Pre-populated from combat? ──
   private fromCombat: CombatState | null = null;
+
+  // ── Participant list container (for partial re-renders) ──
+  private participantListEl: HTMLElement | null = null;
 
   constructor(app: App, plugin: DndCampaignHubPlugin, combatState?: CombatState) {
     super(app);
@@ -93,6 +101,10 @@ export class PursuitSetupModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("dnd-pursuit-setup-modal");
+
+    // Pre-load vault entities
+    this.vaultEntities = await this.loadVaultEntities();
+    this.vaultEntitiesLoaded = true;
 
     // Pre-populate from combat if available
     if (this.fromCombat) {
@@ -127,7 +139,7 @@ export class PursuitSetupModal extends Modal {
 
     // ── Environment ──
     contentEl.createEl("h3", { text: "Environment" });
-    const envDesc = contentEl.createEl("p", {
+    contentEl.createEl("p", {
       cls: "setting-item-description",
       text: "These affect the stealth condition for quarry members at end of round.",
     });
@@ -183,19 +195,13 @@ export class PursuitSetupModal extends Modal {
         t.setValue(this.hasRangerPursuer).onChange((v) => { this.hasRangerPursuer = v; })
       );
 
-    // ── Participants ──
+    // ── Add Participants (inline search) ──
     contentEl.createEl("h3", { text: "Participants" });
+    this.renderAddParticipantSearch(contentEl);
 
-    if (this.participants.length === 0) {
-      contentEl.createEl("p", { text: "No participants yet. Add from vault or combat tracker.", cls: "setting-item-description" });
-    } else {
-      this.renderParticipantTable(contentEl);
-    }
-
-    // ── Add from vault ──
-    const addRow = contentEl.createDiv({ cls: "dnd-pursuit-add-row" });
-    const addBtn = addRow.createEl("button", { text: "➕ Add from Vault", cls: "dnd-pursuit-btn" });
-    addBtn.addEventListener("click", () => this.showVaultPicker());
+    // ── Participant list ──
+    this.participantListEl = contentEl.createDiv({ cls: "dnd-pursuit-participant-list" });
+    this.renderParticipantList();
 
     // ── Start button ──
     contentEl.createEl("hr");
@@ -213,123 +219,248 @@ export class PursuitSetupModal extends Modal {
     startBtn.addEventListener("click", () => this.startChase());
   }
 
-  // ── Participant Table ──────────────────────────────────────
+  // ── Inline search (encounter-builder style) ────────────────
 
-  private renderParticipantTable(container: HTMLElement) {
-    const table = container.createEl("table", { cls: "dnd-pursuit-table" });
-    const thead = table.createEl("thead");
-    const hr = thead.createEl("tr");
-    for (const h of ["Name", "Role", "Speed", "Init", "HP", "STR", "Stealth", "PPerc", "Cunning", "Actions"]) {
-      hr.createEl("th", { text: h });
+  private renderAddParticipantSearch(container: HTMLElement) {
+    const count = this.vaultEntitiesLoaded ? this.vaultEntities.length : 0;
+
+    const setting = new Setting(container)
+      .setName("Add from Vault")
+      .setDesc(`Search PCs, NPCs, and creatures (${count} available)`);
+
+    // Search input + dropdown
+    const searchContainer = setting.controlEl.createDiv({ cls: "dnd-pursuit-search-container" });
+    const searchInput = searchContainer.createEl("input", {
+      type: "text",
+      placeholder: "Search by name…",
+      cls: "dnd-pursuit-search-input",
+    });
+    const resultsEl = searchContainer.createDiv({ cls: "dnd-pursuit-search-results" });
+    resultsEl.style.display = "none";
+
+    let selectedEntity: VaultEntity | null = null;
+    let addRole: PursuitRole = "quarry";
+
+    // Role selector
+    const roleContainer = setting.controlEl.createDiv({ cls: "dnd-inline-checkbox" });
+    roleContainer.style.display = "inline-flex";
+    roleContainer.style.alignItems = "center";
+    roleContainer.style.marginLeft = "8px";
+
+    const roleSelect = roleContainer.createEl("select", { cls: "dropdown" });
+    const quarryOpt = roleSelect.createEl("option", { text: "🏃 Quarry", attr: { value: "quarry" } });
+    const pursuerOpt = roleSelect.createEl("option", { text: "🔍 Pursuer", attr: { value: "pursuer" } });
+    roleSelect.addEventListener("change", () => {
+      addRole = roleSelect.value as PursuitRole;
+    });
+
+    // Add button
+    setting.addButton((btn) =>
+      btn.setButtonText("Add").setCta().onClick(() => {
+        this.addSelectedEntity(selectedEntity, addRole, searchInput);
+        selectedEntity = null;
+      })
+    );
+
+    // ── Search filtering ──
+    const showResults = (query: string) => {
+      if (!query || query.length < 1) {
+        resultsEl.style.display = "none";
+        return;
+      }
+      const q = query.toLowerCase().trim();
+      const filtered = this.vaultEntities
+        .filter((e) => e.name.toLowerCase().includes(q))
+        .slice(0, 15);
+
+      resultsEl.empty();
+
+      if (filtered.length === 0) {
+        resultsEl.createDiv({ text: "No matches found", cls: "dnd-pursuit-search-no-results" });
+        resultsEl.style.display = "block";
+        return;
+      }
+
+      for (const entity of filtered) {
+        const row = resultsEl.createDiv({ cls: "dnd-pursuit-search-result" });
+
+        // Name with type icon
+        const typeIcon = entity.type === "player" ? "👤" : entity.type === "npc" ? "🎭" : "🐉";
+        row.createDiv({ text: `${typeIcon} ${entity.name}`, cls: "dnd-pursuit-search-result-name" });
+
+        // Stats row
+        const speed = entity.speed.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
+        const parts: string[] = [speed];
+        parts.push(`STR ${entity.strScore}`);
+        parts.push(`Stealth ${entity.stealthModifier >= 0 ? "+" : ""}${entity.stealthModifier}`);
+        parts.push(`PPerc ${entity.passivePerception}`);
+        if (entity.currentHP > 0) parts.push(`HP ${entity.currentHP}/${entity.maxHP}`);
+        row.createDiv({ text: parts.join(" · "), cls: "dnd-pursuit-search-result-stats" });
+
+        row.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          selectedEntity = entity;
+          searchInput.value = entity.name;
+          resultsEl.style.display = "none";
+        });
+      }
+
+      resultsEl.style.display = "block";
+    };
+
+    searchInput.addEventListener("input", (e) => {
+      selectedEntity = null;
+      showResults((e.target as HTMLInputElement).value);
+    });
+
+    searchInput.addEventListener("focus", (e) => {
+      const v = (e.target as HTMLInputElement).value;
+      if (v.length >= 1) showResults(v);
+    });
+
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && selectedEntity) {
+        e.preventDefault();
+        this.addSelectedEntity(selectedEntity, addRole, searchInput);
+        selectedEntity = null;
+      }
+    });
+
+    searchInput.addEventListener("blur", () => {
+      setTimeout(() => { resultsEl.style.display = "none"; }, 250);
+    });
+  }
+
+  private addSelectedEntity(entity: VaultEntity | null, role: PursuitRole, searchInput: HTMLInputElement) {
+    if (!entity) {
+      new Notice("Search and select a participant first.");
+      return;
+    }
+    // Allow duplicates for creatures (multiple of same type), prevent for PCs/NPCs
+    if (entity.type !== "creature" && this.participants.some((p) => p.notePath === entity.notePath)) {
+      new Notice(`${entity.name} is already in the chase.`);
+      return;
     }
 
-    const tbody = table.createEl("tbody");
+    this.participants.push({
+      ...entity,
+      role,
+      initiative: 0,
+      hasCunningAction: false,
+    });
+
+    new Notice(`Added ${entity.name} as ${role}`);
+    searchInput.value = "";
+    this.renderParticipantList();
+    this.updateFooter();
+  }
+
+  // ── Participant List ───────────────────────────────────────
+
+  private renderParticipantList() {
+    const el = this.participantListEl;
+    if (!el) return;
+    el.empty();
+
+    if (this.participants.length === 0) {
+      el.createEl("p", { text: "No participants yet. Search above to add PCs, NPCs, or creatures.", cls: "setting-item-description" });
+      return;
+    }
+
     for (const p of this.participants) {
-      const tr = tbody.createEl("tr");
-      tr.addClass(p.role === "quarry" ? "dnd-pursuit-quarry-row" : "dnd-pursuit-pursuer-row");
+      const item = el.createDiv({
+        cls: `dnd-pursuit-participant-item ${p.role === "quarry" ? "dnd-pursuit-quarry-row" : "dnd-pursuit-pursuer-row"}`,
+      });
 
-      // Name
-      tr.createEl("td", { text: p.name });
+      // ── Top row: name + role + remove ──
+      const topRow = item.createDiv({ cls: "dnd-pursuit-participant-top" });
 
-      // Role toggle
-      const roleTd = tr.createEl("td");
-      const roleBtn = roleTd.createEl("button", {
+      const typeIcon = p.type === "player" ? "👤" : p.type === "npc" ? "🎭" : "🐉";
+      topRow.createSpan({ text: `${typeIcon} ${p.name}`, cls: "dnd-pursuit-participant-name" });
+
+      const roleBtn = topRow.createEl("button", {
         text: p.role === "quarry" ? "🏃 Quarry" : "🔍 Pursuer",
         cls: "dnd-pursuit-role-btn",
       });
       roleBtn.addEventListener("click", () => {
         p.role = p.role === "quarry" ? "pursuer" : "quarry";
-        this.renderContent();
+        this.renderParticipantList();
+        this.updateFooter();
       });
 
-      // Speed
-      const speedTd = tr.createEl("td");
-      const speedText = p.speed.map((s) => `${s.mode} ${s.feet}ft`).join(", ");
-      speedTd.createEl("span", { text: speedText, cls: "dnd-pursuit-speed" });
-
-      // Initiative
-      const initTd = tr.createEl("td");
-      const initInput = initTd.createEl("input", {
-        type: "number",
-        cls: "dnd-pursuit-init-input",
-        attr: { value: String(p.initiative), min: "1", max: "30" },
-      });
-      initInput.addEventListener("change", () => {
-        p.initiative = parseInt(initInput.value, 10) || 0;
-      });
-
-      // HP
-      tr.createEl("td", { text: `${p.currentHP}/${p.maxHP}` });
-
-      // STR
-      const strTd = tr.createEl("td");
-      const strInput = strTd.createEl("input", {
-        type: "number",
-        cls: "dnd-pursuit-str-input",
-        attr: { value: String(p.strScore), min: "1", max: "30" },
-      });
-      strInput.addEventListener("change", () => {
-        p.strScore = parseInt(strInput.value, 10) || 10;
-      });
-
-      // Stealth
-      const stTd = tr.createEl("td");
-      const stInput = stTd.createEl("input", {
-        type: "number",
-        cls: "dnd-pursuit-stat-input",
-        attr: { value: String(p.stealthModifier) },
-      });
-      stInput.addEventListener("change", () => {
-        p.stealthModifier = parseInt(stInput.value, 10) || 0;
-      });
-
-      // Passive Perception
-      const ppTd = tr.createEl("td");
-      const ppInput = ppTd.createEl("input", {
-        type: "number",
-        cls: "dnd-pursuit-stat-input",
-        attr: { value: String(p.passivePerception) },
-      });
-      ppInput.addEventListener("change", () => {
-        p.passivePerception = parseInt(ppInput.value, 10) || 10;
-      });
-
-      // Cunning Action
-      const caTd = tr.createEl("td");
-      const caCheck = caTd.createEl("input", { type: "checkbox" });
-      caCheck.checked = p.hasCunningAction;
-      caCheck.addEventListener("change", () => {
-        p.hasCunningAction = caCheck.checked;
-      });
-
-      // Remove button
-      const actTd = tr.createEl("td");
-      const removeBtn = actTd.createEl("button", { text: "✕", cls: "dnd-pursuit-remove-btn" });
+      const removeBtn = topRow.createEl("button", { text: "✕", cls: "dnd-pursuit-remove-btn" });
       removeBtn.addEventListener("click", () => {
         this.participants = this.participants.filter((x) => x !== p);
-        this.renderContent();
+        this.renderParticipantList();
+        this.updateFooter();
+      });
+
+      // ── Stats row (read-only from statblock, editable overrides) ──
+      const statsRow = item.createDiv({ cls: "dnd-pursuit-participant-stats" });
+
+      // Speed
+      const speedText = p.speed.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
+      statsRow.createSpan({ text: `⚡ ${speedText}`, cls: "dnd-pursuit-stat-chip" });
+
+      // HP
+      statsRow.createSpan({ text: `❤️ ${p.currentHP}/${p.maxHP}`, cls: "dnd-pursuit-stat-chip" });
+
+      // STR
+      this.addEditableStatChip(statsRow, "STR", p.strScore, (v) => { p.strScore = v; });
+
+      // Stealth
+      this.addEditableStatChip(statsRow, "Stealth", p.stealthModifier, (v) => { p.stealthModifier = v; }, true);
+
+      // Passive Perception
+      this.addEditableStatChip(statsRow, "PPerc", p.passivePerception, (v) => { p.passivePerception = v; });
+
+      // CON mod (for free dashes)
+      const conLabel = p.conModifier >= 0 ? `+${p.conModifier}` : `${p.conModifier}`;
+      statsRow.createSpan({ text: `CON ${conLabel}`, cls: "dnd-pursuit-stat-chip dnd-pursuit-stat-chip-muted" });
+
+      // Cunning Action
+      const caChip = statsRow.createSpan({ cls: `dnd-pursuit-stat-chip dnd-pursuit-stat-chip-toggle ${p.hasCunningAction ? "active" : ""}` });
+      caChip.textContent = `🗡️ Cunning`;
+      caChip.addEventListener("click", () => {
+        p.hasCunningAction = !p.hasCunningAction;
+        caChip.classList.toggle("active", p.hasCunningAction);
       });
     }
   }
 
-  // ── Vault Picker ───────────────────────────────────────────
-
-  private async showVaultPicker() {
-    const entities = await this.loadVaultEntities();
-    const modal = new VaultEntityPickerModal(this.app, entities, (picked) => {
-      for (const e of picked) {
-        // Avoid duplicates
-        if (this.participants.some((p) => p.notePath === e.notePath)) continue;
-        this.participants.push({
-          ...e,
-          role: "quarry",
-          initiative: 0,
-          hasCunningAction: false,
-        });
-      }
-      this.renderContent();
+  private addEditableStatChip(
+    container: HTMLElement, label: string, value: number,
+    onChange: (v: number) => void, showSign = false,
+  ) {
+    const chip = container.createSpan({ cls: "dnd-pursuit-stat-chip dnd-pursuit-stat-chip-editable" });
+    const display = showSign ? (value >= 0 ? `+${value}` : `${value}`) : `${value}`;
+    chip.createSpan({ text: `${label} ` });
+    const input = chip.createEl("input", {
+      type: "number",
+      cls: "dnd-pursuit-stat-chip-input",
+      attr: { value: String(value) },
     });
-    modal.open();
+    input.addEventListener("change", () => {
+      const v = parseInt(input.value, 10);
+      if (!isNaN(v)) onChange(v);
+    });
+  }
+
+  private updateFooter() {
+    // Re-render footer counts without full re-render
+    const footerEl = this.contentEl.querySelector(".dnd-pursuit-summary");
+    if (footerEl) {
+      const quarryCount = this.participants.filter((p) => p.role === "quarry").length;
+      const pursuerCount = this.participants.filter((p) => p.role === "pursuer").length;
+      footerEl.textContent = `${quarryCount} quarry · ${pursuerCount} pursuers`;
+    }
+    const startBtn = this.contentEl.querySelector(".dnd-pursuit-btn-primary") as HTMLButtonElement | null;
+    if (startBtn) {
+      const quarryCount = this.participants.filter((p) => p.role === "quarry").length;
+      const pursuerCount = this.participants.filter((p) => p.role === "pursuer").length;
+      startBtn.disabled = quarryCount === 0 || pursuerCount === 0;
+    }
   }
 
   /** Load PCs, NPCs, and creatures from the vault. */
@@ -538,82 +669,5 @@ export class PursuitSetupModal extends Modal {
     // Open the pursuit tracker view
     this.plugin.openPursuitTracker();
     new Notice(`🏃 Chase "${this.chaseName}" started!`);
-  }
-}
-
-// ── Vault Entity Picker (sub-modal) ──────────────────────────
-
-class VaultEntityPickerModal extends Modal {
-  private entities: VaultEntity[];
-  private onPick: (entities: VaultEntity[]) => void;
-  private selected: Set<string> = new Set();
-  private searchQuery = "";
-
-  constructor(app: App, entities: VaultEntity[], onPick: (entities: VaultEntity[]) => void) {
-    super(app);
-    this.entities = entities;
-    this.onPick = onPick;
-  }
-
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("dnd-pursuit-picker-modal");
-    contentEl.createEl("h3", { text: "Add Participants" });
-
-    // Search
-    new Setting(contentEl)
-      .setName("Search")
-      .addText((text) =>
-        text.setPlaceholder("Filter by name...").onChange((v) => {
-          this.searchQuery = v.toLowerCase().trim();
-          this.renderList(listEl);
-        })
-      );
-
-    const listEl = contentEl.createDiv({ cls: "dnd-pursuit-picker-list" });
-    this.renderList(listEl);
-
-    // Confirm
-    const footer = contentEl.createDiv({ cls: "dnd-pursuit-footer" });
-    const confirmBtn = footer.createEl("button", { text: "✅ Add Selected", cls: "dnd-pursuit-btn dnd-pursuit-btn-primary" });
-    confirmBtn.addEventListener("click", () => {
-      const picked = this.entities.filter((e) => this.selected.has(e.notePath));
-      this.onPick(picked);
-      this.close();
-    });
-  }
-
-  onClose() {
-    this.contentEl.empty();
-  }
-
-  private renderList(container: HTMLElement) {
-    container.empty();
-
-    const filtered = this.entities.filter((e) =>
-      !this.searchQuery || e.name.toLowerCase().includes(this.searchQuery)
-    );
-
-    if (filtered.length === 0) {
-      container.createEl("p", { text: "No matching entities found.", cls: "setting-item-description" });
-      return;
-    }
-
-    for (const e of filtered) {
-      const row = container.createDiv({ cls: "dnd-pursuit-picker-row" });
-      const cb = row.createEl("input", { type: "checkbox" }) as HTMLInputElement;
-      cb.checked = this.selected.has(e.notePath);
-      cb.addEventListener("change", () => {
-        if (cb.checked) this.selected.add(e.notePath);
-        else this.selected.delete(e.notePath);
-      });
-
-      const typeIcon = e.type === "player" ? "👤" : e.type === "npc" ? "🎭" : "🐉";
-      row.createEl("span", { text: `${typeIcon} ${e.name}`, cls: "dnd-pursuit-picker-name" });
-
-      const speedText = e.speed.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
-      row.createEl("span", { text: speedText, cls: "dnd-pursuit-picker-speed" });
-    }
   }
 }
