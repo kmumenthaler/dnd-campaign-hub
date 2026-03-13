@@ -365,7 +365,10 @@ export function renderSceneMusicBlock(
 
   /** Sync button appearance with the actual player state. */
   const syncButton = () => {
+    const busy = musicPlayer.isTransitioning();
     const active = musicPlayer.isScenePlaying(config);
+    playBtn.disabled = busy;
+    playBtn.classList.toggle('is-disabled', busy);
     if (active) {
       playBtn.textContent = '⏹ Stop';
       playBtn.classList.remove('mod-cta');
@@ -384,21 +387,25 @@ export function renderSceneMusicBlock(
     cls: 'scene-music-play-btn mod-cta',
   });
 
-  playBtn.addEventListener('click', () => {
-    // Ignore clicks while a stop is fading out
-    if (musicPlayer.isStopping()) return;
+  playBtn.addEventListener('click', async () => {
+    // Ignore clicks while any scene transition is in progress
+    if (musicPlayer.isTransitioning()) return;
 
-    if (musicPlayer.isScenePlaying(config)) {
-      // This scene is active → stop everything
-      musicPlayer.stopAll();
-    } else {
-      // Ensure the music player leaf is open before loading
-      if (onPlayTriggered) onPlayTriggered();
-      // Load & play this scene (stops any previous scene first)
-      musicPlayer.loadSceneMusic(config, config.autoPlay);
-      new Notice('🎵 Scene music loaded' + (config.autoPlay ? ' & playing' : ''));
+    try {
+      if (musicPlayer.isScenePlaying(config)) {
+        // This scene is active → stop everything
+        await musicPlayer.stopAll();
+      } else {
+        // Ensure the music player leaf is open before loading
+        if (onPlayTriggered) onPlayTriggered();
+        // Load & play this scene (stops any previous scene first)
+        await musicPlayer.loadSceneMusic(config, config.autoPlay);
+        new Notice('🎵 Scene music loaded' + (config.autoPlay ? ' & playing' : ''));
+      }
+    } finally {
+      // Ensure UI state is refreshed even if a transition throws
+      syncButton();
     }
-    // Button state will be updated by the scene-change listener
   });
 
   // Listen for scene changes (another block started / stopped) so the

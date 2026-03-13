@@ -712,7 +712,10 @@ export class SessionRunDashboardView extends ItemView {
       }
 
       const syncDashBtn = () => {
+        const busy = this.plugin.musicPlayer.isTransitioning();
         const active = this.plugin.musicPlayer.isScenePlaying(config);
+        playBtn.disabled = busy;
+        playBtn.classList.toggle('is-disabled', busy);
         if (active) {
           playBtn.textContent = '⏹ Stop';
           playBtn.classList.remove('mod-cta');
@@ -728,14 +731,18 @@ export class SessionRunDashboardView extends ItemView {
         text: '▶ Load & Play',
         cls: 'mod-cta scene-music-detect-play',
       });
-      playBtn.addEventListener('click', () => {
-        if (this.plugin.musicPlayer.isStopping()) return;
-        if (this.plugin.musicPlayer.isScenePlaying(config)) {
-          this.plugin.musicPlayer.stopAll();
-        } else {
-          this.plugin.ensureMusicPlayerOpen();
-          this.plugin.musicPlayer.loadSceneMusic(config, config.autoPlay);
-          new Notice(`🎵 Loaded scene music for "${sceneName}"`);
+      playBtn.addEventListener('click', async () => {
+        if (this.plugin.musicPlayer.isTransitioning()) return;
+        try {
+          if (this.plugin.musicPlayer.isScenePlaying(config)) {
+            await this.plugin.musicPlayer.stopAll();
+          } else {
+            this.plugin.ensureMusicPlayerOpen();
+            await this.plugin.musicPlayer.loadSceneMusic(config, config.autoPlay);
+            new Notice(`🎵 Loaded scene music for "${sceneName}"`);
+          }
+        } finally {
+          syncDashBtn();
         }
       });
 

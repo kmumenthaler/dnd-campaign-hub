@@ -29,6 +29,12 @@ export class MusicPlayer {
   /** True while stopAll() is fading out — prevents re-entrance */
   private _stopping: boolean = false;
 
+  /** True while loadSceneMusic is transitioning between scenes. */
+  private _sceneTransitioning: boolean = false;
+
+  /** Monotonic token used to ignore stale async scene transitions. */
+  private _sceneOpToken: number = 0;
+
   /** Listeners notified when the active scene changes (load / stop) */
   private _sceneChangeListeners: Set<() => void> = new Set();
 
@@ -158,19 +164,46 @@ export class MusicPlayer {
     return this.getPlaylistById(this.primary.state.currentPlaylistId);
   }
 
+  /** Wait for both layers to stop, but never block forever.
+   *  If fades hang, force-stop both layers and continue. */
+  private async _awaitLayerStops(context: string): Promise<void> {
+    const timeoutMs = Math.max((this.primary.fadeDurationMs || 0), (this.ambient.fadeDurationMs || 0)) + 1500;
+    const stopPromise = Promise.all([
+      this.primary.stopAsync(),
+      this.ambient.stopAsync(),
+    ]);
+
+    const timeoutPromise = new Promise<void>((resolve) => {
+      globalThis.setTimeout(() => resolve(), timeoutMs);
+    });
+
+    const completed = await Promise.race([
+      stopPromise.then(() => true).catch(() => false),
+      timeoutPromise.then(() => false),
+    ]);
+
+    if (!completed) {
+      console.warn(`[MusicPlayer] ${context} timed out while waiting for stopAsync(); forcing stop.`);
+      this.primary.stop();
+      this.ambient.stop();
+    }
+  }
+
   /** Stop both primary and ambient layers.
    *  Waits for the fade-out to complete before clearing the active scene
    *  so the UI stays in "Stop" state during the transition. */
   async stopAll() {
     if (this._stopping) return;   // Already fading out, ignore repeated clicks
+    const opToken = ++this._sceneOpToken;
     this._stopping = true;
+    this._sceneTransitioning = false;
+    this._notifySceneChange();
     try {
-      await Promise.all([
-        this.primary.stopAsync(),
-        this.ambient.stopAsync(),
-      ]);
+      await this._awaitLayerStops('stopAll');
     } finally {
-      this._activeSceneConfig = null;
+      if (opToken === this._sceneOpToken) {
+        this._activeSceneConfig = null;
+      }
       this._stopping = false;
       this._notifySceneChange();
     }
@@ -179,6 +212,11 @@ export class MusicPlayer {
   /** True while a stopAll fade-out is in progress. */
   isStopping(): boolean {
     return this._stopping;
+  }
+
+  /** True while any stop/load transition is in progress. */
+  isTransitioning(): boolean {
+    return this._stopping || this._sceneTransitioning;
   }
 
   // ─── Scene tracking helpers ─────────────────────────────────
@@ -279,23 +317,35 @@ export class MusicPlayer {
    * Fades out any previously playing scene music first, then loads the
    * new playlists on each layer and starts playback.
    */
-  loadSceneMusic(config: SceneMusicConfig, autoPlay = false) {
+  async loadSceneMusic(config: SceneMusicConfig, autoPlay = false): Promise<void> {
     // If a stopAll() is still fading out, ignore the load request
-    if (this._stopping) return;
+    if (this._stopping || this._sceneTransitioning) return;
+    const opToken = ++this._sceneOpToken;
+    this._sceneTransitioning = true;
 
     // Mark the new scene immediately so button state updates right away
     this._activeSceneConfig = { ...config };
     this._notifySceneChange();
 
-    // Fade out both layers in parallel, then load & play the new scene
-    const fadeOutBoth = Promise.all([
-      this.primary.stopAsync(),
-      this.ambient.stopAsync(),
-    ]);
+    try {
+      // Fade out both layers first, then load & play the new scene.
+      await this._awaitLayerStops('loadSceneMusic');
 
-    fadeOutBoth.then(() => {
+      // If a newer operation took over, ignore this stale transition.
+      if (opToken !== this._sceneOpToken) return;
+
       this._loadAndPlayScene(config, autoPlay);
-    });
+    } catch (e) {
+      console.error('[MusicPlayer] loadSceneMusic failed', e);
+      if (opToken === this._sceneOpToken) {
+        this._activeSceneConfig = null;
+      }
+    } finally {
+      if (opToken === this._sceneOpToken) {
+        this._sceneTransitioning = false;
+      }
+      this._notifySceneChange();
+    }
   }
 
   /**
