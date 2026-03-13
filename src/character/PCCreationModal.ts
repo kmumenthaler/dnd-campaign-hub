@@ -750,6 +750,8 @@ export class PCCreationModal extends Modal {
         template_version: playerTemplateVersion,
         statblock: true,
         layout: "Basic 5e Layout",
+        columns: 2,
+        forceColumns: true,
         size: "Medium",
         name: this.pcName,
         player: this.playerName,
@@ -861,10 +863,10 @@ export class PCCreationModal extends Modal {
   }
 
   private ensureFantasyStatblockSection(content: string): string {
-    const block = `## Fantasy Statblock\n\n\`\`\`statblock\ncreature: ${this.pcName}\n\`\`\``;
+    const block = `## Fantasy Statblock\n\n\`\`\`statblock\ncreature: ${this.pcName}\ncolumns: 2\nforceColumns: true\n\`\`\``;
 
     if (content.includes("```statblock\ncreature:")) {
-      return content.replace(/```statblock\ncreature:\s*[^\n]*\n```/, `\`\`\`statblock\ncreature: ${this.pcName}\n\`\`\``);
+      return content.replace(/```statblock\n[\s\S]*?```/, `\`\`\`statblock\ncreature: ${this.pcName}\ncolumns: 2\nforceColumns: true\n\`\`\``);
     }
 
     if (/^## Equipment & Inventory/m.test(content)) {
@@ -886,6 +888,9 @@ export class PCCreationModal extends Modal {
         name: this.pcName,
         size: "Medium",
         type: "humanoid",
+        layout: "Basic 5e Layout",
+        columns: 2,
+        forceColumns: true,
         ac: parseInt(this.ac) || 10,
         hp: parseInt(this.hpMax || this.hpCurrent) || 1,
         speed: speedValue,
