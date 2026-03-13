@@ -542,32 +542,38 @@ export class SessionCreationModal extends Modal {
         sessionContent = sessionContent.replace(/## Recap\s*\n/m, `## Recap\n${recapContent}`);
       }
 
-      // Replace placeholders in template using proper regex patterns
-      // Note: use .*$ (not [^\r\n]\w*$) so empty template fields are also replaced
-      sessionContent = sessionContent
-        .replace(/^campaign:.*$/m, `campaign: ${campaignName}`)
-        .replace(/^world:.*$/m, `world: ${campaignName}`)
-        .replace(/^adventure:.*$/m, `adventure: ${this.adventurePath ? `"[[${this.adventurePath}]]"` : ''}`)
-        .replace(/^starting_scene:.*$/m, `starting_scene: ${this.startingScenePath ? `"[[${this.startingScenePath}]]"` : '""'}`)
-        .replace(/^ending_scene:.*$/m, `ending_scene: ""`)
-        .replace(/^party_id:.*$/m, `party_id: ${this.selectedPartyId}`)
-        .replace(/^sessionNum:.*$/m, `sessionNum: ${nextNumber}`)
-        .replace(/^location:.*$/m, `location: ${this.location}`)
-        .replace(/^date:.*$/m, `date: ${this.sessionDate}`)
-        .replace(/^fc-calendar:.*$/m, `fc-calendar: ${this.calendar}`)
-        .replace(/^# Session.*$/m, `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`);
+      const adventureLink = this.adventurePath ? `[[${this.adventurePath}]]` : "";
+      const startingSceneLink = this.startingScenePath ? `[[${this.startingScenePath}]]` : "";
 
-      // Replace fc-date (start date) - need to match the nested structure
-      sessionContent = sessionContent
-        .replace(/fc-date:\s*\n\s*year:.*$/m, `fc-date:\n  year: ${this.startYear}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*)month:.*$/m, `$1month: ${this.startMonth}`)
-        .replace(/(fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:.*$/m, `$1day: ${this.startDay}`);
+      sessionContent = updateYamlFrontmatter(sessionContent, (fm) => ({
+        ...fm,
+        campaign: campaignName,
+        world: campaignName,
+        adventure: adventureLink,
+        starting_scene: startingSceneLink,
+        ending_scene: "",
+        party_id: this.selectedPartyId,
+        sessionNum: nextNumber,
+        location: this.location,
+        date: this.sessionDate,
+        "fc-calendar": this.calendar,
+        "fc-date": {
+          year: this.startYear,
+          month: this.startMonth,
+          day: this.startDay,
+        },
+        "fc-end": {
+          year: this.endYear,
+          month: this.endMonth,
+          day: this.endDay,
+        },
+      }));
 
-      // Replace fc-end (end date) - need to match the nested structure
-      sessionContent = sessionContent
-        .replace(/fc-end:\s*\n\s*year:.*$/m, `fc-end:\n  year: ${this.endYear}`)
-        .replace(/(fc-end:\s*\n\s*year:.*\n\s*)month:.*$/m, `$1month: ${this.endMonth}`)
-        .replace(/(fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*)day:.*$/m, `$1day: ${this.endDay}`);
+      // Update markdown heading title in body.
+      sessionContent = sessionContent.replace(
+        /^# Session.*$/m,
+        `# Session ${nextNumber}${this.sessionTitle ? ' - ' + this.sessionTitle : ''}`
+      );
       // Create the file
       await this.app.vault.create(filePath, sessionContent);
 

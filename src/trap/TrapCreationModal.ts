@@ -3,6 +3,7 @@ import type DndCampaignHubPlugin from "../main";
 import { TrapElement, TrapCountermeasure } from "../encounter/EncounterBuilder";
 import { TRAP_TEMPLATE } from "../templates";
 import { TEMPLATE_VERSIONS } from "../migration";
+import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
 
 export class TrapCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -749,36 +750,24 @@ export class TrapCreationModal extends Modal {
     // Generate statblock content
     const statblockContent = this.generateStatblockContent();
     
-    // Convert elements and countermeasures to YAML
-    const elementsYaml = JSON.stringify(this.elements, null, 2)
-      .split('\n')
-      .map((line, idx) => idx === 0 ? line : '  ' + line)
-      .join('\n');
-
-    const countermeasuresYaml = JSON.stringify(this.countermeasures, null, 2)
-      .split('\n')
-      .map((line, idx) => idx === 0 ? line : '  ' + line)
-      .join('\n');
-    const frontmatter = `---
-type: trap
-template_version: ${trapTemplateVersion}
-campaign: ${campaignName}
-adventure: ${this.adventurePath?.split('/').pop()?.replace('.md', '') || ''}
-world: ${worldName}
-scene: ${this.scenePath?.split('/').pop()?.replace('.md', '') || ''}
-trap_name: ${this.trapName}
-trap_type: ${this.trapType}
-threat_level: ${this.threatLevel}
-min_level: ${this.minLevel}
-max_level: ${this.maxLevel}
-trigger: ${this.trigger}
-elements: ${elementsYaml}
-countermeasures: ${countermeasuresYaml}
-date: ${now}
----`;
-
-    let content = TRAP_TEMPLATE
-      .replace(/^---\n[\s\S]*?\n---/, frontmatter)
+    let content = updateYamlFrontmatter(TRAP_TEMPLATE, (fm) => ({
+      ...fm,
+      type: 'trap',
+      template_version: trapTemplateVersion,
+      campaign: campaignName,
+      adventure: this.adventurePath?.split('/').pop()?.replace('.md', '') || '',
+      world: worldName,
+      scene: this.scenePath?.split('/').pop()?.replace('.md', '') || '',
+      trap_name: this.trapName,
+      trap_type: this.trapType,
+      threat_level: this.threatLevel,
+      min_level: this.minLevel,
+      max_level: this.maxLevel,
+      trigger: this.trigger,
+      elements: this.elements,
+      countermeasures: this.countermeasures,
+      date: now,
+    }))
       .replace(/{{trap_name}}/g, this.trapName)
       .replace(/{{trap_type}}/g, this.trapType)
       .replace(/{{threat_level}}/g, this.threatLevel)

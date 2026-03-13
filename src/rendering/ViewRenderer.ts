@@ -1,4 +1,5 @@
 import { App, TFile, TFolder } from "obsidian";
+import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -203,7 +204,11 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
       const f = app.vault.getAbstractFileByPath(scene.file.path);
       if (f instanceof TFile) {
         const c = await app.vault.read(f);
-        await app.vault.modify(f, c.replace(/^status:\s*.+$/m, `status: ${newStatus}`));
+        const updated = updateYamlFrontmatter(c, (fm) => ({
+          ...fm,
+          status: newStatus,
+        }));
+        await app.vault.modify(f, updated);
         currentStatus = newStatus;
         togBtn.textContent = STATUS_ICON[newStatus] || "⬜";
       }
@@ -292,7 +297,11 @@ function renderSceneItems(container: HTMLElement, app: App, scenes: FileMeta[]):
       const f = app.vault.getAbstractFileByPath(scene.file.path);
       if (f instanceof TFile) {
         const content = await app.vault.read(f);
-        await app.vault.modify(f, content.replace(/^status:\s*.+$/m, `status: ${newStatus}`));
+        const updated = updateYamlFrontmatter(content, (fm) => ({
+          ...fm,
+          status: newStatus,
+        }));
+        await app.vault.modify(f, updated);
         currentStatus = newStatus;
         statusBtn.textContent = STATUS_ICON[newStatus] || "⬜";
       }

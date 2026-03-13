@@ -5,6 +5,7 @@ import { RenameCreatureModal } from "../utils/CreatureModals";
 import { MarkerDefinition } from "../marker/MarkerTypes";
 import { SCENE_TEMPLATE } from '../templates';
 import { PartySelector } from '../party/PartySelector';
+import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 
 export class SceneCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -1318,9 +1319,14 @@ date: ${currentDate}
             const fileContent = await this.app.vault.read(originalFile);
             const cache = this.app.metadataCache.getFileCache(originalFile);
             sourceTokenId = cache?.frontmatter?.token_id;
-            newContent = fileContent
-              .replace(/^name:\s*.+$/m, `name: ${newName}`)
-              .replace(/^creature:\s*.+$/m, `creature: ${newName}`);
+            newContent = updateYamlFrontmatter(fileContent, (fm) => ({
+              ...fm,
+              name: newName,
+            }));
+            newContent = newContent.replace(
+              /```statblock\ncreature:\s*.+\n```/,
+              `\`\`\`statblock\ncreature: ${newName}\n\`\`\``
+            );
           }
         }
 
@@ -1376,10 +1382,14 @@ date: ${currentDate}
         };
         await this.plugin.markerLibrary.setMarker(tokenDef);
 
-        if (newContent.includes("token_id:")) {
-          newContent = newContent.replace(/^token_id:\s*.+$/m, `token_id: ${newTokenId}`);
-        } else {
+        const withToken = updateYamlFrontmatter(newContent, (fm) => ({
+          ...fm,
+          token_id: newTokenId,
+        }));
+        if (withToken === newContent && !newContent.includes("token_id:")) {
           newContent = newContent.replace(/\n---\s*\n/, `\ntoken_id: ${newTokenId}\n---\n`);
+        } else {
+          newContent = withToken;
         }
 
         await this.app.vault.create(newFilePath, newContent);

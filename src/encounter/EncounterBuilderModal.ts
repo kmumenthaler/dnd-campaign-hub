@@ -4,6 +4,7 @@ import { EncounterBuilder, EncounterCreature } from "./EncounterBuilder";
 import { RenameCreatureModal } from "../utils/CreatureModals";
 import { MarkerDefinition, CreatureSize } from "../marker/MarkerTypes";
 import { PartySelector } from "../party/PartySelector";
+import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
 
 export class EncounterBuilderModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -721,10 +722,15 @@ export class EncounterBuilderModal extends Modal {
             const cache = this.app.metadataCache.getFileCache(originalFile);
             sourceTokenId = cache?.frontmatter?.token_id;
 
-            // Replace name in frontmatter and statblock code block
-            newContent = fileContent
-              .replace(/^name:\s*.+$/m, `name: ${newName}`)
-              .replace(/^creature:\s*.+$/m, `creature: ${newName}`);
+            // Replace name in frontmatter and creature reference in statblock block.
+            newContent = updateYamlFrontmatter(fileContent, (fm) => ({
+              ...fm,
+              name: newName,
+            }));
+            newContent = newContent.replace(
+              /```statblock\ncreature:\s*.+\n```/,
+              `\`\`\`statblock\ncreature: ${newName}\n\`\`\``
+            );
           }
         }
 
@@ -790,12 +796,16 @@ export class EncounterBuilderModal extends Modal {
         };
         await this.plugin.markerLibrary.setMarker(tokenDef);
 
-        // Inject the new token_id into the file content
-        if (newContent.includes("token_id:")) {
-          newContent = newContent.replace(/^token_id:\s*.+$/m, `token_id: ${newTokenId}`);
-        } else {
-          // Insert token_id before the closing ---
+        // Inject the new token_id into frontmatter.
+        const withToken = updateYamlFrontmatter(newContent, (fm) => ({
+          ...fm,
+          token_id: newTokenId,
+        }));
+        if (withToken === newContent && !newContent.includes("token_id:")) {
+          // Fallback for malformed files with no frontmatter.
           newContent = newContent.replace(/\n---\s*\n/, `\ntoken_id: ${newTokenId}\n---\n`);
+        } else {
+          newContent = withToken;
         }
 
         // --- Create the new creature file ---

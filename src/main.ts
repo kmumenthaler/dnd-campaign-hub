@@ -1729,12 +1729,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 				
 				// Update the file
 				let content = await this.app.vault.read(file);
-				
-				// Update frontmatter icon
-				content = content.replace(
-					/^icon:\s*.+$/m,
-					`icon: ${correctIcon}`
-				);
+
+        content = updateYamlFrontmatter(content, (frontmatter) => ({
+          ...frontmatter,
+          icon: correctIcon,
+        }));
 				
 				// Update heading icon (first heading after frontmatter)
 				const headingRegex = /^(---\n[\s\S]*?\n---\n\n)# (.+?) (.+)$/m;

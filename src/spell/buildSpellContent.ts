@@ -1,16 +1,6 @@
 import { SPELL_TEMPLATE } from "../templates";
 import { TEMPLATE_VERSIONS } from "../migration";
-
-function escapeYamlString(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/\"/g, '\\"').replace(/\r?\n/g, " ");
-}
-
-function stringifyYaml(value: unknown): string {
-  if (typeof value === "boolean" || typeof value === "number") {
-    return String(value);
-  }
-  return `"${escapeYamlString(String(value ?? ""))}"`;
-}
+import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
 
 export function buildSpellContent(spell: any): string {
   const templateVersion = TEMPLATE_VERSIONS.spell || "1.1.0";
@@ -27,24 +17,22 @@ export function buildSpellContent(spell: any): string {
     ? spell.higher_level.join("\n\n")
     : "N/A";
 
-  const frontmatter = `---
-type: spell
-template_version: ${templateVersion}
-name: ${stringifyYaml(spell.name || "Spell")}
-level: ${typeof spell.level === "number" ? spell.level : 1}
-school: ${stringifyYaml(spell.school?.name || "")}
-casting_time: ${stringifyYaml(spell.casting_time || "1 action")}
-range: ${stringifyYaml(spell.range || "")}
-components: ${stringifyYaml(components)}
-duration: ${stringifyYaml(spell.duration || "")}
-concentration: ${Boolean(spell.concentration)}
-ritual: ${Boolean(spell.ritual)}
-classes: ${stringifyYaml(classes)}
-source: ${stringifyYaml(spell.source || "SRD")}
----`;
-
-  let content = SPELL_TEMPLATE
-    .replace(/^---\n[\s\S]*?\n---/, frontmatter)
+  let content = updateYamlFrontmatter(SPELL_TEMPLATE, (fm) => ({
+    ...fm,
+    type: "spell",
+    template_version: templateVersion,
+    name: spell.name || "Spell",
+    level: typeof spell.level === "number" ? spell.level : 1,
+    school: spell.school?.name || "",
+    casting_time: spell.casting_time || "1 action",
+    range: spell.range || "",
+    components,
+    duration: spell.duration || "",
+    concentration: Boolean(spell.concentration),
+    ritual: Boolean(spell.ritual),
+    classes,
+    source: spell.source || "SRD",
+  }))
     .replace(/^# Spell$/m, `# ${spell.name || "Spell"}`);
 
   content = content.replace(

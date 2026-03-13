@@ -5,6 +5,7 @@ import { MarkerDefinition, CreatureSize } from '../marker/MarkerTypes';
 import { TokenEditorWidget } from '../marker/TokenEditorWidget';
 import { PC_TEMPLATE } from '../templates';
 import { TEMPLATE_VERSIONS } from '../migration';
+import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 
 export class PCCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -633,37 +634,28 @@ export class PCCreationModal extends Modal {
       // Combine classes into a single string
       const classString = this.classes.filter(c => c.trim()).join("/");
 
-      // Build complete frontmatter
       const playerTemplateVersion = TEMPLATE_VERSIONS.player || TEMPLATE_VERSIONS.pc || "1.3.0";
-      const frontmatter = `---
-type: player
-    template_version: ${playerTemplateVersion}
-name: ${this.pcName}
-player: ${this.playerName}
-campaign: ${campaignName}
-world: ${worldName}
-race: 
-class: ${classString}
-subclass: 
-level: ${this.level}
-hp: ${this.hpCurrent || "0"}
-hp_max: ${this.hpMax || "0"}
-thp: 0
-ac: ${this.ac}
-init_bonus: ${this.initBonus}
-speed: ${this.speed}
-passive_perception: 10
-background: 
-alignment: 
-experience: 0
-readonlyUrl: ${this.characterSheetUrl}
-characterSheetPdf: ${this.characterSheetPdf}
-token_id: ${tokenId}
-date: ${currentDate}
----`;
-
-      // Replace the frontmatter
-      pcContent = pcContent.replace(/^---\n[\s\S]*?\n---/, frontmatter);
+      pcContent = updateYamlFrontmatter(pcContent, (fm) => ({
+        ...fm,
+        type: 'player',
+        template_version: playerTemplateVersion,
+        name: this.pcName,
+        player: this.playerName,
+        campaign: campaignName,
+        world: worldName,
+        class: classString,
+        level: this.level,
+        hp: this.hpCurrent || "0",
+        hp_max: this.hpMax || "0",
+        thp: 0,
+        ac: this.ac,
+        init_bonus: this.initBonus,
+        speed: this.speed,
+        readonlyUrl: this.characterSheetUrl,
+        characterSheetPdf: this.characterSheetPdf,
+        token_id: tokenId,
+        date: currentDate,
+      }));
       
       // Replace the title
       pcContent = pcContent.replace(/# {{name}}/, `# ${this.pcName}`);
