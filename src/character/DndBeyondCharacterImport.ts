@@ -162,6 +162,12 @@ function resolveDescription(item: any): string {
   return raw ? stripHtml(raw) : "No description provided.";
 }
 
+function summarizeDescription(value: string, maxLen: number = 320): string {
+  const text = stripHtml(value);
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen).trimEnd()}...`;
+}
+
 function collectModifiers(data: any): any[] {
   return [
     ...(Array.isArray(data?.modifiers?.race) ? data.modifiers.race : []),
@@ -392,6 +398,61 @@ function collectOptionTraits(data: any): StatblockEntry[] {
   return out;
 }
 
+function collectClassAndSpeciesTraits(data: any): StatblockEntry[] {
+  const out: StatblockEntry[] = [];
+  const seen = new Set<string>();
+
+  const pushTrait = (nameRaw: string, descRaw: string) => {
+    const name = nameRaw.trim();
+    if (!name) return;
+    if (seen.has(name.toLowerCase())) return;
+    if (/^core\s+.+\s+traits$/i.test(name)) return;
+    if (/^spellcasting$/i.test(name)) return;
+
+    const desc = summarizeDescription(descRaw || "");
+    if (!desc) return;
+
+    out.push({
+      name,
+      desc: `${withSearchLink(name)}: ${desc}`,
+    });
+    seen.add(name.toLowerCase());
+  };
+
+  const classes = Array.isArray(data?.classes) ? data.classes : [];
+  for (const cls of classes) {
+    const classFeatures = Array.isArray(cls?.classFeatures) ? cls.classFeatures : [];
+    for (const feature of classFeatures) {
+      const def = feature?.definition;
+      if (!def) continue;
+      if (def.hideInSheet === true) continue;
+      const name = String(def.name || "");
+      const desc = String(def.snippet || def.description || "");
+      pushTrait(name, desc);
+    }
+
+    const subclassDef = cls?.subclassDefinition;
+    if (subclassDef) {
+      const subName = String(subclassDef?.name || "").trim();
+      const subDesc = String(subclassDef?.description || subclassDef?.snippet || "");
+      if (subName && subDesc) {
+        pushTrait(subName, subDesc);
+      }
+    }
+  }
+
+  const racialTraits = Array.isArray(data?.race?.racialTraits) ? data.race.racialTraits : [];
+  for (const trait of racialTraits) {
+    const def = trait?.definition;
+    if (!def) continue;
+    const name = String(def.name || "");
+    const desc = String(def.snippet || def.description || "");
+    pushTrait(name, desc);
+  }
+
+  return out;
+}
+
 function isWeaponProficient(weapon: any, modifiers: any[]): boolean {
   const weaponName = String(weapon?.definition?.name || "").toLowerCase();
   const categoryId = asNumber(weapon?.definition?.categoryId);
@@ -541,6 +602,7 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
 
   const featTraits = collectFeatTraits(data);
   const optionTraits = collectOptionTraits(data);
+  const classSpeciesTraits = collectClassAndSpeciesTraits(data);
   const proficiencyBonus = getProficiencyBonus(totalLevel);
   const skillsaves = collectSkillSaves(data, abilities, totalLevel);
   const skillTraits = collectSkillsTrait(skillsaves);
@@ -564,7 +626,7 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
     senses: collectSenses(data),
     languages: collectLanguages(data),
     skillsaves,
-    traits: [...skillTraits, ...featTraits, ...optionTraits],
+    traits: [...skillTraits, ...classSpeciesTraits, ...featTraits, ...optionTraits],
     actions: [...weaponActions, ...actionEntries.actions],
     bonusActions: actionEntries.bonusActions,
     reactions: actionEntries.reactions,
