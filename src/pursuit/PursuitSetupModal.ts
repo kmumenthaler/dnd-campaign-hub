@@ -343,10 +343,13 @@ export class PursuitSetupModal extends Modal {
       if (!fm) continue;
 
       const type = fm.type;
-      if (type !== "player" && type !== "pc" && type !== "npc" && type !== "creature") continue;
-
+      // Creatures don't have type:"creature" — they have statblock:true
+      // and their type field is the monster type (e.g. "beast", "fiend").
+      // PCs have type:"player"/"pc", NPCs have type:"npc".
       const isPlayer = type === "player" || type === "pc";
-      const isCreature = type === "creature";
+      const isNPC = type === "npc";
+      const isCreature = !isPlayer && !isNPC && fm.statblock === true;
+      if (!isPlayer && !isNPC && !isCreature) continue;
 
       // Speed
       const rawSpeed = fm.speed;
