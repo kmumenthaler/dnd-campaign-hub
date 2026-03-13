@@ -7,6 +7,7 @@ import { PC_TEMPLATE } from '../templates';
 import { TEMPLATE_VERSIONS } from '../migration';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 import { createVaultSrdLinkResolver, importFromDndBeyond, StatblockEntry } from './DndBeyondCharacterImport';
+import { parsePDFCharacterSheet, dumpPDFFields } from './PDFCharacterParser';
 
 export class PCCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -419,6 +420,27 @@ export class PCCreationModal extends Modal {
       new PDFFileSuggest(this.app, text.inputEl);
     });
 
+    // Import Stats from PDF button
+    new Setting(contentEl)
+      .setName("Import Stats from PDF")
+      .setDesc("Parse a fillable PDF character sheet to populate stats above")
+      .addButton((button) =>
+        button
+          .setButtonText("Import from PDF")
+          .setCta()
+          .onClick(async () => {
+            await this.importFromPDF();
+          })
+      )
+      .addButton((button) =>
+        button
+          .setButtonText("Dump Fields")
+          .setTooltip("Show all form fields in the PDF (for debugging)")
+          .onClick(async () => {
+            await this.dumpPDFFieldsToConsole();
+          })
+      );
+
     // ── Token Appearance ──
     contentEl.createEl("h3", { text: "🎨 Token Appearance" });
     const tokenContainer = contentEl.createDiv();
@@ -593,6 +615,100 @@ export class PCCreationModal extends Modal {
       const message = error instanceof Error ? error.message : String(error);
       new Notice(`❌ D&D Beyond import failed: ${message}`);
       console.error("D&D Beyond import error:", error);
+    }
+  }
+
+  /**
+   * Read the currently selected PDF character sheet and populate modal fields.
+   */
+  async importFromPDF() {
+    const pdfPath = this.characterSheetPdf?.trim();
+    if (!pdfPath) {
+      new Notice("Please select a PDF character sheet first.");
+      return;
+    }
+
+    try {
+      const file = this.app.vault.getAbstractFileByPath(pdfPath);
+      if (!(file instanceof TFile)) {
+        new Notice("PDF file not found in vault.");
+        return;
+      }
+
+      new Notice("Parsing PDF character sheet…");
+      const arrayBuf = await this.app.vault.readBinary(file);
+      const imported = await parsePDFCharacterSheet(arrayBuf);
+
+      // Only overwrite fields that the PDF actually provided
+      if (imported.name) this.pcName = imported.name;
+      if (imported.playerName) this.playerName = imported.playerName;
+      if (imported.classes.length > 0) this.classes = imported.classes;
+      if (imported.level && imported.level !== "1") this.level = imported.level;
+      if (imported.hpMax) this.hpMax = imported.hpMax;
+      if (imported.hpCurrent) this.hpCurrent = imported.hpCurrent;
+      if (imported.ac) this.ac = imported.ac;
+      if (imported.initBonus) this.initBonus = imported.initBonus;
+      if (imported.speed) this.speed = imported.speed;
+
+      const a = imported.abilities;
+      if (a.str !== 10) this.str = a.str;
+      if (a.dex !== 10) this.dex = a.dex;
+      if (a.con !== 10) this.con = a.con;
+      if (a.int !== 10) this.int = a.int;
+      if (a.wis !== 10) this.wis = a.wis;
+      if (a.cha !== 10) this.cha = a.cha;
+
+      if (imported.senses) this.senses = imported.senses;
+      if (imported.languages) this.languages = imported.languages;
+      if (imported.skillsaves.length > 0) this.skillsaves = imported.skillsaves;
+      if (imported.traits.length > 0) this.traits = imported.traits;
+      if (imported.actions.length > 0) this.actions = imported.actions;
+      if (imported.spells.length > 0) this.spells = imported.spells;
+
+      this.refresh();
+      const profile = imported.profileUsed;
+      new Notice(`✅ Imported from PDF (${profile}): ${imported.name || "unnamed"}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("no form") || message.includes("getForm")) {
+        new Notice("❌ This PDF has no fillable form fields. Only fillable character sheets are supported.");
+      } else {
+        new Notice(`❌ PDF import failed: ${message}`);
+      }
+      console.error("PDF import error:", error);
+    }
+  }
+
+  /**
+   * Dump all form fields in the selected PDF to the developer console.
+   * Useful for building new field-mapping profiles.
+   */
+  async dumpPDFFieldsToConsole() {
+    const pdfPath = this.characterSheetPdf?.trim();
+    if (!pdfPath) {
+      new Notice("Please select a PDF first.");
+      return;
+    }
+
+    try {
+      const file = this.app.vault.getAbstractFileByPath(pdfPath);
+      if (!(file instanceof TFile)) {
+        new Notice("PDF file not found in vault.");
+        return;
+      }
+
+      const arrayBuf = await this.app.vault.readBinary(file);
+      const fields = await dumpPDFFields(arrayBuf);
+
+      console.group(`PDF Form Fields: ${pdfPath}`);
+      console.table(fields);
+      console.groupEnd();
+
+      new Notice(`📋 ${fields.length} form fields logged to developer console (Ctrl+Shift+I)`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      new Notice(`❌ Could not read PDF fields: ${message}`);
+      console.error("PDF field dump error:", error);
     }
   }
 
