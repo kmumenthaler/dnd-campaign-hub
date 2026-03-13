@@ -154,6 +154,42 @@ const PROFILES: FieldProfile[] = [
       personalityTraits: ["Personality Traits"],
     },
   },
+  /* ───── German (Deutsch) 5e Character Sheet ───── */
+  {
+    name: "German 5e (Deutsch)",
+    fields: {
+      characterName: ["Charaktername_page1", "Charaktername_page2"],
+      classLevel: ["KlasseUndStufe", "Klasse und Stufe"],
+      playerName: ["Spielername"],
+      race: ["Volk", "Rasse"],
+      background: ["Hintergrund"],
+      hpMax: ["TrefferpunkteMaximum", "Trefferpunkte Maximum"],
+      hpCurrent: ["AktTrefferpunkte", "Aktuelle Trefferpunkte"],
+      hpTemp: ["TempTrefferpunkte"],
+      ac: ["Rüstungsklasse", "RK"],
+      initiative: ["Initiative"],
+      speed: ["Bewegungsrate"],
+      profBonus: ["Übungsbonus", "Kompetenzbonus"],
+      str: ["Str"],
+      dex: ["Ges"],
+      con: ["Kon"],
+      int: ["Int"],
+      wis: ["Wei"],
+      cha: ["Cha"],
+      strMod: ["StrMod"],
+      dexMod: ["GesMod"],
+      conMod: ["KonMod"],
+      intMod: ["IntMod"],
+      wisMod: ["WeiMod"],
+      chaMod: ["ChaMod"],
+      passivePerception: ["PassiveWeisheit", "Passive Weisheit"],
+      featuresTraits: ["Klassenmerkmale1", "Klassenmerkmale2", "Rassenmerkmale"],
+      equipment: ["Equipment"],
+      attacksSpellcasting: [""],
+      personalityTraits: ["Persönlichkeitsmerkmale"],
+      senses: ["Sinne"],
+    },
+  },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -162,6 +198,7 @@ const PROFILES: FieldProfile[] = [
 
 /** Mapping from known skill-field-name fragments to canonical skill names. */
 const SKILL_FIELD_MAP: Record<string, string> = {
+  // English
   acrobatics: "Acrobatics",
   "animal handling": "Animal Handling",
   "animal": "Animal Handling",
@@ -182,6 +219,24 @@ const SKILL_FIELD_MAP: Record<string, string> = {
   "sleight": "Sleight of Hand",
   stealth: "Stealth",
   survival: "Survival",
+  // German (Deutsch)
+  "akrobatik": "Acrobatics",
+  "arkanekunde": "Arcana",
+  "athletik": "Athletics",
+  "auftreten": "Performance",
+  "einschüchtern": "Intimidation",
+  "fingerfertigkeit": "Sleight of Hand",
+  "geschichte": "History",
+  "heilkunde": "Medicine",
+  "heimlichkeit": "Stealth",
+  "mittierenumgehen": "Animal Handling",
+  "motiverkennen": "Insight",
+  "nachforschungen": "Investigation",
+  "naturkunde": "Nature",
+  "täuschen": "Deception",
+  "überlebenskunst": "Survival",
+  "überzeugen": "Persuasion",
+  "wahrnehmung": "Perception",
 };
 
 const SAVE_FIELD_MAP: Record<string, string> = {
@@ -197,6 +252,16 @@ const SAVE_FIELD_MAP: Record<string, string> = {
   wisdom: "Wis",
   cha: "Cha",
   charisma: "Cha",
+};
+
+/** German save-field suffixes → canonical save key. */
+const DE_SAVE_FIELD_MAP: Record<string, string> = {
+  strrw: "Str Save",
+  gesrw: "Dex Save",
+  konrw: "Con Save",
+  intrw: "Int Save",
+  weirw: "Wis Save",
+  charw: "Cha Save",
 };
 
 /* ------------------------------------------------------------------ */
@@ -239,6 +304,8 @@ export async function parsePDFCharacterSheet(
     return "";
   };
 
+  const isGerman = profile.name.startsWith("German");
+
   // ── Core stats ──
   const rawClassLevel = get("classLevel");
   const { classes, level } = parseClassLevel(rawClassLevel);
@@ -246,25 +313,50 @@ export async function parsePDFCharacterSheet(
   const abilities = parseAbilities(get, fieldMap);
 
   // ── Skills & saves ──
-  const skillsaves = extractSkillsAndSaves(fieldMap);
+  const skillsaves = extractSkillsAndSaves(fieldMap, isGerman);
 
   // ── Traits / features ──
-  const traits = parseTextBlock(get("featuresTraits"));
+  const traitTexts: string[] = [];
+  if (isGerman) {
+    // German sheets store class features and racial traits separately
+    for (const key of ["klassenmerkmale1", "klassenmerkmale2", "rassenmerkmale"]) {
+      const v = fieldMap.get(key);
+      if (v?.trim()) traitTexts.push(v.trim());
+    }
+  }
+  const traits = traitTexts.length > 0
+    ? parseTextBlock(traitTexts.join("\n\n"))
+    : parseTextBlock(get("featuresTraits"));
 
   // ── Actions ──
-  const actions = parseTextBlock(get("attacksSpellcasting"));
+  const attackActions = extractNumberedAttacks(fieldMap);
+  const textActions = parseTextBlock(get("attacksSpellcasting"));
+  const actions = attackActions.length > 0 ? attackActions : textActions;
 
   // ── Spells (extracted from spell fields or text blocks) ──
   const spells = extractSpells(fieldMap);
 
-  // ── Senses / languages (common text fields) ──
+  // ── Senses / languages ──
   const senses = resolveTextField(fieldMap, [
-    "senses", "passive perception", "passive",
+    "sinne", "senses", "passive perception", "passive",
   ]);
-  const languages = resolveTextField(fieldMap, [
-    "languages", "other proficiencies and languages",
-    "proficiencies", "proficiencies & languages",
-  ]);
+  const numberedLangs = extractNumberedValues(fieldMap, "sprache");
+  const languages = numberedLangs.length > 0
+    ? numberedLangs.join(", ")
+    : resolveTextField(fieldMap, [
+        "languages", "other proficiencies and languages",
+        "proficiencies", "proficiencies & languages",
+      ]);
+
+  // ── Speed: German sheets use meters; convert to feet ──
+  let speed = get("speed").replace(/\s*ft\.?$/i, "").replace(/\s*m$/i, "");
+  if (isGerman && speed) {
+    const metres = parseFloat(speed);
+    if (!isNaN(metres) && metres < 20) {
+      // Likely metres – convert to feet (round to nearest 5)
+      speed = String(Math.round((metres * 3.28084) / 5) * 5);
+    }
+  }
 
   return {
     name: get("characterName"),
@@ -275,7 +367,7 @@ export async function parsePDFCharacterSheet(
     hpMax: get("hpMax"),
     ac: get("ac"),
     initBonus: get("initiative"),
-    speed: get("speed").replace(/\s*ft\.?$/i, ""),
+    speed,
     abilities,
     senses,
     languages,
@@ -317,10 +409,22 @@ function pickBestProfile(
 }
 
 /**
- * Parse "Fighter 5 / Wizard 3" or "Ranger 7" into structured data.
+ * Parse class/level strings in various formats:
+ *  - "Fighter 5 / Wizard 3"  (English)
+ *  - "Ranger 7"
+ *  - "Kriegsmagier (3)"      (German parenthesised level)
  */
 function parseClassLevel(raw: string): { classes: string[]; level: string } {
   if (!raw) return { classes: [], level: "1" };
+
+  // Try "Class (Level)" format first (covers German sheets)
+  const parenMatch = raw.match(/^(.+?)\s*\((\d+)\)$/);
+  if (parenMatch?.[1] && parenMatch[2]) {
+    return {
+      classes: [parenMatch[1].trim()],
+      level: parenMatch[2],
+    };
+  }
 
   // Try "Class Level / Class Level" format
   const parts = raw.split(/\s*\/\s*/);
@@ -385,6 +489,7 @@ function parseAbilities(
  */
 function extractSkillsAndSaves(
   fieldMap: Map<string, string>,
+  isGerman = false,
 ): Array<Record<string, string>> {
   const result: Array<Record<string, string>> = [];
   const seen = new Set<string>();
@@ -392,9 +497,12 @@ function extractSkillsAndSaves(
   for (const [key, val] of fieldMap) {
     if (!val || val === "0" || val === "+0") continue;
 
+    // Skip proficiency/expertise checkboxes — only want bonus values
+    if (key.endsWith("prof") || key.endsWith("exp")) continue;
+
     // Check skills
     for (const [fragment, canonical] of Object.entries(SKILL_FIELD_MAP)) {
-      if (key.includes(fragment) && !key.includes("check") && !seen.has(canonical)) {
+      if (key.includes(fragment) && !key.includes("check") && !key.includes("prof") && !key.includes("exp") && !seen.has(canonical)) {
         const bonus = normalizeBonus(val);
         if (bonus) {
           result.push({ [canonical]: bonus });
@@ -403,7 +511,7 @@ function extractSkillsAndSaves(
       }
     }
 
-    // Check saving throws
+    // Check saving throws (English)
     for (const [fragment, canonical] of Object.entries(SAVE_FIELD_MAP)) {
       const saveKey = `${canonical} Save`;
       if (
@@ -417,6 +525,19 @@ function extractSkillsAndSaves(
         }
       }
     }
+
+    // Check German saving throws (e.g. "strrw", "gesrw")
+    if (isGerman) {
+      for (const [fieldSuffix, saveKey] of Object.entries(DE_SAVE_FIELD_MAP)) {
+        if (key === fieldSuffix && !seen.has(saveKey)) {
+          const bonus = normalizeBonus(val);
+          if (bonus) {
+            result.push({ [saveKey]: bonus });
+            seen.add(saveKey);
+          }
+        }
+      }
+    }
   }
 
   return result;
@@ -424,22 +545,40 @@ function extractSkillsAndSaves(
 
 /**
  * Extract spells from form fields.
- * Many sheets have fields like "Spells1001", "Spells1002", etc.
+ * Handles English ("Spells1001") and German ("Zaubertrick1", "Zauber1_1") patterns.
  */
 function extractSpells(fieldMap: Map<string, string>): string[] {
   const spells: string[] = [];
   const seen = new Set<string>();
 
+  const add = (val: string) => {
+    const name = val.trim();
+    const lc = name.toLowerCase();
+    if (name && !seen.has(lc) && name.length > 1) {
+      spells.push(name);
+      seen.add(lc);
+    }
+  };
+
   for (const [key, val] of fieldMap) {
     if (!val) continue;
-    // Match fields like "Spells1001", "Spell Name 1", "SpellName1", etc.
+
+    // English: "Spells1001", "Spell Name 1", etc.
     if (/spell/i.test(key) && !/slot|level|dc|attack|mod|save|bonus|casting/i.test(key)) {
-      const name = val.trim();
-      const lc = name.toLowerCase();
-      if (name && !seen.has(lc) && name.length > 1) {
-        spells.push(name);
-        seen.add(lc);
-      }
+      add(val);
+      continue;
+    }
+
+    // German: "Zaubertrick1"–"Zaubertrick8" (cantrips)
+    if (/^zaubertrick\d+$/i.test(key)) {
+      add(val);
+      continue;
+    }
+
+    // German: "Zauber1_1", "Zauber2_3", etc. (levelled spells)
+    // Exclude slot/consumed/active fields
+    if (/^zauber\d+_\d+$/i.test(key)) {
+      add(val);
     }
   }
 
@@ -479,6 +618,66 @@ function parseTextBlock(text: string): StatblockEntry[] {
   }
 
   return entries;
+}
+
+/**
+ * Extract actions from numbered attack fields (e.g. Angriff1–5, Schaden1–5).
+ * Common in German and some custom sheets.
+ */
+function extractNumberedAttacks(
+  fieldMap: Map<string, string>,
+): StatblockEntry[] {
+  const actions: StatblockEntry[] = [];
+
+  for (let i = 1; i <= 10; i++) {
+    // Try English patterns first, then German
+    const name =
+      fieldMap.get(`attack${i}`) ||
+      fieldMap.get(`angriff${i}`) ||
+      "";
+    if (!name.trim()) continue;
+
+    const damage = fieldMap.get(`schaden${i}`) || fieldMap.get(`damage${i}`) || "";
+    const damageType = fieldMap.get(`schadentyp${i}`) || fieldMap.get(`damagetype${i}`) || "";
+    const range = fieldMap.get(`reichweite${i}`) || fieldMap.get(`range${i}`) || "";
+    const bonus = fieldMap.get(`bonus${i}`) || "";
+    const desc = fieldMap.get(`beschreibung${i}`) || fieldMap.get(`description${i}`) || "";
+
+    const parts: string[] = [];
+    if (bonus) parts.push(`+${bonus.replace(/^\+/, "")} to hit`);
+    if (range) parts.push(`range ${range}`);
+    if (damage) {
+      let dmgStr = damage;
+      if (damageType) dmgStr += ` ${damageType}`;
+      parts.push(dmgStr);
+    }
+    if (desc) parts.push(desc);
+
+    actions.push({
+      name: name.trim(),
+      desc: parts.join(". ") || name.trim(),
+    });
+  }
+
+  return actions;
+}
+
+/**
+ * Collect values from numbered form fields like Sprache1, Sprache2, etc.
+ */
+function extractNumberedValues(
+  fieldMap: Map<string, string>,
+  prefix: string,
+): string[] {
+  const values: string[] = [];
+  const lowerPrefix = prefix.toLowerCase();
+
+  for (let i = 1; i <= 20; i++) {
+    const val = fieldMap.get(`${lowerPrefix}${i}`);
+    if (val?.trim()) values.push(val.trim());
+  }
+
+  return values;
 }
 
 /** Resolve first non-empty value from a list of candidate field names. */
