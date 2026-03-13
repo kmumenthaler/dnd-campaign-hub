@@ -117,6 +117,7 @@ function resolveAbilityScore(data: any, statId: number): number {
 }
 
 function resolveArmorClass(data: any): string | undefined {
+  // Try direct AC fields (legacy API)
   const directCandidates = [
     data?.armorClass,
     data?.baseArmorClass,
@@ -129,7 +130,58 @@ function resolveArmorClass(data: any): string | undefined {
     if (ac > 0) return String(ac);
   }
 
-  return undefined;
+  // 2024+ API: compute AC from equipped armor + DEX + modifiers
+  const dexMod = abilityModifier(resolveAbilityScore(data, 2) || 10);
+  let baseAc = 10 + dexMod; // unarmored default
+
+  const inventory = Array.isArray(data?.inventory) ? data.inventory : [];
+  for (const item of inventory) {
+    if (!item?.equipped) continue;
+    const def = item?.definition;
+    if (!def) continue;
+    const filterType = String(def.filterType || "").toLowerCase();
+    if (filterType !== "armor") continue;
+    const armorTypeId = asNumber(def.armorTypeId);
+    const armorAc = asNumber(def.armorClass);
+    if (armorAc <= 0) continue;
+
+    if (armorTypeId === 1) {
+      // Light armor: AC + full DEX
+      baseAc = armorAc + dexMod;
+    } else if (armorTypeId === 2) {
+      // Medium armor: AC + DEX (max 2)
+      baseAc = armorAc + Math.min(dexMod, 2);
+    } else if (armorTypeId === 3) {
+      // Heavy armor: AC only
+      baseAc = armorAc;
+    }
+  }
+
+  // Add shield bonus
+  for (const item of inventory) {
+    if (!item?.equipped) continue;
+    const def = item?.definition;
+    if (!def) continue;
+    const filterType = String(def.filterType || "").toLowerCase();
+    if (filterType !== "armor") continue;
+    const armorTypeId = asNumber(def.armorTypeId);
+    if (armorTypeId === 4) {
+      // Shield
+      baseAc += asNumber(def.armorClass) || 2;
+    }
+  }
+
+  // Add AC bonuses from modifiers (magic items, feats, etc.)
+  const modifiers = collectModifiers(data);
+  for (const mod of modifiers) {
+    const type = String(mod?.type || "").toLowerCase();
+    const subType = String(mod?.subType || "").toLowerCase();
+    if (type === "bonus" && subType === "armor-class") {
+      baseAc += asNumber(mod.value);
+    }
+  }
+
+  return String(baseAc);
 }
 
 function resolveWalkSpeed(data: any): string {
@@ -173,6 +225,10 @@ function slugify(name: string): string {
     .replace(/['’]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function titleCase(value: string): string {
+  return value.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 }
 
 function stripMdExtension(path: string): string {
@@ -810,8 +866,18 @@ function collectWeaponActions(data: any, abilities: AbilityScores, proficiencyBo
 }
 
 function collectActionEntries(data: any, ctx: ImportContext): { actions: StatblockEntry[]; bonusActions: StatblockEntry[]; reactions: StatblockEntry[] } {
+  // data.actions can be an array (legacy) or an object keyed by source (2024+)
+  let rawActions: any[];
+  if (Array.isArray(data?.actions)) {
+    rawActions = data.actions;
+  } else if (data?.actions && typeof data.actions === "object") {
+    rawActions = Object.values(data.actions).flat();
+  } else {
+    rawActions = [];
+  }
+
   const items = [
-    ...(Array.isArray(data?.actions) ? data.actions : []),
+    ...rawActions,
     ...(Array.isArray(data?.customActions) ? data.customActions : []),
   ];
 
@@ -1018,6 +1084,64 @@ export async function importFromDndBeyond(source: string, options?: ImportOption
   }
 
   const data = body.data;
+
+  // ── Diagnostic: dump API response structure ──
+  const diagKeys = (obj: any, label: string) => {
+    if (!obj || typeof obj !== "object") {
+      console.log(`[DDB Import] ${label}: ${obj === null ? "null" : typeof obj}`);
+      return;
+    }
+    if (Array.isArray(obj)) {
+      console.log(`[DDB Import] ${label}: Array(${obj.length})`);
+      if (obj.length > 0) console.log(`[DDB Import]   ${label}[0] keys:`, Object.keys(obj[0]).join(", "));
+    } else {
+      console.log(`[DDB Import] ${label}: {${Object.keys(obj).join(", ")}}`);
+    }
+  };
+  console.log("[DDB Import] ── Raw API response diagnostics ──");
+  console.log("[DDB Import] Top-level keys:", Object.keys(data).join(", "));
+  diagKeys(data.stats, "data.stats");
+  diagKeys(data.bonusStats, "data.bonusStats");
+  diagKeys(data.overrideStats, "data.overrideStats");
+  diagKeys(data.classes, "data.classes");
+  if (Array.isArray(data.classes) && data.classes.length > 0) {
+    const cls0 = data.classes[0];
+    console.log("[DDB Import]   classes[0] keys:", Object.keys(cls0).join(", "));
+    diagKeys(cls0.classFeatures, "  classes[0].classFeatures");
+    diagKeys(cls0.definition, "  classes[0].definition");
+  }
+  diagKeys(data.race, "data.race");
+  if (data.race) {
+    diagKeys(data.race.racialTraits, "  race.racialTraits");
+    diagKeys(data.race.weightSpeeds, "  race.weightSpeeds");
+  }
+  diagKeys(data.modifiers, "data.modifiers");
+  if (data.modifiers && typeof data.modifiers === "object" && !Array.isArray(data.modifiers)) {
+    for (const key of Object.keys(data.modifiers)) {
+      diagKeys(data.modifiers[key], `  modifiers.${key}`);
+    }
+  }
+  diagKeys(data.inventory, "data.inventory");
+  diagKeys(data.classSpells, "data.classSpells");
+  if (Array.isArray(data.classSpells) && data.classSpells.length > 0) {
+    diagKeys(data.classSpells[0].spells, "  classSpells[0].spells");
+  }
+  diagKeys(data.actions, "data.actions");
+  diagKeys(data.customActions, "data.customActions");
+  diagKeys(data.feats, "data.feats");
+  diagKeys(data.options, "data.options");
+  if (data.options) diagKeys(data.options.class, "  options.class");
+  diagKeys(data.spellSlots, "data.spellSlots");
+  console.log("[DDB Import] data.name:", data.name);
+  console.log("[DDB Import] data.baseHitPoints:", data.baseHitPoints);
+  console.log("[DDB Import] data.bonusHitPoints:", data.bonusHitPoints);
+  console.log("[DDB Import] data.removedHitPoints:", data.removedHitPoints);
+  console.log("[DDB Import] data.overrideHitPoints:", data.overrideHitPoints);
+  console.log("[DDB Import] data.armorClass:", data.armorClass);
+  console.log("[DDB Import] data.baseArmorClass:", data.baseArmorClass);
+  console.log("[DDB Import] data.currentArmorClass:", data.currentArmorClass);
+  console.log("[DDB Import] ── End diagnostics ──");
+
   const classes = Array.isArray(data.classes)
     ? data.classes
         .map((c: any) => c?.definition?.name)
@@ -1094,9 +1218,9 @@ export async function importFromDndBeyond(source: string, options?: ImportOption
   ];
   const dedupedTraits = groupWithDividers(traitGroups, actionNames);
 
-  return {
+  const result: DndBeyondPcImportData = {
     characterId,
-    name: String(data.name || "").trim() || `Character ${characterId}`,
+    name: titleCase(String(data.name || "").trim()) || `Character ${characterId}`,
     playerName: String(data.username || "").trim(),
     classes,
     level: String(totalLevel > 0 ? totalLevel : 1),
@@ -1116,4 +1240,14 @@ export async function importFromDndBeyond(source: string, options?: ImportOption
     reactions: allReactions,
     spells,
   };
+
+  console.log("[DDB Import] ── Result summary ──");
+  console.log("[DDB Import] name:", result.name, "| level:", result.level, "| classes:", result.classes);
+  console.log("[DDB Import] hp:", result.hpCurrent, "/", result.hpMax, "| ac:", result.ac, "| speed:", result.speed);
+  console.log("[DDB Import] abilities:", result.abilities);
+  console.log("[DDB Import] skillsaves:", result.skillsaves.length, "| traits:", result.traits.length);
+  console.log("[DDB Import] actions:", result.actions.length, "| bonusActions:", result.bonusActions.length, "| reactions:", result.reactions.length);
+  console.log("[DDB Import] spells:", result.spells.length, "| languages:", result.languages, "| senses:", result.senses);
+
+  return result;
 }

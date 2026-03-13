@@ -774,8 +774,9 @@ export class PCCreationModal extends Modal {
           const folder = filePath.substring(0, filePath.lastIndexOf('/'));
           const newPath = `${folder}/${this.pcName}.md`;
           
-          // Check if new name conflicts
-          if (await this.app.vault.adapter.exists(newPath)) {
+          // Check if new name conflicts (allow case-only renames on case-insensitive file systems)
+          if (newPath.toLowerCase() !== this.originalPCPath.toLowerCase()
+              && await this.app.vault.adapter.exists(newPath)) {
             new Notice(`A PC named "${this.pcName}" already exists!`);
             return;
           }
