@@ -3041,6 +3041,10 @@
   font-size: 10px;
 }
 
+.dashboard-readiness-item span:last-of-type {
+  flex: 1;
+}
+
 .dashboard-readiness-ok,
 .dashboard-readiness-missing {
   display: inline-flex;
@@ -3062,6 +3066,22 @@
 .dashboard-readiness-missing {
   background: rgba(197, 125, 0, 0.22);
   color: #c57d00;
+}
+
+.dashboard-readiness-action {
+  padding: 2px 7px;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 3px;
+  border: 1px solid var(--interactive-accent);
+  background: var(--background-primary);
+  color: var(--interactive-accent);
+  cursor: pointer;
+}
+
+.dashboard-readiness-action:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
 }
 
 /* Adventure Cards - Compact */
