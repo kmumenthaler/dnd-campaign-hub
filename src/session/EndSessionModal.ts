@@ -2,6 +2,7 @@ import { App, Modal, Notice, Setting, TFile } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { SessionCreationModal } from './SessionCreationModal';
 import { ConfirmModal } from '../utils/ConfirmModal';
+import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 
 export class EndSessionModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -120,27 +121,21 @@ export class EndSessionModal extends Modal {
     try {
       // Write ending_scene (and adventure if missing) to session frontmatter
       let content = await this.app.vault.read(this.sessionFile);
-      const wikiVal = `"[[${this.endingScenePath}]]"`;
+      const endingSceneWiki = `[[${this.endingScenePath}]]`;
 
-      if (/^ending_scene:/m.test(content)) {
-        content = content.replace(/^ending_scene:\s*.*$/m, `ending_scene: ${wikiVal}`);
-      } else {
-        content = content.replace(/(---\n)([\s\S]*?)(---\n)/, (_f, open, body, close) =>
-          `${open}${body}ending_scene: ${wikiVal}\n${close}`
-        );
-      }
+      content = updateYamlFrontmatter(content, (fm) => {
+        const updated: Record<string, unknown> = {
+          ...fm,
+          ending_scene: endingSceneWiki,
+        };
 
-      // Also patch adventure: field if it was empty
-      if (!/^adventure:\s*\[\[/m.test(content) && resolvedAdventurePath) {
-        const advWiki = `"[[${resolvedAdventurePath}]]"`;
-        if (/^adventure:/m.test(content)) {
-          content = content.replace(/^adventure:\s*.*$/m, `adventure: ${advWiki}`);
-        } else {
-          content = content.replace(/(---\n)([\s\S]*?)(---\n)/, (_f, open, body, close) =>
-            `${open}${body}adventure: ${advWiki}\n${close}`
-          );
+        const existingAdventure = String(updated.adventure ?? '').trim();
+        if (!existingAdventure.startsWith('[[') && resolvedAdventurePath) {
+          updated.adventure = `[[${resolvedAdventurePath}]]`;
         }
-      }
+
+        return updated;
+      });
 
       await this.app.vault.modify(this.sessionFile, content);
 
