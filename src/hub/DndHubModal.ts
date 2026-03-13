@@ -75,10 +75,11 @@ export class DndHubModal extends Modal {
       sessions: {
         label: "Sessions",
         icon: "📜",
-        folders: (cs) => cs,
-        types: ["session-gm", "session-player"],
+        // Prefer canonical Sessions folders, but also scan campaign roots for legacy layouts.
+        folders: (cs) => [...cs.map((c) => `${c}/Sessions`), ...cs],
+        types: ["session"],
         recursive: true,
-        subtitle: (fm) => fm.session_date || fm.summary?.slice(0, 60) || "",
+        subtitle: (fm) => fm.date || fm.summary?.slice(0, 60) || "",
       },
       factions: {
         label: "Factions",
@@ -105,17 +106,20 @@ export class DndHubModal extends Modal {
         label: "Creatures",
         icon: "🐉",
         folders: () => ["z_Beastiarity"],
-        types: ["creature"],
+        // Creature notes use statblock-style frontmatter where `type` is creature kind (humanoid, dragon, ...),
+        // not entity type. Filter by folder only.
+        types: undefined,
         recursive: true,
         subtitle: (fm) => [fm.size, fm.type, fm.cr ? `CR ${fm.cr}` : ""].filter(Boolean).join(" · "),
       },
       traps: {
         label: "Traps",
         icon: "🪤",
-        folders: (cs) => cs,
+        // Support all known trap locations (global, per-campaign, and legacy campaign-root scans).
+        folders: (cs) => ["z_Traps", ...cs.map((c) => `${c}/z_Traps`), ...cs],
         types: ["trap"],
         recursive: true,
-        subtitle: (fm) => [fm.trap_severity, fm.trap_type].filter(Boolean).join(" · "),
+        subtitle: (fm) => [fm.threat_level, fm.trap_type].filter(Boolean).join(" · "),
       },
     };
   }
