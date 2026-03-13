@@ -1,6 +1,7 @@
 import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { FACTION_TEMPLATE } from '../templates';
+import { TEMPLATE_VERSIONS } from "../migration";
 
 export class FactionCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -274,10 +275,12 @@ export class FactionCreationModal extends Modal {
 
       // Get current date
       const currentDate = new Date().toISOString().split('T')[0];
+      const factionTemplateVersion = TEMPLATE_VERSIONS.faction || "1.1.0";
 
       // Build complete frontmatter
       const frontmatter = `---
 type: faction
+    template_version: ${factionTemplateVersion}
 name: ${this.factionName}
 campaign: ${campaignName}
 world: ${worldName}
