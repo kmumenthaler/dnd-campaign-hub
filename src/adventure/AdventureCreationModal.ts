@@ -1,6 +1,7 @@
 import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { ADVENTURE_TEMPLATE } from "../templates";
+import { TEMPLATE_VERSIONS } from "../migration";
 
 export class AdventureCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -426,6 +427,8 @@ date: ${currentDate}
   }
 
   async createMainAdventureNote(filePath: string, campaignName: string, worldName: string, currentDate: string) {
+    const adventureTemplateVersion = TEMPLATE_VERSIONS.adventure || "1.4.0";
+
     // Get Adventure template
     const templatePath = "z_Templates/Frontmatter - Adventure.md";
     const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
@@ -440,6 +443,7 @@ date: ${currentDate}
     // Build complete frontmatter
     const frontmatter = `---
 type: adventure
+  template_version: ${adventureTemplateVersion}
 name: ${this.adventureName}
 campaign: ${campaignName}
 world: ${worldName}

@@ -2,6 +2,7 @@ import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { WORLD_TEMPLATE } from "../templates";
 import { CalendarDateInputModal } from './CalendarDateInputModal';
+import { TEMPLATE_VERSIONS } from "../migration";
 
 export class CampaignCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -357,9 +358,12 @@ export class CampaignCreationModal extends Modal {
         worldContent = WORLD_TEMPLATE;
       }
 
+      const worldTemplateVersion = TEMPLATE_VERSIONS.world || "1.3.0";
+
       worldContent = worldContent
         .replace(/world: $/m, `world: ${campaignName}`)
         .replace(/campaign: $/m, `campaign: ${campaignName}`)
+        .replace(/^template_version:\s*.*$/m, `template_version: ${worldTemplateVersion}`)
         .replace(/role: player$/m, `role: ${this.role}`)
         .replace(/system:$/m, `system: ${this.system}`)
         .replace(/fc-calendar:\s*([^\r\n]\w*)$/m, `fc-calendar: ${this.calendarName}`)
