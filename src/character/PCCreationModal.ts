@@ -6,7 +6,7 @@ import { TokenEditorWidget } from '../marker/TokenEditorWidget';
 import { PC_TEMPLATE } from '../templates';
 import { TEMPLATE_VERSIONS } from '../migration';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
-import { importFromDndBeyond } from './DndBeyondCharacterImport';
+import { importFromDndBeyond, StatblockEntry } from './DndBeyondCharacterImport';
 
 export class PCCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -26,6 +26,13 @@ export class PCCreationModal extends Modal {
   int = 10;
   wis = 10;
   cha = 10;
+  senses = "";
+  languages = "";
+  skillsaves: Array<Record<string, string>> = [];
+  traits: StatblockEntry[] = [];
+  actions: StatblockEntry[] = [];
+  bonusActions: StatblockEntry[] = [];
+  reactions: StatblockEntry[] = [];
   characterSheetUrl = "";
   characterSheetPdf = "";
   dndBeyondSource = "";
@@ -522,6 +529,13 @@ export class PCCreationModal extends Modal {
           this.wis = Number(stats[4]) || 10;
           this.cha = Number(stats[5]) || 10;
         }
+        this.senses = fm.senses?.toString() || "";
+        this.languages = fm.languages?.toString() || "";
+        this.skillsaves = Array.isArray(fm.skillsaves) ? fm.skillsaves : [];
+        this.traits = Array.isArray(fm.traits) ? fm.traits : [];
+        this.actions = Array.isArray(fm.actions) ? fm.actions : [];
+        this.bonusActions = Array.isArray(fm.bonus_actions) ? fm.bonus_actions : [];
+        this.reactions = Array.isArray(fm.reactions) ? fm.reactions : [];
         this.characterSheetUrl = fm.readonlyUrl || "";
         this.characterSheetPdf = fm.characterSheetPdf || "";
         this.dndBeyondSource = this.characterSheetUrl || "";
@@ -558,6 +572,13 @@ export class PCCreationModal extends Modal {
       this.int = imported.abilities.int;
       this.wis = imported.abilities.wis;
       this.cha = imported.abilities.cha;
+      this.senses = imported.senses || this.senses;
+      this.languages = imported.languages || this.languages;
+      this.skillsaves = imported.skillsaves;
+      this.traits = imported.traits;
+      this.actions = imported.actions;
+      this.bonusActions = imported.bonusActions;
+      this.reactions = imported.reactions;
       this.characterSheetUrl = imported.readonlyUrl;
       this.dndBeyondSource = imported.characterId;
 
@@ -714,6 +735,11 @@ export class PCCreationModal extends Modal {
       const playerTemplateVersion = TEMPLATE_VERSIONS.player || TEMPLATE_VERSIONS.pc || "1.4.0";
       const stats = [this.str, this.dex, this.con, this.int, this.wis, this.cha].map((value) => Number(value) || 10);
       const fageStats = stats.map((score) => Math.floor((score - 10) / 2));
+      const traits = this.traits.length > 0 ? this.traits : [];
+      const actions = this.actions.length > 0 ? this.actions : [];
+      const bonusActions = this.bonusActions.length > 0 ? this.bonusActions : [];
+      const reactions = this.reactions.length > 0 ? this.reactions : [];
+      const skillsaves = this.skillsaves.length > 0 ? this.skillsaves : [];
       pcContent = updateYamlFrontmatter(pcContent, (fm) => ({
         ...fm,
         type: 'player',
@@ -733,14 +759,16 @@ export class PCCreationModal extends Modal {
         ac: this.ac,
         init_bonus: this.initBonus,
         speed: this.speed,
+        senses: this.senses,
+        languages: this.languages,
         stats,
         fage_stats: fageStats,
         saves: [],
-        skillsaves: [],
-        traits: [],
-        actions: [],
-        bonus_actions: [],
-        reactions: [],
+        skillsaves,
+        traits,
+        actions,
+        bonus_actions: bonusActions,
+        reactions,
         legendary_actions: [],
         readonlyUrl: this.characterSheetUrl,
         characterSheetPdf: this.characterSheetPdf,
@@ -788,18 +816,19 @@ export class PCCreationModal extends Modal {
       // Create or update the file
       if (this.isEdit && pcFile) {
         await this.app.vault.modify(pcFile, pcContent);
-        await this.savePCToStatblocks();
+        await this.savePCToStatblocks(filePath);
         new Notice(`✅ PC "${this.pcName}" updated successfully!`);
       } else {
         await this.app.vault.create(filePath, pcContent);
         new Notice(`✅ PC "${this.pcName}" created successfully!`);
         pcFile = this.app.vault.getAbstractFileByPath(filePath) as TFile;
-        await this.savePCToStatblocks();
+        await this.savePCToStatblocks(filePath);
       }
 
       // Open the file
       if (pcFile) {
         await this.app.workspace.openLinkText(filePath, "", false);
+        await this.refreshStatblockRendering(filePath);
       }
       
       // Register in Party Manager if requested (only for new PCs)
@@ -840,7 +869,7 @@ export class PCCreationModal extends Modal {
     return `${content.trimEnd()}\n\n${block}\n`;
   }
 
-  private async savePCToStatblocks() {
+  private async savePCToStatblocks(filePath: string) {
     try {
       const statblocksPlugin = (this.app as any).plugins.getPlugin("obsidian-5e-statblocks");
       if (!statblocksPlugin?.saveMonster) return;
@@ -858,19 +887,37 @@ export class PCCreationModal extends Modal {
         stats,
         fage_stats: stats.map((score) => Math.floor((score - 10) / 2)),
         saves: [],
-        skillsaves: [],
-        traits: [],
-        actions: [],
-        bonus_actions: [],
-        reactions: [],
+        skillsaves: this.skillsaves,
+        senses: this.senses,
+        languages: this.languages,
+        traits: this.traits,
+        actions: this.actions,
+        bonus_actions: this.bonusActions,
+        reactions: this.reactions,
         legendary_actions: [],
         cr: "0",
         source: `PC: ${this.pcName}`,
       };
 
       await statblocksPlugin.saveMonster(statblock);
+      this.app.workspace.trigger("fantasy-statblocks:bestiary:updated");
+      await this.refreshStatblockRendering(filePath);
     } catch (error) {
       console.error("Error saving PC to statblocks plugin:", error);
+    }
+  }
+
+  private async refreshStatblockRendering(filePath: string) {
+    try {
+      const leaves = this.app.workspace.getLeavesOfType("markdown");
+      for (const leaf of leaves) {
+        const view = leaf.view as any;
+        if (view?.file?.path !== filePath) continue;
+        const state = leaf.getViewState();
+        await leaf.setViewState(state, { focus: false });
+      }
+    } catch (error) {
+      console.error("Error refreshing statblock render:", error);
     }
   }
 
