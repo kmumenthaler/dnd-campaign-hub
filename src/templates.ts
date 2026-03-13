@@ -566,7 +566,7 @@ date: {{DATE}}
 
 export const TRAP_TEMPLATE = `---
 type: trap
-template_version: 1.3.0
+template_version: 1.3.1
 campaign: 
 adventure: 
 world: 
@@ -632,7 +632,6 @@ trap-countermeasures
 **Created:** {{DATE}}
 
 *Record when this trap was encountered and what happened*
-5
 
 `;
 

@@ -603,6 +603,28 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "trap-1.3.1",
+      entityTypes: ["trap"],
+      targetVersion: "1.3.1",
+      description: "Normalize trap template body and bump version",
+      async apply(ctx: MigrationContext) {
+        // Legacy generated notes may contain an accidental standalone '5'
+        // after the Session History helper text.
+        let out = ctx.content.replace(
+          /(\*Record when this trap was encountered and what happened\*\r?\n)5\r?\n/,
+          "$1",
+        );
+
+        if (out === ctx.content) {
+          // No content changes needed; still advance version target.
+          return setFrontmatterField(ctx.content, "template_version", "1.3.1");
+        }
+
+        return setFrontmatterField(out, "template_version", "1.3.1");
+      },
+    },
+
     // ── Item ─────────────────────────────────────────────────────────────
 
     {
