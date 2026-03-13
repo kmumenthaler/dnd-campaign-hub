@@ -6,6 +6,7 @@ import { TokenEditorWidget } from '../marker/TokenEditorWidget';
 import { PC_TEMPLATE } from '../templates';
 import { TEMPLATE_VERSIONS } from '../migration';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
+import { importFromDndBeyond } from './DndBeyondCharacterImport';
 
 export class PCCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -21,6 +22,7 @@ export class PCCreationModal extends Modal {
   speed = "30";
   characterSheetUrl = "";
   characterSheetPdf = "";
+  dndBeyondSource = "";
   isGM = false;
   registerInTracker = true;  // Default: register PCs in party manager
 
@@ -265,6 +267,28 @@ export class PCCreationModal extends Modal {
     // Character Sheet Links (for both GM and Player)
     contentEl.createEl("h3", { text: "📄 Character Sheet" });
 
+    const ddbSetting = new Setting(contentEl)
+      .setName("D&D Beyond Import")
+      .setDesc("Paste a D&D Beyond character URL or character ID, then import core stats.");
+
+    ddbSetting
+      .addText((text) =>
+        text
+          .setPlaceholder("https://www.dndbeyond.com/characters/12345678 or 12345678")
+          .setValue(this.dndBeyondSource || this.characterSheetUrl)
+          .onChange((value) => {
+            this.dndBeyondSource = value;
+          })
+      )
+      .addButton((button) =>
+        button
+          .setButtonText("Import")
+          .setCta()
+          .onClick(async () => {
+            await this.importFromDndBeyondSource();
+          })
+      );
+
     new Setting(contentEl)
       .setName("Digital Character Sheet Link")
       .setDesc("Optional: Link to D&D Beyond, Roll20, or other digital sheet")
@@ -485,11 +509,43 @@ export class PCCreationModal extends Modal {
         this.speed = fm.speed?.toString() || "30";
         this.characterSheetUrl = fm.readonlyUrl || "";
         this.characterSheetPdf = fm.characterSheetPdf || "";
+        this.dndBeyondSource = this.characterSheetUrl || "";
       }
 
     } catch (error) {
       console.error("Error loading PC data:", error);
       new Notice("Error loading PC data. Check console for details.");
+    }
+  }
+
+  async importFromDndBeyondSource() {
+    const source = (this.dndBeyondSource || this.characterSheetUrl || "").trim();
+    if (!source) {
+      new Notice("Please enter a D&D Beyond character URL or ID first.");
+      return;
+    }
+
+    try {
+      const imported = await importFromDndBeyond(source);
+
+      this.pcName = imported.name;
+      if (imported.playerName) this.playerName = imported.playerName;
+      this.classes = imported.classes.length > 0 ? imported.classes : [""];
+      this.level = imported.level;
+      this.hpCurrent = imported.hpCurrent;
+      this.hpMax = imported.hpMax;
+      if (imported.ac) this.ac = imported.ac;
+      this.initBonus = imported.initBonus;
+      this.speed = imported.speed;
+      this.characterSheetUrl = imported.readonlyUrl;
+      this.dndBeyondSource = imported.characterId;
+
+      this.refresh();
+      new Notice(`✅ Imported ${imported.name} from D&D Beyond`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      new Notice(`❌ D&D Beyond import failed: ${message}`);
+      console.error("D&D Beyond import error:", error);
     }
   }
 
