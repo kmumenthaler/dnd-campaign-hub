@@ -5,6 +5,55 @@ All notable changes to the D&D Campaign Hub plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-13
+
+### Added
+
+#### PC Statblock System
+- Fantasy Statblock integration for player characters — PCs now get full rendered statblocks like creatures
+- PC statblock template with `statblock: true` frontmatter and Fantasy Statblock code fence
+- D&D Beyond character import — fetch core stats, abilities, spells, traits, actions, and equipment from the D&D Beyond API
+- Rich statblock content: weapon attacks, spell attacks, feature actions, bonus actions, reactions, class features, species traits, feats, and skill proficiencies
+- Section dividers with labeled groups (Weapon Attacks, Spell Attacks, Feature Actions, Class Features, Species Traits, Skills, Feats, Options) and empty-section suppression
+- Spell list import with slot counts, spell save DC, and spell attack modifier
+- Local SRD vault link resolver — automatically links spells, feats, features, traits, classes, and races to matching vault notes
+- PDF character sheet import via `pdf-lib` with fillable form field extraction
+- Four PDF profiles: WotC Official 5e, D&D Beyond PDF, MPMB Automated Sheet, and German 5e (Deutsch)
+- German PDF profile with full field mappings for abilities, skills, saves, attacks, spells, and languages
+- Unarmed Strike auto-generated in weapon actions
+
+#### Combat Tracker
+- Clicking a PC name in the combat tracker now opens a Fantasy Statblock preview (same as creatures)
+- Statblock preview leaf tab context menu restricted to "Close" only
+- Falls back to full note view if Fantasy Statblocks plugin is not installed
+
+#### Session Prep Dashboard
+- Actionable session readiness checklist with clickable items
+- Session prep readiness indicators and focus filters
+- Improved dashboard auto-refresh behavior
+
+### Changed
+- Refactored frontmatter manipulation across all entity types to use centralized YAML helper (`updateYamlFrontmatter`)
+- Hardened YAML frontmatter handling in encounter, session, NPC, PC, adventure, world, faction, and PoI flows
+- Template version alignment for sessions, encounters, PCs, traps, spells, adventures, worlds, and factions
+- D&D Beyond import now title-cases character names (API returns lowercase)
+- AC computation for 2024+ D&D Beyond API — calculates from equipped armor, shield, DEX, and modifier bonuses
+- D&D Beyond `data.actions` handled as keyed object (2024+ API format) in addition to legacy array format
+- Statblock deduplication improved — traits already present as actions are excluded
+- Statblock formatting: proper level-gating, ordering, and wide-clipping prevention
+
+### Fixed
+- Hub browse discovery for sessions, creatures, and traps
+- Trap template and migration target alignment
+- D&D Beyond max HP import (now includes CON modifier × level)
+- Unicode NFC normalization for German PDF field matching (umlauts)
+- Case-only PC renames no longer blocked on case-insensitive file systems
+- Music player scene load/stop state transition hardening
+- Manual encounter YAML parsing replaced with safe helper
+
+### Docs
+- Updated agent instructions to require `npm run check` and `npm run test` before build/deploy
+
 ## [0.4.0] - 2026-03-12
 
 ### Added
