@@ -1,3 +1,5 @@
+import { parse, stringify } from "yaml";
+
 export class Notice {
   message: string;
   timeout?: number;
@@ -11,3 +13,11 @@ export class Notice {
 export class TFile {}
 export class TFolder {}
 export class App {}
+
+export function parseYaml(yaml: string): any {
+  return parse(yaml);
+}
+
+export function stringifyYaml(value: any): string {
+  return stringify(value);
+}

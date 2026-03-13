@@ -100,6 +100,7 @@ import type { MapMediaElement } from './constants';
 import { canvasPool as _canvasPool } from './utils/CanvasPool';
 import { getWallsHash as _getWallsHash, visCacheKey as _visCacheKey, visCacheMap as _visCacheMap, VIS_CACHE_MAX as _VIS_CACHE_MAX } from './utils/VisibilityCache';
 import { computeLightFlicker, computeNeonBuzz, hexToRgb, getFlickerSeedForKey, FLICKER_LIGHT_TYPES_SET, BUZZ_LIGHT_TYPES_SET } from './utils/LightFlicker';
+import { parseYamlFrontmatter, updateYamlFrontmatter } from './utils/YamlFrontmatter';
 
 //  Extracted modals & views 
 import { GridCalibrationModal } from './utils/GridCalibrationModal';
@@ -2139,101 +2140,42 @@ export default class DndCampaignHubPlugin extends Plugin {
 	 */
 	async syncEncounterToScenes(encounterFile: TFile) {
 		try {
-
-			// Wait a moment for metadata cache to update, then read file directly
-			await new Promise(resolve => setTimeout(resolve, 100));
-
-			// Read the file content directly and parse frontmatter
+			// Read the file directly so the sync uses the newest saved content.
 			const content = await this.app.vault.read(encounterFile);
-			const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
-			
-			if (!frontmatterMatch || !frontmatterMatch[1]) {
+			const parsed = parseYamlFrontmatter<Record<string, unknown>>(content);
+
+			if (!parsed.hasFrontmatter) {
 				return;
 			}
 
-			// Parse YAML frontmatter manually
-			const frontmatterText = frontmatterMatch[1];
-			const lines = frontmatterText.split('\n');
-			
-			let encounterName = encounterFile.basename;
-			let encounterCreatures: any[] = [];
-			let encounterDifficulty = 'easy';
-			let selectedPartyId: string | null = null;
-			let useColorNames = false;
-			
-			// Parse creatures array
-			let inCreaturesArray = false;
-			let currentCreature: any = null;
-			
-			for (const line of lines) {
-				const trimmed = line.trim();
-				
-				// Check for top-level fields (no indentation at start of line)
-				const isTopLevel = line.length > 0 && line[0] !== ' ' && line[0] !== '\t';
-				
-				if (trimmed.startsWith('name:') && isTopLevel) {
-					encounterName = trimmed.substring(5).trim().replace(/^["']|["']$/g, '');
-				} else if (trimmed === 'creatures:' && isTopLevel) {
-					inCreaturesArray = true;
-					if (currentCreature) {
-						encounterCreatures.push(currentCreature);
-						currentCreature = null;
-					}
-				} else if (isTopLevel && trimmed.includes(':') && inCreaturesArray) {
-					// Any top-level field ends the creatures array
-					inCreaturesArray = false;
-					if (currentCreature) {
-						encounterCreatures.push(currentCreature);
-						currentCreature = null;
-					}
-					
-					// Process the field we just encountered
-					if (trimmed.startsWith('selected_party_id:')) {
-						selectedPartyId = trimmed.substring(18).trim().replace(/^["']|["']$/g, '') || null;
-					} else if (trimmed.startsWith('use_color_names:')) {
-						useColorNames = trimmed.substring(16).trim().toLowerCase() === 'true';
-					}
-				} else if (inCreaturesArray && trimmed.startsWith('- name:')) {
-					if (currentCreature) {
-						encounterCreatures.push(currentCreature);
-					}
-					currentCreature = {
-						name: trimmed.substring(7).trim().replace(/^["']|["']$/g, ''),
-						count: 1,
-						hp: null,
-						ac: null,
-						cr: null,
-						path: null,
-						source: null
-					};
-				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('count:')) {
-					currentCreature.count = parseInt(trimmed.substring(6).trim());
-				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('hp:')) {
-					currentCreature.hp = parseInt(trimmed.substring(3).trim());
-				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('ac:')) {
-					currentCreature.ac = parseInt(trimmed.substring(3).trim());
-				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('cr:')) {
-					currentCreature.cr = trimmed.substring(3).trim().replace(/^["']|["']$/g, '');
-				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('path:')) {
-					currentCreature.path = trimmed.substring(5).trim().replace(/^["']|["']$/g, '');
-				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('source:')) {
-					currentCreature.source = trimmed.substring(7).trim().replace(/^["']|["']$/g, '');
-				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('is_trap:')) {
-					currentCreature.isTrap = trimmed.substring(8).trim().toLowerCase() === 'true';
-				} else if (inCreaturesArray && currentCreature && trimmed.startsWith('trap_path:')) {
-					// Store trap file path for later loading
-					currentCreature.trapPath = trimmed.substring(10).trim().replace(/^["']|["']$/g, '');
-				} else if (!inCreaturesArray && trimmed.startsWith('selected_party_id:')) {
-					selectedPartyId = trimmed.substring(18).trim().replace(/^["']|["']$/g, '') || null;
-				} else if (!inCreaturesArray && trimmed.startsWith('use_color_names:')) {
-					useColorNames = trimmed.substring(16).trim().toLowerCase() === 'true';
-				}
-			}
-			
-			// Add last creature if exists
-			if (currentCreature) {
-				encounterCreatures.push(currentCreature);
-			}
+			const encounterName = typeof parsed.frontmatter.name === 'string' && parsed.frontmatter.name.length > 0
+				? parsed.frontmatter.name
+				: encounterFile.basename;
+
+			const rawCreatures = Array.isArray(parsed.frontmatter.creatures)
+				? parsed.frontmatter.creatures
+				: [];
+			const encounterCreatures = rawCreatures
+				.filter((creature): creature is Record<string, unknown> => !!creature && typeof creature === 'object' && !Array.isArray(creature))
+				.map((creature) => ({
+					name: typeof creature.name === 'string' ? creature.name : 'Unknown',
+					count: typeof creature.count === 'number' ? creature.count : 1,
+					hp: typeof creature.hp === 'number' ? creature.hp : null,
+					ac: typeof creature.ac === 'number' ? creature.ac : null,
+					cr: typeof creature.cr === 'string' ? creature.cr : null,
+					path: typeof creature.path === 'string' ? creature.path : null,
+					source: typeof creature.source === 'string' ? creature.source : null,
+					is_trap: creature.is_trap === true,
+					trap_path: typeof creature.trap_path === 'string' ? creature.trap_path : null,
+					is_friendly: creature.is_friendly === true,
+					is_hidden: creature.is_hidden === true,
+				}));
+
+			const encounterDifficulty = parsed.frontmatter.difficulty ?? null;
+			const selectedPartyId = typeof parsed.frontmatter.selected_party_id === 'string' && parsed.frontmatter.selected_party_id.length > 0
+				? parsed.frontmatter.selected_party_id
+				: null;
+			const useColorNames = parsed.frontmatter.use_color_names === true;
 
 
 			// Find all scenes that link to this encounter
@@ -2258,9 +2200,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Update each scene's frontmatter
 			for (const sceneFile of scenesLinking) {
 				await this.updateSceneFrontmatter(sceneFile, {
-					encounter_creatures: JSON.stringify(encounterCreatures),
+					encounter_creatures: encounterCreatures,
 					encounter_difficulty: encounterDifficulty,
-					selected_party_id: selectedPartyId
+					selected_party_id: selectedPartyId ?? ""
 				});
 			}
 
@@ -2281,34 +2223,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 	 */
 	async updateSceneFrontmatter(sceneFile: TFile, updates: Record<string, any>) {
 		const content = await this.app.vault.read(sceneFile);
-		const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
-		
-		if (!frontmatterMatch || !frontmatterMatch[1]) {
+		const parsed = parseYamlFrontmatter(content);
+
+		if (!parsed.hasFrontmatter) {
 			console.error(`No frontmatter found in ${sceneFile.path}`);
 			return;
 		}
 
-		let frontmatter = frontmatterMatch[1];
-
-		// Update each field
-		for (const [key, value] of Object.entries(updates)) {
-			const fieldMatch = frontmatter.match(new RegExp(`^${key}:\\s*(.*)$`, 'm'));
-			if (fieldMatch) {
-				// Update existing field
-				frontmatter = frontmatter.replace(
-					new RegExp(`^${key}:\\s*.*$`, 'm'),
-					`${key}: ${value}`
-				);
-			} else {
-				// Add new field at the end
-				frontmatter = `${frontmatter}\n${key}: ${value}`;
-			}
-		}
-
-		const newContent = content.replace(
-			/^---\n[\s\S]*?\n---/,
-			`---\n${frontmatter}\n---`
-		);
+		const newContent = updateYamlFrontmatter(content, (frontmatter) => ({
+			...frontmatter,
+			...updates,
+		}));
 
 		await this.app.vault.modify(sceneFile, newContent);
 	}
