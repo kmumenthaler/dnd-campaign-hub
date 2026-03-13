@@ -315,16 +315,19 @@ export class SessionPrepDashboardView extends ItemView {
     hasSessions: boolean;
     hasNpcs: boolean;
     nextSceneHasGoal: boolean;
+    nextScenePath: string;
     details: string;
   }> {
     const adventures = await this.getActiveAdventures();
     const hasAdventure = adventures.length > 0;
 
     let nextSceneHasGoal = false;
+    let nextScenePath = "";
     const firstAdventure = adventures[0];
     if (firstAdventure) {
       const scenes = await this.getScenesForAdventure(firstAdventure.path);
       const nextScene = scenes.find((s) => s.status !== "completed") || scenes[0];
+      nextScenePath = nextScene?.path || "";
       nextSceneHasGoal = !!nextScene?.goal?.trim();
     }
 
@@ -357,8 +360,14 @@ export class SessionPrepDashboardView extends ItemView {
       hasSessions,
       hasNpcs,
       nextSceneHasGoal,
+      nextScenePath,
       details
     };
+  }
+
+  private runCommand(commandId: string): void {
+    const commands = (this.app as any).commands;
+    commands?.executeCommandById(`dnd-campaign-hub:${commandId}`);
   }
 
   async renderReadinessCard(container: HTMLElement) {
@@ -383,12 +392,48 @@ export class SessionPrepDashboardView extends ItemView {
     });
 
     const checklist = card.createEl("div", { cls: "dashboard-readiness-checklist" });
-    const items = [
-      { ok: readiness.hasAdventure, label: "Active adventure selected" },
-      { ok: readiness.hasParty, label: "Party members available" },
-      { ok: readiness.hasSessions, label: "Previous session notes exist" },
-      { ok: readiness.hasNpcs, label: "NPC roster available" },
-      { ok: readiness.nextSceneHasGoal, label: "Next scene goal defined" }
+    const items: Array<{
+      ok: boolean;
+      label: string;
+      actionLabel: string;
+      runAction: () => void;
+    }> = [
+      {
+        ok: readiness.hasAdventure,
+        label: "Active adventure selected",
+        actionLabel: "Create",
+        runAction: () => this.runCommand("create-adventure")
+      },
+      {
+        ok: readiness.hasParty,
+        label: "Party members available",
+        actionLabel: "Manage",
+        runAction: () => this.runCommand("manage-parties")
+      },
+      {
+        ok: readiness.hasSessions,
+        label: "Previous session notes exist",
+        actionLabel: "Create",
+        runAction: () => this.runCommand("create-session")
+      },
+      {
+        ok: readiness.hasNpcs,
+        label: "NPC roster available",
+        actionLabel: "Create",
+        runAction: () => this.runCommand("create-npc")
+      },
+      {
+        ok: readiness.nextSceneHasGoal,
+        label: "Next scene goal defined",
+        actionLabel: readiness.nextScenePath ? "Open" : "Create",
+        runAction: () => {
+          if (readiness.nextScenePath) {
+            void this.app.workspace.openLinkText(readiness.nextScenePath, "", false);
+            return;
+          }
+          this.runCommand("create-scene");
+        }
+      }
     ];
 
     for (const item of items) {
@@ -398,6 +443,18 @@ export class SessionPrepDashboardView extends ItemView {
         text: item.ok ? "OK" : "TODO"
       });
       row.createEl("span", { text: item.label });
+
+      if (!item.ok) {
+        const action = row.createEl("button", {
+          cls: "dashboard-readiness-action",
+          text: item.actionLabel
+        });
+        action.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          item.runAction();
+        });
+      }
     }
   }
 
