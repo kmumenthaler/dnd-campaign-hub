@@ -12,6 +12,14 @@ export interface DndBeyondPcImportData {
   initBonus: string;
   speed: string;
   readonlyUrl: string;
+  abilities: {
+    str: number;
+    dex: number;
+    con: number;
+    int: number;
+    wis: number;
+    cha: number;
+  };
 }
 
 interface DndBeyondResponse {
@@ -135,6 +143,14 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
   const dexScore = resolveAbilityScore(data, 2);
   const initBonusNum = abilityModifier(dexScore || 10);
   const initBonus = initBonusNum >= 0 ? `+${initBonusNum}` : String(initBonusNum);
+  const abilities = {
+    str: resolveAbilityScore(data, 1) || 10,
+    dex: dexScore || 10,
+    con: conScore || 10,
+    int: resolveAbilityScore(data, 4) || 10,
+    wis: resolveAbilityScore(data, 5) || 10,
+    cha: resolveAbilityScore(data, 6) || 10,
+  };
 
   return {
     characterId,
@@ -148,5 +164,6 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
     initBonus,
     speed: resolveWalkSpeed(data),
     readonlyUrl: buildReadonlyUrl(characterId, String(data.readonlyUrl || "").trim()),
+    abilities,
   };
 }

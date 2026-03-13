@@ -172,6 +172,33 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "player-1.4.0",
+      entityTypes: ["player", "pc"],
+      targetVersion: "1.4.0",
+      description: "Add Fantasy Statblock section to PC notes",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        const pcName = ctx.frontmatter.name || fileBasename(ctx.filePath);
+
+        out = addFrontmatterField(out, "statblock", "true");
+        out = addFrontmatterField(out, "layout", "Basic 5e Layout");
+
+        if (!out.includes("```statblock\ncreature:")) {
+          const block = `## Fantasy Statblock\n\n\`\`\`statblock\ncreature: ${pcName}\n\`\`\``;
+          if (/^## Background/m.test(out)) {
+            out = out.replace(/^## Background/m, `${block}\n\n## Background`);
+          } else if (/^## Equipment & Inventory/m.test(out)) {
+            out = out.replace(/^## Equipment & Inventory/m, `${block}\n\n## Equipment & Inventory`);
+          } else {
+            out = `${out.trimEnd()}\n\n${block}\n`;
+          }
+        }
+
+        return setFrontmatterField(out, "template_version", "1.4.0");
+      },
+    },
+
     // ── NPC ──────────────────────────────────────────────────────────────
 
     {

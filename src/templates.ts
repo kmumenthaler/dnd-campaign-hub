@@ -345,7 +345,7 @@ notes: []
 
 export const PC_TEMPLATE = `---
 type: player
-template_version: 1.3.0
+template_version: 1.4.0
 name: 
 player: 
 campaign: 
@@ -388,6 +388,13 @@ date:
 ## Description
 
 *Physical appearance and personality traits*
+
+
+## Fantasy Statblock
+
+\`\`\`statblock
+creature: {{name}}
+\`\`\`
 
 
 

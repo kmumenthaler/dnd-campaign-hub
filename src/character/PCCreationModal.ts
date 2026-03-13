@@ -20,6 +20,12 @@ export class PCCreationModal extends Modal {
   ac = "10";
   initBonus = "0";
   speed = "30";
+  str = 10;
+  dex = 10;
+  con = 10;
+  int = 10;
+  wis = 10;
+  cha = 10;
   characterSheetUrl = "";
   characterSheetPdf = "";
   dndBeyondSource = "";
@@ -507,6 +513,15 @@ export class PCCreationModal extends Modal {
         this.ac = fm.ac?.toString() || "10";
         this.initBonus = fm.init_bonus?.toString() || "0";
         this.speed = fm.speed?.toString() || "30";
+        const stats = Array.isArray(fm.stats) ? fm.stats : null;
+        if (stats && stats.length >= 6) {
+          this.str = Number(stats[0]) || 10;
+          this.dex = Number(stats[1]) || 10;
+          this.con = Number(stats[2]) || 10;
+          this.int = Number(stats[3]) || 10;
+          this.wis = Number(stats[4]) || 10;
+          this.cha = Number(stats[5]) || 10;
+        }
         this.characterSheetUrl = fm.readonlyUrl || "";
         this.characterSheetPdf = fm.characterSheetPdf || "";
         this.dndBeyondSource = this.characterSheetUrl || "";
@@ -537,6 +552,12 @@ export class PCCreationModal extends Modal {
       if (imported.ac) this.ac = imported.ac;
       this.initBonus = imported.initBonus;
       this.speed = imported.speed;
+      this.str = imported.abilities.str;
+      this.dex = imported.abilities.dex;
+      this.con = imported.abilities.con;
+      this.int = imported.abilities.int;
+      this.wis = imported.abilities.wis;
+      this.cha = imported.abilities.cha;
       this.characterSheetUrl = imported.readonlyUrl;
       this.dndBeyondSource = imported.characterId;
 
@@ -690,11 +711,16 @@ export class PCCreationModal extends Modal {
       // Combine classes into a single string
       const classString = this.classes.filter(c => c.trim()).join("/");
 
-      const playerTemplateVersion = TEMPLATE_VERSIONS.player || TEMPLATE_VERSIONS.pc || "1.3.0";
+      const playerTemplateVersion = TEMPLATE_VERSIONS.player || TEMPLATE_VERSIONS.pc || "1.4.0";
+      const stats = [this.str, this.dex, this.con, this.int, this.wis, this.cha].map((value) => Number(value) || 10);
+      const fageStats = stats.map((score) => Math.floor((score - 10) / 2));
       pcContent = updateYamlFrontmatter(pcContent, (fm) => ({
         ...fm,
         type: 'player',
         template_version: playerTemplateVersion,
+        statblock: true,
+        layout: "Basic 5e Layout",
+        size: "Medium",
         name: this.pcName,
         player: this.playerName,
         campaign: campaignName,
@@ -707,6 +733,15 @@ export class PCCreationModal extends Modal {
         ac: this.ac,
         init_bonus: this.initBonus,
         speed: this.speed,
+        stats,
+        fage_stats: fageStats,
+        saves: [],
+        skillsaves: [],
+        traits: [],
+        actions: [],
+        bonus_actions: [],
+        reactions: [],
+        legendary_actions: [],
         readonlyUrl: this.characterSheetUrl,
         characterSheetPdf: this.characterSheetPdf,
         token_id: tokenId,
@@ -748,14 +783,18 @@ export class PCCreationModal extends Modal {
             this.characterSheetUrl ? `[Digital Character Sheet](${this.characterSheetUrl})` : "_No digital sheet linked_");
       }
 
+      pcContent = this.ensureFantasyStatblockSection(pcContent);
+
       // Create or update the file
       if (this.isEdit && pcFile) {
         await this.app.vault.modify(pcFile, pcContent);
+        await this.savePCToStatblocks();
         new Notice(`✅ PC "${this.pcName}" updated successfully!`);
       } else {
         await this.app.vault.create(filePath, pcContent);
         new Notice(`✅ PC "${this.pcName}" created successfully!`);
         pcFile = this.app.vault.getAbstractFileByPath(filePath) as TFile;
+        await this.savePCToStatblocks();
       }
 
       // Open the file
@@ -784,6 +823,54 @@ export class PCCreationModal extends Modal {
     } catch (error) {
       console.error("Error registering PC in Party Manager:", error);
       new Notice("⚠️ PC created but could not register in party. Check console for details.");
+    }
+  }
+
+  private ensureFantasyStatblockSection(content: string): string {
+    const block = `## Fantasy Statblock\n\n\`\`\`statblock\ncreature: ${this.pcName}\n\`\`\``;
+
+    if (content.includes("```statblock\ncreature:")) {
+      return content.replace(/```statblock\ncreature:\s*[^\n]*\n```/, `\`\`\`statblock\ncreature: ${this.pcName}\n\`\`\``);
+    }
+
+    if (/^## Equipment & Inventory/m.test(content)) {
+      return content.replace(/^## Equipment & Inventory/m, `${block}\n\n## Equipment & Inventory`);
+    }
+
+    return `${content.trimEnd()}\n\n${block}\n`;
+  }
+
+  private async savePCToStatblocks() {
+    try {
+      const statblocksPlugin = (this.app as any).plugins.getPlugin("obsidian-5e-statblocks");
+      if (!statblocksPlugin?.saveMonster) return;
+
+      const speedValue = `${(this.speed || "30").toString().replace(/\s*ft\.?$/i, "")} ft.`;
+      const stats = [this.str, this.dex, this.con, this.int, this.wis, this.cha].map((value) => Number(value) || 10);
+
+      const statblock = {
+        name: this.pcName,
+        size: "Medium",
+        type: "humanoid",
+        ac: parseInt(this.ac) || 10,
+        hp: parseInt(this.hpMax || this.hpCurrent) || 1,
+        speed: speedValue,
+        stats,
+        fage_stats: stats.map((score) => Math.floor((score - 10) / 2)),
+        saves: [],
+        skillsaves: [],
+        traits: [],
+        actions: [],
+        bonus_actions: [],
+        reactions: [],
+        legendary_actions: [],
+        cr: "0",
+        source: `PC: ${this.pcName}`,
+      };
+
+      await statblocksPlugin.saveMonster(statblock);
+    } catch (error) {
+      console.error("Error saving PC to statblocks plugin:", error);
     }
   }
 
