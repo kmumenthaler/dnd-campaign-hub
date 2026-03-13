@@ -785,41 +785,8 @@ Brief description of the campaign.
 - [[Session 1]]
 `;
 
-export const SESSION_DEFAULT_TEMPLATE = `---
-type: session
-template_version: 1.0.0
-campaign: 
-date: 
-session_number: 
-players_present: []
----
-
-# Session
-
-## Pre-Session Notes
-- Objectives
-- Plot points to cover
-- Potential encounters
-
-## Session Summary
-What happened during the session.
-
-## Key Events
-- Event 1
-- Event 2
-
-## Player Actions
-- Player 1: 
-- Player 2: 
-
-## Post-Session Notes
-- Experience gained
-- Treasure distributed
-- Plot hooks for next session
-
-## Next Session Prep
-- 
-`;
+// Keep one canonical session schema to prevent frontmatter/version drift.
+export const SESSION_DEFAULT_TEMPLATE = SESSION_GM_TEMPLATE;
 
 export const POI_TEMPLATE = `---
 type: point-of-interest
@@ -915,7 +882,7 @@ danger-level:
 
 export const ENCOUNTER_TABLE_TEMPLATE = `---
 type: encounter-table
-template_version: 1.2.0
+template_version: 1.3.0
 name: 
 environment: 
 party_level: 3
