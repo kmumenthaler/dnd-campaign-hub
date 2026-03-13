@@ -117,6 +117,16 @@ export class CombatTrackerView extends ItemView {
 
       const nextBtn = toolbar.createEl("button", { text: "▶", cls: "dnd-ct-toolbar-btn dnd-ct-toolbar-btn-primary", attr: { title: "Next Turn" } });
       nextBtn.addEventListener("click", () => tracker.nextTurn());
+
+      // Start Chase button
+      const chaseBtn = toolbar.createEl("button", {
+        text: "🏃",
+        cls: "dnd-ct-toolbar-btn",
+        attr: { title: "Start Chase from Combat" },
+      });
+      chaseBtn.addEventListener("click", () => {
+        this.plugin.startPursuitFromCombat();
+      });
     }
 
     // Spacer

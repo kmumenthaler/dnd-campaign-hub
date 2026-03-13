@@ -13,7 +13,7 @@
 import { Notice, WorkspaceLeaf } from 'obsidian';
 import type DndCampaignHubPlugin from '../main';
 import type { PlayerMapView } from '../map-views/PlayerMapView';
-import { PLAYER_MAP_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE } from '../constants';
+import { PLAYER_MAP_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE, PURSUIT_PLAYER_VIEW_TYPE } from '../constants';
 import type { ProjectionTarget, TabletopCalibration } from '../types';
 import { enumerateScreens, screenKey, type ScreenInfo } from '../utils/ScreenEnumeration';
 import { queryPhysicalMonitorSizes, matchScreenToPhysical } from '../utils/MonitorPhysicalSize';
@@ -23,8 +23,8 @@ import { queryPhysicalMonitorSizes, matchScreenToPhysical } from '../utils/Monit
 /** Projection mode: 'battle' = auto-calibrated grid-scale, 'free' = user-controlled pan/zoom. */
 export type ProjectionMode = 'battle' | 'free';
 
-/** What is being projected: a battle map or the combat tracker player view. */
-export type ProjectionContentType = 'map' | 'combat';
+/** What is being projected: a battle map, combat tracker, or pursuit player view. */
+export type ProjectionContentType = 'map' | 'combat' | 'pursuit';
 
 export interface ProjectionState {
   /** The player view leaf currently being projected. */
@@ -211,6 +211,48 @@ export class ProjectionManager {
     }
 
     new Notice(`⚔️ Combat view projected to ${screen.label}`);
+  }
+
+  /**
+   * Project the Pursuit / Chase player view to a specific screen.
+   * Stops any existing projection on that screen first.
+   */
+  async projectPursuitView(screen: ScreenInfo): Promise<void> {
+    const sKey = screenKey(screen);
+
+    if (this.isProjectionAliveOnScreen(sKey)) {
+      this.stopProjectionOnScreen(sKey);
+    }
+
+    const spm = this.plugin.sessionProjectionManager;
+    const managedLeaf = spm?.isActive() ? spm.getManagedLeaf(sKey) : null;
+
+    const popoutLeaf = managedLeaf ?? this.plugin.app.workspace.openPopoutLeaf({
+      size: { width: screen.width, height: screen.height },
+    });
+
+    await popoutLeaf.setViewState({
+      type: PURSUIT_PLAYER_VIEW_TYPE,
+      active: true,
+    });
+
+    this.activeProjections.set(sKey, {
+      leaf: popoutLeaf,
+      screen,
+      mapId: '',
+      mode: 'free',
+      contentType: 'pursuit',
+    });
+
+    if (spm?.isActive()) spm.setScreenStatus(sKey, 'pursuit');
+
+    if (!managedLeaf) {
+      setTimeout(async () => {
+        await this.positionAndFullscreen(popoutLeaf, screen);
+      }, 300);
+    }
+
+    new Notice(`🏃 Pursuit view projected to ${screen.label}`);
   }
 
   /**

@@ -46,7 +46,7 @@ export interface ManagedScreenConfig {
 // ── Session state (runtime only, not persisted) ────────────────────────
 
 /** What kind of content is currently shown on a managed screen. */
-export type ManagedScreenStatus = 'idle' | 'map' | 'combat' | 'media';
+export type ManagedScreenStatus = 'idle' | 'map' | 'combat' | 'pursuit' | 'media';
 
 /** Runtime state for a single managed screen during an active session. */
 export interface ManagedScreenState {

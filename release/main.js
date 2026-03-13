@@ -989,15 +989,15 @@ var init_types2 = __esm({
       player: "1.4.0",
       adventure: "1.4.0",
       scene: "2.3.0",
-      faction: "1.1.0",
-      item: "1.1.0",
-      spell: "1.1.0",
+      faction: "1.2.0",
+      item: "1.2.0",
+      spell: "1.2.0",
       campaign: "1.1.0",
       trap: "1.3.1",
       creature: "1.3.0",
-      encounter: "1.1.0",
+      encounter: "1.2.0",
       "encounter-table": "1.3.0",
-      "point-of-interest": "1.1.0"
+      "point-of-interest": "1.2.0"
     };
   }
 });
@@ -1066,6 +1066,12 @@ function compareVersions(a, b) {
     if (aVal > bVal) return 1;
   }
   return 0;
+}
+function removeAllDataviewjsBlocks(content) {
+  const blockRegex = /```dataviewjs\n[\s\S]*?```/g;
+  if (!blockRegex.test(content)) return null;
+  const cleaned = content.replace(/```dataviewjs\n[\s\S]*?```/g, "");
+  return cleaned;
 }
 function replaceDataviewjsBlock(content, markerText, replacement) {
   const blockRegex = /```dataviewjs\n[\s\S]*?```/g;
@@ -1633,6 +1639,36 @@ deleteBtn.addEventListener("click", () => {
         return setFrontmatterField(out, "template_version", "1.1.0");
       }
     },
+    {
+      id: "encounter-1.2.0",
+      entityTypes: ["encounter"],
+      targetVersion: "1.2.0",
+      description: "Strip remaining dataviewjs blocks and ensure native encounter views exist",
+      async apply(ctx) {
+        let out = ctx.content;
+        if (out.includes("```dnd-hub") && !out.includes("```dataviewjs")) return null;
+        const stripped = removeAllDataviewjsBlocks(out);
+        if (stripped) out = stripped;
+        if (!out.includes("```dnd-hub")) {
+          out = insertAfterTitle(out, DND_HUB_BLOCK);
+        }
+        if (!out.includes("encounter-difficulty")) {
+          const diffHeader = /^(## .*Difficulty.*$)/m;
+          if (diffHeader.test(out)) {
+            out = out.replace(diffHeader, "$1\n\n```dnd-hub-view\nencounter-difficulty\n```");
+          }
+        }
+        if (!out.includes("encounter-creatures")) {
+          const creaturesHeader = /^(## .*Creatures.*$)/m;
+          if (creaturesHeader.test(out)) {
+            out = out.replace(creaturesHeader, "$1\n\n```dnd-hub-view\nencounter-creatures\n```");
+          }
+        }
+        out = out.replace(/\n{3,}/g, "\n\n");
+        if (out === ctx.content) return null;
+        return setFrontmatterField(out, "template_version", "1.2.0");
+      }
+    },
     // ── Trap ─────────────────────────────────────────────────────────────
     {
       id: "trap-1.2.0",
@@ -1686,6 +1722,20 @@ deleteBtn.addEventListener("click", () => {
         return insertAfterTitle(ctx.content, DND_HUB_BLOCK);
       }
     },
+    {
+      id: "item-1.2.0",
+      entityTypes: ["item"],
+      targetVersion: "1.2.0",
+      description: "Strip remaining dataviewjs blocks from item notes",
+      async apply(ctx) {
+        var _a;
+        if (!ctx.content.includes("```dataviewjs")) return null;
+        let out = (_a = removeAllDataviewjsBlocks(ctx.content)) != null ? _a : ctx.content;
+        out = out.replace(/\n{3,}/g, "\n\n");
+        if (out === ctx.content) return null;
+        return setFrontmatterField(out, "template_version", "1.2.0");
+      }
+    },
     // ── Spell ────────────────────────────────────────────────────────────
     {
       id: "spell-1.1.0",
@@ -1695,6 +1745,20 @@ deleteBtn.addEventListener("click", () => {
       async apply(ctx) {
         if (ctx.content.includes("```dnd-hub")) return null;
         return insertAfterTitle(ctx.content, DND_HUB_BLOCK);
+      }
+    },
+    {
+      id: "spell-1.2.0",
+      entityTypes: ["spell"],
+      targetVersion: "1.2.0",
+      description: "Strip remaining dataviewjs blocks from spell notes",
+      async apply(ctx) {
+        var _a;
+        if (!ctx.content.includes("```dataviewjs")) return null;
+        let out = (_a = removeAllDataviewjsBlocks(ctx.content)) != null ? _a : ctx.content;
+        out = out.replace(/\n{3,}/g, "\n\n");
+        if (out === ctx.content) return null;
+        return setFrontmatterField(out, "template_version", "1.2.0");
       }
     },
     // ── Faction ──────────────────────────────────────────────────────────
@@ -1708,6 +1772,20 @@ deleteBtn.addEventListener("click", () => {
         return insertAfterTitle(ctx.content, DND_HUB_BLOCK);
       }
     },
+    {
+      id: "faction-1.2.0",
+      entityTypes: ["faction"],
+      targetVersion: "1.2.0",
+      description: "Strip remaining dataviewjs blocks from faction notes",
+      async apply(ctx) {
+        var _a;
+        if (!ctx.content.includes("```dataviewjs")) return null;
+        let out = (_a = removeAllDataviewjsBlocks(ctx.content)) != null ? _a : ctx.content;
+        out = out.replace(/\n{3,}/g, "\n\n");
+        if (out === ctx.content) return null;
+        return setFrontmatterField(out, "template_version", "1.2.0");
+      }
+    },
     // ── Point of Interest ────────────────────────────────────────────────
     {
       id: "poi-1.1.0",
@@ -1716,6 +1794,20 @@ deleteBtn.addEventListener("click", () => {
       description: "Replace inline buttons with dynamic render block",
       async apply(ctx) {
         return replaceButtonsWithRenderBlock(ctx.content, "dnd-campaign-hub:edit-poi");
+      }
+    },
+    {
+      id: "poi-1.2.0",
+      entityTypes: ["point-of-interest"],
+      targetVersion: "1.2.0",
+      description: "Strip remaining dataviewjs blocks from POI notes",
+      async apply(ctx) {
+        var _a;
+        if (!ctx.content.includes("```dataviewjs")) return null;
+        let out = (_a = removeAllDataviewjsBlocks(ctx.content)) != null ? _a : ctx.content;
+        out = out.replace(/\n{3,}/g, "\n\n");
+        if (out === ctx.content) return null;
+        return setFrontmatterField(out, "template_version", "1.2.0");
       }
     },
     // ── World ────────────────────────────────────────────────────────────
@@ -1838,7 +1930,7 @@ var init_runner = __esm({
         if (folder instanceof import_obsidian8.TFolder) {
           await this.scanFolder(folder, results);
         }
-        for (const sharedPath of ["z_Traps", "z_Beastiarity"]) {
+        for (const sharedPath of ["z_Traps", "z_Beastiarity", "z_Encounters"]) {
           const shared = this.app.vault.getAbstractFileByPath(sharedPath);
           if (shared instanceof import_obsidian8.TFolder) {
             await this.scanFolder(shared, results);
@@ -25198,6 +25290,7 @@ creature: ${newName}
     const currentDate = window.moment().format("YYYY-MM-DD");
     let frontmatter = `---
 type: encounter
+template_version: 1.2.0
 name: ${this.escapeYamlString(this.encounterName)}
 creatures:`;
     for (const creature of this.creatures) {
@@ -54443,6 +54536,7 @@ creature: ${newName}
     const currentDate = window.moment().format("YYYY-MM-DD");
     let frontmatter = `---
 type: encounter
+template_version: 1.2.0
 name: ${this.escapeYamlString(this.encounterName)}
 creatures:`;
     for (const creature of this.creatures) {
@@ -56055,7 +56149,7 @@ value: '${this.value}'`;
 campaign: '${campaignName}'
 world: '${worldName}'
 date: ${currentDate}
-template_version: '1.1.0'
+template_version: '1.2.0'
 ---
 
 `;
@@ -58245,6 +58339,116 @@ var DndHubModal = class _DndHubModal extends import_obsidian64.Modal {
       }
     };
   }
+  /** SRD reference categories — shown under a separate header in the browser. */
+  getSrdBrowseCategories() {
+    return {
+      srd_equipment: {
+        label: "Equipment",
+        icon: "\u{1F6E0}\uFE0F",
+        folders: () => ["z_Equipment"],
+        types: ["srd-equipment"],
+        subtitle: () => ""
+      },
+      srd_classes: {
+        label: "Classes",
+        icon: "\u{1F4DA}",
+        folders: () => ["z_Classes"],
+        types: ["srd-classes"],
+        subtitle: () => ""
+      },
+      srd_subclasses: {
+        label: "Subclasses",
+        icon: "\u{1F4D6}",
+        folders: () => ["z_Subclasses"],
+        types: ["srd-subclasses"],
+        subtitle: () => ""
+      },
+      srd_races: {
+        label: "Races",
+        icon: "\u{1F9DD}",
+        folders: () => ["z_Races"],
+        types: ["srd-races"],
+        subtitle: () => ""
+      },
+      srd_subraces: {
+        label: "Subraces",
+        icon: "\u{1F9EC}",
+        folders: () => ["z_Subraces"],
+        types: ["srd-subraces"],
+        subtitle: () => ""
+      },
+      srd_features: {
+        label: "Features",
+        icon: "\u2B50",
+        folders: () => ["z_Features"],
+        types: ["srd-features"],
+        subtitle: () => ""
+      },
+      srd_traits: {
+        label: "Traits",
+        icon: "\u{1F9E9}",
+        folders: () => ["z_Traits"],
+        types: ["srd-traits"],
+        subtitle: () => ""
+      },
+      srd_conditions: {
+        label: "Conditions",
+        icon: "\u{1F480}",
+        folders: () => ["z_Conditions"],
+        types: ["srd-conditions"],
+        subtitle: () => ""
+      },
+      srd_skills: {
+        label: "Skills",
+        icon: "\u{1F3AF}",
+        folders: () => ["z_Skills"],
+        types: ["srd-skills"],
+        subtitle: () => ""
+      },
+      srd_proficiencies: {
+        label: "Proficiencies",
+        icon: "\u{1F3C5}",
+        folders: () => ["z_Proficiencies"],
+        types: ["srd-proficiencies"],
+        subtitle: () => ""
+      },
+      srd_languages: {
+        label: "Languages",
+        icon: "\u{1F5E3}\uFE0F",
+        folders: () => ["z_Languages"],
+        types: ["srd-languages"],
+        subtitle: () => ""
+      },
+      srd_ability_scores: {
+        label: "Ability Scores",
+        icon: "\u{1F4CA}",
+        folders: () => ["z_AbilityScores"],
+        types: ["srd-ability-scores"],
+        subtitle: () => ""
+      },
+      srd_damage_types: {
+        label: "Damage Types",
+        icon: "\u{1F4A5}",
+        folders: () => ["z_DamageTypes"],
+        types: ["srd-damage-types"],
+        subtitle: () => ""
+      },
+      srd_magic_schools: {
+        label: "Magic Schools",
+        icon: "\u{1F52E}",
+        folders: () => ["z_MagicSchools"],
+        types: ["srd-magic-schools"],
+        subtitle: () => ""
+      },
+      srd_weapon_properties: {
+        label: "Weapon Properties",
+        icon: "\u2699\uFE0F",
+        folders: () => ["z_WeaponProperties"],
+        types: ["srd-weapon-properties"],
+        subtitle: () => ""
+      }
+    };
+  }
   /* ── Query helpers ──────────────────────────────────────────── */
   /**
    * Resolve campaign name from a file path.
@@ -58386,11 +58590,24 @@ var DndHubModal = class _DndHubModal extends import_obsidian64.Modal {
   renderBrowseSection(root) {
     const campaignPaths = this.plugin.getAllCampaigns().map((c) => c.path);
     const categories = this.getBrowseCategories();
+    const srdCategories = this.getSrdBrowseCategories();
     const browseContainer = root.createDiv({ cls: "dnd-hub-browse-section" });
+    this.renderCategoryGroup(browseContainer, categories, campaignPaths);
+    const srdEntries = Object.entries(srdCategories);
+    const hasSrdContent = srdEntries.some(
+      ([, cat]) => this.queryCategory(cat, campaignPaths).length > 0
+    );
+    if (hasSrdContent) {
+      browseContainer.createEl("h3", { text: "SRD Reference", cls: "dnd-hub-section-divider" });
+      this.renderCategoryGroup(browseContainer, Object.fromEntries(srdEntries), campaignPaths);
+    }
+  }
+  /** Render a group of browse categories into the container. */
+  renderCategoryGroup(container, categories, campaignPaths) {
     for (const [key, cat] of Object.entries(categories)) {
       const entities = this.queryCategory(cat, campaignPaths);
       const isExpanded = this.expandedCategory === key;
-      const header = browseContainer.createDiv({
+      const header = container.createDiv({
         cls: `dnd-hub-cat-header ${isExpanded ? "is-expanded" : ""}`
       });
       header.createEl("span", { cls: "dnd-hub-cat-chevron", text: isExpanded ? "\u25BE" : "\u25B8" });
@@ -58399,10 +58616,10 @@ var DndHubModal = class _DndHubModal extends import_obsidian64.Modal {
       header.createEl("span", { cls: "dnd-hub-cat-count", text: String(entities.length) });
       header.addEventListener("click", () => {
         this.expandedCategory = this.expandedCategory === key ? null : key;
-        this.refreshBrowse(root);
+        this.refreshBrowse(container.closest(".dnd-hub-modal") || container.parentElement);
       });
       if (isExpanded) {
-        const panel = browseContainer.createDiv({ cls: "dnd-hub-cat-panel" });
+        const panel = container.createDiv({ cls: "dnd-hub-cat-panel" });
         this.renderCategoryPanel(panel, key, cat, entities, campaignPaths.length > 1);
       }
     }

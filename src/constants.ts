@@ -7,6 +7,8 @@ export const COMBAT_TRACKER_VIEW_TYPE = "dnd-combat-tracker";
 export const COMBAT_PLAYER_VIEW_TYPE = "dnd-combat-player-view";
 export const IDLE_SCREEN_VIEW_TYPE = "dnd-idle-screen-view";
 export const MEDIA_PROJECTION_VIEW_TYPE = "dnd-media-projection-view";
+export const PURSUIT_TRACKER_VIEW_TYPE = "dnd-pursuit-tracker";
+export const PURSUIT_PLAYER_VIEW_TYPE = "dnd-pursuit-player-view";
 
 /**
  * A media element (image or video) that exposes image-compatible dimension properties.

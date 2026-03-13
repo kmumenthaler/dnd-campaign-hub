@@ -93,6 +93,8 @@ import {
   COMBAT_TRACKER_VIEW_TYPE,
   COMBAT_PLAYER_VIEW_TYPE,
   IDLE_SCREEN_VIEW_TYPE,
+  PURSUIT_TRACKER_VIEW_TYPE,
+  PURSUIT_PLAYER_VIEW_TYPE,
 } from './constants';
 import type { MapMediaElement } from './constants';
 
@@ -145,6 +147,10 @@ import { GmMapView } from './map-views/GmMapView';
 import { PlayerMapView } from './map-views/PlayerMapView';
 import { ProjectionManager } from './projection/ProjectionManager';
 import { SessionProjectionManager, IdleScreenView, SessionProjectionHubModal } from './projection';
+import { PursuitTracker } from './pursuit/PursuitTracker';
+import { PursuitTrackerView } from './pursuit/PursuitTrackerView';
+import { PursuitPlayerView } from './pursuit/PursuitPlayerView';
+import { PursuitSetupModal } from './pursuit/PursuitSetupModal';
 
 // ── Extracted function modules ──
 import { renderMapView as renderMapViewFn } from './map-views/renderMapView';
@@ -186,6 +192,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   migrationRegistry!: MigrationRegistry;
   encounterBuilder!: EncounterBuilder;
   combatTracker!: CombatTracker;
+  pursuitTracker!: PursuitTracker;
   partyManager!: PartyManager;
   mapManager!: MapManager;
   mapController!: MapController;
@@ -274,11 +281,26 @@ export default class DndCampaignHubPlugin extends Plugin {
       (leaf) => new IdleScreenView(leaf, this)
     );
 
+    // Register the Pursuit Tracker View (GM sidebar)
+    this.registerView(
+      PURSUIT_TRACKER_VIEW_TYPE,
+      (leaf) => new PursuitTrackerView(leaf, this)
+    );
+
+    // Register the Pursuit Player View (projection popout)
+    this.registerView(
+      PURSUIT_PLAYER_VIEW_TYPE,
+      (leaf) => new PursuitPlayerView(leaf, this)
+    );
+
     // Initialize the encounter builder
     this.encounterBuilder = new EncounterBuilder(this.app, this);
 
     // Initialize the combat tracker engine
     this.combatTracker = new CombatTracker(this.app, this);
+
+    // Initialize the pursuit tracker engine
+    this.pursuitTracker = new PursuitTracker(this.app, this);
 
     // Initialize the party manager
     this.partyManager = new PartyManager(this.app, this.manifest.id);
@@ -1053,6 +1075,27 @@ export default class DndCampaignHubPlugin extends Plugin {
       id: "prev-turn",
       name: "⏪ Previous Turn",
       callback: () => this.combatTracker.prevTurn(),
+    });
+
+    this.addCommand({
+      id: "start-pursuit",
+      name: "🏃 Start Pursuit / Chase",
+      callback: () => this.startPursuitSetup(),
+    });
+
+    this.addCommand({
+      id: "open-pursuit-tracker",
+      name: "🏃 Open Pursuit Tracker",
+      callback: () => this.openPursuitTracker(),
+    });
+
+    this.addCommand({
+      id: "end-pursuit",
+      name: "🛑 End Pursuit",
+      callback: () => {
+        this.pursuitTracker.endChase("gm-ended");
+        new Notice("Pursuit ended.");
+      },
     });
 
     // Register file watcher for encounter modifications
@@ -2411,6 +2454,32 @@ export default class DndCampaignHubPlugin extends Plugin {
 			await leaf.setViewState({ type: COMBAT_TRACKER_VIEW_TYPE, active: true });
 			this.app.workspace.revealLeaf(leaf);
 		}
+	}
+
+	async openPursuitTracker() {
+		const existing = this.app.workspace.getLeavesOfType(PURSUIT_TRACKER_VIEW_TYPE);
+		if (existing.length > 0 && existing[0]) {
+			this.app.workspace.revealLeaf(existing[0]);
+			return;
+		}
+		const leaf = this.app.workspace.getRightLeaf(false);
+		if (leaf) {
+			await leaf.setViewState({ type: PURSUIT_TRACKER_VIEW_TYPE, active: true });
+			this.app.workspace.revealLeaf(leaf);
+		}
+	}
+
+	startPursuitSetup() {
+		new PursuitSetupModal(this.app, this).open();
+	}
+
+	startPursuitFromCombat() {
+		const combatState = this.combatTracker.getState();
+		if (!combatState) {
+			new Notice("No active combat to start a chase from.");
+			return;
+		}
+		new PursuitSetupModal(this.app, this, combatState).open();
 	}
 
 	/**
