@@ -1,6 +1,8 @@
 import { App, Modal, Notice, TFile, Setting, Editor } from 'obsidian';
 import { POI_TYPES, PoiType } from '../map/types';
+import { TEMPLATE_VERSIONS } from '../migration';
 import { POI_TEMPLATE } from '../templates';
+import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 
 /**
  * Modal for editing an existing PoI
@@ -180,44 +182,23 @@ export class PoiEditModal extends Modal {
 				.split(',')
 				.map(t => t.trim())
 				.filter(t => t.length > 0);
+			const poiTemplateVersion = TEMPLATE_VERSIONS['point-of-interest'] || '1.1.0';
 
 			// Update frontmatter
-			content = content.replace(
-				/name:.*$/m,
-				`name: ${this.name}`
-			);
-			content = content.replace(
-				/poi-type:.*$/m,
-				`poi-type: ${this.poiType}`
-			);
-			content = content.replace(
-				/icon:.*$/m,
-				`icon: ${this.icon}`
-			);
-			content = content.replace(
-				/region:.*$/m,
-				`region: ${this.region}`
-			);
-			content = content.replace(
-				/discovered:.*$/m,
-				`discovered: ${this.discovered}`
-			);
-			content = content.replace(
-				/visited:.*$/m,
-				`visited: ${this.visited}`
-			);
-			content = content.replace(
-				/quest-related:.*$/m,
-				`quest-related: ${this.questRelated}`
-			);
-			content = content.replace(
-				/danger-level:.*$/m,
-				`danger-level: ${this.dangerLevel}`
-			);
-			content = content.replace(
-				/tags:.*$/m,
-				`tags: [${tagArray.join(', ')}]`
-			);
+			content = updateYamlFrontmatter(content, (fm) => ({
+				...fm,
+				type: 'point-of-interest',
+				template_version: poiTemplateVersion,
+				name: this.name,
+				'poi-type': this.poiType,
+				icon: this.icon,
+				region: this.region,
+				discovered: this.discovered,
+				visited: this.visited,
+				'quest-related': this.questRelated,
+				'danger-level': this.dangerLevel,
+				tags: tagArray,
+			}));
 
 			// Update heading
 			content = content.replace(
@@ -402,7 +383,7 @@ export class PoiCreationModal extends Modal {
 
 	private name: string = '';
 	private poiType: PoiType = 'settlement';
-	private icon: string = '�️';
+	private icon: string = '🏰';
 	private region: string = '';
 	private tags: string = '';
 
@@ -521,6 +502,7 @@ export class PoiCreationModal extends Modal {
 				.split(',')
 				.map(t => t.trim())
 				.filter(t => t.length > 0);
+			const poiTemplateVersion = TEMPLATE_VERSIONS['point-of-interest'] || '1.1.0';
 
 			// Create file content from template
 			// Replace all Templater syntax with actual values
@@ -547,12 +529,21 @@ export class PoiCreationModal extends Modal {
 			);
 
 			// Update frontmatter
-			content = content.replace('name: ', `name: ${this.name}`);
-			content = content.replace('poi-type: settlement', `poi-type: ${this.poiType}`);
-			content = content.replace('icon: 🏰', `icon: ${this.icon}`);
-			content = content.replace('tags: []', `tags: [${tagArray.join(', ')}]`);
-			content = content.replace('campaign: ', `campaign: ${campaignName}`);
-			content = content.replace('region: ', `region: ${this.region}`);
+			content = updateYamlFrontmatter(content, (fm) => ({
+				...fm,
+				type: 'point-of-interest',
+				template_version: poiTemplateVersion,
+				name: this.name,
+				'poi-type': this.poiType,
+				icon: this.icon,
+				tags: tagArray,
+				campaign: campaignName,
+				region: this.region,
+				discovered: false,
+				visited: false,
+				'quest-related': false,
+				'danger-level': '',
+			}));
 
 			// Create the file
 			const file = await this.app.vault.create(filePath, content);
