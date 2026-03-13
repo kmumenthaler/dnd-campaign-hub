@@ -925,6 +925,74 @@ function deduplicateTraits(traits: StatblockEntry[], actionNames: Set<string>): 
   return out;
 }
 
+function groupWithDividers(
+  groups: Array<{ label: string; items: StatblockEntry[] }>,
+  actionNames: Set<string>,
+): StatblockEntry[] {
+  const out: StatblockEntry[] = [];
+  const globalSeen = new Set<string>();
+  let first = true;
+
+  for (const group of groups) {
+    const filtered: StatblockEntry[] = [];
+    for (const item of group.items) {
+      const key = stripLinkMarkup(item.name).toLowerCase();
+      if (globalSeen.has(key)) continue;
+      if (actionNames.has(key)) continue;
+      globalSeen.add(key);
+      filtered.push(item);
+    }
+    if (filtered.length === 0) continue;
+
+    if (!first) {
+      out.push({ name: "___", desc: "" });
+    }
+    out.push({ name: `***${group.label}***`, desc: "" });
+    out.push(...filtered);
+    first = false;
+  }
+
+  return out;
+}
+
+function groupActionsByKind(
+  weapons: StatblockEntry[],
+  spellAttacks: StatblockEntry[],
+  featureActions: StatblockEntry[],
+  otherActions: StatblockEntry[],
+): StatblockEntry[] {
+  const groups: Array<{ label: string; items: StatblockEntry[] }> = [
+    { label: "Weapon Attacks", items: weapons },
+    { label: "Spell Attacks", items: spellAttacks },
+    { label: "Feature Actions", items: featureActions },
+    { label: "Other", items: otherActions },
+  ];
+
+  const out: StatblockEntry[] = [];
+  const seen = new Set<string>();
+  let first = true;
+
+  for (const group of groups) {
+    const filtered: StatblockEntry[] = [];
+    for (const item of group.items) {
+      const key = stripLinkMarkup(item.name).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      filtered.push(item);
+    }
+    if (filtered.length === 0) continue;
+
+    if (!first) {
+      out.push({ name: "___", desc: "" });
+    }
+    out.push({ name: `***${group.label}***`, desc: "" });
+    out.push(...filtered);
+    first = false;
+  }
+
+  return out;
+}
+
 export async function importFromDndBeyond(source: string, options?: ImportOptions): Promise<DndBeyondPcImportData> {
   const characterId = parseCharacterId(source);
   if (!characterId) {
@@ -1003,7 +1071,12 @@ export async function importFromDndBeyond(source: string, options?: ImportOption
   const spellAttackActions = collectSpellAttackActions(data, abilities, totalLevel, linkResolver);
   const spells = linkSpellDisplayLines(collectSpellLines(data, abilities, totalLevel), linkResolver);
 
-  const allActions = mergeUniqueEntries(weaponActions, [unarmedAction], spellAttackActions, featureActions.actions, actionEntries.actions);
+  const allActions = groupActionsByKind(
+    [...weaponActions, unarmedAction],
+    spellAttackActions,
+    featureActions.actions,
+    actionEntries.actions,
+  );
   const allBonusActions = mergeUniqueEntries(featureActions.bonusActions, actionEntries.bonusActions);
   const allReactions = mergeUniqueEntries(featureActions.reactions, actionEntries.reactions);
 
@@ -1012,14 +1085,14 @@ export async function importFromDndBeyond(source: string, options?: ImportOption
     actionNames.add(stripLinkMarkup(a.name).toLowerCase());
   }
 
-  const rawTraits = [
-    ...classSpeciesTraits.classTraits,
-    ...classSpeciesTraits.speciesTraits,
-    ...scopedSkillTraits,
-    ...featTraits,
-    ...optionTraits,
+  const traitGroups: Array<{ label: string; items: StatblockEntry[] }> = [
+    { label: "Class Features", items: classSpeciesTraits.classTraits },
+    { label: "Species Traits", items: classSpeciesTraits.speciesTraits },
+    { label: "Skills", items: scopedSkillTraits },
+    { label: "Feats", items: featTraits },
+    { label: "Options", items: optionTraits },
   ];
-  const dedupedTraits = deduplicateTraits(rawTraits, actionNames);
+  const dedupedTraits = groupWithDividers(traitGroups, actionNames);
 
   return {
     characterId,

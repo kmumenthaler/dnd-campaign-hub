@@ -772,14 +772,12 @@ export class PCCreationModal extends Modal {
         languages: this.languages,
         stats,
         fage_stats: fageStats,
-        saves: [],
         skillsaves,
-        traits,
-        actions,
-        bonus_actions: bonusActions,
-        reactions,
-        legendary_actions: [],
-        spells,
+        ...(traits.length > 0 ? { traits } : {}),
+        ...(actions.length > 0 ? { actions } : {}),
+        ...(bonusActions.length > 0 ? { bonus_actions: bonusActions } : {}),
+        ...(reactions.length > 0 ? { reactions } : {}),
+        ...(spells.length > 0 ? { spells } : {}),
         readonlyUrl: this.characterSheetUrl,
         characterSheetPdf: this.characterSheetPdf,
         token_id: tokenId,
@@ -887,7 +885,7 @@ export class PCCreationModal extends Modal {
       const speedValue = `${(this.speed || "30").toString().replace(/\s*ft\.?$/i, "")} ft.`;
       const stats = [this.str, this.dex, this.con, this.int, this.wis, this.cha].map((value) => Number(value) || 10);
 
-      const statblock = {
+      const statblock: Record<string, unknown> = {
         name: this.pcName,
         size: "Medium",
         type: "humanoid",
@@ -900,19 +898,18 @@ export class PCCreationModal extends Modal {
         speed: speedValue,
         stats,
         fage_stats: stats.map((score) => Math.floor((score - 10) / 2)),
-        saves: [],
         skillsaves: this.skillsaves,
         senses: this.senses,
         languages: this.languages,
-        traits: this.traits,
-        actions: this.actions,
-        bonus_actions: this.bonusActions,
-        reactions: this.reactions,
-        legendary_actions: [],
-        spells: this.spells,
         cr: "0",
         source: `PC: ${this.pcName}`,
       };
+
+      if (this.traits.length > 0) statblock.traits = this.traits;
+      if (this.actions.length > 0) statblock.actions = this.actions;
+      if (this.bonusActions.length > 0) statblock.bonus_actions = this.bonusActions;
+      if (this.reactions.length > 0) statblock.reactions = this.reactions;
+      if (this.spells.length > 0) statblock.spells = this.spells;
 
       await statblocksPlugin.saveMonster(statblock);
       this.app.workspace.trigger("fantasy-statblocks:bestiary:updated");
