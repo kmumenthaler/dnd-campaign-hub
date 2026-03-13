@@ -145,6 +145,17 @@ export function compareVersions(a: string, b: string): number {
 }
 
 /**
+ * Remove ALL dataviewjs code blocks from content.
+ * Returns the modified content, or null if no blocks were found.
+ */
+export function removeAllDataviewjsBlocks(content: string): string | null {
+  const blockRegex = /```dataviewjs\n[\s\S]*?```/g;
+  if (!blockRegex.test(content)) return null;
+  const cleaned = content.replace(/```dataviewjs\n[\s\S]*?```/g, "");
+  return cleaned;
+}
+
+/**
  * Find and replace a dataviewjs code block that contains a specific marker string.
  * Returns the modified content, or null if no matching block was found.
  */

@@ -44,7 +44,7 @@ export class MigrationRunner {
     }
 
     // Shared folders that may contain entity notes
-    for (const sharedPath of ["z_Traps", "z_Beastiarity"]) {
+    for (const sharedPath of ["z_Traps", "z_Beastiarity", "z_Encounters"]) {
       const shared = this.app.vault.getAbstractFileByPath(sharedPath);
       if (shared instanceof TFolder) {
         await this.scanFolder(shared, results);

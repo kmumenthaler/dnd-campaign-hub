@@ -225,6 +225,19 @@
   border-color: var(--interactive-accent);
 }
 
+/* Keep wide Fantasy Statblocks readable in constrained note panes */
+.markdown-reading-view .statblock,
+.markdown-preview-view .statblock {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.markdown-reading-view .statblock-content,
+.markdown-preview-view .statblock-content {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 /* Dependency Modal Styles */
 .dnd-dependency-list {
   margin: 15px 0;
@@ -2798,6 +2811,9 @@
 
 /* Header - Compact */
 .dashboard-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   padding: 8px 10px;
   background-color: var(--background-secondary);
   border-bottom: 1px solid var(--background-modifier-border);
@@ -2810,6 +2826,30 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.dashboard-freshness {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.dashboard-freshness-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #2fa058;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.dashboard-freshness.is-stale .dashboard-freshness-dot {
+  background-color: #c57d00;
+}
+
+.dashboard-freshness-value {
+  line-height: 1.2;
 }
 
 .dashboard-title {
@@ -2913,6 +2953,148 @@
   color: var(--text-normal);
   border-bottom: 1px solid var(--background-modifier-border);
   padding-bottom: 4px;
+}
+
+.dashboard-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 10px;
+  padding: 8px 0 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.dashboard-section-title-row .section-title {
+  margin: 0;
+  padding: 0;
+  border-bottom: none;
+}
+
+.dashboard-filter-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.dashboard-filter-chip {
+  font-size: 10px;
+  padding: 2px 7px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.dashboard-filter-chip:hover {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.dashboard-filter-chip.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.dashboard-readiness-card {
+  margin: 8px 10px;
+  padding: 8px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+}
+
+.dashboard-readiness-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.dashboard-readiness-score {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--interactive-accent);
+}
+
+.dashboard-readiness-bar {
+  margin-top: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.dashboard-readiness-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #c57d00 0%, #2fa058 100%);
+  transition: width 0.25s ease;
+}
+
+.dashboard-readiness-note {
+  margin: 8px 0 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.dashboard-readiness-checklist {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.dashboard-readiness-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.dashboard-readiness-item span:last-of-type {
+  flex: 1;
+}
+
+.dashboard-readiness-ok,
+.dashboard-readiness-missing {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.dashboard-readiness-ok {
+  background: rgba(47, 160, 88, 0.22);
+  color: #2fa058;
+}
+
+.dashboard-readiness-missing {
+  background: rgba(197, 125, 0, 0.22);
+  color: #c57d00;
+}
+
+.dashboard-readiness-action {
+  padding: 2px 7px;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 3px;
+  border: 1px solid var(--interactive-accent);
+  background: var(--background-primary);
+  color: var(--interactive-accent);
+  cursor: pointer;
+}
+
+.dashboard-readiness-action:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
 }
 
 /* Adventure Cards - Compact */
@@ -3203,29 +3385,6 @@
   color: var(--text-muted);
   line-height: 1.4;
   font-style: italic;
-}
-
-/* Footer */
-.dashboard-footer {
-  padding: 8px 10px;
-  border-top: 1px solid var(--background-modifier-border);
-  text-align: right;
-  position: sticky;
-  bottom: 0;
-  background-color: var(--background-primary);
-}
-
-.dashboard-refresh-btn {
-  padding: 4px 8px;
-  font-size: 14px;
-  background-color: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 3px;
-  cursor: pointer;
-}
-
-.dashboard-refresh-btn:hover {
-  background-color: var(--background-modifier-hover);
 }
 
 /* Empty state messages */

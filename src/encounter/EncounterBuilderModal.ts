@@ -1876,6 +1876,7 @@ export class EncounterBuilderModal extends Modal {
 
     let frontmatter = `---
 type: encounter
+template_version: 1.2.0
 name: ${this.escapeYamlString(this.encounterName)}
 creatures:`;
 

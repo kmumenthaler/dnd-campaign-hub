@@ -3,6 +3,7 @@ import {
   addFrontmatterFieldAfter,
   compareVersions,
   parseFrontmatter,
+  removeAllDataviewjsBlocks,
   replaceDataviewjsBlock,
   setFrontmatterField,
 } from "../../src/migration/frontmatter";
@@ -86,5 +87,33 @@ describe("migration/frontmatter utilities", () => {
     expect(compareVersions("1.10.0", "1.9.9")).toBe(1);
     expect(compareVersions("1.3.0", "1.3.0")).toBe(0);
     expect(compareVersions("1.2.9", "1.3.0")).toBe(-1);
+  });
+
+  it("removeAllDataviewjsBlocks strips every dataviewjs block", () => {
+    const input = [
+      "# Title",
+      "",
+      "```dataviewjs",
+      "dv.paragraph('block 1')",
+      "```",
+      "",
+      "Some text",
+      "",
+      "```dataviewjs",
+      "dv.paragraph('block 2')",
+      "```",
+    ].join("\n");
+
+    const out = removeAllDataviewjsBlocks(input);
+
+    expect(out).not.toBeNull();
+    expect(out).not.toContain("dataviewjs");
+    expect(out).toContain("Some text");
+    expect(out).toContain("# Title");
+  });
+
+  it("removeAllDataviewjsBlocks returns null when no blocks exist", () => {
+    const input = "# Title\n\nSome text\n";
+    expect(removeAllDataviewjsBlocks(input)).toBeNull();
   });
 });

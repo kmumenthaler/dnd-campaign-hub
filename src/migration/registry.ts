@@ -6,6 +6,7 @@ import {
   addFrontmatterFieldAfter,
   setFrontmatterField,
   replaceDataviewjsBlock,
+  removeAllDataviewjsBlocks,
   replaceDataviewTableBlocks,
   insertAfterTitle,
 } from "./frontmatter";
@@ -598,6 +599,50 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "encounter-1.2.0",
+      entityTypes: ["encounter"],
+      targetVersion: "1.2.0",
+      description: "Strip remaining dataviewjs blocks and ensure native encounter views exist",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+
+        // Already fully migrated
+        if (out.includes("```dnd-hub") && !out.includes("```dataviewjs")) return null;
+
+        // Strip ALL remaining dataviewjs blocks
+        const stripped = removeAllDataviewjsBlocks(out);
+        if (stripped) out = stripped;
+
+        // Ensure dnd-hub render block exists
+        if (!out.includes("```dnd-hub")) {
+          out = insertAfterTitle(out, DND_HUB_BLOCK);
+        }
+
+        // Ensure encounter-difficulty view exists
+        if (!out.includes("encounter-difficulty")) {
+          const diffHeader = /^(## .*Difficulty.*$)/m;
+          if (diffHeader.test(out)) {
+            out = out.replace(diffHeader, "$1\n\n```dnd-hub-view\nencounter-difficulty\n```");
+          }
+        }
+
+        // Ensure encounter-creatures view exists
+        if (!out.includes("encounter-creatures")) {
+          const creaturesHeader = /^(## .*Creatures.*$)/m;
+          if (creaturesHeader.test(out)) {
+            out = out.replace(creaturesHeader, "$1\n\n```dnd-hub-view\nencounter-creatures\n```");
+          }
+        }
+
+        // Collapse runs of 3+ blank lines left by removed/inserted blocks
+        out = out.replace(/\n{3,}/g, "\n\n");
+
+        if (out === ctx.content) return null;
+        return setFrontmatterField(out, "template_version", "1.2.0");
+      },
+    },
+
     // ── Trap ─────────────────────────────────────────────────────────────
 
     {
@@ -665,6 +710,20 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "item-1.2.0",
+      entityTypes: ["item"],
+      targetVersion: "1.2.0",
+      description: "Strip remaining dataviewjs blocks from item notes",
+      async apply(ctx: MigrationContext) {
+        if (!ctx.content.includes("```dataviewjs")) return null;
+        let out = removeAllDataviewjsBlocks(ctx.content) ?? ctx.content;
+        out = out.replace(/\n{3,}/g, "\n\n");
+        if (out === ctx.content) return null;
+        return setFrontmatterField(out, "template_version", "1.2.0");
+      },
+    },
+
     // ── Spell ────────────────────────────────────────────────────────────
 
     {
@@ -675,6 +734,20 @@ deleteBtn.addEventListener("click", () => {
       async apply(ctx: MigrationContext) {
         if (ctx.content.includes("```dnd-hub")) return null;
         return insertAfterTitle(ctx.content, DND_HUB_BLOCK);
+      },
+    },
+
+    {
+      id: "spell-1.2.0",
+      entityTypes: ["spell"],
+      targetVersion: "1.2.0",
+      description: "Strip remaining dataviewjs blocks from spell notes",
+      async apply(ctx: MigrationContext) {
+        if (!ctx.content.includes("```dataviewjs")) return null;
+        let out = removeAllDataviewjsBlocks(ctx.content) ?? ctx.content;
+        out = out.replace(/\n{3,}/g, "\n\n");
+        if (out === ctx.content) return null;
+        return setFrontmatterField(out, "template_version", "1.2.0");
       },
     },
 
@@ -691,6 +764,20 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "faction-1.2.0",
+      entityTypes: ["faction"],
+      targetVersion: "1.2.0",
+      description: "Strip remaining dataviewjs blocks from faction notes",
+      async apply(ctx: MigrationContext) {
+        if (!ctx.content.includes("```dataviewjs")) return null;
+        let out = removeAllDataviewjsBlocks(ctx.content) ?? ctx.content;
+        out = out.replace(/\n{3,}/g, "\n\n");
+        if (out === ctx.content) return null;
+        return setFrontmatterField(out, "template_version", "1.2.0");
+      },
+    },
+
     // ── Point of Interest ────────────────────────────────────────────────
 
     {
@@ -700,6 +787,20 @@ deleteBtn.addEventListener("click", () => {
       description: "Replace inline buttons with dynamic render block",
       async apply(ctx: MigrationContext) {
         return replaceButtonsWithRenderBlock(ctx.content, "dnd-campaign-hub:edit-poi");
+      },
+    },
+
+    {
+      id: "poi-1.2.0",
+      entityTypes: ["point-of-interest"],
+      targetVersion: "1.2.0",
+      description: "Strip remaining dataviewjs blocks from POI notes",
+      async apply(ctx: MigrationContext) {
+        if (!ctx.content.includes("```dataviewjs")) return null;
+        let out = removeAllDataviewjsBlocks(ctx.content) ?? ctx.content;
+        out = out.replace(/\n{3,}/g, "\n\n");
+        if (out === ctx.content) return null;
+        return setFrontmatterField(out, "template_version", "1.2.0");
       },
     },
 
