@@ -1,5 +1,6 @@
 import { App, Notice, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
+import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
 
 // Trap-related interfaces
 export interface TrapElement {
@@ -1414,11 +1415,10 @@ export class EncounterBuilder {
 
       let content = await this.app.vault.read(sceneFile);
 
-      // Update tracker_encounter field in frontmatter
-      content = content.replace(
-        /^tracker_encounter:\s*$/m,
-        `tracker_encounter: "${this.encounterName}"`
-      );
+      content = updateYamlFrontmatter(content, (fm) => ({
+        ...fm,
+        tracker_encounter: this.encounterName,
+      }));
 
       await this.app.vault.modify(sceneFile, content);
 
