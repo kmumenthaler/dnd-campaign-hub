@@ -5,6 +5,23 @@ All notable changes to the D&D Campaign Hub plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-03-13
+
+### Added
+
+- **SRD Reference browser** — the Campaign Hub browse section now includes all 15 SRD categories (Equipment, Classes, Races, Conditions, Skills, etc.) under a dedicated "SRD Reference" header, with search and filtering. The section appears automatically after importing SRD data.
+
+### Docs
+
+- Added D&D Beyond import and PDF character sheet import to characters documentation
+- Added session projection system with profiles and idle screen media picker
+- Added session prep readiness checklist with scoring and action buttons
+- Added PC statblock viewing in combat tracker documentation
+- Added `dnd-hub` code block and projection commands to reference
+- Removed Buttons and Dataview from dependencies (replaced by native `dnd-hub` blocks)
+- Added all SRD folders to vault structure reference
+- Expanded combat tracker docs from developer stub to full user guide
+
 ## [0.5.0] - 2026-03-13
 
 ### Added
