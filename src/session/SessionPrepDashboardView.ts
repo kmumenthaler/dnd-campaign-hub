@@ -15,6 +15,7 @@ export class SessionPrepDashboardView extends ItemView {
   private pendingRefreshReason: string | null = null;
   private lastRenderedAt = 0;
   private lastRefreshReason = "initial";
+  private sceneFilter: "session" | "all" = "session";
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -252,6 +253,8 @@ export class SessionPrepDashboardView extends ItemView {
         this.plugin.createSession();
       });
 
+      await this.renderReadinessCard(container);
+
       // Adventures & Next Scene (Primary focus)
       await this.renderAdventuresAndScenes(container);
 
@@ -270,6 +273,132 @@ export class SessionPrepDashboardView extends ItemView {
       this.finalizeRender();
     }
 
+  }
+
+  private getSessionFiles(): TFile[] {
+    const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
+    const sessionFiles: TFile[] = [];
+
+    if (sessionsFolder instanceof TFolder) {
+      for (const item of sessionsFolder.children) {
+        if (item instanceof TFile && item.extension === "md") {
+          sessionFiles.push(item);
+        }
+      }
+      return sessionFiles;
+    }
+
+    const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
+    if (!(campaignFolder instanceof TFolder)) return sessionFiles;
+
+    for (const item of campaignFolder.children) {
+      if (!(item instanceof TFile) || item.extension !== "md") continue;
+      const cache = this.app.metadataCache.getFileCache(item);
+      if (cache?.frontmatter?.type === "session") {
+        sessionFiles.push(item);
+      }
+    }
+
+    return sessionFiles;
+  }
+
+  private getNpcCount(): number {
+    const npcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/NPCs`);
+    if (!(npcsFolder instanceof TFolder)) return 0;
+    return npcsFolder.children.filter((item) => item instanceof TFile && item.extension === "md").length;
+  }
+
+  private async getReadinessData(): Promise<{
+    score: number;
+    hasAdventure: boolean;
+    hasParty: boolean;
+    hasSessions: boolean;
+    hasNpcs: boolean;
+    nextSceneHasGoal: boolean;
+    details: string;
+  }> {
+    const adventures = await this.getActiveAdventures();
+    const hasAdventure = adventures.length > 0;
+
+    let nextSceneHasGoal = false;
+    const firstAdventure = adventures[0];
+    if (firstAdventure) {
+      const scenes = await this.getScenesForAdventure(firstAdventure.path);
+      const nextScene = scenes.find((s) => s.status !== "completed") || scenes[0];
+      nextSceneHasGoal = !!nextScene?.goal?.trim();
+    }
+
+    const campaignName = this.campaignPath?.split("/").pop() || "";
+    const party = this.plugin.partyManager.resolveParty(undefined, campaignName);
+    let hasParty = false;
+    if (party?.id) {
+      const members = await this.plugin.partyManager.resolveMembers(party.id);
+      hasParty = members.length > 0;
+    }
+
+    const hasSessions = this.getSessionFiles().length > 0;
+    const hasNpcs = this.getNpcCount() > 0;
+
+    let score = 0;
+    if (hasAdventure) score += 30;
+    if (hasParty) score += 25;
+    if (hasSessions) score += 20;
+    if (hasNpcs) score += 10;
+    if (nextSceneHasGoal) score += 15;
+
+    const details = hasAdventure
+      ? (nextSceneHasGoal ? "Your next scene has a clear goal." : "Add a goal to your next scene for a smoother run.")
+      : "Create or activate an adventure to prepare your next session.";
+
+    return {
+      score,
+      hasAdventure,
+      hasParty,
+      hasSessions,
+      hasNpcs,
+      nextSceneHasGoal,
+      details
+    };
+  }
+
+  async renderReadinessCard(container: HTMLElement) {
+    const readiness = await this.getReadinessData();
+    const section = container.createEl("div", { cls: "dashboard-section" });
+    const card = section.createEl("div", { cls: "dashboard-readiness-card" });
+
+    const titleRow = card.createEl("div", { cls: "dashboard-readiness-title-row" });
+    titleRow.createEl("strong", { text: "Session Readiness" });
+    titleRow.createEl("span", {
+      cls: "dashboard-readiness-score",
+      text: `${readiness.score}/100`
+    });
+
+    const bar = card.createEl("div", { cls: "dashboard-readiness-bar" });
+    const fill = bar.createEl("div", { cls: "dashboard-readiness-fill" });
+    fill.style.width = `${readiness.score}%`;
+
+    card.createEl("p", {
+      cls: "dashboard-readiness-note",
+      text: readiness.details
+    });
+
+    const checklist = card.createEl("div", { cls: "dashboard-readiness-checklist" });
+    const items = [
+      { ok: readiness.hasAdventure, label: "Active adventure selected" },
+      { ok: readiness.hasParty, label: "Party members available" },
+      { ok: readiness.hasSessions, label: "Previous session notes exist" },
+      { ok: readiness.hasNpcs, label: "NPC roster available" },
+      { ok: readiness.nextSceneHasGoal, label: "Next scene goal defined" }
+    ];
+
+    for (const item of items) {
+      const row = checklist.createEl("div", { cls: "dashboard-readiness-item" });
+      row.createEl("span", {
+        cls: item.ok ? "dashboard-readiness-ok" : "dashboard-readiness-missing",
+        text: item.ok ? "OK" : "TODO"
+      });
+      row.createEl("span", { text: item.label });
+    }
   }
 
   async renderQuickActions(container: HTMLElement) {
@@ -379,7 +508,30 @@ export class SessionPrepDashboardView extends ItemView {
 
   async renderAdventuresAndScenes(container: HTMLElement) {
     const section = container.createEl("div", { cls: "dashboard-section" });
-    section.createEl("h3", { text: "🗺️ Adventure Progress", cls: "section-title" });
+    const titleRow = section.createEl("div", { cls: "dashboard-section-title-row" });
+    titleRow.createEl("h3", { text: "🗺️ Adventure Progress", cls: "section-title" });
+
+    const filterRow = titleRow.createEl("div", { cls: "dashboard-filter-chips" });
+    const sessionChip = filterRow.createEl("button", {
+      cls: this.sceneFilter === "session" ? "dashboard-filter-chip is-active" : "dashboard-filter-chip",
+      text: "Only This Session"
+    });
+    const allChip = filterRow.createEl("button", {
+      cls: this.sceneFilter === "all" ? "dashboard-filter-chip is-active" : "dashboard-filter-chip",
+      text: "All Scenes"
+    });
+
+    sessionChip.addEventListener("click", () => {
+      if (this.sceneFilter === "session") return;
+      this.sceneFilter = "session";
+      this.requestRefresh("scene filter changed", 0);
+    });
+
+    allChip.addEventListener("click", () => {
+      if (this.sceneFilter === "all") return;
+      this.sceneFilter = "all";
+      this.requestRefresh("scene filter changed", 0);
+    });
 
     // Get all adventures in this campaign
     const adventures = await this.getActiveAdventures();
@@ -471,19 +623,29 @@ export class SessionPrepDashboardView extends ItemView {
 
       // Upcoming scenes (collapsed by default)
       if (scenes.length > 1) {
+        const visibleScenes = this.sceneFilter === "session"
+          ? scenes.filter((scene) => scene.status !== "completed")
+          : scenes;
+
+        const otherVisibleScenes = visibleScenes.filter((scene) => scene.path !== nextScene?.path);
+        if (otherVisibleScenes.length === 0) {
+          continue;
+        }
+
         const sectionKey = `upcoming-scenes-${adventure.name}`;
         let upcomingExpanded = this.expandedSections.has(sectionKey);
         const upcomingHeader = adventureCard.createEl("div", { cls: "upcoming-header" });
         const toggleBtn = upcomingHeader.createEl("button", {
-          text: upcomingExpanded ? `▼ Hide scenes` : `▶ Show ${scenes.length - 1} more scenes`,
+          text: upcomingExpanded
+            ? `▼ Hide scenes`
+            : `▶ Show ${otherVisibleScenes.length} more scenes`,
           cls: "upcoming-toggle"
         });
 
         const upcomingList = adventureCard.createEl("div", { cls: "upcoming-scenes-list" });
         upcomingList.style.display = upcomingExpanded ? "block" : "none";
 
-        for (const scene of scenes) {
-          if (scene.path === nextScene?.path) continue; // Skip the next scene
+        for (const scene of otherVisibleScenes) {
 
           const sceneItem = upcomingList.createEl("div", { cls: "scene-list-item" });
           const statusIcon = scene.status === "completed" ? "✅" : "⬜";
@@ -510,7 +672,7 @@ export class SessionPrepDashboardView extends ItemView {
           upcomingList.style.display = expanded ? "block" : "none";
           toggleBtn.textContent = expanded 
             ? `▼ Hide scenes` 
-            : `▶ Show ${scenes.length - 1} more scenes`;
+            : `▶ Show ${otherVisibleScenes.length} more scenes`;
         });
       }
     }
@@ -860,29 +1022,7 @@ export class SessionPrepDashboardView extends ItemView {
     content.style.display = isExpanded ? "block" : "none";
     toggle.textContent = isExpanded ? "▼" : "▶";
 
-    // Get recent sessions
-    const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
-    const sessionFiles: TFile[] = [];
-
-    if (sessionsFolder instanceof TFolder) {
-      for (const item of sessionsFolder.children) {
-        if (item instanceof TFile && item.extension === "md") {
-          sessionFiles.push(item);
-        }
-      }
-    } else {
-      const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
-      if (campaignFolder instanceof TFolder) {
-        for (const item of campaignFolder.children) {
-          if (item instanceof TFile && item.extension === "md") {
-            const cache = this.app.metadataCache.getFileCache(item);
-            if (cache?.frontmatter?.type === "session") {
-              sessionFiles.push(item);
-            }
-          }
-        }
-      }
-    }
+    const sessionFiles = this.getSessionFiles();
 
     if (sessionFiles.length === 0) {
       content.createEl("p", { 
