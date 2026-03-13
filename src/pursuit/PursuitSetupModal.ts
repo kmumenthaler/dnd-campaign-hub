@@ -22,6 +22,27 @@ import type {
 } from "./types";
 import { parseSpeed, SIZE_WEIGHT_ESTIMATE, computeCarryPenalty } from "./types";
 
+/** Extract a numeric skill bonus from a skillsaves frontmatter array.
+ *  skillsaves is stored as `[{stealth: 5}, {perception: 3}]`. */
+function extractSkillBonus(skillsaves: unknown, skillName: string): number | null {
+  if (!Array.isArray(skillsaves)) return null;
+  const lower = skillName.toLowerCase();
+  for (const entry of skillsaves) {
+    if (typeof entry !== "object" || entry === null) continue;
+    for (const [key, val] of Object.entries(entry as Record<string, unknown>)) {
+      if (key.toLowerCase() === lower && typeof val === "number") return val;
+    }
+  }
+  return null;
+}
+
+/** Extract Passive Perception from a senses string like "darkvision 60 ft., Passive Perception 14". */
+function extractPassivePerception(senses: unknown): number | null {
+  if (typeof senses !== "string") return null;
+  const m = senses.match(/Passive Perception\s+(\d+)/i);
+  return m ? parseInt(m[1]!, 10) : null;
+}
+
 /** Minimal data for a vault entity we can add to a chase. */
 interface VaultEntity {
   name: string;
@@ -331,38 +352,31 @@ export class PursuitSetupModal extends Modal {
       const rawSpeed = fm.speed;
       const speeds = parseSpeed(rawSpeed);
 
-      // STR
-      let strScore = 10;
-      if (isCreature && Array.isArray(fm.stats) && fm.stats.length >= 1) {
-        strScore = typeof fm.stats[0] === "number" ? fm.stats[0] : 10;
-      }
+      // ── Ability scores (all types can have stats[]) ──
+      const hasStats = Array.isArray(fm.stats) && fm.stats.length >= 6;
+      const str = hasStats && typeof fm.stats[0] === "number" ? fm.stats[0] : 10;
+      const dex = hasStats && typeof fm.stats[1] === "number" ? fm.stats[1] : 10;
+      const con = hasStats && typeof fm.stats[2] === "number" ? fm.stats[2] : 10;
+      const wis = hasStats && typeof fm.stats[4] === "number" ? fm.stats[4] : 10;
+      const dexMod = Math.floor((dex - 10) / 2);
+      const conMod = Math.floor((con - 10) / 2);
+      const wisMod = Math.floor((wis - 10) / 2);
 
-      // CON modifier
-      let conMod = 0;
-      if (isCreature && Array.isArray(fm.stats) && fm.stats.length >= 3) {
-        const con = typeof fm.stats[2] === "number" ? fm.stats[2] : 10;
-        conMod = Math.floor((con - 10) / 2);
-      }
+      // Initiative bonus: PCs may store a separate init_bonus
+      const initBonus = isPlayer && typeof fm.init_bonus === "number" ? fm.init_bonus : dexMod;
 
-      // DEX modifier (for stealth and initiative)
-      let dexMod = 0;
-      if (isPlayer && typeof fm.init_bonus === "number") {
-        dexMod = fm.init_bonus;
-      } else if (isCreature && Array.isArray(fm.stats) && fm.stats.length >= 2) {
-        const dex = typeof fm.stats[1] === "number" ? fm.stats[1] : 10;
-        dexMod = Math.floor((dex - 10) / 2);
-      }
+      // ── Stealth: prefer skillsaves, fall back to DEX mod ──
+      const stealthMod = extractSkillBonus(fm.skillsaves, "stealth") ?? dexMod;
 
-      // WIS modifier (for perception)
-      let wisMod = 0;
-      if (isCreature && Array.isArray(fm.stats) && fm.stats.length >= 5) {
-        const wis = typeof fm.stats[4] === "number" ? fm.stats[4] : 10;
-        wisMod = Math.floor((wis - 10) / 2);
-      }
+      // ── Perception: prefer skillsaves, fall back to WIS mod ──
+      const percMod = extractSkillBonus(fm.skillsaves, "perception") ?? wisMod;
+
+      // ── Passive Perception: prefer senses string, else 10 + percMod ──
+      const passivePerc = extractPassivePerception(fm.senses) ?? (10 + percMod);
 
       // Size → weight estimate
       let size = "medium";
-      if (isCreature && typeof fm.size === "string") {
+      if (typeof fm.size === "string") {
         size = fm.size.toLowerCase();
       }
 
@@ -375,12 +389,12 @@ export class PursuitSetupModal extends Modal {
         notePath: file.path,
         type: isPlayer ? "player" : isCreature ? "creature" : "npc",
         speed: speeds,
-        strScore,
+        strScore: str,
         conModifier: conMod,
-        stealthModifier: dexMod, // Default to DEX mod; GM can override
-        passivePerception: 10 + wisMod,
-        perceptionModifier: wisMod,
-        initBonus: dexMod,
+        stealthModifier: stealthMod,
+        passivePerception: passivePerc,
+        perceptionModifier: percMod,
+        initBonus,
         currentHP: hp,
         maxHP,
         size,
@@ -402,7 +416,9 @@ export class PursuitSetupModal extends Modal {
       let strScore = 10;
       let conMod = 0;
       let dexMod = c.modifier;
-      let wisMod = 0;
+      let stealthMod = dexMod;
+      let percMod = 0;
+      let passivePerc = 10;
       let size = "medium";
 
       if (c.notePath) {
@@ -412,12 +428,18 @@ export class PursuitSetupModal extends Modal {
           const fm = cache?.frontmatter;
           if (fm) {
             speeds = parseSpeed(fm.speed);
-            if (Array.isArray(fm.stats) && fm.stats.length >= 6) {
+            const hasStats = Array.isArray(fm.stats) && fm.stats.length >= 6;
+            if (hasStats) {
               strScore = typeof fm.stats[0] === "number" ? fm.stats[0] : 10;
+              const dex = typeof fm.stats[1] === "number" ? fm.stats[1] : 10;
               const con = typeof fm.stats[2] === "number" ? fm.stats[2] : 10;
-              conMod = Math.floor((con - 10) / 2);
               const wis = typeof fm.stats[4] === "number" ? fm.stats[4] : 10;
-              wisMod = Math.floor((wis - 10) / 2);
+              dexMod = Math.floor((dex - 10) / 2);
+              conMod = Math.floor((con - 10) / 2);
+              const wisMod = Math.floor((wis - 10) / 2);
+              stealthMod = extractSkillBonus(fm.skillsaves, "stealth") ?? dexMod;
+              percMod = extractSkillBonus(fm.skillsaves, "perception") ?? wisMod;
+              passivePerc = extractPassivePerception(fm.senses) ?? (10 + percMod);
             }
             if (typeof fm.init_bonus === "number") dexMod = fm.init_bonus;
             if (typeof fm.size === "string") size = fm.size.toLowerCase();
@@ -432,9 +454,9 @@ export class PursuitSetupModal extends Modal {
         speed: speeds,
         strScore,
         conModifier: conMod,
-        stealthModifier: dexMod,
-        passivePerception: 10 + wisMod,
-        perceptionModifier: wisMod,
+        stealthModifier: stealthMod,
+        passivePerception: passivePerc,
+        perceptionModifier: percMod,
         initBonus: dexMod,
         currentHP: c.currentHP,
         maxHP: c.maxHP,
