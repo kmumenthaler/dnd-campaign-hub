@@ -2,6 +2,7 @@ import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { FACTION_TEMPLATE } from '../templates';
 import { TEMPLATE_VERSIONS } from "../migration";
+import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
 
 export class FactionCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -274,31 +275,28 @@ export class FactionCreationModal extends Modal {
       }
 
       // Get current date
-      const currentDate = new Date().toISOString().split('T')[0];
+      const currentDate = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
       const factionTemplateVersion = TEMPLATE_VERSIONS.faction || "1.1.0";
 
-      // Build complete frontmatter
-      const frontmatter = `---
-type: faction
-    template_version: ${factionTemplateVersion}
-name: ${this.factionName}
-campaign: ${campaignName}
-world: ${worldName}
-main_goal: "${this.mainGoal}"
-pursuit_method: "${this.pursuitMethod}"
-leader: ${this.leader}
-size: ${this.size}
-resources: "${this.resources}"
-reputation: "${this.reputation}"
-territories: "${this.territories}"
-allies: "${this.allies}"
-enemies: "${this.enemies}"
-active_problem: "${this.activeProblem}"
-date: ${currentDate}
----`;
-
-      // Replace the frontmatter
-      factionContent = factionContent.replace(/^---\n[\s\S]*?\n---/, frontmatter);
+      factionContent = updateYamlFrontmatter(factionContent, (fm) => ({
+        ...fm,
+        type: "faction",
+        template_version: factionTemplateVersion,
+        name: this.factionName,
+        campaign: campaignName,
+        world: worldName,
+        main_goal: this.mainGoal,
+        pursuit_method: this.pursuitMethod,
+        leader: this.leader,
+        size: this.size,
+        resources: this.resources,
+        reputation: this.reputation,
+        territories: this.territories,
+        allies: this.allies,
+        enemies: this.enemies,
+        active_problem: this.activeProblem,
+        date: currentDate,
+      }));
       
       // Replace the title and template references
       factionContent = factionContent
