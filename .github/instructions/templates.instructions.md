@@ -14,3 +14,4 @@ Every template constant (e.g. `PC_TEMPLATE`, `NPC_TEMPLATE`) follows these rules
 5. **Never remove frontmatter fields** — existing user notes depend on them. Only add new fields with sensible defaults.
 6. **Action buttons use `dnd-hub` code blocks** — a single ` ```dnd-hub\n``` ` block in each entity template. The plugin renders buttons dynamically based on the note's `type` via `renderNoteActions()` in `main.ts`. **Do NOT use inline dataviewjs button blocks for entity actions.**
 7. **To add/change buttons**, edit `renderNoteActions()` in `main.ts` — no template or migration change is needed.
+8. **Before build/deploy after template changes**, run `npm run check`, `npm run test`, then `npm run build`.

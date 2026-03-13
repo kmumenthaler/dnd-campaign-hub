@@ -21,7 +21,7 @@ The migration system uses a **registry pattern**. Each migration is a self-conta
 2. Add a new `MigrationStep` object in the correct entity-type section, sorted by version.
 3. Update `TEMPLATE_VERSIONS` in `src/migration/types.ts` to the new target version.
 4. Update `template_version` in the template constant in `src/templates.ts` to match.
-5. Build and test.
+5. Validate and verify in this order: `npm run check`, `npm run test`, then `npm run build`.
 
 ## MigrationStep Contract
 

@@ -13,13 +13,24 @@ Always follow this sequence when implementing a feature or bug fix:
 
 1. **Plan** — Analyze the change, identify affected files, design the approach with a focus on performance and user-friendly design.
 2. **Implement** — Write future-proof, human-readable, maintainable code.
-3. **Validate** — Check for compile errors and fix them.
-4. **Build** — Run `npm run build` from the workspace root.
-5. **Deploy** — Copy artifacts to the Obsidian test vault (see Deploy section).
-6. **Commit** — Stage and commit with a conventional commit message.
-7. **Inform** — Tell the user what changed and how to test it in Obsidian.
+3. **Validate** — Run `npm run check` and fix compile/type errors.
+4. **Test** — Run `npm run test` and fix failing tests.
+5. **Build** — Run `npm run build` from the workspace root.
+6. **Deploy** — Copy artifacts to the Obsidian test vault (see Deploy section).
+7. **Commit** — Stage and commit with a conventional commit message.
+8. **Inform** — Tell the user what changed and how to test it in Obsidian.
 
-## Build & Deploy
+## Validate, Test, Build & Deploy
+
+Validate:
+```powershell
+npm run check
+```
+
+Test:
+```powershell
+npm run test
+```
 
 Build:
 ```powershell
@@ -77,7 +88,7 @@ When instructed to create a release:
 
 ## Constraints
 
-- Do NOT skip the build step — always verify the plugin compiles.
-- Do NOT deploy untested code — build must succeed before copying.
+- Do NOT skip validation/tests/build — `npm run check`, `npm run test`, and `npm run build` must all pass before deploy.
+- Do NOT deploy untested code.
 - Do NOT remove user data during migrations.
 - Do NOT commit without a meaningful conventional commit message.
