@@ -230,6 +230,38 @@ function summarizeDescription(value: string, maxLen: number = 320): string {
   return `${text.slice(0, maxLen).trimEnd()}...`;
 }
 
+function shouldSkipNonStatblockTrait(name: string): boolean {
+  const key = name.trim().toLowerCase();
+  if (!key) return true;
+  const blocked = new Set([
+    "age",
+    "alignment",
+    "size",
+    "speed",
+    "languages",
+    "language",
+    "darkvision",
+    "creature type",
+    "ability score increase",
+    "ability score increases",
+  ]);
+  if (blocked.has(key)) return true;
+  if (/^core\s+.+\s+traits$/i.test(name)) return true;
+  if (/^spellcasting$/i.test(name)) return true;
+  return false;
+}
+
+function getScaleValue(feature: any): number | undefined {
+  const scale = feature?.levelScale;
+  const direct = asNumber(scale?.fixedValue ?? scale?.value);
+  if (direct > 0) return direct;
+
+  const uses = asNumber(feature?.definition?.limitedUse?.[0]?.uses);
+  if (uses > 0) return uses;
+
+  return undefined;
+}
+
 function collectModifiers(data: any): any[] {
   return [
     ...(Array.isArray(data?.modifiers?.race) ? data.modifiers.race : []),
@@ -449,7 +481,7 @@ function collectSpellLines(data: any, abilities: AbilityScores, totalLevel: numb
   return lines;
 }
 
-function collectFeatTraits(data: any): StatblockEntry[] {
+function collectFeatTraits(data: any, ctx: ImportContext): StatblockEntry[] {
   const feats = Array.isArray(data?.feats) ? data.feats : [];
   const out: StatblockEntry[] = [];
   for (const feat of feats) {
@@ -457,14 +489,10 @@ function collectFeatTraits(data: any): StatblockEntry[] {
     if (!name) continue;
     out.push({
       name,
-      desc: `${withDdbLink(name, "feats")}: ${resolveDescription(feat, { abilities: defaultAbilities(), totalLevel: 1 })}`,
+      desc: `${withDdbLink(name, "feats")}: ${resolveDescription(feat, ctx)}`,
     });
   }
   return out;
-}
-
-function defaultAbilities(): AbilityScores {
-  return { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
 }
 
 function collectOptionTraits(data: any, ctx: ImportContext): StatblockEntry[] {
@@ -490,10 +518,9 @@ function collectClassAndSpeciesTraits(data: any, ctx: ImportContext): { classTra
   const pushTrait = (nameRaw: string, descRaw: string, bucket: "class" | "species") => {
     const name = nameRaw.trim();
     if (!name) return;
+    if (shouldSkipNonStatblockTrait(name)) return;
     const seen = bucket === "class" ? seenClass : seenSpecies;
     if (seen.has(name.toLowerCase())) return;
-    if (/^core\s+.+\s+traits$/i.test(name)) return;
-    if (/^spellcasting$/i.test(name)) return;
 
     const desc = summarizeDescription(resolveDdbTemplateExpressions(descRaw || "", ctx));
     if (!desc) return;
@@ -519,7 +546,8 @@ function collectClassAndSpeciesTraits(data: any, ctx: ImportContext): { classTra
       if (requiredLevel > 0 && requiredLevel > classLevel) continue;
       const name = String(def.name || "");
       const desc = String(def.snippet || def.description || "");
-      pushTrait(name, desc, "class");
+      const localCtx: ImportContext = { ...ctx, scaleValue: getScaleValue(feature) };
+      pushTrait(name, resolveDdbTemplateExpressions(desc, localCtx), "class");
     }
 
     const subclassDef = cls?.subclassDefinition;
@@ -540,7 +568,8 @@ function collectClassAndSpeciesTraits(data: any, ctx: ImportContext): { classTra
     if (requiredLevel > 0 && requiredLevel > ctx.totalLevel) continue;
     const name = String(def.name || "");
     const desc = String(def.snippet || def.description || "");
-    pushTrait(name, desc, "species");
+    const localCtx: ImportContext = { ...ctx, scaleValue: getScaleValue(trait) };
+    pushTrait(name, resolveDdbTemplateExpressions(desc, localCtx), "species");
   }
 
   return { classTraits, speciesTraits };
@@ -552,7 +581,8 @@ function collectFeatureActionEntries(data: any, ctx: ImportContext): { actions: 
   const reactions: StatblockEntry[] = [];
   const seen = new Set<string>();
 
-  const addFromDef = (def: any, currentLevel: number) => {
+  const addFromDef = (feature: any, currentLevel: number) => {
+    const def = feature?.definition;
     if (!def) return;
     if (def.hideInSheet === true) return;
     const requiredLevel = asNumber(def.requiredLevel);
@@ -564,7 +594,8 @@ function collectFeatureActionEntries(data: any, ctx: ImportContext): { actions: 
     const activationType = asNumber(def?.activation?.activationType);
     if (activationType !== 1 && activationType !== 3 && activationType !== 4) return;
 
-    const desc = summarizeDescription(resolveDdbTemplateExpressions(String(def.snippet || def.description || ""), ctx));
+    const localCtx: ImportContext = { ...ctx, scaleValue: getScaleValue(feature) };
+    const desc = summarizeDescription(resolveDdbTemplateExpressions(String(def.snippet || def.description || ""), localCtx));
     if (!desc) return;
 
     const key = `${name.toLowerCase()}::${activationType}`;
@@ -582,13 +613,13 @@ function collectFeatureActionEntries(data: any, ctx: ImportContext): { actions: 
     const currentLevel = asNumber(cls?.level);
     const classFeatures = Array.isArray(cls?.classFeatures) ? cls.classFeatures : [];
     for (const feature of classFeatures) {
-      addFromDef(feature?.definition, currentLevel);
+      addFromDef(feature, currentLevel);
     }
   }
 
   const racialTraits = Array.isArray(data?.race?.racialTraits) ? data.race.racialTraits : [];
   for (const trait of racialTraits) {
-    addFromDef(trait?.definition, ctx.totalLevel);
+    addFromDef(trait, ctx.totalLevel);
   }
 
   return { actions, bonusActions, reactions };
@@ -674,7 +705,7 @@ function collectWeaponActions(data: any, abilities: AbilityScores, proficiencyBo
   return out;
 }
 
-function collectActionEntries(data: any): { actions: StatblockEntry[]; bonusActions: StatblockEntry[]; reactions: StatblockEntry[] } {
+function collectActionEntries(data: any, ctx: ImportContext): { actions: StatblockEntry[]; bonusActions: StatblockEntry[]; reactions: StatblockEntry[] } {
   const items = [
     ...(Array.isArray(data?.actions) ? data.actions : []),
     ...(Array.isArray(data?.customActions) ? data.customActions : []),
@@ -687,7 +718,7 @@ function collectActionEntries(data: any): { actions: StatblockEntry[]; bonusActi
   for (const item of items) {
     const name = String(item?.definition?.name || item?.name || "").trim();
     if (!name) continue;
-    const desc = resolveDescription(item, { abilities: defaultAbilities(), totalLevel: 1 });
+    const desc = resolveDescription(item, ctx);
     const activationType = asNumber(item?.definition?.activation?.activationType ?? item?.activation?.activationType);
     if (activationType === 3) {
       bonusActions.push({ name, desc });
@@ -755,14 +786,14 @@ export async function importFromDndBeyond(source: string): Promise<DndBeyondPcIm
     cha: resolveAbilityScore(data, 6) || 10,
   };
 
-  const featTraits = collectFeatTraits(data);
   const importCtx: ImportContext = { abilities, totalLevel };
+  const featTraits = collectFeatTraits(data, importCtx);
   const optionTraits = collectOptionTraits(data, importCtx);
   const classSpeciesTraits = collectClassAndSpeciesTraits(data, importCtx);
   const proficiencyBonus = getProficiencyBonus(totalLevel);
   const skillsaves = collectSkillSaves(data, abilities, totalLevel);
   const scopedSkillTraits = collectScopedSkillTraits(data, abilities, totalLevel);
-  const actionEntries = collectActionEntries(data);
+  const actionEntries = collectActionEntries(data, importCtx);
   const weaponActions = collectWeaponActions(data, abilities, proficiencyBonus);
   const featureActions = collectFeatureActionEntries(data, importCtx);
   const spells = collectSpellLines(data, abilities, totalLevel);

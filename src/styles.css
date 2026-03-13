@@ -225,6 +225,19 @@
   border-color: var(--interactive-accent);
 }
 
+/* Keep wide Fantasy Statblocks readable in constrained note panes */
+.markdown-reading-view .statblock,
+.markdown-preview-view .statblock {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.markdown-reading-view .statblock-content,
+.markdown-preview-view .statblock-content {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 /* Dependency Modal Styles */
 .dnd-dependency-list {
   margin: 15px 0;
