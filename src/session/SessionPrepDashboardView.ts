@@ -1,13 +1,20 @@
-import { App, ItemView, Notice, Setting, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { App, ItemView, TAbstractFile, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { SESSION_PREP_VIEW_TYPE } from "../constants";
 
 export class SessionPrepDashboardView extends ItemView {
+  private static readonly AUTO_REFRESH_MS = 30000;
+
   plugin: DndCampaignHubPlugin;
   campaignPath: string;
   private refreshInterval: number | null = null;
-  private activeLeafChangeRef: any = null;
+  private freshnessTickInterval: number | null = null;
+  private refreshDebounceTimeout: number | null = null;
   private expandedSections: Set<string> = new Set();
+  private isRendering = false;
+  private pendingRefreshReason: string | null = null;
+  private lastRenderedAt = 0;
+  private lastRefreshReason = "initial";
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -29,7 +36,98 @@ export class SessionPrepDashboardView extends ItemView {
 
   setCampaign(campaignPath: string) {
     this.campaignPath = campaignPath;
-    this.render();
+    this.requestRefresh("campaign changed", 0);
+  }
+
+  private isPathInCampaign(path: string): boolean {
+    if (!path || !this.campaignPath) return false;
+    return path === this.campaignPath || path.startsWith(`${this.campaignPath}/`);
+  }
+
+  private isRelevantFile(file: TAbstractFile | null | undefined): boolean {
+    return !!file && this.isPathInCampaign(file.path);
+  }
+
+  private requestRefresh(reason: string, delayMs = 200): void {
+    if (this.isRendering) {
+      this.pendingRefreshReason = reason;
+      return;
+    }
+
+    if (this.refreshDebounceTimeout !== null) {
+      window.clearTimeout(this.refreshDebounceTimeout);
+    }
+
+    this.refreshDebounceTimeout = window.setTimeout(() => {
+      this.refreshDebounceTimeout = null;
+      void this.render(reason);
+    }, delayMs);
+  }
+
+  private updateFreshnessDisplay(): void {
+    const freshness = this.containerEl.querySelector(".dashboard-freshness") as HTMLElement | null;
+    const freshnessValue = this.containerEl.querySelector(".dashboard-freshness-value") as HTMLElement | null;
+
+    if (!freshness || !freshnessValue) return;
+
+    if (!this.lastRenderedAt) {
+      freshnessValue.textContent = "Updating...";
+      freshness.classList.remove("is-stale");
+      return;
+    }
+
+    const ageMs = Date.now() - this.lastRenderedAt;
+    const ageSeconds = Math.max(0, Math.floor(ageMs / 1000));
+    const nextAutoRefreshMs = Math.max(0, SessionPrepDashboardView.AUTO_REFRESH_MS - (ageMs % SessionPrepDashboardView.AUTO_REFRESH_MS));
+    const nextAutoRefreshSeconds = Math.ceil(nextAutoRefreshMs / 1000);
+    const ageLabel = ageSeconds < 2 ? "just now" : `${ageSeconds}s ago`;
+
+    freshnessValue.textContent = `Updated ${ageLabel} | next auto refresh in ${nextAutoRefreshSeconds}s`;
+    freshnessValue.title = `Last refresh reason: ${this.lastRefreshReason}`;
+    freshness.classList.toggle("is-stale", ageSeconds >= 45);
+  }
+
+  private registerDataChangeListeners(): void {
+    this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => {
+      if (leaf?.view === this) {
+        this.requestRefresh("view focused", 0);
+        this.enableEditMode();
+      }
+    }));
+
+    this.registerEvent(this.app.vault.on("create", (file) => {
+      if (this.isRelevantFile(file)) this.requestRefresh("note created");
+    }));
+
+    this.registerEvent(this.app.vault.on("modify", (file) => {
+      if (this.isRelevantFile(file)) this.requestRefresh("note modified");
+    }));
+
+    this.registerEvent(this.app.vault.on("delete", (file) => {
+      if (this.isRelevantFile(file)) this.requestRefresh("note deleted");
+    }));
+
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      if (this.isRelevantFile(file) || this.isPathInCampaign(oldPath)) {
+        this.requestRefresh("note renamed");
+      }
+    }));
+
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+      if (this.isRelevantFile(file)) this.requestRefresh("frontmatter updated");
+    }));
+  }
+
+  private finalizeRender(): void {
+    this.lastRenderedAt = Date.now();
+    this.updateFreshnessDisplay();
+    this.isRendering = false;
+
+    if (this.pendingRefreshReason) {
+      const queuedReason = this.pendingRefreshReason;
+      this.pendingRefreshReason = null;
+      this.requestRefresh(queuedReason, 0);
+    }
   }
 
   private renderCampaignPicker(container: HTMLElement) {
@@ -62,7 +160,7 @@ export class SessionPrepDashboardView extends ItemView {
     this.containerEl.style.minWidth = "0";
     this.containerEl.style.maxWidth = "none";
     
-    await this.render();
+    await this.render("initial load");
 
     // Force all open notes into editing (source) mode for prep work
     setTimeout(() => {
@@ -71,16 +169,14 @@ export class SessionPrepDashboardView extends ItemView {
 
     // Set up auto-refresh every 30 seconds
     this.refreshInterval = window.setInterval(() => {
-      this.render();
-    }, 30000);
+      this.requestRefresh("auto refresh", 0);
+    }, SessionPrepDashboardView.AUTO_REFRESH_MS);
 
-    // Refresh and enforce edit mode when this view becomes active
-    this.activeLeafChangeRef = this.app.workspace.on('active-leaf-change', (leaf) => {
-      if (leaf?.view === this) {
-        this.render();
-        this.enableEditMode();
-      }
-    });
+    this.freshnessTickInterval = window.setInterval(() => {
+      this.updateFreshnessDisplay();
+    }, 1000);
+
+    this.registerDataChangeListeners();
   }
 
   enableEditMode() {
@@ -96,7 +192,15 @@ export class SessionPrepDashboardView extends ItemView {
     });
   }
 
-  async render() {
+  async render(reason = "manual") {
+    if (this.isRendering) {
+      this.pendingRefreshReason = reason;
+      return;
+    }
+
+    this.isRendering = true;
+    this.lastRefreshReason = reason;
+
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass("session-prep-dashboard");
@@ -104,66 +208,68 @@ export class SessionPrepDashboardView extends ItemView {
     // If no campaign resolved, show picker
     if (!this.campaignPath) {
       this.renderCampaignPicker(container);
+      this.finalizeRender();
       return;
     }
 
-    // Compact Header
-    const header = container.createEl("div", { cls: "dashboard-header" });
-    const headerTitle = header.createEl("div", { cls: "dashboard-header-title" });
-    headerTitle.createEl("span", { text: "📋 Session Prep", cls: "dashboard-title" });
+    try {
+      // Compact Header
+      const header = container.createEl("div", { cls: "dashboard-header" });
+      const headerTitle = header.createEl("div", { cls: "dashboard-header-title" });
+      headerTitle.createEl("span", { text: "📋 Session Prep", cls: "dashboard-title" });
 
-    // Campaign selector dropdown in header
-    const campaigns = this.plugin.getAllCampaigns();
-    if (campaigns.length > 1) {
-      const select = headerTitle.createEl("select", { cls: "dashboard-campaign-select" });
-      for (const c of campaigns) {
-        const name = typeof c === "string" ? c : c.name;
-        const path = typeof c === "string" ? c : c.path;
-        const opt = select.createEl("option", { text: name, value: path });
-        if (path === this.campaignPath) opt.selected = true;
+      const freshness = header.createEl("div", { cls: "dashboard-freshness" });
+      freshness.createEl("span", { cls: "dashboard-freshness-dot" });
+      freshness.createEl("span", { cls: "dashboard-freshness-value", text: "Updating..." });
+
+      // Campaign selector dropdown in header
+      const campaigns = this.plugin.getAllCampaigns();
+      if (campaigns.length > 1) {
+        const select = headerTitle.createEl("select", { cls: "dashboard-campaign-select" });
+        for (const c of campaigns) {
+          const name = typeof c === "string" ? c : c.name;
+          const path = typeof c === "string" ? c : c.path;
+          const opt = select.createEl("option", { text: name, value: path });
+          if (path === this.campaignPath) opt.selected = true;
+        }
+        select.addEventListener("change", () => {
+          this.setCampaign(select.value);
+        });
+      } else {
+        const campaignName = this.campaignPath.split('/').pop() || "Unknown";
+        headerTitle.createEl("span", {
+          text: campaignName,
+          cls: "dashboard-campaign-name"
+        });
       }
-      select.addEventListener("change", () => {
-        this.setCampaign(select.value);
+
+      // Main action button
+      const mainAction = container.createEl("button", {
+        text: "📝 New Session",
+        cls: "dashboard-main-action mod-cta"
       });
-    } else {
-      const campaignName = this.campaignPath.split('/').pop() || "Unknown";
-      headerTitle.createEl("span", { 
-        text: campaignName,
-        cls: "dashboard-campaign-name"
+      mainAction.addEventListener("click", () => {
+        this.plugin.createSession();
       });
+
+      // Adventures & Next Scene (Primary focus)
+      await this.renderAdventuresAndScenes(container);
+
+      // Quick Actions (Collapsible)
+      await this.renderQuickActions(container);
+
+      // Party Overview (Collapsible)
+      await this.renderPartyStats(container);
+
+      // Recent NPCs (Collapsible)
+      await this.renderRecentNPCsSection(container);
+
+      // Last Session Recap (Collapsible)
+      await this.renderLastSessionRecap(container);
+    } finally {
+      this.finalizeRender();
     }
 
-    // Main action button
-    const mainAction = container.createEl("button", {
-      text: "📝 New Session",
-      cls: "dashboard-main-action mod-cta"
-    });
-    mainAction.addEventListener("click", () => {
-      this.plugin.createSession();
-    });
-
-    // Adventures & Next Scene (Primary focus)
-    await this.renderAdventuresAndScenes(container);
-
-    // Quick Actions (Collapsible)
-    await this.renderQuickActions(container);
-
-    // Party Overview (Collapsible)
-    await this.renderPartyStats(container);
-
-    // Recent NPCs (Collapsible)
-    await this.renderRecentNPCsSection(container);
-
-    // Last Session Recap (Collapsible)
-    await this.renderLastSessionRecap(container);
-
-    // Footer with refresh
-    const footer = container.createEl("div", { cls: "dashboard-footer" });
-    const refreshBtn = footer.createEl("button", { 
-      text: "🔄",
-      cls: "dashboard-refresh-btn"
-    });
-    refreshBtn.addEventListener("click", () => this.render());
   }
 
   async renderQuickActions(container: HTMLElement) {
@@ -855,10 +961,14 @@ export class SessionPrepDashboardView extends ItemView {
       this.refreshInterval = null;
     }
 
-    // Unregister workspace event listener
-    if (this.activeLeafChangeRef) {
-      this.app.workspace.offref(this.activeLeafChangeRef);
-      this.activeLeafChangeRef = null;
+    if (this.freshnessTickInterval !== null) {
+      window.clearInterval(this.freshnessTickInterval);
+      this.freshnessTickInterval = null;
+    }
+
+    if (this.refreshDebounceTimeout !== null) {
+      window.clearTimeout(this.refreshDebounceTimeout);
+      this.refreshDebounceTimeout = null;
     }
   }
 }
