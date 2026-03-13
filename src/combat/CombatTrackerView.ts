@@ -403,6 +403,7 @@ export class CombatTrackerView extends ItemView {
       if ((leaf.view as any)?.file?.path === tempPath) {
         await leaf.openFile(file, { state: { mode: "preview" } });
         this.app.workspace.revealLeaf(leaf);
+        this.restrictTabMenu(leaf);
         return;
       }
     }
@@ -410,6 +411,29 @@ export class CombatTrackerView extends ItemView {
     // Otherwise split below the combat tracker
     const newLeaf = this.app.workspace.createLeafBySplit(this.leaf, "horizontal", false);
     await newLeaf.openFile(file, { state: { mode: "preview" } });
+    this.restrictTabMenu(newLeaf);
+  }
+
+  /** Replace the default tab right-click menu with only a "Close" option. */
+  private restrictTabMenu(leaf: WorkspaceLeaf) {
+    const tabHeader = (leaf as any).tabHeaderEl as HTMLElement | undefined;
+    if (!tabHeader) return;
+
+    const handler = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const menu = new Menu();
+      menu.addItem((item) =>
+        item.setTitle("Close").setIcon("x").onClick(() => leaf.detach()),
+      );
+      menu.showAtMouseEvent(e);
+    };
+
+    // Remove any previously attached handler
+    const prev = (tabHeader as any)._dndStatblockCtx as ((e: MouseEvent) => void) | undefined;
+    if (prev) tabHeader.removeEventListener("contextmenu", prev, true);
+    (tabHeader as any)._dndStatblockCtx = handler;
+    tabHeader.addEventListener("contextmenu", handler, true);
   }
 
   /** Open a note in a split leaf below the tracker (for PCs). */
