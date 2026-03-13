@@ -1592,7 +1592,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 		};
 
 		const cmd = (id: string) => () => {
-			this.app.commands.executeCommandById(`dnd-campaign-hub:${id}`);
+			(this.app as any).commands.executeCommandById(`dnd-campaign-hub:${id}`);
 		};
 
 		switch (type) {
