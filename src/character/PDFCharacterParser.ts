@@ -268,6 +268,11 @@ const DE_SAVE_FIELD_MAP: Record<string, string> = {
 /*  Core parsing logic                                                 */
 /* ------------------------------------------------------------------ */
 
+/** Normalise a field name for consistent lookups across Unicode forms. */
+function nfcKey(s: string): string {
+  return s.normalize("NFC").toLowerCase().trim();
+}
+
 /**
  * Parse a fillable PDF character sheet and extract as much PC data
  * as possible.  Returns an object whose fields are populated best-effort.
@@ -279,14 +284,14 @@ export async function parsePDFCharacterSheet(
   const form = pdf.getForm();
   const allFields = form.getFields();
 
-  // Build a lookup: lowercase field name → text value
+  // Build a lookup: NFC-normalised lowercase field name → text value
   const fieldMap = new Map<string, string>();
   for (const field of allFields) {
     const key = field.getName();
     if (field instanceof PDFTextField) {
-      fieldMap.set(key.toLowerCase().trim(), field.getText() ?? "");
+      fieldMap.set(nfcKey(key), field.getText() ?? "");
     } else if (field instanceof PDFCheckBox) {
-      fieldMap.set(key.toLowerCase().trim(), field.isChecked() ? "true" : "false");
+      fieldMap.set(nfcKey(key), field.isChecked() ? "true" : "false");
     }
   }
 
@@ -298,7 +303,8 @@ export async function parsePDFCharacterSheet(
     const candidates = profile.fields[logicalKey];
     if (!candidates) return "";
     for (const c of candidates) {
-      const val = fieldMap.get(c.toLowerCase().trim());
+      if (!c) continue; // skip empty candidates
+      const val = fieldMap.get(nfcKey(c));
       if (val) return val.trim();
     }
     return "";
@@ -358,7 +364,7 @@ export async function parsePDFCharacterSheet(
     }
   }
 
-  return {
+  const result: PDFPcImportData = {
     name: get("characterName"),
     playerName: get("playerName"),
     classes,
@@ -377,6 +383,24 @@ export async function parsePDFCharacterSheet(
     spells,
     profileUsed: profile.name,
   };
+
+  console.log("[PDFCharacterParser] Parsed result:", {
+    profile: profile.name,
+    name: result.name,
+    class: result.classes.join("/"),
+    level: result.level,
+    hp: `${result.hpCurrent}/${result.hpMax}`,
+    ac: result.ac,
+    speed: result.speed,
+    abilities: result.abilities,
+    skills: result.skillsaves.length,
+    traits: result.traits.length,
+    actions: result.actions.length,
+    spells: result.spells.length,
+    languages: result.languages,
+  });
+
+  return result;
 }
 
 /* ------------------------------------------------------------------ */
@@ -394,7 +418,8 @@ function pickBestProfile(
     let score = 0;
     for (const candidates of Object.values(profile.fields)) {
       for (const c of candidates) {
-        if (fieldMap.has(c.toLowerCase().trim())) {
+        if (!c) continue; // skip empty candidates
+        if (fieldMap.has(nfcKey(c))) {
           score++;
           break; // only count each logical key once
         }
@@ -404,7 +429,9 @@ function pickBestProfile(
       bestScore = score;
       best = profile;
     }
+    console.log(`[PDFCharacterParser] Profile "${profile.name}" score: ${score}`);
   }
+  console.log(`[PDFCharacterParser] Selected profile: "${best.name}" (score ${bestScore})`);
   return best;
 }
 
@@ -686,7 +713,8 @@ function resolveTextField(
   candidates: string[],
 ): string {
   for (const c of candidates) {
-    const val = fieldMap.get(c.toLowerCase().trim());
+    if (!c) continue;
+    const val = fieldMap.get(nfcKey(c));
     if (val?.trim()) return val.trim();
   }
   return "";
@@ -733,6 +761,12 @@ export async function dumpPDFFields(
 
     result.push({ name, type, value });
   }
+
+  // Also log NFC-normalised keys with values for debugging encoding issues
+  const nfcKeys = result
+    .filter(f => f.type === "text" && f.value)
+    .map(f => `${nfcKey(f.name)} = ${f.value.slice(0, 40)}`);
+  console.log("[PDFCharacterParser] NFC keys with values:", nfcKeys);
 
   return result;
 }
