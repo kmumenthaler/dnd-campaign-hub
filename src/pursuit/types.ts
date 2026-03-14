@@ -298,6 +298,8 @@ export interface PursuitParticipant {
   notePath?: string;
   /** Token marker id from MarkerLibrary. */
   tokenId?: string;
+  /** Combat tracker combatant ID (for sync when started from combat). */
+  combatantId?: string;
 }
 
 // ── Chase environment ──────────────────────────────────────────

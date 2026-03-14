@@ -151,6 +151,7 @@ import { PursuitTracker } from './pursuit/PursuitTracker';
 import { PursuitTrackerView } from './pursuit/PursuitTrackerView';
 import { PursuitPlayerView } from './pursuit/PursuitPlayerView';
 import { PursuitSetupModal } from './pursuit/PursuitSetupModal';
+import { CombatPursuitSync } from './pursuit/CombatPursuitSync';
 
 // ── Extracted function modules ──
 import { renderMapView as renderMapViewFn } from './map-views/renderMapView';
@@ -193,6 +194,7 @@ export default class DndCampaignHubPlugin extends Plugin {
   encounterBuilder!: EncounterBuilder;
   combatTracker!: CombatTracker;
   pursuitTracker!: PursuitTracker;
+  combatPursuitSync: CombatPursuitSync | null = null;
   partyManager!: PartyManager;
   mapManager!: MapManager;
   mapController!: MapController;
@@ -1093,6 +1095,10 @@ export default class DndCampaignHubPlugin extends Plugin {
       id: "end-pursuit",
       name: "🛑 End Pursuit",
       callback: () => {
+        if (this.combatPursuitSync) {
+          this.combatPursuitSync.teardown();
+          this.combatPursuitSync = null;
+        }
         this.pursuitTracker.endChase("gm-ended");
         new Notice("Pursuit ended.");
       },

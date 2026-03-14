@@ -12,6 +12,7 @@
 import { App, Modal, Notice, Setting, TFile } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import type { CombatState } from "../combat/types";
+import { CombatPursuitSync } from "./CombatPursuitSync";
 import type {
   PursuitParticipant,
   PursuitRole,
@@ -100,6 +101,7 @@ interface CreatureEntry {
   hasTremorsense: boolean;
   combatInitiative?: number;
   isPlayer?: boolean;
+  combatantId?: string;
 }
 
 export class PursuitSetupModal extends Modal {
@@ -998,6 +1000,7 @@ export class PursuitSetupModal extends Modal {
         hasTremorsense: false,
         combatInitiative: c.initiative,
         isPlayer: c.player === true,
+        combatantId: c.id,
       });
     }
   }
@@ -1131,6 +1134,7 @@ export class PursuitSetupModal extends Modal {
           complicationLoSBreak: false,
           notePath: c.notePath,
           tokenId: c.tokenId,
+          combatantId: c.combatantId,
           wisModifier: c.wisModifier,
           intModifier: c.intModifier,
           chaModifier: c.chaModifier,
@@ -1163,6 +1167,14 @@ export class PursuitSetupModal extends Modal {
       // Start on the combatant whose turn it was in combat
       const activeCombatant = this.fromCombat.combatants[this.fromCombat.turnIndex];
       this.plugin.pursuitTracker.startChase(activeCombatant?.name);
+
+      // Activate bidirectional sync between combat and pursuit
+      if (this.plugin.combatPursuitSync) this.plugin.combatPursuitSync.teardown();
+      this.plugin.combatPursuitSync = new CombatPursuitSync(
+        this.plugin.combatTracker,
+        this.plugin.pursuitTracker,
+      );
+      this.plugin.combatPursuitSync.activate();
     }
 
     this.close();
