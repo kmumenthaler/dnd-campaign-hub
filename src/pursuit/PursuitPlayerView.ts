@@ -196,33 +196,9 @@ export class PursuitPlayerView extends ItemView {
 
     this.tokenPositions.clear();
 
-    // Quarry Y positions: evenly spread in top 20%-55% of scene
-    quarries.forEach((q, i) => {
-      const x = this.posToPercent(q.position, rangeStart, rangeSize);
-      const yStep = quarries.length > 1 ? 35 / (quarries.length - 1) : 0;
-      const y = quarries.length === 1 ? 30 : 20 + i * yStep;
-      this.tokenPositions.set(q.id, { x, y });
-    });
-
-    // Pursuer Y positions: gravitate toward their target quarry's Y
-    for (const p of pursuers) {
-      const x = this.posToPercent(p.position, rangeStart, rangeSize);
-      let y = 70; // default bottom area
-      if (p.activeTargetId) {
-        const targetPos = this.tokenPositions.get(p.activeTargetId);
-        if (targetPos) {
-          // The closer the pursuer, the more their y converges on the target's y
-          const target = state.participants.find((q) => q.id === p.activeTargetId);
-          if (target) {
-            const dist = Math.abs(p.position - target.position);
-            const maxDist = rangeSize * 0.8;
-            const closeness = 1 - Math.min(dist / maxDist, 1); // 0 = far, 1 = close
-            y = targetPos.y + (70 - targetPos.y) * (1 - closeness * 0.7);
-          }
-        }
-      }
-      this.tokenPositions.set(p.id, { x, y });
-    }
+    // Layout tokens by grouping same-position tokens and spreading them
+    this.layoutTokenGroup(quarries, rangeStart, rangeSize, 10, 50);
+    this.layoutTokenGroup(pursuers, rangeStart, rangeSize, 55, 92);
 
     // ── Collision resolution: nudge overlapping tokens ──
     this.resolveOverlaps(visible.filter((p) => !p.escaped && !p.droppedOut));
@@ -288,6 +264,68 @@ export class PursuitPlayerView extends ItemView {
     }
   }
 
+  // ── Token Layout ───────────────────────────────────────────
+
+  /**
+   * Lay out a group of tokens (quarries or pursuers) within a Y band.
+   * Tokens at the same position get spread vertically and nudged
+   * horizontally to avoid overlap.
+   */
+  private layoutTokenGroup(
+    tokens: PursuitParticipant[],
+    rangeStart: number,
+    rangeSize: number,
+    yMin: number,
+    yMax: number,
+  ) {
+    if (tokens.length === 0) return;
+
+    // Group tokens by their position (feet)
+    const groups = new Map<number, PursuitParticipant[]>();
+    for (const p of tokens) {
+      const existing = groups.get(p.position) ?? [];
+      existing.push(p);
+      groups.set(p.position, existing);
+    }
+
+    // For each position group, spread tokens vertically within the band
+    const yRange = yMax - yMin;
+    const totalTokens = tokens.length;
+
+    // If only one group, spread all tokens evenly across the full Y band
+    if (groups.size === 1) {
+      const group = [...groups.values()][0]!;
+      const baseX = this.posToPercent(group[0]!.position, rangeStart, rangeSize);
+      const step = totalTokens > 1 ? yRange / (totalTokens - 1) : 0;
+      const xSpread = Math.min(3, 12 / totalTokens); // slight horizontal spread
+      group.forEach((p, i) => {
+        const y = totalTokens === 1 ? yMin + yRange / 2 : yMin + i * step;
+        const xOffset = totalTokens > 1 ? (i - (totalTokens - 1) / 2) * xSpread : 0;
+        this.tokenPositions.set(p.id, { x: baseX + xOffset, y });
+      });
+      return;
+    }
+
+    // Multiple position groups: spread each group in its own vertical sub-band
+    // Each group gets a proportional share of the Y space
+    let yOffset = yMin;
+    const sortedPositions = [...groups.keys()].sort((a, b) => a - b);
+
+    for (const pos of sortedPositions) {
+      const group = groups.get(pos)!;
+      const share = (group.length / totalTokens) * yRange;
+      const baseX = this.posToPercent(pos, rangeStart, rangeSize);
+      const step = group.length > 1 ? share / (group.length - 1) : 0;
+      const xSpread = Math.min(2.5, 10 / group.length);
+      group.forEach((p, i) => {
+        const y = group.length === 1 ? yOffset + share / 2 : yOffset + i * step;
+        const xOffset = group.length > 1 ? (i - (group.length - 1) / 2) * xSpread : 0;
+        this.tokenPositions.set(p.id, { x: baseX + xOffset, y });
+      });
+      yOffset += share + (yRange * 0.05); // small gap between position groups
+    }
+  }
+
   // ── Overlap Resolution ─────────────────────────────────────
 
   private resolveOverlaps(participants: PursuitParticipant[]) {
@@ -296,12 +334,11 @@ export class PursuitPlayerView extends ItemView {
       pos: this.tokenPositions.get(p.id)!,
     })).filter((e) => e.pos);
 
-    const minGapX = 8; // minimum horizontal gap (percent)
-    const minGapY = 16; // minimum vertical gap (percent)
+    const minGapX = 6;
+    const minGapY = 10;
 
     // Multiple passes to settle overlaps
-    for (let pass = 0; pass < 3; pass++) {
-      // Sort by x then y each pass
+    for (let pass = 0; pass < 5; pass++) {
       entries.sort((a, b) => a.pos.x - b.pos.x || a.pos.y - b.pos.y);
 
       for (let i = 0; i < entries.length; i++) {
@@ -312,14 +349,13 @@ export class PursuitPlayerView extends ItemView {
           const dy = Math.abs(a.pos.y - b.pos.y);
 
           if (dx < minGapX && dy < minGapY) {
-            // Nudge b away vertically
-            const shift = (minGapY - dy) / 2 + 1;
+            const shift = (minGapY - dy) / 2 + 0.5;
             if (b.pos.y >= a.pos.y) {
-              b.pos.y = Math.min(88, b.pos.y + shift);
-              a.pos.y = Math.max(12, a.pos.y - shift);
+              b.pos.y = Math.min(95, b.pos.y + shift);
+              a.pos.y = Math.max(5, a.pos.y - shift);
             } else {
-              a.pos.y = Math.min(88, a.pos.y + shift);
-              b.pos.y = Math.max(12, b.pos.y - shift);
+              a.pos.y = Math.min(95, a.pos.y + shift);
+              b.pos.y = Math.max(5, b.pos.y - shift);
             }
             this.tokenPositions.set(a.id, a.pos);
             this.tokenPositions.set(b.id, b.pos);
