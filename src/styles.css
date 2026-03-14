@@ -12551,3 +12551,26 @@
   60% { transform: scale(1.1); }
   100% { transform: scale(1); opacity: 1; }
 }
+
+/* ── Guided Phase UI (complication / roll prompt / turn summary) ── */
+.dnd-pursuit-complication { margin-top: 6px; padding: 8px; background: rgba(255, 180, 0, 0.06); border-left: 3px solid #e90; border-radius: 6px; }
+.dnd-pursuit-complication-header { font-weight: 700; font-size: 0.95em; margin-bottom: 4px; }
+.dnd-pursuit-complication-result { font-size: 0.85em; color: var(--text-muted); margin-top: 2px; }
+
+.dnd-pursuit-roll-prompt { margin-top: 6px; padding: 8px; background: rgba(68, 170, 255, 0.06); border-left: 3px solid #4af; border-radius: 6px; }
+.dnd-pursuit-roll-prompt label { font-weight: 600; font-size: 0.9em; display: block; margin-bottom: 4px; }
+.dnd-pursuit-roll-prompt input[type="number"] { width: 80px; margin-right: 6px; }
+
+.dnd-pursuit-turn-summary { margin-top: 6px; padding: 8px; background: var(--background-secondary); border-radius: 6px; font-size: 0.85em; }
+.dnd-pursuit-turn-summary div { padding: 1px 0; }
+
+.dnd-pursuit-btn-continue { margin-top: 6px; }
+
+.dnd-pursuit-action-highlight { border-color: var(--interactive-accent) !important; background: rgba(var(--interactive-accent-rgb), 0.1) !important; font-weight: 700; }
+
+.dnd-pursuit-los-info { font-size: 0.8em; color: #8cf; margin-top: 2px; }
+.dnd-pursuit-auto-result { font-size: 0.85em; margin-top: 2px; padding: 2px 0; }
+
+/* Hidden quarry token overlay on player view */
+.dnd-pursuit-pv-token-hidden .dnd-pursuit-pv-token-circle { border-color: #8cf; background: rgba(136, 204, 255, 0.15); box-shadow: 0 0 0.8em rgba(136, 204, 255, 0.3); }
+.dnd-pursuit-pv-token-hidden .dnd-pursuit-pv-token-label { color: #8cf; font-style: italic; }

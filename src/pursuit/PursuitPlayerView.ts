@@ -276,7 +276,7 @@ export class PursuitPlayerView extends ItemView {
 
     // Action summary (show what they're doing)
     if (p.turnAction) {
-      const actionText = p.turnAction === "dash" ? "Dashing!" : p.turnAction === "hide" ? "Hiding..." : "";
+      const actionText = p.turnAction === "dash" ? "Dashing!" : p.turnAction === "hide" ? "Hiding..." : p.turnAction === "search" ? "Searching..." : "";
       if (actionText) {
         token.createEl("div", { text: actionText, cls: "dnd-pursuit-pv-action-badge" });
       }
@@ -295,17 +295,17 @@ export class PursuitPlayerView extends ItemView {
       }
     }
 
-    // Hidden / LoS broken indicator
-    if (p.lineOfSightBroken && p.role === "quarry") {
+    // Hidden indicator (quarry hiding from pursuers)
+    if (p.isHidden && p.role === "quarry") {
+      token.addClass("dnd-pursuit-pv-token-hidden");
       token.createEl("div", { text: "👁️‍🗨️ Hidden", cls: "dnd-pursuit-pv-hidden-badge" });
     }
 
-    // Stealth result (if rolled this round) — hide exact numbers from players
-    if (p.stealthRoll !== undefined) {
-      const isEscaped = p.escaped;
+    // Escaped via stealth
+    if (p.escaped && p.isHidden) {
       token.createEl("div", {
-        text: isEscaped ? "Vanished! ✅" : "Spotted! ❌",
-        cls: `dnd-pursuit-pv-stealth-result ${isEscaped ? "dnd-pursuit-pv-stealth-pass" : "dnd-pursuit-pv-stealth-fail"}`,
+        text: "Vanished! ✅",
+        cls: "dnd-pursuit-pv-stealth-result dnd-pursuit-pv-stealth-pass",
       });
     }
   }

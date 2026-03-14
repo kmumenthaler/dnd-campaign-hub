@@ -4,8 +4,14 @@
  * Follows the same onChange() listener pattern as CombatTracker.
  * All state mutations go through this class; views subscribe via onChange().
  *
- * Turn phases:  ACTION  →  BONUS  →  MOVE  →  (resolve pending saves)  →  END
- * The view uses `canX()` query methods to enable/disable controls.
+ * Fully automated phase machine:
+ *   COMPLICATION → COMPLICATION_CHECK → ACTION → ACTION_RESOLVE
+ *   → BONUS → BONUS_RESOLVE → MOVEMENT → TURN_END
+ *
+ * NPCs auto-roll all checks (d20 + modifier).
+ * PCs prompt the GM for roll results via pendingInput.
+ * Line of Sight is auto-computed (distance + environment + complication).
+ * Hidden quarry not found by end of round → ESCAPE.
  */
 
 import { App } from "obsidian";
@@ -16,10 +22,13 @@ import type {
   PursuitListener,
   PursuitLogEntry,
   TurnAction,
+  TurnPhase,
+  ActiveComplication,
+  PendingInput,
   StealthCondition,
   ChaseEnvironment,
 } from "./types";
-import { computeStealthCondition, computeCarryPenalty } from "./types";
+import { computeStealthCondition, computeCarryPenalty, CHASE_COMPLICATIONS } from "./types";
 
 export class PursuitTracker {
   private app: App;
@@ -64,35 +73,60 @@ export class PursuitTracker {
     return this.state.participants[this.state.turnIndex];
   }
 
-  // ── Query helpers (used by the view to decide what to show) ─
+  // ── Query helpers ───────────────────────────────────────────
 
-  /** Can this participant still choose an action? */
-  canAct(p: PursuitParticipant): boolean {
-    return p.turnAction === undefined && !p.pendingDashSave;
-  }
-
-  /** Can this participant use a bonus action? */
-  canBonus(p: PursuitParticipant): boolean {
-    return p.hasCunningAction && p.bonusAction === undefined && !p.pendingDashSave;
-  }
-
-  /** Can this participant still move? */
-  canMove(p: PursuitParticipant): boolean {
-    return !p.hasMoved && !p.pendingDashSave;
-  }
-
-  /** Is the current turn ready to advance (no pending dash save)? */
-  canAdvanceTurn(): boolean {
-    const p = this.getActive();
-    return !!p && !p.pendingDashSave;
-  }
-
-  /** Maximum movement feet for this participant this turn. */
+  /** Maximum movement feet for this participant this turn (accounting for dash + complication). */
   getMaxMovement(p: PursuitParticipant): number {
+    if (p.movementPenalty === "zero") return 0;
     let speed = this.getEffectiveSpeed(p);
     const dashed = p.turnAction === "dash" || p.bonusAction === "dash";
     if (dashed) speed *= 2;
+    if (p.movementPenalty === "halved") speed = Math.floor(speed / 2);
     return speed;
+  }
+
+  /** Whether Line of Sight is auto-broken for a quarry based on distance + environment + complication. */
+  isLoSBroken(quarry: PursuitParticipant): boolean {
+    if (!this.state) return false;
+    if (quarry.complicationLoSBreak) return true;
+    const env = this.state.environment;
+    if (!env.hasCover && !env.hasObscurement && !env.crowdedOrNoisy) return false;
+    const pursuers = this.state.participants.filter(
+      (p) => p.role === "pursuer" && !p.droppedOut && !p.incapacitated
+    );
+    if (pursuers.length === 0) return true;
+    const nearest = Math.min(...pursuers.map((p) => p.position));
+    return quarry.position - nearest >= 30;
+  }
+
+  /** Auto-roll a d20 + modifier. Returns { natural, total }. */
+  private autoRoll(modifier: number): { natural: number; total: number } {
+    const natural = Math.floor(Math.random() * 20) + 1;
+    return { natural, total: natural + modifier };
+  }
+
+  /** Roll a dice formula like "1d6", "2d8+3". */
+  private rollDice(formula: string): number {
+    const match = formula.match(/(\d+)d(\d+)([+-]\d+)?/);
+    if (!match) return 0;
+    const count = parseInt(match[1]!, 10);
+    const sides = parseInt(match[2]!, 10);
+    const mod = parseInt(match[3] || "0", 10);
+    let total = mod;
+    for (let i = 0; i < count; i++) {
+      total += Math.floor(Math.random() * sides) + 1;
+    }
+    return Math.max(0, total);
+  }
+
+  /** Get the ability modifier for a complication check. */
+  private getAbilityModifier(p: PursuitParticipant, ability?: string): number {
+    switch (ability) {
+      case "DEX": return p.initiativeModifier;
+      case "STR": return Math.floor((p.strScore - 10) / 2);
+      case "Stealth": return p.stealthModifier;
+      default: return 0;
+    }
   }
 
   // ── Setup ──────────────────────────────────────────────────
@@ -115,6 +149,7 @@ export class PursuitTracker {
       turnIndex: 0,
       started: false,
       ended: false,
+      turnPhase: "complication" as TurnPhase,
       environment,
       stealthCondition,
       hasRangerPursuer,
@@ -168,10 +203,9 @@ export class PursuitTracker {
     this.state.started = true;
     this.state.turnIndex = 0;
     this.state.round = 1;
-    // Find first non-skipped participant
     this.skipInactiveForward();
     this.addLog(`Chase begins! Round 1.`);
-    this.emit();
+    this.beginTurn();
   }
 
   // ── Turn Management ────────────────────────────────────────
@@ -185,6 +219,8 @@ export class PursuitTracker {
     p.pendingDashSave = false;
     p.activePerceptionRoll = undefined;
     p.stealthRoll = undefined;
+    p.movementPenalty = "none";
+    p.complicationLoSBreak = false;
   }
 
   /** Advance to the next participant's turn. */
@@ -192,21 +228,17 @@ export class PursuitTracker {
     if (!this.state || !this.state.started || this.state.ended) return;
 
     const active = this.getActive();
-    // Block if a CON save is still pending
-    if (active?.pendingDashSave) return;
-
-    // Mark current participant as done
     if (active) active.hasActed = true;
 
     const len = this.state.participants.length;
     let next = this.state.turnIndex + 1;
 
-    // Check for round wrap
+    // Round wrap
     if (next >= len) {
       this.runEndOfRound();
+      if (this.state.ended) return;
       this.state.round++;
       next = 0;
-      // Reset per-turn state for all participants
       for (const p of this.state.participants) {
         p.hasActed = false;
         this.resetTurnFlags(p);
@@ -216,13 +248,10 @@ export class PursuitTracker {
 
     this.state.turnIndex = next;
     this.skipInactiveForward();
-    // Reset turn flags for the new active participant
-    const newActive = this.getActive();
-    if (newActive) this.resetTurnFlags(newActive);
-    this.emit();
+    this.beginTurn();
   }
 
-  /** Go back to the previous participant's turn. */
+  /** Go back to the previous participant's turn (GM undo). */
   prevTurn(): void {
     if (!this.state || !this.state.started) return;
 
@@ -236,7 +265,6 @@ export class PursuitTracker {
       }
     }
 
-    // Skip dropped/escaped backwards
     while (prev >= 0) {
       const p = this.state.participants[prev];
       if (p && !p.droppedOut && !p.escaped && !p.incapacitated) break;
@@ -245,13 +273,12 @@ export class PursuitTracker {
     if (prev < 0) prev = 0;
 
     this.state.turnIndex = prev;
-    // Reset that participant's turn flags so they can re-do
     const p = this.getActive();
     if (p) {
       p.hasActed = false;
       this.resetTurnFlags(p);
     }
-    this.emit();
+    this.beginTurn();
   }
 
   /** Skip forward past inactive participants. Safety-capped to prevent infinite loop. */
@@ -271,40 +298,393 @@ export class PursuitTracker {
     }
   }
 
+  // ── Phase Machine ───────────────────────────────────────────
+  //
+  // Turn flow: COMPLICATION → COMPLICATION_CHECK → ACTION → ACTION_RESOLVE
+  //            → BONUS → BONUS_RESOLVE → MOVEMENT → TURN_END
+  //
+  // NPCs auto-roll all checks. PCs set pendingInput for GM entry.
+
+  /** Begin the current participant's turn: reset flags, compute LoS, roll complication. */
+  private beginTurn(): void {
+    if (!this.state || this.state.ended) return;
+    const p = this.getActive();
+    if (!p) return;
+    this.resetTurnFlags(p);
+    if (p.role === "quarry") {
+      p.lineOfSightBroken = this.isLoSBroken(p);
+    }
+    this.state.currentComplication = undefined;
+    this.state.pendingInput = undefined;
+    this.rollComplication();
+  }
+
+  /** Roll d6 complication for the active participant. */
+  private rollComplication(): void {
+    if (!this.state) return;
+    const p = this.getActive();
+    if (!p) return;
+    const roll = Math.floor(Math.random() * 6) + 1;
+    const entry = CHASE_COMPLICATIONS[roll - 1];
+    if (!entry) return;
+    const comp: ActiveComplication = { entry, roll, resolved: false };
+    this.state.currentComplication = comp;
+    this.addLog(`🎲 ${p.display} — Complication: ${entry.title} (d6 = ${roll}).`);
+
+    if (!entry.requiresCheck) {
+      comp.resolved = true;
+      this.state.turnPhase = "complication";
+      this.emit();
+      return;
+    }
+
+    // Check needed — auto-roll for NPCs, prompt for PCs
+    if (!p.player) {
+      const mod = this.getAbilityModifier(p, entry.checkAbility);
+      const { natural, total } = this.autoRoll(mod);
+      comp.checkNatural = natural;
+      comp.checkResult = total;
+      comp.resolved = true;
+      comp.passed = total >= (entry.checkDC ?? 0);
+      this.applyComplicationResult(p, comp);
+      this.state.turnPhase = "complication";
+      this.emit();
+    } else {
+      const mod = this.getAbilityModifier(p, entry.checkAbility);
+      this.state.pendingInput = {
+        type: "complication-check",
+        participantId: p.id,
+        label: `${entry.checkAbility} DC ${entry.checkDC}`,
+        modifier: mod,
+        dc: entry.checkDC,
+        description: entry.description,
+      };
+      this.state.turnPhase = "complication-check";
+      this.emit();
+    }
+  }
+
+  /** Submit a complication check result (PC roll from GM). */
+  submitComplicationCheck(total: number): void {
+    if (!this.state) return;
+    const comp = this.state.currentComplication;
+    const p = this.getActive();
+    if (!comp || !p || comp.resolved) return;
+
+    comp.checkResult = total;
+    comp.resolved = true;
+    comp.passed = total >= (comp.entry.checkDC ?? 0);
+    this.applyComplicationResult(p, comp);
+    this.state.pendingInput = undefined;
+    this.state.turnPhase = "action";
+    this.emit();
+  }
+
+  /** Apply complication effects after the check is resolved. */
+  private applyComplicationResult(p: PursuitParticipant, comp: ActiveComplication): void {
+    const effect = comp.passed ? comp.entry.onSuccess : comp.entry.onFail;
+    if (!effect) {
+      comp.effectDescription = comp.passed ? "Passed — no effect." : "No penalty on failure.";
+      return;
+    }
+    comp.effectDescription = effect.description;
+    if (effect.grantsLoS) {
+      p.complicationLoSBreak = true;
+      p.lineOfSightBroken = true;
+      this.addLog(`${p.display}: ${effect.description}`);
+    }
+    if (effect.speedPenalty === "halved") {
+      p.movementPenalty = "halved";
+      this.addLog(`${p.display}: speed halved this turn.`);
+    } else if (effect.speedPenalty === "zero") {
+      p.movementPenalty = "zero";
+      this.addLog(`${p.display}: loses all movement this turn.`);
+    }
+    if (effect.damage) {
+      const dmg = this.rollDice(effect.damage);
+      p.currentHP -= dmg;
+      if (p.currentHP <= 0) {
+        p.currentHP = 0;
+        p.incapacitated = true;
+        p.droppedOut = true;
+        this.addLog(`${p.display} takes ${dmg} damage and is incapacitated!`);
+        this.checkChaseEnd();
+      } else {
+        this.addLog(`${p.display} takes ${dmg} damage (HP: ${p.currentHP}/${p.maxHP}).`);
+      }
+    }
+  }
+
+  /** Advance from complication to action phase (called by view "Continue" button). */
+  advanceToAction(): void {
+    if (!this.state) return;
+    this.state.pendingInput = undefined;
+    this.state.turnPhase = "action";
+    this.emit();
+  }
+
+  /** Select the action for the active participant. */
+  selectAction(action: TurnAction): void {
+    if (!this.state) return;
+    const p = this.getActive();
+    if (!p || p.turnAction !== undefined) return;
+
+    p.turnAction = action;
+    if (action === "dash") {
+      this.handleDash(p, false);
+    } else if (action === "hide") {
+      this.handleHide(p, false);
+    } else if (action === "search") {
+      this.handleSearch(p, false);
+    } else {
+      this.addLog(`${p.display} takes the ${action} action.`);
+      this.advanceAfterAction(p);
+    }
+  }
+
+  /** Handle a Dash action (or bonus dash). */
+  private handleDash(p: PursuitParticipant, isBonus: boolean): void {
+    p.dashesUsed++;
+    const needsSave = p.dashesUsed > p.freeDashes;
+    const label = isBonus ? "bonus-dashes" : "dashes";
+    if (needsSave) {
+      if (!p.player) {
+        const { natural, total } = this.autoRoll(p.conModifier);
+        const passed = total >= 10;
+        if (!passed) {
+          p.exhaustionLevel++;
+          this.addLog(`${p.display} ${label} (${p.dashesUsed}/${p.freeDashes} free). CON save ${total} (d20=${natural}) — FAIL! Exhaustion → ${p.exhaustionLevel}.`);
+          if (p.exhaustionLevel >= 5) {
+            p.incapacitated = true;
+            p.droppedOut = true;
+            this.addLog(`${p.display} collapses from exhaustion!`);
+            this.checkChaseEnd();
+          }
+        } else {
+          this.addLog(`${p.display} ${label} (${p.dashesUsed}/${p.freeDashes} free). CON save ${total} (d20=${natural}) — passed.`);
+        }
+        this.advanceAfterAction(p, isBonus);
+      } else {
+        p.pendingDashSave = true;
+        this.addLog(`${p.display} ${label} (${p.dashesUsed}/${p.freeDashes} free). DC 10 CON save required!`);
+        this.state!.pendingInput = {
+          type: "con-save",
+          participantId: p.id,
+          label: "CON Save DC 10",
+          modifier: p.conModifier,
+          dc: 10,
+          description: `DC 10 Constitution save to avoid exhaustion (dash ${p.dashesUsed}, ${p.freeDashes} free).`,
+        };
+        this.state!.turnPhase = isBonus ? "bonus-resolve" : "action-resolve";
+        this.emit();
+      }
+    } else {
+      this.addLog(`${p.display} ${label} (${p.dashesUsed}/${p.freeDashes} free).`);
+      this.advanceAfterAction(p, isBonus);
+    }
+  }
+
+  /** Handle a Hide action (or bonus hide via Cunning Action). */
+  private handleHide(p: PursuitParticipant, isBonus: boolean): void {
+    if (p.role === "quarry") {
+      p.lineOfSightBroken = this.isLoSBroken(p);
+    }
+    if (!p.lineOfSightBroken && p.role === "quarry") {
+      this.addLog(`${p.display} tries to hide but line of sight is not broken!`);
+      this.advanceAfterAction(p, isBonus);
+      return;
+    }
+
+    if (!p.player) {
+      const { natural, total } = this.autoRoll(p.stealthModifier);
+      this.resolveHide(p, total, natural, isBonus);
+    } else {
+      this.state!.pendingInput = {
+        type: "stealth",
+        participantId: p.id,
+        label: "Stealth Check",
+        modifier: p.stealthModifier,
+        description: "Roll Stealth to hide from pursuers.",
+      };
+      this.state!.turnPhase = isBonus ? "bonus-resolve" : "action-resolve";
+      this.emit();
+    }
+  }
+
+  /** Resolve a Hide attempt: compare stealth to all pursuers' passive perception. */
+  private resolveHide(p: PursuitParticipant, total: number, natural: number | undefined, isBonus: boolean): void {
+    if (!this.state) return;
+    p.stealthRoll = total;
+    const pursuers = this.state.participants.filter(
+      (q) => q.role === "pursuer" && !q.droppedOut && !q.incapacitated
+    );
+    let allHidden = true;
+    const spotted: string[] = [];
+    for (const pur of pursuers) {
+      if (total < pur.passivePerception) {
+        allHidden = false;
+        spotted.push(pur.display);
+      }
+    }
+    if (allHidden && pursuers.length > 0) {
+      p.isHidden = true;
+      p.hiddenStealthRoll = total;
+      this.addLog(`${p.display} hides! Stealth ${total}${natural != null ? ` (d20=${natural})` : ""} — hidden from all pursuers.`);
+    } else {
+      p.isHidden = false;
+      p.hiddenStealthRoll = undefined;
+      this.addLog(`${p.display} fails to hide (Stealth ${total}${natural != null ? `, d20=${natural}` : ""}) — spotted by ${spotted.join(", ")}.`);
+    }
+    this.advanceAfterAction(p, isBonus);
+  }
+
+  /** Handle a Search action (pursuers only, to find hidden quarry). */
+  private handleSearch(p: PursuitParticipant, isBonus: boolean): void {
+    if (!p.player) {
+      const { natural, total } = this.autoRoll(p.perceptionModifier);
+      this.resolveSearch(p, total, natural, isBonus);
+    } else {
+      this.state!.pendingInput = {
+        type: "perception",
+        participantId: p.id,
+        label: "Perception Check",
+        modifier: p.perceptionModifier,
+        description: "Roll Perception to find hidden quarry.",
+      };
+      this.state!.turnPhase = isBonus ? "bonus-resolve" : "action-resolve";
+      this.emit();
+    }
+  }
+
+  /** Resolve a Search: compare perception to all hidden quarry's stealth rolls. */
+  private resolveSearch(p: PursuitParticipant, total: number, natural: number | undefined, isBonus: boolean): void {
+    if (!this.state) return;
+    p.activePerceptionRoll = total;
+    const hidden = this.state.participants.filter(
+      (q) => q.role === "quarry" && q.isHidden && !q.escaped && !q.droppedOut
+    );
+    for (const quarry of hidden) {
+      const stealth = quarry.hiddenStealthRoll ?? 0;
+      if (total >= stealth) {
+        quarry.isHidden = false;
+        quarry.hiddenStealthRoll = undefined;
+        this.addLog(`${p.display} searches (Perception ${total}${natural != null ? `, d20=${natural}` : ""}) — finds ${quarry.display}! (Stealth was ${stealth})`);
+      } else {
+        this.addLog(`${p.display} searches (Perception ${total}${natural != null ? `, d20=${natural}` : ""}) — ${quarry.display} remains hidden (Stealth ${stealth}).`);
+      }
+    }
+    if (hidden.length === 0) {
+      this.addLog(`${p.display} searches but no quarry is hidden.`);
+    }
+    this.advanceAfterAction(p, isBonus);
+  }
+
+  /** Submit the resolution of an action roll (PC input from GM). */
+  submitActionInput(total: number): void {
+    if (!this.state) return;
+    const p = this.getActive();
+    const pending = this.state.pendingInput;
+    if (!p || !pending) return;
+
+    this.state.pendingInput = undefined;
+
+    if (pending.type === "con-save") {
+      p.pendingDashSave = false;
+      const passed = total >= 10;
+      if (!passed) {
+        p.exhaustionLevel++;
+        this.addLog(`${p.display} CON save ${total} — FAIL! Exhaustion → ${p.exhaustionLevel}.`);
+        if (p.exhaustionLevel >= 5) {
+          p.incapacitated = true;
+          p.droppedOut = true;
+          this.addLog(`${p.display} collapses from exhaustion!`);
+          this.checkChaseEnd();
+        }
+      } else {
+        this.addLog(`${p.display} CON save ${total} — passed.`);
+      }
+      const isBonus = this.state.turnPhase === "bonus-resolve";
+      this.advanceAfterAction(p, isBonus);
+    } else if (pending.type === "stealth") {
+      const isBonus = this.state.turnPhase === "bonus-resolve";
+      this.resolveHide(p, total, undefined, isBonus);
+    } else if (pending.type === "perception") {
+      const isBonus = this.state.turnPhase === "bonus-resolve";
+      this.resolveSearch(p, total, undefined, isBonus);
+    }
+  }
+
+  /** Advance to the next phase after an action (or bonus action) resolves. */
+  private advanceAfterAction(p: PursuitParticipant, isBonus = false): void {
+    if (!this.state) return;
+    this.state.pendingInput = undefined;
+    if (!isBonus && p.hasCunningAction && p.bonusAction === undefined) {
+      this.state.turnPhase = "bonus";
+    } else {
+      this.state.turnPhase = "movement";
+    }
+    this.emit();
+  }
+
+  /** Select a bonus action (Cunning Action). */
+  selectBonusAction(action: TurnAction): void {
+    if (!this.state) return;
+    const p = this.getActive();
+    if (!p || !p.hasCunningAction || p.bonusAction !== undefined) return;
+
+    p.bonusAction = action;
+    if (action === "dash") {
+      this.handleDash(p, true);
+    } else if (action === "hide") {
+      this.handleHide(p, true);
+    } else {
+      this.addLog(`${p.display} uses Cunning Action: ${action}.`);
+      this.state.turnPhase = "movement";
+      this.emit();
+    }
+  }
+
+  /** Skip the bonus action phase. */
+  skipBonusAction(): void {
+    if (!this.state) return;
+    this.state.turnPhase = "movement";
+    this.emit();
+  }
+
   // ── Movement ───────────────────────────────────────────────
 
-  /**
-   * Move a participant by the given number of feet.
-   * Enforces: only once per turn, clamped to max speed (doubled if dashed).
-   * Positive = forward (away from pursuers for quarry, towards quarry for pursuers).
-   *
-   * Returns the actual feet moved, or 0 if blocked.
-   */
-  move(id: string, feet: number): number {
-    if (!this.state) return 0;
-    const p = this.getParticipant(id);
-    if (!p || p.hasMoved || p.pendingDashSave) return 0;
+  /** Confirm movement for the active participant (called from movement phase). */
+  confirmMovement(feet: number): void {
+    if (!this.state) return;
+    const p = this.getActive();
+    if (!p || p.hasMoved) return;
 
     const maxFeet = this.getMaxMovement(p);
     const clamped = Math.min(Math.max(feet, 0), maxFeet);
-    if (clamped === 0) return 0;
 
     p.position += clamped;
     p.hasMoved = true;
     p.feetMovedThisTurn = clamped;
 
-    this.addLog(`${p.display} moves ${clamped}ft → position ${p.position}ft.`);
+    if (clamped > 0) {
+      this.addLog(`${p.display} moves ${clamped}ft → position ${p.position}ft.`);
+    } else {
+      this.addLog(`${p.display} stays in place (position ${p.position}ft).`);
+    }
 
-    // Sync carried participant position
     if (p.carrying) {
       const carried = this.getParticipant(p.carrying);
       if (carried) carried.position = p.position;
     }
 
-    // Auto-detect catch / melee range
     this.checkCatchUp();
+
+    if (p.role === "quarry") {
+      p.lineOfSightBroken = this.isLoSBroken(p);
+    }
+
+    this.state.turnPhase = "turn-end";
     this.emit();
-    return clamped;
   }
 
   /** Set a participant's position directly (GM override). */
@@ -318,6 +698,15 @@ export class PursuitTracker {
       if (carried) carried.position = p.position;
     }
     this.checkCatchUp();
+    this.emit();
+  }
+
+  /** Set a participant's active speed mode. */
+  setActiveSpeed(id: string, mode: string): void {
+    if (!this.state) return;
+    const p = this.getParticipant(id);
+    if (!p) return;
+    p.activeSpeed = mode;
     this.emit();
   }
 
@@ -345,217 +734,6 @@ export class PursuitTracker {
     if (p.exhaustionLevel >= 5) speed = 0;
 
     return speed;
-  }
-
-  // ── Dash ───────────────────────────────────────────────────
-
-  /**
-   * Record a Dash action. Sets turnAction, increments dash counter.
-   * If dashes exceed free dashes, sets pendingDashSave = true.
-   * The view MUST resolve the save before the turn can advance.
-   *
-   * @returns "free" | "save-needed" indicating whether a CON save modal is required.
-   */
-  dash(id: string): "free" | "save-needed" {
-    if (!this.state) return "free";
-    const p = this.getParticipant(id);
-    if (!p || p.turnAction !== undefined) return "free"; // Already acted
-
-    p.dashesUsed++;
-    p.turnAction = "dash";
-
-    const needsSave = p.dashesUsed > p.freeDashes;
-    if (needsSave) {
-      p.pendingDashSave = true;
-      this.addLog(`${p.display} dashes (${p.dashesUsed}/${p.freeDashes} free). DC 10 CON save required!`);
-    } else {
-      this.addLog(`${p.display} dashes (${p.dashesUsed}/${p.freeDashes} free).`);
-    }
-
-    this.emit();
-    return needsSave ? "save-needed" : "free";
-  }
-
-  /**
-   * Record a Dash as bonus action (Cunning Action).
-   * Same dash-counter logic applies.
-   */
-  dashBonus(id: string): "free" | "save-needed" {
-    if (!this.state) return "free";
-    const p = this.getParticipant(id);
-    if (!p || !p.hasCunningAction || p.bonusAction !== undefined) return "free";
-
-    p.dashesUsed++;
-    p.bonusAction = "dash";
-
-    const needsSave = p.dashesUsed > p.freeDashes;
-    if (needsSave) {
-      p.pendingDashSave = true;
-      this.addLog(`${p.display} bonus-dashes (${p.dashesUsed}/${p.freeDashes} free). DC 10 CON save required!`);
-    } else {
-      this.addLog(`${p.display} bonus-dashes (${p.dashesUsed}/${p.freeDashes} free).`);
-    }
-
-    this.emit();
-    return needsSave ? "save-needed" : "free";
-  }
-
-  /**
-   * Resolve a DC 10 CON save for an extra dash.
-   * Clears pendingDashSave so the turn can proceed.
-   * @returns Whether the save succeeded.
-   */
-  resolveDashSave(id: string, roll: number): boolean {
-    if (!this.state) return false;
-    const p = this.getParticipant(id);
-    if (!p || !p.pendingDashSave) return false;
-
-    p.pendingDashSave = false;
-
-    const success = roll >= 10;
-    if (!success) {
-      p.exhaustionLevel++;
-      this.addLog(`${p.display} fails CON save (rolled ${roll}). Exhaustion → ${p.exhaustionLevel}.`);
-      if (p.exhaustionLevel >= 5) {
-        p.incapacitated = true;
-        p.droppedOut = true;
-        this.addLog(`${p.display} collapses from exhaustion! Dropped out of the chase.`);
-        this.checkChaseEnd();
-      }
-    } else {
-      this.addLog(`${p.display} succeeds CON save (rolled ${roll}).`);
-    }
-
-    this.emit();
-    return success;
-  }
-
-  // ── Actions ────────────────────────────────────────────────
-
-  /** Set the action a participant takes this turn. Blocked if already acted. */
-  setTurnAction(id: string, action: TurnAction): void {
-    if (!this.state) return;
-    const p = this.getParticipant(id);
-    if (!p || p.turnAction !== undefined) return; // Already used action
-
-    p.turnAction = action;
-
-    if (action === "hide") {
-      this.addLog(`${p.display} takes the Hide action.`);
-    } else if (action === "disengage") {
-      this.addLog(`${p.display} takes the Disengage action.`);
-    } else if (action === "dodge") {
-      this.addLog(`${p.display} takes the Dodge action.`);
-    } else if (action === "other") {
-      this.addLog(`${p.display} uses their action (spell/item/other).`);
-    }
-
-    this.emit();
-  }
-
-  /** Set the bonus action (for Cunning Action users). Blocked if already used. */
-  setBonusAction(id: string, action: TurnAction): void {
-    if (!this.state) return;
-    const p = this.getParticipant(id);
-    if (!p || !p.hasCunningAction || p.bonusAction !== undefined) return;
-
-    p.bonusAction = action;
-    this.addLog(`${p.display} uses Cunning Action: ${action}.`);
-    this.emit();
-  }
-
-  // ── Active Speed ───────────────────────────────────────────
-
-  setActiveSpeed(id: string, mode: string): void {
-    if (!this.state) return;
-    const p = this.getParticipant(id);
-    if (!p) return;
-    p.activeSpeed = mode;
-    this.emit();
-  }
-
-  // ── Line of Sight ──────────────────────────────────────────
-
-  /** GM toggles whether a quarry member has broken line of sight. */
-  setLineOfSightBroken(id: string, broken: boolean): void {
-    if (!this.state) return;
-    const p = this.getParticipant(id);
-    if (!p || p.role !== "quarry") return;
-    p.lineOfSightBroken = broken;
-    if (broken) {
-      this.addLog(`${p.display} breaks line of sight!`);
-    }
-    this.emit();
-  }
-
-  // ── Stealth (end-of-round) ─────────────────────────────────
-
-  /**
-   * Resolve a quarry member's stealth check against all pursuers.
-   * Only valid when LoS is broken and the quarry took the Hide action
-   * (or has Cunning Action + used bonus action to Hide).
-   *
-   * @returns "escaped" | "detected" | "ineligible"
-   */
-  resolveStealthCheck(
-    quarryId: string,
-    roll: number,
-  ): "escaped" | "detected" | "ineligible" {
-    if (!this.state) return "ineligible";
-    const quarry = this.getParticipant(quarryId);
-    if (!quarry || quarry.role !== "quarry") return "ineligible";
-
-    // Check eligibility
-    if (!quarry.lineOfSightBroken) return "ineligible";
-    const canHide =
-      quarry.turnAction === "hide" ||
-      (quarry.hasCunningAction && quarry.bonusAction === "hide");
-    if (!canHide) return "ineligible";
-
-    quarry.stealthRoll = roll;
-
-    // Find highest effective perception among pursuers
-    const pursuers = this.state.participants.filter((p) => p.role === "pursuer" && !p.droppedOut);
-    let highestPerception = 0;
-    let highestPursuerName = "";
-    for (const pur of pursuers) {
-      // Active Perception roll beats passive if higher
-      const effective = Math.max(pur.passivePerception, pur.activePerceptionRoll ?? 0);
-      if (effective > highestPerception) {
-        highestPerception = effective;
-        highestPursuerName = pur.display;
-      }
-    }
-
-    if (roll > highestPerception) {
-      quarry.escaped = true;
-      // Release carried participant too
-      if (quarry.carrying) {
-        const carried = this.getParticipant(quarry.carrying);
-        if (carried) carried.escaped = true;
-      }
-      this.addLog(`${quarry.display} escapes! (Stealth ${roll} vs ${highestPursuerName}'s Perception ${highestPerception})`);
-      this.checkChaseEnd();
-      this.emit();
-      return "escaped";
-    } else {
-      quarry.lineOfSightBroken = false;
-      this.addLog(`${quarry.display} detected! (Stealth ${roll} vs ${highestPursuerName}'s Perception ${highestPerception})`);
-      this.emit();
-      return "detected";
-    }
-  }
-
-  /** Set an active Perception roll for a pursuer (Search action). */
-  setActivePerception(id: string, roll: number): void {
-    if (!this.state) return;
-    const p = this.getParticipant(id);
-    if (!p || p.role !== "pursuer") return;
-    if (p.turnAction !== undefined) return; // Already used action
-    p.activePerceptionRoll = roll;
-    p.turnAction = "other"; // Search is their action
-    this.addLog(`${p.display} searches (Perception ${roll}).`);
-    this.emit();
   }
 
   // ── Carry ──────────────────────────────────────────────────
@@ -651,28 +829,31 @@ export class PursuitTracker {
 
   // ── Internal helpers ───────────────────────────────────────
 
-  /** Run end-of-round logic: log stealth-eligible quarry, then reset LoS. */
+  /** Run end-of-round logic: hidden quarry that weren't found this round escape. */
   private runEndOfRound(): void {
     if (!this.state) return;
 
-    const quarries = this.state.participants.filter(
-      (p) => p.role === "quarry" && !p.droppedOut && !p.escaped && !p.incapacitated
+    const hidden = this.state.participants.filter(
+      (p) => p.role === "quarry" && p.isHidden && !p.droppedOut && !p.escaped && !p.incapacitated
     );
 
-    const eligible = quarries.filter((q) => {
-      if (!q.lineOfSightBroken) return false;
-      return q.turnAction === "hide" || (q.hasCunningAction && q.bonusAction === "hide");
-    });
-
-    if (eligible.length > 0) {
-      this.addLog(`End of round ${this.state.round}: ${eligible.length} quarry member(s) eligible for stealth check.`);
-    } else if (quarries.length > 0) {
-      this.addLog(`End of round ${this.state.round}: No quarry members eligible for stealth (need LoS broken + Hide action).`);
+    for (const quarry of hidden) {
+      quarry.escaped = true;
+      if (quarry.carrying) {
+        const carried = this.getParticipant(quarry.carrying);
+        if (carried) carried.escaped = true;
+      }
+      this.addLog(`🏃 ${quarry.display} escapes! Hidden quarry was not found by end of round ${this.state.round}.`);
     }
 
-    // Reset LoS broken for next round (stealth already resolved or not eligible)
-    for (const q of quarries) {
+    if (hidden.length > 0) {
+      this.checkChaseEnd();
+    }
+
+    // Reset per-turn LoS (will be recomputed at start of each turn)
+    for (const q of this.state.participants.filter((p) => p.role === "quarry")) {
       q.lineOfSightBroken = false;
+      q.complicationLoSBreak = false;
     }
   }
 

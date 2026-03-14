@@ -928,6 +928,10 @@ export class PursuitSetupModal extends Modal {
           droppedOut: false,
           player: true,
           hidden: false,
+          isHidden: false,
+          hiddenStealthRoll: undefined,
+          movementPenalty: "none",
+          complicationLoSBreak: false,
           notePath: data?.notePath,
           tokenId: data?.tokenId,
         });
@@ -975,6 +979,10 @@ export class PursuitSetupModal extends Modal {
           droppedOut: false,
           player: false,
           hidden: false,
+          isHidden: false,
+          hiddenStealthRoll: undefined,
+          movementPenalty: "none",
+          complicationLoSBreak: false,
           notePath: c.notePath,
           tokenId: c.tokenId,
         });

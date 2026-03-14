@@ -10,6 +10,108 @@ export interface SpeedEntry {
   feet: number;
 }
 
+// ── Turn Phase Machine ─────────────────────────────────────────
+
+/**
+ * Phase of the current participant's turn.
+ * The tracker advances through these in order;
+ * the view renders based on the current phase.
+ */
+export type TurnPhase =
+  | "complication"        // Auto-rolled d6, showing result
+  | "complication-check"  // Waiting for PC to roll complication check
+  | "action"              // Choose action
+  | "action-resolve"      // Waiting for action resolution (stealth/CON save)
+  | "bonus"               // Choose bonus action (Cunning Action only)
+  | "bonus-resolve"       // Waiting for bonus resolution
+  | "movement"            // Movement phase
+  | "turn-end";           // Summary, ready to advance
+
+// ── Complications ──────────────────────────────────────────────
+
+/** Definition of a single complication result in the d6 table. */
+export interface ComplicationEntry {
+  roll: number;
+  title: string;
+  description: string;
+  requiresCheck: boolean;
+  checkAbility?: string;  // "DEX" | "STR" | "Stealth"
+  checkDC?: number;
+  onSuccess?: ComplicationEffect;
+  onFail?: ComplicationEffect;
+}
+
+/** Effect applied from a complication check pass or fail. */
+export interface ComplicationEffect {
+  description: string;
+  grantsLoS?: boolean;
+  speedPenalty?: "halved" | "zero";
+  damage?: string;  // dice formula like "1d6"
+}
+
+/** Active complication for the current turn. */
+export interface ActiveComplication {
+  entry: ComplicationEntry;
+  roll: number;
+  resolved: boolean;
+  checkResult?: number;
+  checkNatural?: number;
+  passed?: boolean;
+  effectDescription?: string;
+}
+
+/** Default Urban Chase Complications (d6). */
+export const CHASE_COMPLICATIONS: ComplicationEntry[] = [
+  {
+    roll: 1, title: "Clear path",
+    description: "No complication.",
+    requiresCheck: false,
+  },
+  {
+    roll: 2, title: "Uneven ground",
+    description: "DEX save DC 12 or fall prone.",
+    requiresCheck: true, checkAbility: "DEX", checkDC: 12,
+    onFail: { description: "Falls prone! Speed halved this turn.", speedPenalty: "halved" },
+  },
+  {
+    roll: 3, title: "Obstacle",
+    description: "Athletics/Acrobatics DC 13 to get past.",
+    requiresCheck: true, checkAbility: "DEX", checkDC: 13,
+    onFail: { description: "Blocked! Loses all movement this turn.", speedPenalty: "zero" },
+  },
+  {
+    roll: 4, title: "Crowd",
+    description: "Stealth DC 12 to slip through.",
+    requiresCheck: true, checkAbility: "Stealth", checkDC: 12,
+    onSuccess: { description: "Slips through the crowd — line of sight broken!", grantsLoS: true },
+    onFail: { description: "Struggles through the crowd. Speed halved.", speedPenalty: "halved" },
+  },
+  {
+    roll: 5, title: "Hazard",
+    description: "DEX save DC 14 or take damage.",
+    requiresCheck: true, checkAbility: "DEX", checkDC: 14,
+    onFail: { description: "Hit by hazard!", damage: "1d6" },
+  },
+  {
+    roll: 6, title: "Dead end",
+    description: "Athletics DC 15 to find another way.",
+    requiresCheck: true, checkAbility: "STR", checkDC: 15,
+    onFail: { description: "Dead end! Must backtrack — loses all movement.", speedPenalty: "zero" },
+  },
+];
+
+// ── Pending Input ──────────────────────────────────────────────
+
+/** Describes a roll the system is waiting for from the GM (for PCs). */
+export interface PendingInput {
+  type: "complication-check" | "stealth" | "con-save" | "perception";
+  participantId: string;
+  label: string;
+  modifier: number;
+  dc?: number;
+  description: string;
+}
+
 // ── Participant ────────────────────────────────────────────────
 
 export type PursuitRole = "quarry" | "pursuer";
@@ -20,9 +122,10 @@ export type PursuitRole = "quarry" | "pursuer";
  * - hide: attempt Stealth (requires LoS broken), base movement only
  * - disengage: avoid opportunity attacks, base movement only
  * - dodge: attacks have disadvantage, base movement only
+ * - search: pursuers only — active Perception vs hidden quarry
  * - other: spell, Help, item, etc.
  */
-export type TurnAction = "dash" | "hide" | "disengage" | "dodge" | "other";
+export type TurnAction = "dash" | "hide" | "disengage" | "dodge" | "search" | "other";
 
 /** Advantage / disadvantage modifier for the Stealth check. */
 export type StealthCondition = "advantage" | "disadvantage" | "normal";
@@ -78,6 +181,12 @@ export interface PursuitParticipant {
   /** Whether a CON save from an extra dash is currently pending. */
   pendingDashSave: boolean;
 
+  // ── Complication state (per-turn) ──
+  /** Speed penalty from complications this turn. */
+  movementPenalty: "none" | "halved" | "zero";
+  /** Complication granted LoS break this turn. */
+  complicationLoSBreak: boolean;
+
   // ── Carry mechanic ──
   /** ID of participant being carried by this one. */
   carrying?: string;
@@ -99,8 +208,15 @@ export interface PursuitParticipant {
   activePerceptionRoll?: number;
   /** End-of-round stealth roll result (quarry only). */
   stealthRoll?: number;
-  /** GM toggle: quarry has broken LoS this round. */
+  /**
+   * Auto-computed: LoS is broken based on distance + environment + complication.
+   * No manual toggle — the tracker sets this automatically.
+   */
   lineOfSightBroken: boolean;
+  /** Quarry is currently hidden from all pursuers (stealth beat all perceptions). */
+  isHidden: boolean;
+  /** The stealth roll that made this quarry hidden (for pursuer Search contests). */
+  hiddenStealthRoll?: number;
 
   // ── Targeting (pursuers) ──
   /** IDs of quarry members this pursuer is chasing. */
@@ -191,6 +307,14 @@ export interface PursuitState {
   ended: boolean;
   /** How the chase ended. */
   outcome?: "escaped" | "caught" | "surrendered" | "returned-to-combat" | "gm-ended";
+
+  // ── Phase machine ──
+  /** Current phase of the active participant's turn. */
+  turnPhase: TurnPhase;
+  /** Complication rolled for the current turn (undefined outside complication phases). */
+  currentComplication?: ActiveComplication;
+  /** Pending input the system is waiting for from the GM (PC rolls only). */
+  pendingInput?: PendingInput;
 
   // ── Environment ──
   environment: ChaseEnvironment;
