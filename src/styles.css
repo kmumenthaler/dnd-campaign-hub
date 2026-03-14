@@ -12295,29 +12295,10 @@
 .dnd-pursuit-btn-primary { background: var(--interactive-accent); color: var(--text-on-accent); border: none; font-weight: 600; }
 .dnd-pursuit-btn-danger { background: var(--text-error); color: white; border: none; }
 
-/* ── Inline search (encounter-builder style) ── */
-.dnd-pursuit-search-container { position: relative; width: 200px; display: inline-block; }
-.dnd-pursuit-search-input { width: 100%; padding: 4px 8px; border: 1px solid var(--background-modifier-border); border-radius: 4px; background: var(--background-primary); color: var(--text-normal); font-size: 0.9em; }
-.dnd-pursuit-search-results { position: absolute; top: 100%; left: 0; right: 0; max-height: 320px; overflow-y: auto; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 0 0 6px 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; }
-.dnd-pursuit-search-result { padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--background-modifier-border-hover); }
-.dnd-pursuit-search-result:hover { background: var(--background-modifier-hover); }
-.dnd-pursuit-search-result-name { font-weight: 500; font-size: 0.9em; }
-.dnd-pursuit-search-result-stats { font-size: 0.75em; color: var(--text-muted); margin-top: 2px; }
-.dnd-pursuit-search-no-results { padding: 8px 10px; color: var(--text-muted); font-size: 0.85em; }
-
-/* ── Participant list (card-style items) ── */
-.dnd-pursuit-participant-list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
-.dnd-pursuit-participant-item { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--background-modifier-border); }
-.dnd-pursuit-participant-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.dnd-pursuit-participant-name { flex: 1; font-weight: 500; font-size: 0.95em; }
-.dnd-pursuit-participant-stats { display: flex; flex-wrap: wrap; gap: 4px; }
-
-.dnd-pursuit-stat-chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 8px; border-radius: 4px; background: var(--background-secondary); font-size: 0.8em; white-space: nowrap; }
-.dnd-pursuit-stat-chip-muted { color: var(--text-muted); }
-.dnd-pursuit-stat-chip-editable { cursor: default; }
-.dnd-pursuit-stat-chip-input { width: 38px; text-align: center; border: none; background: var(--background-primary); border-radius: 3px; padding: 1px 2px; font-size: 1em; color: var(--text-normal); }
-.dnd-pursuit-stat-chip-toggle { cursor: pointer; opacity: 0.5; transition: opacity 0.15s; }
-.dnd-pursuit-stat-chip-toggle.active { opacity: 1; background: var(--interactive-accent); color: var(--text-on-accent); }
+/* ── Setup modal now reuses .dnd-creature-* classes from the encounter builder ──
+   Role-based row coloring for creature items: */
+.dnd-pursuit-setup-modal .dnd-creature-item.dnd-pursuit-quarry-row { background: rgba(0, 180, 80, 0.06); }
+.dnd-pursuit-setup-modal .dnd-creature-item.dnd-pursuit-pursuer-row { background: rgba(220, 50, 50, 0.06); }
 
 /* ── Tracker View (GM sidebar) ── */
 .dnd-pursuit-tracker { padding: 8px; }

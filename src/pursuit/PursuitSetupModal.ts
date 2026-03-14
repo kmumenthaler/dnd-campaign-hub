@@ -1,25 +1,33 @@
 /**
- * PursuitSetupModal — Modal for setting up a chase / pursuit encounter.
+ * PursuitSetupModal — Encounter-builder-style modal for setting up chases.
  *
- * Can be opened standalone or pre-populated from an active CombatTracker state.
- * Lets the GM:
- *  - Name the chase
- *  - Configure the environment (cover, obscurement, crowd, etc.)
- *  - Add participants via inline search (like the encounter builder)
- *  - Assign roles (quarry / pursuer), review stats from statblocks
- *  - Initiate the chase
+ * Layout mirrors EncounterBuilderModal:
+ *  - Chase Name input
+ *  - Include Party toggle + PartySelector + member list (quarry)
+ *  - Environment configuration
+ *  - Creatures & NPCs section (vault search + manual entry + list with color-coded names)
+ *  - Footer with participant counts + Start Chase button
  */
 
 import { App, Modal, Notice, Setting, TFile } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
-import type { Combatant, CombatState } from "../combat/types";
+import type { CombatState } from "../combat/types";
 import type {
   PursuitParticipant,
   PursuitRole,
   ChaseEnvironment,
   SpeedEntry,
 } from "./types";
-import { parseSpeed, SIZE_WEIGHT_ESTIMATE, computeCarryPenalty } from "./types";
+import { parseSpeed, SIZE_WEIGHT_ESTIMATE } from "./types";
+import { PartySelector } from "../party/PartySelector";
+
+// ── Color names for multiple creatures (same list as EncounterBuilder) ──
+const CREATURE_COLORS = [
+  "Red", "Blue", "Green", "Yellow", "Purple", "Orange",
+  "Pink", "Brown", "Black", "White", "Gray", "Cyan",
+  "Magenta", "Lime", "Teal", "Indigo", "Violet", "Gold",
+  "Silver", "Bronze",
+];
 
 /** Extract a numeric skill bonus from a skillsaves frontmatter array.
  *  skillsaves is stored as `[{stealth: 5}, {perception: 3}]`. */
@@ -42,7 +50,7 @@ function extractPassivePerception(senses: unknown): number | null {
   return m ? parseInt(m[1]!, 10) : null;
 }
 
-/** Minimal data for a vault entity we can add to a chase. */
+/** Full stat block for a vault entity. */
 interface VaultEntity {
   name: string;
   notePath: string;
@@ -60,7 +68,27 @@ interface VaultEntity {
   tokenId?: string;
 }
 
-type Participant = VaultEntity & { role: PursuitRole; initiative: number; hasCunningAction: boolean };
+/** A creature/NPC entry in the creature list (supports count > 1). */
+interface CreatureEntry {
+  name: string;
+  count: number;
+  role: PursuitRole;
+  speed: SpeedEntry[];
+  strScore: number;
+  conModifier: number;
+  stealthModifier: number;
+  passivePerception: number;
+  perceptionModifier: number;
+  initBonus: number;
+  currentHP: number;
+  maxHP: number;
+  size: string;
+  notePath?: string;
+  entityType: "npc" | "creature";
+  tokenId?: string;
+  isCustom: boolean;
+  hasCunningAction: boolean;
+}
 
 export class PursuitSetupModal extends Modal {
   private plugin: DndCampaignHubPlugin;
@@ -78,18 +106,29 @@ export class PursuitSetupModal extends Modal {
   };
   private hasRangerPursuer = false;
 
-  // ── Participants ──
-  private participants: Participant[] = [];
+  // ── Party (PCs) ──
+  private includeParty = true;
+  private selectedPartyId = "";
+  private selectedPartyName = "";
+  private selectedPartyMembers: string[] = [];
+  private partySelector: PartySelector | null = null;
 
-  // ── Vault entities cache ──
-  private vaultEntities: VaultEntity[] = [];
-  private vaultEntitiesLoaded = false;
+  // ── Creature / NPC entries (with count) ──
+  private creatures: CreatureEntry[] = [];
+
+  // ── Vault entities cache (NPCs + creatures only, for search) ──
+  private searchableEntities: VaultEntity[] = [];
+
+  // ── All vault entities (including PCs, for combat-state import) ──
+  private allVaultEntities: VaultEntity[] = [];
 
   // ── Pre-populated from combat? ──
   private fromCombat: CombatState | null = null;
 
-  // ── Participant list container (for partial re-renders) ──
-  private participantListEl: HTMLElement | null = null;
+  // ── UI containers ──
+  private partySelectionContainer: HTMLElement | null = null;
+  private partyMemberListContainer: HTMLElement | null = null;
+  private creatureListContainer: HTMLElement | null = null;
 
   constructor(app: App, plugin: DndCampaignHubPlugin, combatState?: CombatState) {
     super(app);
@@ -103,16 +142,17 @@ export class PursuitSetupModal extends Modal {
     contentEl.addClass("dnd-pursuit-setup-modal");
 
     // Pre-load vault entities
-    this.vaultEntities = await this.loadVaultEntities();
-    this.vaultEntitiesLoaded = true;
+    this.allVaultEntities = await this.loadVaultEntities();
+    this.searchableEntities = this.allVaultEntities.filter((e) => e.type !== "player");
 
     // Pre-populate from combat if available
     if (this.fromCombat) {
       this.chaseName = `Chase — ${this.fromCombat.encounterName}`;
+      this.includeParty = false; // Combatants are added directly as creature entries
       await this.loadFromCombatState(this.fromCombat);
     }
 
-    this.renderContent();
+    await this.renderContent();
   }
 
   onClose() {
@@ -121,7 +161,7 @@ export class PursuitSetupModal extends Modal {
 
   // ── Render ─────────────────────────────────────────────────
 
-  private renderContent() {
+  private async renderContent() {
     const { contentEl } = this;
     contentEl.empty();
 
@@ -136,6 +176,31 @@ export class PursuitSetupModal extends Modal {
           .setValue(this.chaseName)
           .onChange((v) => { this.chaseName = v; })
       );
+
+    // ── Include Party ──
+    new Setting(contentEl)
+      .setName("Include Party Members")
+      .setDesc("Select party members to include as quarry in the chase")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.includeParty)
+          .onChange(async (value) => {
+            this.includeParty = value;
+            await this.renderPartySelection();
+            await this.renderPartyMemberList();
+            this.updateFooter();
+          })
+      );
+
+    // Party selection container
+    this.partySelectionContainer = contentEl.createDiv();
+    this.partySelectionContainer.style.marginBottom = "15px";
+    await this.renderPartySelection();
+
+    // Party member list container
+    this.partyMemberListContainer = contentEl.createDiv({ cls: "dnd-party-member-list" });
+    this.partyMemberListContainer.style.marginBottom = "15px";
+    await this.renderPartyMemberList();
 
     // ── Environment ──
     contentEl.createEl("h3", { text: "Environment" });
@@ -195,275 +260,488 @@ export class PursuitSetupModal extends Modal {
         t.setValue(this.hasRangerPursuer).onChange((v) => { this.hasRangerPursuer = v; })
       );
 
-    // ── Add Participants (inline search) ──
-    contentEl.createEl("h3", { text: "Participants" });
-    this.renderAddParticipantSearch(contentEl);
+    // ── Creatures & NPCs ──
+    contentEl.createEl("h3", { text: "Creatures & NPCs" });
 
-    // ── Participant list ──
-    this.participantListEl = contentEl.createDiv({ cls: "dnd-pursuit-participant-list" });
-    this.renderParticipantList();
+    // Creature list container (rendered above the add forms)
+    this.creatureListContainer = contentEl.createDiv({ cls: "dnd-creature-list" });
+    this.renderCreatureList();
 
-    // ── Start button ──
+    // Creature input fields (vault search + manual entry)
+    await this.showCreatureInputFields(contentEl);
+
+    // ── Footer ──
     contentEl.createEl("hr");
     const footer = contentEl.createDiv({ cls: "dnd-pursuit-footer" });
 
-    const quarryCount = this.participants.filter((p) => p.role === "quarry").length;
-    const pursuerCount = this.participants.filter((p) => p.role === "pursuer").length;
+    const { quarryCount, pursuerCount } = this.countRoles();
     footer.createEl("span", {
       text: `${quarryCount} quarry · ${pursuerCount} pursuers`,
       cls: "dnd-pursuit-summary",
     });
 
-    const startBtn = footer.createEl("button", { text: "🏃 Start Chase", cls: "dnd-pursuit-btn dnd-pursuit-btn-primary" });
+    const startBtn = footer.createEl("button", {
+      text: "🏃 Start Chase",
+      cls: "dnd-pursuit-btn dnd-pursuit-btn-primary",
+    });
     startBtn.disabled = quarryCount === 0 || pursuerCount === 0;
     startBtn.addEventListener("click", () => this.startChase());
   }
 
-  // ── Inline search (encounter-builder style) ────────────────
+  // ── Party Selection (PartySelector widget) ──────────────────
 
-  private renderAddParticipantSearch(container: HTMLElement) {
-    const count = this.vaultEntitiesLoaded ? this.vaultEntities.length : 0;
+  private async renderPartySelection() {
+    if (!this.partySelectionContainer) return;
+    this.partySelectionContainer.empty();
 
-    const setting = new Setting(container)
-      .setName("Add from Vault")
-      .setDesc(`Search PCs, NPCs, and creatures (${count} available)`);
+    if (!this.includeParty) return;
 
-    // Search input + dropdown
-    const searchContainer = setting.controlEl.createDiv({ cls: "dnd-pursuit-search-container" });
-    const searchInput = searchContainer.createEl("input", {
-      type: "text",
-      placeholder: "Search by name…",
-      cls: "dnd-pursuit-search-input",
+    this.partySelector = new PartySelector({
+      partyManager: this.plugin.partyManager,
+      container: this.partySelectionContainer,
+      initialPartyId: this.selectedPartyId,
+      initialMembers: this.selectedPartyMembers,
+      onChange: (partyId, partyName, members) => {
+        this.selectedPartyId = partyId;
+        this.selectedPartyName = partyName;
+        this.selectedPartyMembers = members;
+        this.renderPartyMemberList();
+        this.updateFooter();
+      },
     });
-    const resultsEl = searchContainer.createDiv({ cls: "dnd-pursuit-search-results" });
-    resultsEl.style.display = "none";
+    await this.partySelector.render();
+  }
+
+  private async renderPartyMemberList() {
+    if (!this.partyMemberListContainer) return;
+    this.partyMemberListContainer.empty();
+
+    if (!this.includeParty || this.selectedPartyMembers.length === 0) return;
+
+    // Look up vault data for each selected member
+    const memberByName = new Map(
+      this.allVaultEntities
+        .filter((e) => e.type === "player")
+        .map((e) => [e.name, e]),
+    );
+
+    const headerDiv = this.partyMemberListContainer.createDiv({ cls: "dnd-party-member-header" });
+    headerDiv.style.marginBottom = "10px";
+    headerDiv.style.fontWeight = "600";
+    headerDiv.setText(`Selected Party Members — Quarry (${this.selectedPartyMembers.length})`);
+
+    for (const memberName of this.selectedPartyMembers) {
+      const data = memberByName.get(memberName);
+
+      const memberItem = this.partyMemberListContainer.createDiv({ cls: "dnd-creature-item" });
+
+      const nameEl = memberItem.createSpan({ cls: "dnd-creature-name" });
+      nameEl.setText(`👤 ${memberName}`);
+
+      const statsEl = memberItem.createSpan({ cls: "dnd-creature-stats" });
+      if (data) {
+        const speed = data.speed.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
+        const parts: string[] = [];
+        parts.push(speed);
+        parts.push(`STR ${data.strScore}`);
+        parts.push(`Stealth ${data.stealthModifier >= 0 ? "+" : ""}${data.stealthModifier}`);
+        parts.push(`PPerc ${data.passivePerception}`);
+        parts.push(`HP ${data.currentHP}/${data.maxHP}`);
+        statsEl.setText(` | ${parts.join(" | ")}`);
+      }
+
+      const removeBtn = memberItem.createEl("button", {
+        text: "Remove",
+        cls: "dnd-creature-remove",
+      });
+      removeBtn.addEventListener("click", () => {
+        this.selectedPartyMembers = this.selectedPartyMembers.filter((n) => n !== memberName);
+        this.renderPartySelection();
+        this.renderPartyMemberList();
+        this.updateFooter();
+      });
+    }
+  }
+
+  // ── Creature Input Fields (vault search + manual) ──────────
+
+  private async showCreatureInputFields(container: HTMLElement) {
+    // === VAULT CREATURE SEARCH ===
+    const vaultSection = container.createDiv({ cls: "dnd-add-creature-vault" });
 
     let selectedEntity: VaultEntity | null = null;
-    let addRole: PursuitRole = "quarry";
+    let creatureCount = "1";
+    let creatureRole: PursuitRole = "pursuer";
+    let searchResults: HTMLElement | null = null;
 
-    // Role selector
-    const roleContainer = setting.controlEl.createDiv({ cls: "dnd-inline-checkbox" });
-    roleContainer.style.display = "inline-flex";
-    roleContainer.style.alignItems = "center";
-    roleContainer.style.marginLeft = "8px";
+    if (this.searchableEntities.length > 0) {
+      const vaultSetting = new Setting(vaultSection)
+        .setName("Add from Vault")
+        .setDesc(`Search NPCs and creatures (${this.searchableEntities.length} available)`);
 
-    const roleSelect = roleContainer.createEl("select", { cls: "dropdown" });
-    const quarryOpt = roleSelect.createEl("option", { text: "🏃 Quarry", attr: { value: "quarry" } });
-    const pursuerOpt = roleSelect.createEl("option", { text: "🔍 Pursuer", attr: { value: "pursuer" } });
-    roleSelect.addEventListener("change", () => {
-      addRole = roleSelect.value as PursuitRole;
+      // Search input container
+      const searchContainer = vaultSetting.controlEl.createDiv({ cls: "dnd-creature-search-container" });
+
+      const searchInput = searchContainer.createEl("input", {
+        type: "text",
+        placeholder: "Search creatures…",
+        cls: "dnd-creature-search-input",
+      });
+
+      searchResults = searchContainer.createDiv({ cls: "dnd-creature-search-results" });
+      searchResults.style.display = "none";
+
+      // Filter and display results
+      const showSearchResults = (query: string) => {
+        if (!searchResults) return;
+        if (!query || query.length < 1) {
+          searchResults.style.display = "none";
+          return;
+        }
+
+        const q = query.toLowerCase().trim();
+        const filtered = this.searchableEntities
+          .filter((e) => e.name.toLowerCase().includes(q))
+          .slice(0, 10);
+
+        searchResults.empty();
+
+        if (filtered.length === 0) {
+          searchResults.createEl("div", {
+            text: "No creatures found",
+            cls: "dnd-creature-search-no-results",
+          });
+          searchResults.style.display = "block";
+          return;
+        }
+
+        for (const entity of filtered) {
+          const resultEl = searchResults.createDiv({ cls: "dnd-creature-search-result" });
+
+          const typeIcon = entity.type === "npc" ? "🎭" : "🐉";
+          resultEl.createDiv({
+            text: `${typeIcon} ${entity.name}`,
+            cls: "dnd-creature-search-result-name",
+          });
+
+          const speed = entity.speed.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
+          const parts: string[] = [speed];
+          parts.push(`STR ${entity.strScore}`);
+          parts.push(`Stealth ${entity.stealthModifier >= 0 ? "+" : ""}${entity.stealthModifier}`);
+          parts.push(`PPerc ${entity.passivePerception}`);
+          resultEl.createDiv({ text: parts.join(" | "), cls: "dnd-creature-search-result-stats" });
+
+          resultEl.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            selectedEntity = entity;
+            searchInput.value = entity.name;
+            searchResults!.style.display = "none";
+          });
+        }
+
+        searchResults.style.display = "block";
+      };
+
+      searchInput.addEventListener("input", (e) => {
+        selectedEntity = null;
+        showSearchResults((e.target as HTMLInputElement).value);
+      });
+
+      searchInput.addEventListener("focus", (e) => {
+        const v = (e.target as HTMLInputElement).value;
+        if (v.length >= 1) showSearchResults(v);
+      });
+
+      searchInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && selectedEntity) {
+          e.preventDefault();
+          addVaultCreature();
+        }
+      });
+
+      searchInput.addEventListener("blur", () => {
+        setTimeout(() => {
+          if (searchResults) searchResults.style.display = "none";
+        }, 250);
+      });
+
+      // Count input
+      vaultSetting.addText((text) => {
+        text.setPlaceholder("Count").setValue("1").onChange((v) => { creatureCount = v; });
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "60px";
+      });
+
+      // Role selector
+      const roleContainer = vaultSetting.controlEl.createDiv({ cls: "dnd-inline-checkbox" });
+      roleContainer.style.display = "inline-flex";
+      roleContainer.style.alignItems = "center";
+      roleContainer.style.marginLeft = "8px";
+
+      const roleSelect = roleContainer.createEl("select", { cls: "dropdown" });
+      roleSelect.createEl("option", { text: "🔍 Pursuer", attr: { value: "pursuer" } });
+      roleSelect.createEl("option", { text: "🏃 Quarry", attr: { value: "quarry" } });
+      roleSelect.addEventListener("change", () => {
+        creatureRole = roleSelect.value as PursuitRole;
+      });
+
+      // Add button
+      const addVaultCreature = () => {
+        if (!selectedEntity) {
+          new Notice("Please search and select a creature first!");
+          return;
+        }
+        const count = parseInt(creatureCount) || 1;
+        this.creatures.push({
+          name: selectedEntity.name,
+          count,
+          role: creatureRole,
+          speed: selectedEntity.speed,
+          strScore: selectedEntity.strScore,
+          conModifier: selectedEntity.conModifier,
+          stealthModifier: selectedEntity.stealthModifier,
+          passivePerception: selectedEntity.passivePerception,
+          perceptionModifier: selectedEntity.perceptionModifier,
+          initBonus: selectedEntity.initBonus,
+          currentHP: selectedEntity.currentHP,
+          maxHP: selectedEntity.maxHP,
+          size: selectedEntity.size,
+          notePath: selectedEntity.notePath,
+          entityType: selectedEntity.type === "npc" ? "npc" : "creature",
+          tokenId: selectedEntity.tokenId,
+          isCustom: false,
+          hasCunningAction: false,
+        });
+        this.renderCreatureList();
+        this.updateFooter();
+        new Notice(`Added ${count}x ${selectedEntity.name} as ${creatureRole}`);
+        searchInput.value = "";
+        selectedEntity = null;
+      };
+
+      vaultSetting.addButton((btn) =>
+        btn.setButtonText("Add").setCta().onClick(addVaultCreature)
+      );
+    } else {
+      vaultSection.createEl("p", {
+        text: "⚠️ No creatures or NPCs found in your vault. Use manual entry below.",
+        cls: "setting-item-description mod-warning",
+      });
+    }
+
+    // === MANUAL CREATURE ENTRY ===
+    const manualSection = container.createDiv({ cls: "dnd-add-creature-manual" });
+
+    let manualName = "";
+    let manualCount = "1";
+    let manualSpeed = "30";
+    let manualStr = "10";
+    let manualCon = "10";
+    let manualStealth = "0";
+    let manualPPerc = "10";
+    let manualRole: PursuitRole = "pursuer";
+
+    const manualSetting = new Setting(manualSection)
+      .setName("Add Custom Creature")
+      .setDesc("Manually enter pursuit-relevant stats");
+
+    manualSetting.addText((text) => {
+      text.setPlaceholder("Name").onChange((v) => { manualName = v; });
+      text.inputEl.style.width = "120px";
     });
 
-    // Add button
-    setting.addButton((btn) =>
+    manualSetting.addText((text) => {
+      text.setPlaceholder("Count").setValue("1").onChange((v) => { manualCount = v; });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "55px";
+    });
+
+    manualSetting.addText((text) => {
+      text.setPlaceholder("Speed").setValue("30").onChange((v) => { manualSpeed = v; });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "55px";
+    });
+
+    manualSetting.addText((text) => {
+      text.setPlaceholder("STR").setValue("10").onChange((v) => { manualStr = v; });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "50px";
+    });
+
+    manualSetting.addText((text) => {
+      text.setPlaceholder("CON").setValue("10").onChange((v) => { manualCon = v; });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "50px";
+    });
+
+    manualSetting.addText((text) => {
+      text.setPlaceholder("Stealth").setValue("0").onChange((v) => { manualStealth = v; });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "55px";
+    });
+
+    manualSetting.addText((text) => {
+      text.setPlaceholder("PPerc").setValue("10").onChange((v) => { manualPPerc = v; });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "55px";
+    });
+
+    // Role selector
+    const manualRoleContainer = manualSetting.controlEl.createDiv({ cls: "dnd-inline-checkbox" });
+    manualRoleContainer.style.display = "inline-flex";
+    manualRoleContainer.style.alignItems = "center";
+    manualRoleContainer.style.marginLeft = "8px";
+
+    const manualRoleSelect = manualRoleContainer.createEl("select", { cls: "dropdown" });
+    manualRoleSelect.createEl("option", { text: "🔍 Pursuer", attr: { value: "pursuer" } });
+    manualRoleSelect.createEl("option", { text: "🏃 Quarry", attr: { value: "quarry" } });
+    manualRoleSelect.addEventListener("change", () => {
+      manualRole = manualRoleSelect.value as PursuitRole;
+    });
+
+    manualSetting.addButton((btn) =>
       btn.setButtonText("Add").setCta().onClick(() => {
-        this.addSelectedEntity(selectedEntity, addRole, searchInput);
-        selectedEntity = null;
+        if (!manualName.trim()) {
+          new Notice("Please enter a creature name!");
+          return;
+        }
+        const count = parseInt(manualCount) || 1;
+        const conScore = parseInt(manualCon) || 10;
+        this.creatures.push({
+          name: manualName.trim(),
+          count,
+          role: manualRole,
+          speed: [{ mode: "walk", feet: parseInt(manualSpeed) || 30 }],
+          strScore: parseInt(manualStr) || 10,
+          conModifier: Math.floor((conScore - 10) / 2),
+          stealthModifier: parseInt(manualStealth) || 0,
+          passivePerception: parseInt(manualPPerc) || 10,
+          perceptionModifier: (parseInt(manualPPerc) || 10) - 10,
+          initBonus: 0,
+          currentHP: 10,
+          maxHP: 10,
+          size: "medium",
+          entityType: "creature",
+          isCustom: true,
+          hasCunningAction: false,
+        });
+        this.renderCreatureList();
+        this.updateFooter();
+        new Notice(`Added ${count}x ${manualName.trim()} as ${manualRole}`);
       })
     );
 
-    // ── Search filtering ──
-    const showResults = (query: string) => {
-      if (!query || query.length < 1) {
-        resultsEl.style.display = "none";
-        return;
-      }
-      const q = query.toLowerCase().trim();
-      const filtered = this.vaultEntities
-        .filter((e) => e.name.toLowerCase().includes(q))
-        .slice(0, 15);
-
-      resultsEl.empty();
-
-      if (filtered.length === 0) {
-        resultsEl.createDiv({ text: "No matches found", cls: "dnd-pursuit-search-no-results" });
-        resultsEl.style.display = "block";
-        return;
-      }
-
-      for (const entity of filtered) {
-        const row = resultsEl.createDiv({ cls: "dnd-pursuit-search-result" });
-
-        // Name with type icon
-        const typeIcon = entity.type === "player" ? "👤" : entity.type === "npc" ? "🎭" : "🐉";
-        row.createDiv({ text: `${typeIcon} ${entity.name}`, cls: "dnd-pursuit-search-result-name" });
-
-        // Stats row
-        const speed = entity.speed.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
-        const parts: string[] = [speed];
-        parts.push(`STR ${entity.strScore}`);
-        parts.push(`Stealth ${entity.stealthModifier >= 0 ? "+" : ""}${entity.stealthModifier}`);
-        parts.push(`PPerc ${entity.passivePerception}`);
-        if (entity.currentHP > 0) parts.push(`HP ${entity.currentHP}/${entity.maxHP}`);
-        row.createDiv({ text: parts.join(" · "), cls: "dnd-pursuit-search-result-stats" });
-
-        row.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          selectedEntity = entity;
-          searchInput.value = entity.name;
-          resultsEl.style.display = "none";
-        });
-      }
-
-      resultsEl.style.display = "block";
-    };
-
-    searchInput.addEventListener("input", (e) => {
-      selectedEntity = null;
-      showResults((e.target as HTMLInputElement).value);
-    });
-
-    searchInput.addEventListener("focus", (e) => {
-      const v = (e.target as HTMLInputElement).value;
-      if (v.length >= 1) showResults(v);
-    });
-
-    searchInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && selectedEntity) {
-        e.preventDefault();
-        this.addSelectedEntity(selectedEntity, addRole, searchInput);
-        selectedEntity = null;
-      }
-    });
-
-    searchInput.addEventListener("blur", () => {
-      setTimeout(() => { resultsEl.style.display = "none"; }, 250);
+    container.createEl("p", {
+      text: "💡 Tip: Creatures with count > 1 get color-coded names (e.g., Goblin Red, Goblin Blue).",
+      cls: "setting-item-description",
     });
   }
 
-  private addSelectedEntity(entity: VaultEntity | null, role: PursuitRole, searchInput: HTMLInputElement) {
-    if (!entity) {
-      new Notice("Search and select a participant first.");
-      return;
-    }
-    // Allow duplicates for creatures (multiple of same type), prevent for PCs/NPCs
-    if (entity.type !== "creature" && this.participants.some((p) => p.notePath === entity.notePath)) {
-      new Notice(`${entity.name} is already in the chase.`);
-      return;
-    }
+  // ── Creature List ──────────────────────────────────────────
 
-    this.participants.push({
-      ...entity,
-      role,
-      initiative: 0,
-      hasCunningAction: false,
-    });
+  private renderCreatureList() {
+    if (!this.creatureListContainer) return;
+    this.creatureListContainer.empty();
 
-    new Notice(`Added ${entity.name} as ${role}`);
-    searchInput.value = "";
-    this.renderParticipantList();
-    this.updateFooter();
-  }
-
-  // ── Participant List ───────────────────────────────────────
-
-  private renderParticipantList() {
-    const el = this.participantListEl;
-    if (!el) return;
-    el.empty();
-
-    if (this.participants.length === 0) {
-      el.createEl("p", { text: "No participants yet. Search above to add PCs, NPCs, or creatures.", cls: "setting-item-description" });
+    if (this.creatures.length === 0) {
+      this.creatureListContainer.createEl("p", {
+        text: "No creatures added yet. Add creatures below.",
+        cls: "setting-item-description",
+      });
       return;
     }
 
-    for (const p of this.participants) {
-      const item = el.createDiv({
-        cls: `dnd-pursuit-participant-item ${p.role === "quarry" ? "dnd-pursuit-quarry-row" : "dnd-pursuit-pursuer-row"}`,
+    for (let i = 0; i < this.creatures.length; i++) {
+      const creature = this.creatures[i]!;
+      const creatureItem = this.creatureListContainer.createDiv({
+        cls: `dnd-creature-item ${creature.role === "quarry" ? "dnd-pursuit-quarry-row" : "dnd-pursuit-pursuer-row"}`,
       });
 
-      // ── Top row: name + role + remove ──
-      const topRow = item.createDiv({ cls: "dnd-pursuit-participant-top" });
+      // Name with color-coded suffixes for count > 1
+      const nameEl = creatureItem.createSpan({ cls: "dnd-creature-name" });
+      const typeIcon = creature.entityType === "npc" ? "🎭" : "🐉";
+      if (creature.count > 1) {
+        const colorNames = CREATURE_COLORS.slice(0, creature.count).join(", ");
+        nameEl.setText(`${typeIcon} ${creature.name} x${creature.count} (${colorNames})`);
+      } else {
+        nameEl.setText(`${typeIcon} ${creature.name}`);
+      }
 
-      const typeIcon = p.type === "player" ? "👤" : p.type === "npc" ? "🎭" : "🐉";
-      topRow.createSpan({ text: `${typeIcon} ${p.name}`, cls: "dnd-pursuit-participant-name" });
+      // Stats
+      const statsEl = creatureItem.createSpan({ cls: "dnd-creature-stats" });
+      const speed = creature.speed.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
+      const parts: string[] = [speed];
+      parts.push(`STR ${creature.strScore}`);
+      parts.push(`Stealth ${creature.stealthModifier >= 0 ? "+" : ""}${creature.stealthModifier}`);
+      parts.push(`PPerc ${creature.passivePerception}`);
+      const conLabel = creature.conModifier >= 0 ? `+${creature.conModifier}` : `${creature.conModifier}`;
+      parts.push(`CON ${conLabel}`);
+      statsEl.setText(` | ${parts.join(" | ")}`);
 
-      const roleBtn = topRow.createEl("button", {
-        text: p.role === "quarry" ? "🏃 Quarry" : "🔍 Pursuer",
+      // Role toggle
+      const roleBtn = creatureItem.createEl("button", {
+        text: creature.role === "quarry" ? "🏃 Quarry" : "🔍 Pursuer",
         cls: "dnd-pursuit-role-btn",
       });
       roleBtn.addEventListener("click", () => {
-        p.role = p.role === "quarry" ? "pursuer" : "quarry";
-        this.renderParticipantList();
+        creature.role = creature.role === "quarry" ? "pursuer" : "quarry";
+        this.renderCreatureList();
         this.updateFooter();
       });
 
-      const removeBtn = topRow.createEl("button", { text: "✕", cls: "dnd-pursuit-remove-btn" });
+      // Cunning Action toggle
+      const caBtn = creatureItem.createEl("button", {
+        text: "🗡️ Cunning",
+        cls: `dnd-creature-friendly-toggle${creature.hasCunningAction ? " active" : ""}`,
+        attr: { title: "Cunning Action (rogue bonus dash)" },
+      });
+      caBtn.addEventListener("click", () => {
+        creature.hasCunningAction = !creature.hasCunningAction;
+        this.renderCreatureList();
+      });
+
+      // Remove
+      const removeBtn = creatureItem.createEl("button", {
+        text: "Remove",
+        cls: "dnd-creature-remove",
+      });
       removeBtn.addEventListener("click", () => {
-        this.participants = this.participants.filter((x) => x !== p);
-        this.renderParticipantList();
+        this.creatures.splice(i, 1);
+        this.renderCreatureList();
         this.updateFooter();
-      });
-
-      // ── Stats row (read-only from statblock, editable overrides) ──
-      const statsRow = item.createDiv({ cls: "dnd-pursuit-participant-stats" });
-
-      // Speed
-      const speedText = p.speed.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
-      statsRow.createSpan({ text: `⚡ ${speedText}`, cls: "dnd-pursuit-stat-chip" });
-
-      // HP
-      statsRow.createSpan({ text: `❤️ ${p.currentHP}/${p.maxHP}`, cls: "dnd-pursuit-stat-chip" });
-
-      // STR
-      this.addEditableStatChip(statsRow, "STR", p.strScore, (v) => { p.strScore = v; });
-
-      // Stealth
-      this.addEditableStatChip(statsRow, "Stealth", p.stealthModifier, (v) => { p.stealthModifier = v; }, true);
-
-      // Passive Perception
-      this.addEditableStatChip(statsRow, "PPerc", p.passivePerception, (v) => { p.passivePerception = v; });
-
-      // CON mod (for free dashes)
-      const conLabel = p.conModifier >= 0 ? `+${p.conModifier}` : `${p.conModifier}`;
-      statsRow.createSpan({ text: `CON ${conLabel}`, cls: "dnd-pursuit-stat-chip dnd-pursuit-stat-chip-muted" });
-
-      // Cunning Action
-      const caChip = statsRow.createSpan({ cls: `dnd-pursuit-stat-chip dnd-pursuit-stat-chip-toggle ${p.hasCunningAction ? "active" : ""}` });
-      caChip.textContent = `🗡️ Cunning`;
-      caChip.addEventListener("click", () => {
-        p.hasCunningAction = !p.hasCunningAction;
-        caChip.classList.toggle("active", p.hasCunningAction);
       });
     }
   }
 
-  private addEditableStatChip(
-    container: HTMLElement, label: string, value: number,
-    onChange: (v: number) => void, showSign = false,
-  ) {
-    const chip = container.createSpan({ cls: "dnd-pursuit-stat-chip dnd-pursuit-stat-chip-editable" });
-    const display = showSign ? (value >= 0 ? `+${value}` : `${value}`) : `${value}`;
-    chip.createSpan({ text: `${label} ` });
-    const input = chip.createEl("input", {
-      type: "number",
-      cls: "dnd-pursuit-stat-chip-input",
-      attr: { value: String(value) },
-    });
-    input.addEventListener("change", () => {
-      const v = parseInt(input.value, 10);
-      if (!isNaN(v)) onChange(v);
-    });
+  // ── Footer update ──────────────────────────────────────────
+
+  private countRoles(): { quarryCount: number; pursuerCount: number } {
+    // Party members count as quarry
+    const partyQuarry = this.includeParty ? this.selectedPartyMembers.length : 0;
+    // Creature entries contribute their count
+    let creatureQuarry = 0;
+    let creaturePursuer = 0;
+    for (const c of this.creatures) {
+      if (c.role === "quarry") creatureQuarry += c.count;
+      else creaturePursuer += c.count;
+    }
+    return {
+      quarryCount: partyQuarry + creatureQuarry,
+      pursuerCount: creaturePursuer,
+    };
   }
 
   private updateFooter() {
-    // Re-render footer counts without full re-render
     const footerEl = this.contentEl.querySelector(".dnd-pursuit-summary");
-    if (footerEl) {
-      const quarryCount = this.participants.filter((p) => p.role === "quarry").length;
-      const pursuerCount = this.participants.filter((p) => p.role === "pursuer").length;
-      footerEl.textContent = `${quarryCount} quarry · ${pursuerCount} pursuers`;
-    }
     const startBtn = this.contentEl.querySelector(".dnd-pursuit-btn-primary") as HTMLButtonElement | null;
-    if (startBtn) {
-      const quarryCount = this.participants.filter((p) => p.role === "quarry").length;
-      const pursuerCount = this.participants.filter((p) => p.role === "pursuer").length;
-      startBtn.disabled = quarryCount === 0 || pursuerCount === 0;
-    }
+    const { quarryCount, pursuerCount } = this.countRoles();
+    if (footerEl) footerEl.textContent = `${quarryCount} quarry · ${pursuerCount} pursuers`;
+    if (startBtn) startBtn.disabled = quarryCount === 0 || pursuerCount === 0;
   }
 
-  /** Load PCs, NPCs, and creatures from the vault. */
+  // ── Load Vault Entities ────────────────────────────────────
+
   private async loadVaultEntities(): Promise<VaultEntity[]> {
     const entities: VaultEntity[] = [];
     const files = this.app.vault.getMarkdownFiles();
@@ -474,19 +752,14 @@ export class PursuitSetupModal extends Modal {
       if (!fm) continue;
 
       const type = fm.type;
-      // Creatures don't have type:"creature" — they have statblock:true
-      // and their type field is the monster type (e.g. "beast", "fiend").
-      // PCs have type:"player"/"pc", NPCs have type:"npc".
       const isPlayer = type === "player" || type === "pc";
       const isNPC = type === "npc";
       const isCreature = !isPlayer && !isNPC && fm.statblock === true;
       if (!isPlayer && !isNPC && !isCreature) continue;
 
-      // Speed
       const rawSpeed = fm.speed;
       const speeds = parseSpeed(rawSpeed);
 
-      // ── Ability scores (all types can have stats[]) ──
       const hasStats = Array.isArray(fm.stats) && fm.stats.length >= 6;
       const str = hasStats && typeof fm.stats[0] === "number" ? fm.stats[0] : 10;
       const dex = hasStats && typeof fm.stats[1] === "number" ? fm.stats[1] : 10;
@@ -496,25 +769,14 @@ export class PursuitSetupModal extends Modal {
       const conMod = Math.floor((con - 10) / 2);
       const wisMod = Math.floor((wis - 10) / 2);
 
-      // Initiative bonus: PCs may store a separate init_bonus
       const initBonus = isPlayer && typeof fm.init_bonus === "number" ? fm.init_bonus : dexMod;
-
-      // ── Stealth: prefer skillsaves, fall back to DEX mod ──
       const stealthMod = extractSkillBonus(fm.skillsaves, "stealth") ?? dexMod;
-
-      // ── Perception: prefer skillsaves, fall back to WIS mod ──
       const percMod = extractSkillBonus(fm.skillsaves, "perception") ?? wisMod;
-
-      // ── Passive Perception: prefer senses string, else 10 + percMod ──
       const passivePerc = extractPassivePerception(fm.senses) ?? (10 + percMod);
 
-      // Size → weight estimate
       let size = "medium";
-      if (typeof fm.size === "string") {
-        size = fm.size.toLowerCase();
-      }
+      if (typeof fm.size === "string") size = fm.size.toLowerCase();
 
-      // HP
       const hp = typeof fm.hp === "number" ? fm.hp : (typeof fm.hp_max === "number" ? fm.hp_max : 10);
       const maxHP = typeof fm.hp_max === "number" ? fm.hp_max : hp;
 
@@ -545,7 +807,6 @@ export class PursuitSetupModal extends Modal {
     for (const c of state.combatants) {
       if (c.dead) continue;
 
-      // Try to read full stats from vault note
       let speeds: SpeedEntry[] = [{ mode: "walk", feet: 30 }];
       let strScore = 10;
       let conMod = 0;
@@ -554,6 +815,7 @@ export class PursuitSetupModal extends Modal {
       let percMod = 0;
       let passivePerc = 10;
       let size = "medium";
+      let tokenId = c.tokenId;
 
       if (c.notePath) {
         const file = this.app.vault.getAbstractFileByPath(c.notePath);
@@ -577,14 +839,16 @@ export class PursuitSetupModal extends Modal {
             }
             if (typeof fm.init_bonus === "number") dexMod = fm.init_bonus;
             if (typeof fm.size === "string") size = fm.size.toLowerCase();
+            if (!tokenId && fm.token_id) tokenId = fm.token_id;
           }
         }
       }
 
-      this.participants.push({
+      // Each combatant becomes a creature entry with count=1
+      this.creatures.push({
         name: c.name,
-        notePath: c.notePath ?? "",
-        type: c.player ? "player" : "creature",
+        count: 1,
+        role: c.player || c.friendly ? "quarry" : "pursuer",
         speed: speeds,
         strScore,
         conModifier: conMod,
@@ -595,9 +859,10 @@ export class PursuitSetupModal extends Modal {
         currentHP: c.currentHP,
         maxHP: c.maxHP,
         size,
-        tokenId: c.tokenId,
-        role: c.player || c.friendly ? "quarry" : "pursuer",
-        initiative: c.initiative,
+        notePath: c.notePath ?? undefined,
+        entityType: c.player ? "npc" : "creature", // PCs from combat go into creature list
+        tokenId,
+        isCustom: false,
         hasCunningAction: false,
       });
     }
@@ -606,49 +871,109 @@ export class PursuitSetupModal extends Modal {
   // ── Start Chase ────────────────────────────────────────────
 
   private startChase() {
-    const quarryCount = this.participants.filter((p) => p.role === "quarry").length;
-    const pursuerCount = this.participants.filter((p) => p.role === "pursuer").length;
+    const { quarryCount, pursuerCount } = this.countRoles();
 
     if (quarryCount === 0 || pursuerCount === 0) {
       new Notice("Need at least one quarry and one pursuer.");
       return;
     }
 
-    // Convert to PursuitParticipant[]
-    const participants: PursuitParticipant[] = this.participants.map((p, i) => ({
-      id: `pursuit_${Date.now()}_${i}`,
-      name: p.name,
-      display: p.name,
-      role: p.role,
-      initiative: p.initiative,
-      initiativeModifier: p.initBonus,
-      speeds: p.speed,
-      activeSpeed: p.speed[0]?.mode ?? "walk",
-      position: p.role === "quarry" ? 60 : 0, // Quarry starts 60ft ahead
-      dashesUsed: 0,
-      freeDashes: 3 + Math.max(0, p.conModifier),
-      conModifier: p.conModifier,
-      exhaustionLevel: 0,
-      hasActed: false,
-      hasCunningAction: p.hasCunningAction,
-      strScore: p.strScore,
-      estimatedWeight: SIZE_WEIGHT_ESTIMATE[p.size] ?? 150,
-      stealthModifier: p.stealthModifier,
-      passivePerception: p.passivePerception,
-      perceptionModifier: p.perceptionModifier,
-      lineOfSightBroken: false,
-      targetIds: [],
-      currentHP: p.currentHP,
-      maxHP: p.maxHP,
-      incapacitated: p.currentHP <= 0,
-      conditions: [],
-      escaped: false,
-      droppedOut: false,
-      player: p.type === "player",
-      hidden: false,
-      notePath: p.notePath || undefined,
-      tokenId: p.tokenId,
-    }));
+    const participants: PursuitParticipant[] = [];
+    let idCounter = 0;
+    const now = Date.now();
+
+    // ── Party members → individual quarry participants ──
+    if (this.includeParty) {
+      const memberByName = new Map(
+        this.allVaultEntities
+          .filter((e) => e.type === "player")
+          .map((e) => [e.name, e]),
+      );
+
+      for (const memberName of this.selectedPartyMembers) {
+        const data = memberByName.get(memberName);
+        const speed = data?.speed ?? [{ mode: "walk" as const, feet: 30 }];
+
+        participants.push({
+          id: `pursuit_${now}_${idCounter++}`,
+          name: memberName,
+          display: memberName,
+          role: "quarry",
+          initiative: 0,
+          initiativeModifier: data?.initBonus ?? 0,
+          speeds: speed,
+          activeSpeed: speed[0]?.mode ?? "walk",
+          position: 60,
+          dashesUsed: 0,
+          freeDashes: 3 + Math.max(0, data?.conModifier ?? 0),
+          conModifier: data?.conModifier ?? 0,
+          exhaustionLevel: 0,
+          hasActed: false,
+          hasCunningAction: false,
+          strScore: data?.strScore ?? 10,
+          estimatedWeight: SIZE_WEIGHT_ESTIMATE[data?.size ?? "medium"] ?? 150,
+          stealthModifier: data?.stealthModifier ?? 0,
+          passivePerception: data?.passivePerception ?? 10,
+          perceptionModifier: data?.perceptionModifier ?? 0,
+          lineOfSightBroken: false,
+          targetIds: [],
+          currentHP: data?.currentHP ?? 10,
+          maxHP: data?.maxHP ?? 10,
+          incapacitated: (data?.currentHP ?? 10) <= 0,
+          conditions: [],
+          escaped: false,
+          droppedOut: false,
+          player: true,
+          hidden: false,
+          notePath: data?.notePath,
+          tokenId: data?.tokenId,
+        });
+      }
+    }
+
+    // ── Creature entries → expand by count with color-coded names ──
+    for (const c of this.creatures) {
+      for (let i = 0; i < c.count; i++) {
+        const name = c.count > 1
+          ? `${c.name} (${CREATURE_COLORS[i % CREATURE_COLORS.length]})`
+          : c.name;
+
+        participants.push({
+          id: `pursuit_${now}_${idCounter++}`,
+          name,
+          display: name,
+          role: c.role,
+          initiative: 0,
+          initiativeModifier: c.initBonus,
+          speeds: c.speed,
+          activeSpeed: c.speed[0]?.mode ?? "walk",
+          position: c.role === "quarry" ? 60 : 0,
+          dashesUsed: 0,
+          freeDashes: 3 + Math.max(0, c.conModifier),
+          conModifier: c.conModifier,
+          exhaustionLevel: 0,
+          hasActed: false,
+          hasCunningAction: c.hasCunningAction,
+          strScore: c.strScore,
+          estimatedWeight: SIZE_WEIGHT_ESTIMATE[c.size] ?? 150,
+          stealthModifier: c.stealthModifier,
+          passivePerception: c.passivePerception,
+          perceptionModifier: c.perceptionModifier,
+          lineOfSightBroken: false,
+          targetIds: [],
+          currentHP: c.currentHP,
+          maxHP: c.maxHP,
+          incapacitated: c.currentHP <= 0,
+          conditions: [],
+          escaped: false,
+          droppedOut: false,
+          player: false,
+          hidden: false,
+          notePath: c.notePath,
+          tokenId: c.tokenId,
+        });
+      }
+    }
 
     // Setup tracker
     this.plugin.pursuitTracker.setup(
@@ -668,6 +993,6 @@ export class PursuitSetupModal extends Modal {
 
     // Open the pursuit tracker view
     this.plugin.openPursuitTracker();
-    new Notice(`🏃 Chase "${this.chaseName}" started!`);
+    new Notice(`🏃 Chase "${this.chaseName}" started with ${participants.length} participants!`);
   }
 }
