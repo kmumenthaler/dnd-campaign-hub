@@ -151,18 +151,23 @@ export class PursuitPlayerView extends ItemView {
     }
   }
 
-  // ── Chase Lane ─────────────────────────────────────────────
+  // ── Chase Lane (2D dynamic layout) ──────────────────────
+
+  /** Resolved 2D position for a token. */
+  private tokenPositions = new Map<string, { x: number; y: number }>();
 
   private renderChaseLane(container: HTMLElement, state: PursuitState) {
-    const visible = state.participants.filter((p) => !p.hidden);
+    const visible = state.participants.filter((p) => !p.hidden && !p.carriedBy && !p.grappledBy);
     if (visible.length === 0) return;
 
     // Calculate position range for scaling
-    const positions = visible.map((p) => p.position);
-    const minPos = Math.min(...positions);
-    const maxPos = Math.max(...positions);
-    const range = Math.max(maxPos - minPos, 60); // Minimum 60ft range
-    const padding = 30; // Extra padding on each side
+    const allPos = state.participants.filter((p) => !p.hidden).map((p) => p.position);
+    const minPos = Math.min(...allPos);
+    const maxPos = Math.max(...allPos);
+    const range = Math.max(maxPos - minPos, 60);
+    const pad = 30;
+    const rangeStart = minPos - pad;
+    const rangeSize = range + pad * 2;
 
     const lane = container.createDiv({ cls: "dnd-pursuit-pv-lane" });
 
@@ -171,43 +176,98 @@ export class PursuitPlayerView extends ItemView {
     dirBar.createEl("span", { text: "← CAUGHT", cls: "dnd-pursuit-pv-dir-caught" });
     dirBar.createEl("span", { text: "ESCAPED →", cls: "dnd-pursuit-pv-dir-escaped" });
 
-    // Track area
-    const track = lane.createDiv({ cls: "dnd-pursuit-pv-track" });
+    // Scene area (2D absolute positioning)
+    const scene = lane.createDiv({ cls: "dnd-pursuit-pv-scene" });
 
-    // Distance markers (every 30ft)
-    const markerStart = Math.floor((minPos - padding) / 30) * 30;
-    const markerEnd = Math.ceil((maxPos + padding) / 30) * 30;
-    for (let ft = markerStart; ft <= markerEnd; ft += 30) {
-      const pct = this.posToPercent(ft, minPos - padding, range + padding * 2);
-      const marker = track.createDiv({ cls: "dnd-pursuit-pv-dist-marker" });
-      marker.style.left = `${pct}%`;
-      marker.createEl("span", { text: `${ft}ft`, cls: "dnd-pursuit-pv-dist-label" });
+    // Distance markers (bottom)
+    const mStart = Math.floor(rangeStart / 30) * 30;
+    const mEnd = Math.ceil((rangeStart + rangeSize) / 30) * 30;
+    for (let ft = mStart; ft <= mEnd; ft += 30) {
+      const pct = this.posToPercent(ft, rangeStart, rangeSize);
+      const m = scene.createDiv({ cls: "dnd-pursuit-pv-dist-marker" });
+      m.style.left = `${pct}%`;
+      m.createEl("span", { text: `${ft}ft`, cls: "dnd-pursuit-pv-dist-label" });
     }
 
-    // Render tokens grouped by approximate row
+    // ── Compute 2D positions ──
     const quarries = visible.filter((p) => p.role === "quarry" && !p.escaped && !p.droppedOut);
     const pursuers = visible.filter((p) => p.role === "pursuer" && !p.droppedOut);
-    const escapedList = visible.filter((p) => p.escaped);
-    const droppedList = visible.filter((p) => p.droppedOut);
+    const escapedList = state.participants.filter((p) => !p.hidden && p.escaped);
 
-    // Quarry row
-    const quarryRow = track.createDiv({ cls: "dnd-pursuit-pv-token-row dnd-pursuit-pv-quarry-row" });
-    for (const p of quarries) {
-      this.renderToken(quarryRow, p, state, minPos - padding, range + padding * 2);
-    }
+    this.tokenPositions.clear();
 
-    // Pursuer row
-    const pursuerRow = track.createDiv({ cls: "dnd-pursuit-pv-token-row dnd-pursuit-pv-pursuer-row" });
+    // Quarry Y positions: evenly spread in top 20%-55% of scene
+    quarries.forEach((q, i) => {
+      const x = this.posToPercent(q.position, rangeStart, rangeSize);
+      const yStep = quarries.length > 1 ? 35 / (quarries.length - 1) : 0;
+      const y = quarries.length === 1 ? 30 : 20 + i * yStep;
+      this.tokenPositions.set(q.id, { x, y });
+    });
+
+    // Pursuer Y positions: gravitate toward their target quarry's Y
     for (const p of pursuers) {
-      this.renderToken(pursuerRow, p, state, minPos - padding, range + padding * 2);
+      const x = this.posToPercent(p.position, rangeStart, rangeSize);
+      let y = 70; // default bottom area
+      if (p.activeTargetId) {
+        const targetPos = this.tokenPositions.get(p.activeTargetId);
+        if (targetPos) {
+          // The closer the pursuer, the more their y converges on the target's y
+          const target = state.participants.find((q) => q.id === p.activeTargetId);
+          if (target) {
+            const dist = Math.abs(p.position - target.position);
+            const maxDist = rangeSize * 0.8;
+            const closeness = 1 - Math.min(dist / maxDist, 1); // 0 = far, 1 = close
+            y = targetPos.y + (70 - targetPos.y) * (1 - closeness * 0.7);
+          }
+        }
+      }
+      this.tokenPositions.set(p.id, { x, y });
     }
 
-    // Distance lines between nearest quarry-pursuer pairs
-    this.renderDistanceLines(track, quarries, pursuers, minPos - padding, range + padding * 2);
+    // ── Collision resolution: nudge overlapping tokens ──
+    this.resolveOverlaps(visible.filter((p) => !p.escaped && !p.droppedOut));
 
-    // Escaped tokens (right edge)
+    // ── Draw connection lines (pursuer → target) using SVG ──
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "dnd-pursuit-pv-svg");
+    svg.setAttribute("viewBox", "0 0 100 100");
+    svg.setAttribute("preserveAspectRatio", "none");
+    scene.appendChild(svg);
+
+    for (const p of pursuers) {
+      if (!p.activeTargetId) continue;
+      const from = this.tokenPositions.get(p.id);
+      const to = this.tokenPositions.get(p.activeTargetId);
+      if (!from || !to) continue;
+
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", String(from.x));
+      line.setAttribute("y1", String(from.y));
+      line.setAttribute("x2", String(to.x));
+      line.setAttribute("y2", String(to.y));
+      const dist = Math.abs(p.position - (state.participants.find((q) => q.id === p.activeTargetId)?.position ?? p.position));
+      line.setAttribute("class", dist <= 5 ? "dnd-pursuit-pv-line dnd-pursuit-pv-line-melee" : "dnd-pursuit-pv-line");
+      svg.appendChild(line);
+
+      // Distance label at midpoint
+      const mx = (from.x + to.x) / 2;
+      const my = (from.y + to.y) / 2;
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("x", String(mx));
+      text.setAttribute("y", String(my - 1.5));
+      text.setAttribute("class", "dnd-pursuit-pv-line-label");
+      text.textContent = dist <= 5 ? `${dist}ft ⚔️` : `${dist}ft`;
+      svg.appendChild(text);
+    }
+
+    // ── Render tokens ──
+    for (const p of [...quarries, ...pursuers].filter((p) => !p.escaped && !p.droppedOut)) {
+      this.render2DToken(scene, p, state);
+    }
+
+    // ── Escaped tokens (right edge cluster) ──
     if (escapedList.length > 0) {
-      const escRow = track.createDiv({ cls: "dnd-pursuit-pv-escaped-row" });
+      const escRow = scene.createDiv({ cls: "dnd-pursuit-pv-escaped-row" });
       for (const p of escapedList) {
         const token = escRow.createDiv({ cls: "dnd-pursuit-pv-token dnd-pursuit-pv-token-escaped" });
         token.createEl("span", { text: this.getTokenIcon(p), cls: "dnd-pursuit-pv-token-icon" });
@@ -217,22 +277,60 @@ export class PursuitPlayerView extends ItemView {
     }
   }
 
-  // ── Token Rendering ────────────────────────────────────────
+  // ── Overlap Resolution ─────────────────────────────────────
 
-  private renderToken(
-    row: HTMLElement,
+  private resolveOverlaps(participants: PursuitParticipant[]) {
+    const entries = participants.map((p) => ({
+      id: p.id,
+      pos: this.tokenPositions.get(p.id)!,
+    })).filter((e) => e.pos);
+
+    // Sort by x then y
+    entries.sort((a, b) => a.pos.x - b.pos.x || a.pos.y - b.pos.y);
+
+    const minGapX = 6; // minimum horizontal gap (percent)
+    const minGapY = 12; // minimum vertical gap (percent)
+
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const a = entries[i]!;
+        const b = entries[j]!;
+        const dx = Math.abs(a.pos.x - b.pos.x);
+        const dy = Math.abs(a.pos.y - b.pos.y);
+
+        if (dx < minGapX && dy < minGapY) {
+          // Nudge b away vertically
+          const shift = (minGapY - dy) / 2 + 1;
+          if (b.pos.y >= a.pos.y) {
+            b.pos.y = Math.min(88, b.pos.y + shift);
+            a.pos.y = Math.max(12, a.pos.y - shift);
+          } else {
+            a.pos.y = Math.min(88, a.pos.y + shift);
+            b.pos.y = Math.max(12, b.pos.y - shift);
+          }
+          this.tokenPositions.set(a.id, a.pos);
+          this.tokenPositions.set(b.id, b.pos);
+        }
+      }
+    }
+  }
+
+  // ── 2D Token Rendering ─────────────────────────────────────
+
+  private render2DToken(
+    scene: HTMLElement,
     p: PursuitParticipant,
     state: PursuitState,
-    rangeStart: number,
-    rangeSize: number,
   ) {
-    const pct = this.posToPercent(p.position, rangeStart, rangeSize);
+    const pos = this.tokenPositions.get(p.id);
+    if (!pos) return;
     const isActive = state.started && state.participants[state.turnIndex]?.id === p.id;
 
-    const token = row.createDiv({
-      cls: `dnd-pursuit-pv-token ${p.role === "quarry" ? "dnd-pursuit-pv-token-quarry" : "dnd-pursuit-pv-token-pursuer"} ${isActive ? "dnd-pursuit-pv-token-active" : ""}`,
+    const token = scene.createDiv({
+      cls: `dnd-pursuit-pv-token dnd-pursuit-pv-token-2d ${p.role === "quarry" ? "dnd-pursuit-pv-token-quarry" : "dnd-pursuit-pv-token-pursuer"} ${isActive ? "dnd-pursuit-pv-token-active" : ""}`,
     });
-    token.style.left = `${pct}%`;
+    token.style.left = `${pos.x}%`;
+    token.style.top = `${pos.y}%`;
 
     // Animate movement
     const prevPos = this.prev.positions.get(p.id);
@@ -240,15 +338,20 @@ export class PursuitPlayerView extends ItemView {
       token.addClass("dnd-pursuit-pv-token-moving");
     }
 
-    // Detect new escape
+    // New escape animation
     if (p.escaped && !this.prev.escaped.has(p.id)) {
       token.addClass("dnd-pursuit-pv-token-just-escaped");
     }
 
-    // Token content
-    const iconEl = token.createDiv({ cls: "dnd-pursuit-pv-token-circle" });
+    // Movement plane badge
+    if (p.movementPlane === "air") {
+      token.addClass("dnd-pursuit-pv-token-flying");
+    } else if (p.movementPlane === "underground") {
+      token.addClass("dnd-pursuit-pv-token-burrowing");
+    }
 
-    // Try to load token image from MarkerLibrary
+    // Token circle with image or icon
+    const iconEl = token.createDiv({ cls: "dnd-pursuit-pv-token-circle" });
     if (p.tokenId) {
       const marker = this.plugin.markerLibrary.getMarker(p.tokenId);
       if (marker?.imageFile) {
@@ -262,8 +365,14 @@ export class PursuitPlayerView extends ItemView {
         if (marker.backgroundColor) iconEl.style.backgroundColor = marker.backgroundColor;
       }
     } else {
-      const icon = this.getTokenIcon(p);
-      iconEl.createEl("span", { text: icon, cls: "dnd-pursuit-pv-token-icon-text" });
+      iconEl.createEl("span", { text: this.getTokenIcon(p), cls: "dnd-pursuit-pv-token-icon-text" });
+    }
+
+    // Plane indicator
+    if (p.movementPlane === "air") {
+      token.createEl("div", { text: "🦅", cls: "dnd-pursuit-pv-plane-icon" });
+    } else if (p.movementPlane === "underground") {
+      token.createEl("div", { text: "⛏️", cls: "dnd-pursuit-pv-plane-icon" });
     }
 
     // Name
@@ -274,12 +383,13 @@ export class PursuitPlayerView extends ItemView {
       token.createEl("div", { text: "YOUR TURN", cls: "dnd-pursuit-pv-your-turn" });
     }
 
-    // Action summary (show what they're doing)
+    // Action summary
     if (p.turnAction) {
       const actionText = p.turnAction === "dash" ? "Dashing!"
         : p.turnAction === "hide" ? "Hiding..."
         : p.turnAction === "search" ? "Searching..."
         : p.turnAction === "attack" ? "Attacking!"
+        : p.turnAction === "grapple" ? "Grappling!"
         : p.turnAction === "create-obstacle" ? "Creating obstacle!"
         : "";
       if (actionText) {
@@ -292,15 +402,32 @@ export class PursuitPlayerView extends ItemView {
       token.createEl("div", { text: `+${p.feetMovedThisTurn}ft`, cls: "dnd-pursuit-pv-moved-badge" });
     }
 
-    // Carrying indicator
-    if (p.carrying) {
-      const carried = state.participants.find((q) => q.id === p.carrying);
-      if (carried) {
-        token.createEl("div", { text: `Carrying: ${carried.display}`, cls: "dnd-pursuit-pv-carrying" });
+    // ── Carried tokens (smaller sub-tokens) ──
+    if (p.carrying.length > 0) {
+      const carryCluster = token.createDiv({ cls: "dnd-pursuit-pv-carried-cluster" });
+      for (const carriedId of p.carrying) {
+        const c = state.participants.find((q) => q.id === carriedId);
+        if (!c) continue;
+        const sub = carryCluster.createDiv({ cls: "dnd-pursuit-pv-sub-token dnd-pursuit-pv-sub-carried" });
+        this.renderSubTokenIcon(sub, c);
+        sub.createEl("span", { text: c.display, cls: "dnd-pursuit-pv-sub-label" });
       }
     }
 
-    // Hidden indicator (quarry hiding from pursuers)
+    // ── Grappled tokens (smaller sub-tokens with chain icon) ──
+    if (p.grappling.length > 0) {
+      const grpCluster = token.createDiv({ cls: "dnd-pursuit-pv-carried-cluster dnd-pursuit-pv-grapple-cluster" });
+      for (const grappledId of p.grappling) {
+        const g = state.participants.find((q) => q.id === grappledId);
+        if (!g) continue;
+        const sub = grpCluster.createDiv({ cls: "dnd-pursuit-pv-sub-token dnd-pursuit-pv-sub-grappled" });
+        sub.createEl("span", { text: "🔗", cls: "dnd-pursuit-pv-chain-icon" });
+        this.renderSubTokenIcon(sub, g);
+        sub.createEl("span", { text: g.display, cls: "dnd-pursuit-pv-sub-label" });
+      }
+    }
+
+    // Hidden indicator
     if (p.isHidden && p.role === "quarry") {
       token.addClass("dnd-pursuit-pv-token-hidden");
       token.createEl("div", { text: "👁️‍🗨️ Hidden", cls: "dnd-pursuit-pv-hidden-badge" });
@@ -322,49 +449,24 @@ export class PursuitPlayerView extends ItemView {
 
     // Escaped via stealth
     if (p.escaped && p.isHidden) {
-      token.createEl("div", {
-        text: "Vanished! ✅",
-        cls: "dnd-pursuit-pv-stealth-result dnd-pursuit-pv-stealth-pass",
-      });
+      token.createEl("div", { text: "Vanished! ✅", cls: "dnd-pursuit-pv-stealth-result dnd-pursuit-pv-stealth-pass" });
     }
   }
 
-  // ── Distance Lines ─────────────────────────────────────────
-
-  private renderDistanceLines(
-    track: HTMLElement,
-    quarries: PursuitParticipant[],
-    pursuers: PursuitParticipant[],
-    rangeStart: number,
-    rangeSize: number,
-  ) {
-    if (quarries.length === 0 || pursuers.length === 0) return;
-
-    // Find lead pursuer (highest position)
-    const leadPursuer = pursuers.reduce((a, b) => a.position > b.position ? a : b);
-
-    for (const q of quarries) {
-      const dist = Math.abs(q.position - leadPursuer.position);
-      if (dist === 0) continue;
-
-      const minP = Math.min(q.position, leadPursuer.position);
-      const maxP = Math.max(q.position, leadPursuer.position);
-      const leftPct = this.posToPercent(minP, rangeStart, rangeSize);
-      const rightPct = this.posToPercent(maxP, rangeStart, rangeSize);
-
-      const line = track.createDiv({ cls: "dnd-pursuit-pv-distance-line" });
-      line.style.left = `${leftPct}%`;
-      line.style.width = `${rightPct - leftPct}%`;
-
-      const label = line.createDiv({ cls: "dnd-pursuit-pv-distance-label" });
-      label.textContent = `${dist}ft`;
-
-      // Warning if within melee range
-      if (dist <= 5) {
-        line.addClass("dnd-pursuit-pv-distance-melee");
-        label.textContent = `${dist}ft ⚔️`;
+  /** Render a small token icon for carried/grappled sub-tokens. */
+  private renderSubTokenIcon(el: HTMLElement, p: PursuitParticipant) {
+    if (p.tokenId) {
+      const marker = this.plugin.markerLibrary.getMarker(p.tokenId);
+      if (marker?.imageFile) {
+        const file = this.app.vault.getAbstractFileByPath(marker.imageFile);
+        if (file) {
+          const img = el.createEl("img", { cls: "dnd-pursuit-pv-sub-img" });
+          img.src = this.app.vault.getResourcePath(file as any);
+          return;
+        }
       }
     }
+    el.createEl("span", { text: this.getTokenIcon(p), cls: "dnd-pursuit-pv-sub-icon" });
   }
 
   // ── Info Bar (bottom) ──────────────────────────────────────

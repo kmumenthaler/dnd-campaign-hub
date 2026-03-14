@@ -16,7 +16,7 @@
 
 import { App } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
-import type {
+import {
   PursuitState,
   PursuitParticipant,
   PursuitListener,
@@ -30,7 +30,7 @@ import type {
   StealthCondition,
   ChaseEnvironment,
 } from "./types";
-import { computeStealthCondition, computeCarryPenalty } from "./types";
+import { computeStealthCondition, computeCarryPenalty, totalBurdenWeight } from "./types";
 import { getComplicationTable } from "./complications";
 
 export class PursuitTracker {
@@ -151,6 +151,8 @@ export class PursuitTracker {
     participants: PursuitParticipant[],
     environment: ChaseEnvironment,
     hasRangerPursuer: boolean,
+    maxDistance = 0,
+    maxRounds = 0,
   ): void {
     const stealthCondition = computeStealthCondition(environment, hasRangerPursuer);
     this.state = {
@@ -166,6 +168,8 @@ export class PursuitTracker {
       stealthCondition,
       hasRangerPursuer,
       catchDistance: 5,
+      maxDistance,
+      maxRounds,
       log: [{ round: 0, text: `Chase "${name}" initialized with ${participants.length} participants.` }],
     };
     this.emit();
@@ -333,6 +337,18 @@ export class PursuitTracker {
     this.state.pendingInput = undefined;
     this.state.endOfTurnD20 = undefined;
 
+    // Apply start penalty (first turn only)
+    if (!p.startPenaltyApplied && p.startPenalty !== "none") {
+      p.movementPenalty = p.startPenalty;
+      p.startPenaltyApplied = true;
+      this.addLog(`${p.display} starts with movement ${p.startPenalty === "zero" ? "halted" : "halved"} (start penalty).`);
+    }
+
+    // Auto-assign default target for pursuers (closest quarry they can perceive)
+    if (p.role === "pursuer" && !p.activeTargetId) {
+      this.autoAssignTarget(p);
+    }
+
     // Check for pending complication from previous participant's d20 roll
     const pending = this.state.pendingComplicationForNext;
     if (pending) {
@@ -342,6 +358,48 @@ export class PursuitTracker {
       this.state.turnPhase = "action";
       this.emit();
     }
+  }
+
+  /** Auto-assign the closest visible quarry as a pursuer's target. */
+  private autoAssignTarget(pursuer: PursuitParticipant): void {
+    if (!this.state) return;
+    const quarries = this.state.participants.filter(
+      (q) => q.role === "quarry" && !q.escaped && !q.droppedOut && !q.incapacitated
+        && this.canPerceive(pursuer, q)
+    );
+    if (quarries.length === 0) return;
+    // Closest quarry by position difference
+    quarries.sort((a, b) => Math.abs(a.position - pursuer.position) - Math.abs(b.position - pursuer.position));
+    pursuer.activeTargetId = quarries[0]!.id;
+  }
+
+  /** Whether a pursuer can perceive a quarry (accounts for movement plane + hidden + tremorsense). */
+  canPerceive(pursuer: PursuitParticipant, quarry: PursuitParticipant): boolean {
+    // Hidden quarry cannot be perceived
+    if (quarry.isHidden) return false;
+    // Ground pursuer cannot perceive burrowing quarry unless tremorsense
+    if (quarry.movementPlane === "underground" && pursuer.movementPlane !== "underground" && !pursuer.hasTremorsense) return false;
+    return true;
+  }
+
+  /** Whether a pursuer can physically catch a quarry (same movement plane required for melee). */
+  canCatch(pursuer: PursuitParticipant, quarry: PursuitParticipant): boolean {
+    if (!this.canPerceive(pursuer, quarry)) return false;
+    // Air quarry can only be caught by air pursuer
+    if (quarry.movementPlane === "air" && pursuer.movementPlane !== "air") return false;
+    // Underground quarry can only be caught by underground pursuer
+    if (quarry.movementPlane === "underground" && pursuer.movementPlane !== "underground") return false;
+    return true;
+  }
+
+  /** Set the active chase target for a pursuer (GM action). */
+  setActiveTarget(pursuerId: string, quarryId: string): void {
+    const p = this.getParticipant(pursuerId);
+    if (!p || p.role !== "pursuer") return;
+    p.activeTargetId = quarryId;
+    const q = this.getParticipant(quarryId);
+    if (q) this.addLog(`${p.display} targets ${q.display}.`);
+    this.emit();
   }
 
   /** Resolve a complication that was rolled by the previous participant (or quarry obstacle). */
@@ -572,6 +630,8 @@ export class PursuitTracker {
     } else if (action === "create-obstacle") {
       this.addLog(`${p.display} creates an obstacle. (GM: select obstacle template or adjudicate.)`);
       this.advanceAfterAction(p);
+    } else if (action === "grapple") {
+      this.handleGrapple(p);
     } else {
       this.addLog(`${p.display} takes the ${action} action.`);
       this.advanceAfterAction(p);
@@ -765,6 +825,8 @@ export class PursuitTracker {
       this.resolveSearch(p, total, undefined, isBonus);
     } else if (pending.type === "escape-stealth") {
       this.submitEscapeCheck(total);
+    } else if (pending.type === "grapple-check") {
+      this.resolveGrappleCheck(p, total);
     }
   }
 
@@ -826,9 +888,10 @@ export class PursuitTracker {
       this.addLog(`${p.display} stays in place (position ${p.position}ft).`);
     }
 
-    if (p.carrying) {
-      const carried = this.getParticipant(p.carrying);
-      if (carried) carried.position = p.position;
+    // Snap all carried and grappled to carrier position
+    for (const id of [...p.carrying, ...p.grappling]) {
+      const dep = this.getParticipant(id);
+      if (dep) dep.position = p.position;
     }
 
     this.checkCatchUp();
@@ -848,8 +911,8 @@ export class PursuitTracker {
     const p = this.getParticipant(id);
     if (!p) return;
     p.position = position;
-    if (p.carrying) {
-      const carried = this.getParticipant(p.carrying);
+    for (const id2 of [...p.carrying, ...p.grappling]) {
+      const carried = this.getParticipant(id2);
       if (carried) carried.position = p.position;
     }
     this.checkCatchUp();
@@ -871,15 +934,13 @@ export class PursuitTracker {
     const entry = p.speeds.find((s) => s.mode === p.activeSpeed) ?? p.speeds[0];
     let speed = entry?.feet ?? 30;
 
-    // Carry penalty
-    if (p.carrying) {
-      const carried = this.getParticipant(p.carrying);
-      if (carried) {
-        const result = computeCarryPenalty(p.strScore, carried.estimatedWeight);
-        if (result.status === "ok") speed = Math.floor(speed * result.speedMultiplier);
-        else if (result.status === "drag") speed = result.speedFeet;
-        else speed = 0;
-      }
+    // Carry + grapple penalty (sum all burden weight)
+    const burdenWeight = totalBurdenWeight(p, this.state?.participants ?? []);
+    if (burdenWeight > 0) {
+      const result = computeCarryPenalty(p.strScore, burdenWeight);
+      if (result.status === "ok") speed = Math.floor(speed * result.speedMultiplier);
+      else if (result.status === "drag") speed = result.speedFeet;
+      else speed = 0;
     }
 
     // Exhaustion penalty (5e RAW: exhaustion 2+ halves speed)
@@ -893,25 +954,24 @@ export class PursuitTracker {
 
   // ── Carry ──────────────────────────────────────────────────
 
-  /** One participant picks up another. */
+  /** One participant picks up another (voluntary carry). */
   pickUp(carrierId: string, targetId: string): boolean {
     if (!this.state) return false;
     const carrier = this.getParticipant(carrierId);
     const target = this.getParticipant(targetId);
     if (!carrier || !target) return false;
 
-    // Prevent overwriting an existing carry
-    if (carrier.carrying) return false;
-
-    // Check capacity
-    const result = computeCarryPenalty(carrier.strScore, target.estimatedWeight);
+    // Check total burden weight with new target
+    const currentWeight = totalBurdenWeight(carrier, this.state.participants);
+    const newWeight = currentWeight + target.estimatedWeight;
+    const result = computeCarryPenalty(carrier.strScore, newWeight);
     if (result.status === "impossible") {
-      this.addLog(`${carrier.display} cannot carry ${target.display} (too heavy).`);
+      this.addLog(`${carrier.display} cannot carry ${target.display} (too heavy — total ${newWeight} lbs).`);
       this.emit();
       return false;
     }
 
-    carrier.carrying = targetId;
+    carrier.carrying.push(targetId);
     target.carriedBy = carrierId;
     target.position = carrier.position;
 
@@ -921,18 +981,142 @@ export class PursuitTracker {
     return true;
   }
 
-  /** Drop a carried participant. */
-  putDown(carrierId: string): void {
+  /** Drop a specific carried participant. */
+  putDown(carrierId: string, targetId?: string): void {
     if (!this.state) return;
     const carrier = this.getParticipant(carrierId);
-    if (!carrier || !carrier.carrying) return;
-    const target = this.getParticipant(carrier.carrying);
-    if (target) {
-      target.carriedBy = undefined;
-      this.addLog(`${carrier.display} puts down ${target.display}.`);
+    if (!carrier || carrier.carrying.length === 0) return;
+
+    if (targetId) {
+      const idx = carrier.carrying.indexOf(targetId);
+      if (idx >= 0) {
+        carrier.carrying.splice(idx, 1);
+        const target = this.getParticipant(targetId);
+        if (target) {
+          target.carriedBy = undefined;
+          this.addLog(`${carrier.display} puts down ${target.display}.`);
+        }
+      }
+    } else {
+      // Drop all
+      for (const id of carrier.carrying) {
+        const target = this.getParticipant(id);
+        if (target) target.carriedBy = undefined;
+      }
+      this.addLog(`${carrier.display} puts down everyone.`);
+      carrier.carrying = [];
     }
-    carrier.carrying = undefined;
     this.emit();
+  }
+
+  // ── Grapple ────────────────────────────────────────────────
+
+  /** Handle a grapple action — pursuer attempts to restrain a quarry within 5ft. */
+  private handleGrapple(pursuer: PursuitParticipant): void {
+    if (!this.state) return;
+    // Find the closest quarry within 5ft
+    const target = this.getGrappleTarget(pursuer);
+    if (!target) {
+      this.addLog(`${pursuer.display} tries to grapple but no target within 5ft!`);
+      this.advanceAfterAction(pursuer);
+      return;
+    }
+
+    if (!pursuer.player) {
+      // NPC auto-roll: Athletics vs Athletics or Acrobatics
+      const atkMod = this.getAbilityModifier(pursuer, "Athletics");
+      const { total: atkTotal, natural: atkNat } = this.autoRoll(atkMod);
+      const defMod = Math.max(
+        this.getAbilityModifier(target, "Athletics"),
+        this.getAbilityModifier(target, "Acrobatics"),
+      );
+      const { total: defTotal, natural: defNat } = this.autoRoll(defMod);
+      if (atkTotal >= defTotal) {
+        this.applyGrapple(pursuer, target);
+        this.addLog(`${pursuer.display} grapples ${target.display}! (Athletics ${atkTotal}, d20=${atkNat} vs ${defTotal}, d20=${defNat})`);
+      } else {
+        this.addLog(`${pursuer.display} fails to grapple ${target.display} (Athletics ${atkTotal}, d20=${atkNat} vs ${defTotal}, d20=${defNat}).`);
+      }
+      this.advanceAfterAction(pursuer);
+    } else {
+      // PC: prompt for Athletics check
+      this.state.pendingInput = {
+        type: "grapple-check",
+        participantId: pursuer.id,
+        label: `Athletics (Grapple vs ${target.display})`,
+        modifier: this.getAbilityModifier(pursuer, "Athletics"),
+        description: `Grapple check: Athletics vs ${target.display}'s Athletics or Acrobatics.`,
+      };
+      this.state.turnPhase = "action-resolve";
+      // Store grapple target in a way the resolver can find it
+      (this.state as any).__grappleTargetId = target.id;
+      this.emit();
+    }
+  }
+
+  /** Find the closest grappable target within 5ft of the active participant. */
+  private getGrappleTarget(p: PursuitParticipant): PursuitParticipant | undefined {
+    if (!this.state) return undefined;
+    const opponents = this.state.participants.filter(
+      (q) => q.role !== p.role && !q.droppedOut && !q.escaped && !q.incapacitated
+        && !q.grappledBy
+        && this.canCatch(p, q)
+        && Math.abs(q.position - p.position) <= 5
+    );
+    if (opponents.length === 0) return undefined;
+    // Return the closest
+    opponents.sort((a, b) => Math.abs(a.position - p.position) - Math.abs(b.position - p.position));
+    return opponents[0];
+  }
+
+  /** Apply grapple: target is now grappled by the grappler. */
+  private applyGrapple(grappler: PursuitParticipant, target: PursuitParticipant): void {
+    grappler.grappling.push(target.id);
+    target.grappledBy = grappler.id;
+    target.position = grappler.position;
+    if (!target.conditions.includes("Grappled")) target.conditions.push("Grappled");
+  }
+
+  /** Break a grapple (target breaks free on their turn, or GM override). */
+  breakGrapple(targetId: string): void {
+    if (!this.state) return;
+    const target = this.getParticipant(targetId);
+    if (!target || !target.grappledBy) return;
+    const grappler = this.getParticipant(target.grappledBy);
+    if (grappler) {
+      const idx = grappler.grappling.indexOf(targetId);
+      if (idx >= 0) grappler.grappling.splice(idx, 1);
+    }
+    target.grappledBy = undefined;
+    const condIdx = target.conditions.indexOf("Grappled");
+    if (condIdx >= 0) target.conditions.splice(condIdx, 1);
+    this.addLog(`${target.display} breaks free from grapple!`);
+    this.emit();
+  }
+
+  /** Resolve a PC grapple check (called from submitActionInput). */
+  private resolveGrappleCheck(pursuer: PursuitParticipant, total: number): void {
+    if (!this.state) return;
+    const targetId = (this.state as any).__grappleTargetId;
+    delete (this.state as any).__grappleTargetId;
+    const target = targetId ? this.getParticipant(targetId) : undefined;
+    if (!target) {
+      this.advanceAfterAction(pursuer);
+      return;
+    }
+    // NPC target auto-rolls defense
+    const defMod = Math.max(
+      this.getAbilityModifier(target, "Athletics"),
+      this.getAbilityModifier(target, "Acrobatics"),
+    );
+    const { total: defTotal } = this.autoRoll(defMod);
+    if (total >= defTotal) {
+      this.applyGrapple(pursuer, target);
+      this.addLog(`${pursuer.display} grapples ${target.display}! (Athletics ${total} vs ${defTotal})`);
+    } else {
+      this.addLog(`${pursuer.display} fails to grapple ${target.display} (Athletics ${total} vs ${defTotal}).`);
+    }
+    this.advanceAfterAction(pursuer);
   }
 
   // ── Drop out / state changes ───────────────────────────────
@@ -1037,6 +1221,34 @@ export class PursuitTracker {
     this.emit();
   }
 
+  /** Add a new participant mid-chase (inserted at end of initiative order). */
+  addParticipant(p: PursuitParticipant): void {
+    if (!this.state) return;
+    this.state.participants.push(p);
+    this.addLog(`${p.display} joins the chase at position ${p.position}ft as ${p.role}!`);
+    this.emit();
+  }
+
+  /** Set a participant's movement plane (ground/air/underground). */
+  setMovementPlane(id: string, plane: "ground" | "air" | "underground"): void {
+    if (!this.state) return;
+    const p = this.getParticipant(id);
+    if (!p) return;
+    // Switch active speed to match the plane
+    const modeMap: Record<string, string> = { ground: "walk", air: "fly", underground: "burrow" };
+    const desiredMode = modeMap[plane] ?? "walk";
+    const hasMode = p.speeds.some((s) => s.mode === desiredMode);
+    if (!hasMode && plane !== "ground") {
+      this.addLog(`${p.display} cannot move to ${plane} — no ${desiredMode} speed!`);
+      this.emit();
+      return;
+    }
+    p.movementPlane = plane;
+    if (hasMode) p.activeSpeed = desiredMode;
+    this.addLog(`${p.display} is now ${plane === "air" ? "flying" : plane === "underground" ? "burrowing" : "on the ground"}.`);
+    this.emit();
+  }
+
   /** Clear the chase state entirely. */
   clear(): void {
     this.state = null;
@@ -1069,16 +1281,20 @@ export class PursuitTracker {
   private runEndOfRound(): void {
     if (!this.state) return;
 
+    // Check max rounds
+    if (this.state.maxRounds > 0 && this.state.round >= this.state.maxRounds) {
+      this.addLog(`⏱️ Maximum rounds (${this.state.maxRounds}) reached — chase ends!`);
+      this.endChase("gm-ended");
+      return;
+    }
+
     // Hidden quarry that weren't found still escape (backwards compat)
     const hidden = this.state.participants.filter(
       (p) => p.role === "quarry" && p.isHidden && !p.droppedOut && !p.escaped && !p.incapacitated
     );
     for (const quarry of hidden) {
       quarry.escaped = true;
-      if (quarry.carrying) {
-        const carried = this.getParticipant(quarry.carrying);
-        if (carried) carried.escaped = true;
-      }
+      this.escapeCarried(quarry);
       this.addLog(`🏃 ${quarry.display} escapes! Hidden quarry was not found by end of round ${this.state.round}.`);
     }
     if (hidden.length > 0) this.checkChaseEnd();
@@ -1189,10 +1405,7 @@ export class PursuitTracker {
     const rollStr = natural != null ? ` (d20=${natural})` : "";
     if (total > highestPerception) {
       quarry.escaped = true;
-      if (quarry.carrying) {
-        const carried = this.getParticipant(quarry.carrying);
-        if (carried) carried.escaped = true;
-      }
+      this.escapeCarried(quarry);
       this.addLog(`🏃 ${quarry.display} escape check: Stealth ${total}${rollStr} > ${highestPerception} — ESCAPED!`);
     } else {
       this.addLog(`${quarry.display} escape check: Stealth ${total}${rollStr} ≤ ${highestPerception} — still being pursued.`);
@@ -1253,10 +1466,30 @@ export class PursuitTracker {
     for (const pur of pursuers) {
       for (const q of quarries) {
         const dist = q.position - pur.position;
-        if (dist <= catchDist && dist >= 0) {
+        if (dist <= catchDist && dist >= 0 && this.canCatch(pur, q)) {
           this.addLog(`⚔️ ${pur.display} catches up to ${q.display}! (${dist}ft apart)`);
         }
       }
+    }
+
+    // Check max distance escape
+    if (this.state.maxDistance > 0) {
+      for (const q of quarries) {
+        if (q.position >= this.state.maxDistance) {
+          q.escaped = true;
+          this.addLog(`🏃 ${q.display} reaches ${q.position}ft — auto-escaped! (max distance: ${this.state.maxDistance}ft)`);
+          this.escapeCarried(q);
+        }
+      }
+      this.checkChaseEnd();
+    }
+  }
+
+  /** Escape all carried/grappled participants along with the escapee. */
+  private escapeCarried(p: PursuitParticipant): void {
+    for (const id of [...p.carrying, ...p.grappling]) {
+      const dep = this.getParticipant(id);
+      if (dep) dep.escaped = true;
     }
   }
 

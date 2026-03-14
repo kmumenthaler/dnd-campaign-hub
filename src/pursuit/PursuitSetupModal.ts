@@ -95,6 +95,9 @@ interface CreatureEntry {
   wisModifier: number;
   intModifier: number;
   chaModifier: number;
+  startPenalty: "none" | "halved" | "zero";
+  startPosition?: number;
+  hasTremorsense: boolean;
 }
 
 export class PursuitSetupModal extends Modal {
@@ -113,6 +116,10 @@ export class PursuitSetupModal extends Modal {
     notes: "",
   };
   private hasRangerPursuer = false;
+  private maxDistance = 0;
+  private maxRounds = 0;
+  private quarryHeadStart = 60;
+  private pursuerStart = 0;
 
   // ── Party (PCs) ──
   private includeParty = true;
@@ -278,6 +285,53 @@ export class PursuitSetupModal extends Modal {
       .addToggle((t) =>
         t.setValue(this.hasRangerPursuer).onChange((v) => { this.hasRangerPursuer = v; })
       );
+
+    // ── Chase Rules ──
+    contentEl.createEl("h3", { text: "Chase Rules" });
+
+    new Setting(contentEl)
+      .setName("Quarry head start (ft)")
+      .setDesc("Starting position for quarry members (pursuers start at their own configured position)")
+      .addText((text) => {
+        text.setPlaceholder("60").setValue(String(this.quarryHeadStart)).onChange((v) => {
+          this.quarryHeadStart = parseInt(v) || 60;
+        });
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "70px";
+      });
+
+    new Setting(contentEl)
+      .setName("Pursuer start position (ft)")
+      .setDesc("Default starting position for all pursuers")
+      .addText((text) => {
+        text.setPlaceholder("0").setValue(String(this.pursuerStart)).onChange((v) => {
+          this.pursuerStart = parseInt(v) || 0;
+        });
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "70px";
+      });
+
+    new Setting(contentEl)
+      .setName("Max escape distance (ft)")
+      .setDesc("Quarry that reaches this distance auto-escapes. 0 = no limit.")
+      .addText((text) => {
+        text.setPlaceholder("0").setValue(String(this.maxDistance)).onChange((v) => {
+          this.maxDistance = parseInt(v) || 0;
+        });
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "70px";
+      });
+
+    new Setting(contentEl)
+      .setName("Max rounds")
+      .setDesc("Chase auto-ends after this many rounds. 0 = no limit.")
+      .addText((text) => {
+        text.setPlaceholder("0").setValue(String(this.maxRounds)).onChange((v) => {
+          this.maxRounds = parseInt(v) || 0;
+        });
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "70px";
+      });
 
     // ── Creatures & NPCs ──
     contentEl.createEl("h3", { text: "Creatures & NPCs" });
@@ -534,6 +588,8 @@ export class PursuitSetupModal extends Modal {
           wisModifier: selectedEntity.wisModifier,
           intModifier: selectedEntity.intModifier,
           chaModifier: selectedEntity.chaModifier,
+          startPenalty: "none",
+          hasTremorsense: false,
         });
         this.renderCreatureList();
         this.updateFooter();
@@ -650,6 +706,8 @@ export class PursuitSetupModal extends Modal {
           wisModifier: 0,
           intModifier: 0,
           chaModifier: 0,
+          startPenalty: "none",
+          hasTremorsense: false,
         });
         this.renderCreatureList();
         this.updateFooter();
@@ -725,6 +783,32 @@ export class PursuitSetupModal extends Modal {
         creature.hasCunningAction = !creature.hasCunningAction;
         this.renderCreatureList();
       });
+
+      // Start penalty selector
+      const penaltySelect = creatureItem.createEl("select", {
+        cls: "dropdown dnd-pursuit-penalty-select",
+        attr: { title: "Start penalty (first turn only)" },
+      });
+      penaltySelect.createEl("option", { text: "No penalty", attr: { value: "none" } });
+      penaltySelect.createEl("option", { text: "½ speed", attr: { value: "halved" } });
+      penaltySelect.createEl("option", { text: "0 speed", attr: { value: "zero" } });
+      penaltySelect.value = creature.startPenalty;
+      penaltySelect.addEventListener("change", () => {
+        creature.startPenalty = penaltySelect.value as "none" | "halved" | "zero";
+      });
+
+      // Tremorsense toggle
+      if (creature.role === "pursuer") {
+        const tsBtn = creatureItem.createEl("button", {
+          text: "📡 Tremor",
+          cls: `dnd-creature-friendly-toggle${creature.hasTremorsense ? " active" : ""}`,
+          attr: { title: "Tremorsense (can detect burrowing quarry)" },
+        });
+        tsBtn.addEventListener("click", () => {
+          creature.hasTremorsense = !creature.hasTremorsense;
+          this.renderCreatureList();
+        });
+      }
 
       // Remove
       const removeBtn = creatureItem.createEl("button", {
@@ -908,6 +992,8 @@ export class PursuitSetupModal extends Modal {
         wisModifier: wisMod,
         intModifier: intMod,
         chaModifier: chaMod,
+        startPenalty: "none",
+        hasTremorsense: false,
       });
     }
   }
@@ -947,7 +1033,7 @@ export class PursuitSetupModal extends Modal {
           initiativeModifier: data?.initBonus ?? 0,
           speeds: speed,
           activeSpeed: speed[0]?.mode ?? "walk",
-          position: 60,
+          position: this.quarryHeadStart,
           dashesUsed: 0,
           freeDashes: 3 + Math.max(0, data?.conModifier ?? 0),
           conModifier: data?.conModifier ?? 0,
@@ -984,6 +1070,12 @@ export class PursuitSetupModal extends Modal {
           wasOutOfSightThisRound: false,
           movementReductionFeet: 0,
           tempHP: 0,
+          carrying: [],
+          grappling: [],
+          movementPlane: "ground",
+          hasTremorsense: false,
+          startPenalty: "none",
+          startPenaltyApplied: false,
         });
       }
     }
@@ -1004,7 +1096,7 @@ export class PursuitSetupModal extends Modal {
           initiativeModifier: c.initBonus,
           speeds: c.speed,
           activeSpeed: c.speed[0]?.mode ?? "walk",
-          position: c.role === "quarry" ? 60 : 0,
+          position: c.startPosition ?? (c.role === "quarry" ? this.quarryHeadStart : this.pursuerStart),
           dashesUsed: 0,
           freeDashes: 3 + Math.max(0, c.conModifier),
           conModifier: c.conModifier,
@@ -1041,6 +1133,12 @@ export class PursuitSetupModal extends Modal {
           wasOutOfSightThisRound: false,
           movementReductionFeet: 0,
           tempHP: 0,
+          carrying: [],
+          grappling: [],
+          movementPlane: "ground",
+          hasTremorsense: c.hasTremorsense,
+          startPenalty: c.startPenalty,
+          startPenaltyApplied: false,
         });
       }
     }
@@ -1051,6 +1149,8 @@ export class PursuitSetupModal extends Modal {
       participants,
       this.environment,
       this.hasRangerPursuer,
+      this.maxDistance,
+      this.maxRounds,
     );
 
     // If coming from combat with initiative already set, keep it

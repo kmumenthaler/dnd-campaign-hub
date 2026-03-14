@@ -101,7 +101,7 @@ export interface PendingComplicationForNext {
 
 /** Describes a roll the system is waiting for from the GM (for PCs). */
 export interface PendingInput {
-  type: "complication-check" | "stealth" | "con-save" | "perception" | "escape-stealth";
+  type: "complication-check" | "stealth" | "con-save" | "perception" | "escape-stealth" | "grapple-check";
   participantId: string;
   label: string;
   modifier: number;
@@ -124,7 +124,7 @@ export type PursuitRole = "quarry" | "pursuer";
  * - search: pursuers only — active Perception vs hidden quarry
  * - other: spell, Help, item, etc.
  */
-export type TurnAction = "dash" | "hide" | "disengage" | "dodge" | "search" | "attack" | "create-obstacle" | "other";
+export type TurnAction = "dash" | "hide" | "disengage" | "dodge" | "search" | "attack" | "create-obstacle" | "grapple" | "other";
 
 /** Advantage / disadvantage modifier for the Stealth check. */
 export type StealthCondition = "advantage" | "disadvantage" | "normal";
@@ -189,14 +189,20 @@ export interface PursuitParticipant {
   complicationLoSBreak: boolean;
 
   // ── Carry mechanic ──
-  /** ID of participant being carried by this one. */
-  carrying?: string;
+  /** IDs of participants being carried by this one. */
+  carrying: string[];
   /** ID of participant carrying this one. */
   carriedBy?: string;
   /** Carrier's STR score (for capacity calculation). */
   strScore: number;
   /** Estimated weight of this participant in lbs (size-based). */
   estimatedWeight: number;
+
+  // ── Grapple mechanic ──
+  /** IDs of participants this one is actively grappling (hostile carry). */
+  grappling: string[];
+  /** ID of participant grappling this one. */
+  grappledBy?: string;
 
   // ── Stealth / Perception ──
   /** Stealth modifier (for quarry end-of-round checks). */
@@ -222,6 +228,20 @@ export interface PursuitParticipant {
   // ── Targeting (pursuers) ──
   /** IDs of quarry members this pursuer is chasing. */
   targetIds: string[];
+  /** Currently active chase target (pursuer selects at start of turn). */
+  activeTargetId?: string;
+
+  // ── Movement plane ──
+  /** Current movement plane: ground, air, or underground. */
+  movementPlane: "ground" | "air" | "underground";
+  /** Whether this creature has tremorsense (can track burrowing). */
+  hasTremorsense: boolean;
+
+  // ── Start configuration ──
+  /** Movement penalty applied at start of this participant's first turn. */
+  startPenalty: "none" | "halved" | "zero";
+  /** Whether the start penalty has been consumed. */
+  startPenaltyApplied: boolean;
 
   // ── Ability modifiers (for complication checks) ──
   /** Wisdom modifier (for WIS saves / checks). */
@@ -356,6 +376,11 @@ export interface PursuitState {
    */
   catchDistance: number;
 
+  /** Maximum distance (feet) a quarry must reach to auto-escape. 0 = disabled. */
+  maxDistance: number;
+  /** Maximum rounds before the chase auto-ends. 0 = disabled. */
+  maxRounds: number;
+
   // ── Log ──
   log: PursuitLogEntry[];
 }
@@ -395,6 +420,26 @@ export function computeCarryPenalty(strScore: number, weightLbs: number): CarryR
   if (weightLbs <= carryCapacity(strScore)) return { status: "ok", speedMultiplier: 0.5 };
   if (weightLbs <= pushDragLiftLimit(strScore)) return { status: "drag", speedFeet: 5 };
   return { status: "impossible" };
+}
+
+/**
+ * Total the effective weight of everything a participant carries + grapples.
+ * Grappled creatures count as 2× weight (struggling makes them harder to move).
+ */
+export function totalBurdenWeight(
+  carrier: PursuitParticipant,
+  allParticipants: PursuitParticipant[],
+): number {
+  let total = 0;
+  for (const id of carrier.carrying) {
+    const p = allParticipants.find((x) => x.id === id);
+    if (p) total += p.estimatedWeight;
+  }
+  for (const id of carrier.grappling) {
+    const p = allParticipants.find((x) => x.id === id);
+    if (p) total += p.estimatedWeight * 2; // struggling = 2× effective weight
+  }
+  return total;
 }
 
 // ── Standard D&D conditions ────────────────────────────────────

@@ -12406,6 +12406,27 @@
 .dnd-pursuit-pursuer-actions { margin-top: 4px; }
 .dnd-pursuit-drop-line { margin-top: 4px; }
 
+/* ── Target / Plane / Grapple badges (GM view) ── */
+.dnd-pursuit-target-badge { font-size: 0.75em; color: #f80; background: rgba(255, 136, 0, 0.12); padding: 1px 6px; border-radius: 8px; margin-left: 4px; }
+.dnd-pursuit-plane-badge { font-size: 0.75em; color: #8cf; background: rgba(136, 204, 255, 0.12); padding: 1px 6px; border-radius: 8px; margin-left: 4px; }
+.dnd-pursuit-grappled-badge { font-size: 0.75em; color: #f44; background: rgba(255, 60, 60, 0.12); padding: 1px 6px; border-radius: 8px; margin-left: 4px; }
+.dnd-pursuit-limits-badge { font-size: 0.75em; color: var(--text-muted); margin-left: 8px; }
+
+/* Target selection for pursuers */
+.dnd-pursuit-target-select { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(255, 136, 0, 0.06); border-left: 2px solid #f80; border-radius: 4px; }
+
+/* Penalty selector in setup modal */
+.dnd-pursuit-penalty-select { width: 90px; font-size: 0.85em; margin-left: 4px; }
+
+/* Add Participant overlay (mid-chase) */
+.dnd-pursuit-add-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+.dnd-pursuit-add-panel { background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 16px; min-width: 300px; max-width: 400px; }
+.dnd-pursuit-add-panel h3 { margin: 0 0 12px; }
+.dnd-pursuit-add-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.dnd-pursuit-add-row label { width: 80px; font-size: 0.85em; color: var(--text-muted); }
+.dnd-pursuit-add-row input, .dnd-pursuit-add-row select { flex: 1; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-normal); }
+.dnd-pursuit-add-btns { justify-content: flex-end; margin-top: 8px; }
+
 .dnd-pursuit-stealth-line { margin-top: 6px; padding: 6px 8px; background: rgba(0, 180, 80, 0.06); border-radius: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .dnd-pursuit-stealth-input { width: 60px; }
 .dnd-pursuit-stealth-dc { font-weight: 600; color: var(--text-muted); }
@@ -12461,18 +12482,28 @@
 
 .dnd-pursuit-pv-track { flex: 1; position: relative; min-height: 20vh; }
 
+/* 2D Scene (replaces flat rows) */
+.dnd-pursuit-pv-scene { flex: 1; position: relative; min-height: 50vh; }
+
 /* Distance markers */
 .dnd-pursuit-pv-dist-marker { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,0.08); }
-.dnd-pursuit-pv-dist-label { position: absolute; top: -1.5em; left: 50%; transform: translateX(-50%); font-size: 0.6em; color: #555; white-space: nowrap; }
+.dnd-pursuit-pv-dist-label { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-size: 0.6em; color: #555; white-space: nowrap; }
 
-/* Token rows */
+/* SVG overlay for connection lines */
+.dnd-pursuit-pv-svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+.dnd-pursuit-pv-line { stroke: rgba(255, 255, 255, 0.15); stroke-width: 0.3; stroke-dasharray: 1 0.8; fill: none; }
+.dnd-pursuit-pv-line-melee { stroke: rgba(255, 60, 60, 0.5); stroke-width: 0.4; stroke-dasharray: none; }
+.dnd-pursuit-pv-line-label { font-size: 2.5px; fill: #aaa; text-anchor: middle; dominant-baseline: auto; }
+
+/* Token rows (legacy, kept for compatibility) */
 .dnd-pursuit-pv-token-row { position: relative; height: 40%; }
 .dnd-pursuit-pv-quarry-row { top: 5%; }
 .dnd-pursuit-pv-pursuer-row { top: 10%; }
 
 /* Tokens */
-.dnd-pursuit-pv-token { position: absolute; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.3em; transition: left 0.6s ease-in-out; z-index: 2; }
-.dnd-pursuit-pv-token-moving { transition: left 0.6s ease-in-out; }
+.dnd-pursuit-pv-token { position: absolute; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.3em; transition: left 0.6s ease-in-out, top 0.6s ease-in-out; z-index: 2; }
+.dnd-pursuit-pv-token-2d { transform: translate(-50%, -50%); }
+.dnd-pursuit-pv-token-moving { transition: left 0.6s ease-in-out, top 0.6s ease-in-out; }
 
 .dnd-pursuit-pv-token-circle { width: 3em; height: 3em; border-radius: 50%; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 0.15em solid rgba(255,255,255,0.3); }
 .dnd-pursuit-pv-token-quarry .dnd-pursuit-pv-token-circle { border-color: #0d6; background: rgba(0, 220, 100, 0.15); }
@@ -12487,6 +12518,23 @@
 .dnd-pursuit-pv-carrying { font-size: 0.5em; color: #e90; }
 .dnd-pursuit-pv-hidden-badge { font-size: 0.5em; color: #8cf; background: rgba(136, 204, 255, 0.15); padding: 0.1em 0.5em; border-radius: 0.5em; }
 
+/* Movement plane visual indicators */
+.dnd-pursuit-pv-token-flying .dnd-pursuit-pv-token-circle { border-style: dashed; box-shadow: 0 -0.3em 0.6em rgba(136, 204, 255, 0.3); }
+.dnd-pursuit-pv-token-flying { margin-top: -1em; }
+.dnd-pursuit-pv-token-burrowing .dnd-pursuit-pv-token-circle { border-style: dotted; opacity: 0.7; }
+.dnd-pursuit-pv-plane-icon { font-size: 0.6em; position: absolute; top: -0.3em; right: -0.3em; }
+
+/* Carried / grappled sub-tokens */
+.dnd-pursuit-pv-carried-cluster { display: flex; gap: 0.3em; align-items: center; }
+.dnd-pursuit-pv-sub-token { display: flex; align-items: center; gap: 0.15em; background: rgba(255, 255, 255, 0.08); border-radius: 0.8em; padding: 0.1em 0.4em; font-size: 0.5em; }
+.dnd-pursuit-pv-sub-carried { border: 1px solid rgba(255, 180, 0, 0.4); }
+.dnd-pursuit-pv-sub-grappled { border: 1px solid rgba(255, 60, 60, 0.4); }
+.dnd-pursuit-pv-sub-img { width: 1.2em; height: 1.2em; border-radius: 50%; object-fit: cover; }
+.dnd-pursuit-pv-sub-icon { font-size: 0.9em; }
+.dnd-pursuit-pv-sub-label { color: #ccc; white-space: nowrap; max-width: 5em; overflow: hidden; text-overflow: ellipsis; }
+.dnd-pursuit-pv-chain-icon { font-size: 0.8em; }
+.dnd-pursuit-pv-grapple-cluster .dnd-pursuit-pv-sub-token { background: rgba(255, 60, 60, 0.08); }
+
 /* Stealth results on tokens */
 .dnd-pursuit-pv-stealth-result { font-size: 0.5em; padding: 0.1em 0.5em; border-radius: 0.5em; font-weight: 700; }
 .dnd-pursuit-pv-stealth-pass { background: rgba(0, 220, 100, 0.3); color: #0f8; }
@@ -12500,9 +12548,9 @@
 /* Escape animation */
 .dnd-pursuit-pv-token-just-escaped { animation: dnd-pursuit-escape-burst 1.2s ease-out; }
 @keyframes dnd-pursuit-escape-burst {
-  0% { transform: translateX(-50%) scale(1); opacity: 1; }
-  30% { transform: translateX(-50%) scale(1.4); opacity: 1; filter: brightness(2); }
-  100% { transform: translateX(-50%) scale(1); opacity: 0.7; filter: brightness(1); }
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  30% { transform: translate(-50%, -50%) scale(1.4); opacity: 1; filter: brightness(2); }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; filter: brightness(1); }
 }
 
 /* Distance lines */
