@@ -58,6 +58,8 @@ export interface ComplicationEntry {
   onFail?: ComplicationEffect;
   /** Description for gm-adjudicate entries (suggested handling). */
   autoEffect?: ComplicationEffect;
+  /** True when this complication involves a creature encounter (enables quick-add). */
+  isEncounter?: boolean;
 }
 
 /** Effect applied from a complication check pass or fail. */
@@ -380,6 +382,9 @@ export interface PursuitState {
   maxDistance: number;
   /** Maximum rounds before the chase auto-ends. 0 = disabled. */
   maxRounds: number;
+
+  /** Pending catch-up alerts requiring GM decision (initiate combat or continue). */
+  catchUpAlerts: { pursuerId: string; quarryId: string }[];
 
   // ── Log ──
   log: PursuitLogEntry[];

@@ -19,8 +19,8 @@ import type {
   ActiveComplication,
   ComplicationCheckOption,
 } from "./types";
-import { computeCarryPenalty, STANDARD_CONDITIONS, SIZE_WEIGHT_ESTIMATE } from "./types";
-import type { PursuitRole } from "./types";
+import { computeCarryPenalty, STANDARD_CONDITIONS, SIZE_WEIGHT_ESTIMATE, parseSpeed } from "./types";
+import type { PursuitRole, SpeedEntry } from "./types";
 import { getComplicationTable, COMPLICATION_TABLES } from "./complications";
 import type { ChaseComplicationTable } from "./complications";
 import { enumerateScreens, screenKey } from "../utils/ScreenEnumeration";
@@ -75,6 +75,7 @@ export class PursuitTrackerView extends ItemView {
     } else if (state.ended) {
       this.renderEnded(container, state);
     } else {
+      this.renderCatchUpAlerts(container, tracker, state);
       this.renderActiveTurns(container, tracker, state);
       this.renderEnvironmentSummary(container, state);
       this.renderLog(container, state);
@@ -200,6 +201,44 @@ export class PursuitTrackerView extends ItemView {
     if (state.maxRounds > 0) infoItems.push(`Max rounds: ${state.round}/${state.maxRounds}`);
     if (infoItems.length > 0) {
       header.createEl("span", { text: infoItems.join(" · "), cls: "dnd-pursuit-limits-badge" });
+    }
+  }
+
+  // ── Catch-Up Alerts ────────────────────────────────────────
+
+  private renderCatchUpAlerts(container: HTMLElement, tracker: PursuitTracker, state: PursuitState) {
+    if (!state.catchUpAlerts || state.catchUpAlerts.length === 0) return;
+
+    for (const alert of state.catchUpAlerts) {
+      const pursuer = state.participants.find((p) => p.id === alert.pursuerId);
+      const quarry = state.participants.find((p) => p.id === alert.quarryId);
+      if (!pursuer || !quarry) continue;
+
+      const alertDiv = container.createDiv({ cls: "dnd-pursuit-catch-alert" });
+      alertDiv.createEl("h4", {
+        text: `⚔️ ${pursuer.display} caught ${quarry.display}!`,
+      });
+      alertDiv.createEl("p", {
+        text: "The pursuer is within striking distance. Initiate combat or continue the chase?",
+        cls: "setting-item-description",
+      });
+
+      const btnRow = alertDiv.createDiv({ cls: "dnd-pursuit-catch-alert-btns" });
+      const combatBtn = btnRow.createEl("button", {
+        text: "⚔️ Initiate Combat",
+        cls: "dnd-pursuit-btn dnd-pursuit-btn-primary",
+      });
+      combatBtn.addEventListener("click", () => {
+        tracker.endChase("returned-to-combat");
+      });
+
+      const continueBtn = btnRow.createEl("button", {
+        text: "🏃 Continue Chase",
+        cls: "dnd-pursuit-btn",
+      });
+      continueBtn.addEventListener("click", () => {
+        tracker.dismissCatchUpAlert(alert.pursuerId, alert.quarryId);
+      });
     }
   }
 
@@ -455,6 +494,18 @@ export class PursuitTrackerView extends ItemView {
       if (comp.effectDescription) {
         div.createEl("p", { text: comp.effectDescription, cls: comp.passed ? "dnd-pursuit-success" : "dnd-pursuit-warning" });
       }
+
+      // Encounter complication: offer quick creature add
+      if (comp.entry.isEncounter) {
+        const encounterBtn = div.createEl("button", {
+          text: "🐲 Add Creature",
+          cls: "dnd-pursuit-btn dnd-pursuit-btn-encounter",
+        });
+        encounterBtn.addEventListener("click", () => {
+          this.showEncounterCreatureSearch(p.position, p.display);
+        });
+      }
+
       this.addContinueButton(div, () => tracker.advanceToAction());
     }
   }
@@ -916,28 +967,32 @@ export class PursuitTrackerView extends ItemView {
     tracker: PursuitTracker,
     state: PursuitState,
   ) {
-    // Pick up incapacitated ally (multi-carry: can pick up more if STR allows)
-    if (p.role === "quarry") {
-      const incapMembers = state.participants.filter(
-        (q) => q.role === "quarry" && q.incapacitated && !q.carriedBy && q.id !== p.id
-      );
-      if (incapMembers.length > 0) {
-        const carryLine = row.createDiv({ cls: "dnd-pursuit-carry-line" });
-        carryLine.createEl("span", { text: "Pick up: " });
-        for (const inc of incapMembers) {
-          const result = computeCarryPenalty(p.strScore, inc.estimatedWeight);
-          const label = result.status === "impossible"
-            ? `${inc.display} (too heavy)`
-            : result.status === "drag"
-              ? `${inc.display} (drag, 5ft)`
-              : `${inc.display} (½ speed)`;
-          const btn = carryLine.createEl("button", {
-            text: label,
-            cls: "dnd-pursuit-carry-btn",
-          });
-          btn.disabled = result.status === "impossible";
-          btn.addEventListener("click", () => tracker.pickUp(p.id, inc.id));
-        }
+    // Pick up same-role ally: incapacitated OR willing (not already carried/self)
+    const candidates = state.participants.filter(
+      (q) =>
+        q.role === p.role &&
+        !q.carriedBy &&
+        q.id !== p.id &&
+        !q.droppedOut &&
+        !q.escaped
+    );
+    if (candidates.length > 0) {
+      const carryLine = row.createDiv({ cls: "dnd-pursuit-carry-line" });
+      carryLine.createEl("span", { text: "Pick up: " });
+      for (const cand of candidates) {
+        const result = computeCarryPenalty(p.strScore, cand.estimatedWeight);
+        const tag = cand.incapacitated ? " 💀" : "";
+        const label = result.status === "impossible"
+          ? `${cand.display}${tag} (too heavy)`
+          : result.status === "drag"
+            ? `${cand.display}${tag} (drag, 5ft)`
+            : `${cand.display}${tag} (½ speed)`;
+        const btn = carryLine.createEl("button", {
+          text: label,
+          cls: "dnd-pursuit-carry-btn",
+        });
+        btn.disabled = result.status === "impossible";
+        btn.addEventListener("click", () => tracker.pickUp(p.id, cand.id));
       }
     }
 
@@ -1023,6 +1078,7 @@ export class PursuitTrackerView extends ItemView {
       caught: "⚔️ The quarry was caught!",
       surrendered: "🏳️ The chase was called off.",
       "returned-to-combat": "⚔️ Returned to combat.",
+      "gm-ended": "🏁 The chase ended.",
     };
 
     div.createEl("h3", { text: outcomeText[state.outcome ?? "surrendered"] });
@@ -1192,23 +1248,280 @@ export class PursuitTrackerView extends ItemView {
       return;
     }
 
-    if (screens.length === 1 && screens[0]) {
-      await pm.projectPursuitView(screens[0]);
-      this.render();
+    // Prevent duplicate pursuit projections
+    for (const proj of pm.getLiveProjections()) {
+      if (proj.contentType === "pursuit") {
+        new Notice("Pursuit player view already projected.");
+        return;
+      }
+    }
+
+    const occupied = pm.getOccupiedScreenKeys();
+
+    if (screens.length <= 1) {
+      const screen = screens[0]!;
+      const sKey = screenKey(screen);
+      if (occupied.has(sKey)) {
+        const menu = new Menu();
+        menu.addItem((item) =>
+          item.setTitle(`🔄 Switch ${screen.label} to Pursuit View`).onClick(async () => {
+            await pm.projectPursuitView(screen);
+            this.render();
+          })
+        );
+        menu.showAtMouseEvent(e);
+      } else {
+        await pm.projectPursuitView(screen);
+        this.render();
+      }
       return;
     }
 
-    // Multiple screens: show picker menu
+    // Multiple screens: show picker menu with occupancy info
     const menu = new Menu();
-    for (const s of screens) {
-      menu.addItem((item) =>
-        item.setTitle(s.label).onClick(async () => {
-          await pm.projectPursuitView(s);
-          this.render();
-        })
-      );
+    for (const screen of screens) {
+      const sKey = screenKey(screen);
+      const isOccupied = occupied.has(sKey);
+      const label = `${screen.isPrimary ? "🖥️" : "🖵"} ${screen.label} (${screen.width}×${screen.height})`;
+
+      if (isOccupied) {
+        menu.addItem((item) =>
+          item.setTitle(`🔄 Switch ${screen.label} to Pursuit View`).onClick(async () => {
+            await pm.projectPursuitView(screen);
+            this.render();
+          })
+        );
+      } else {
+        menu.addItem((item) =>
+          item.setTitle(label).onClick(async () => {
+            await pm.projectPursuitView(screen);
+            this.render();
+          })
+        );
+      }
     }
     menu.showAtMouseEvent(e);
+  }
+
+  // ── Encounter Creature Search ──────────────────────────────
+
+  private showEncounterCreatureSearch(position: number, encounterSource: string) {
+    const tracker = this.plugin.pursuitTracker;
+    const state = tracker.getState();
+    if (!state) return;
+
+    // Scan vault for creatures / NPCs
+    interface VaultCreature {
+      name: string;
+      speeds: SpeedEntry[];
+      strScore: number;
+      conModifier: number;
+      stealthModifier: number;
+      passivePerception: number;
+      perceptionModifier: number;
+      initBonus: number;
+      currentHP: number;
+      maxHP: number;
+      size: string;
+      wisModifier: number;
+      intModifier: number;
+      chaModifier: number;
+    }
+
+    const extractSkillBonus = (skillsaves: unknown, skillName: string): number | null => {
+      if (!Array.isArray(skillsaves)) return null;
+      const lower = skillName.toLowerCase();
+      for (const entry of skillsaves) {
+        if (typeof entry !== "object" || entry === null) continue;
+        for (const [key, val] of Object.entries(entry as Record<string, unknown>)) {
+          if (key.toLowerCase() === lower && typeof val === "number") return val;
+        }
+      }
+      return null;
+    };
+
+    const extractPassivePerception = (senses: unknown): number | null => {
+      if (typeof senses !== "string") return null;
+      const m = senses.match(/passive perception\s+(\d+)/i);
+      return m ? parseInt(m[1]!, 10) : null;
+    };
+
+    const creatures: VaultCreature[] = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache?.frontmatter;
+      if (!fm) continue;
+      const type = fm.type;
+      const isNPC = type === "npc";
+      const isCreature = type !== "player" && type !== "pc" && !isNPC && fm.statblock === true;
+      if (!isNPC && !isCreature) continue;
+
+      const speeds = parseSpeed(fm.speed);
+      const hasStats = Array.isArray(fm.stats) && fm.stats.length >= 6;
+      const str = hasStats && typeof fm.stats[0] === "number" ? fm.stats[0] : 10;
+      const dex = hasStats && typeof fm.stats[1] === "number" ? fm.stats[1] : 10;
+      const con = hasStats && typeof fm.stats[2] === "number" ? fm.stats[2] : 10;
+      const wis = hasStats && typeof fm.stats[4] === "number" ? fm.stats[4] : 10;
+      const int = hasStats && typeof fm.stats[3] === "number" ? fm.stats[3] : 10;
+      const cha = hasStats && typeof fm.stats[5] === "number" ? fm.stats[5] : 10;
+      const dexMod = Math.floor((dex - 10) / 2);
+      const conMod = Math.floor((con - 10) / 2);
+      const wisMod = Math.floor((wis - 10) / 2);
+      const intMod = Math.floor((int - 10) / 2);
+      const chaMod = Math.floor((cha - 10) / 2);
+      const stealthMod = extractSkillBonus(fm.skillsaves, "stealth") ?? dexMod;
+      const percMod = extractSkillBonus(fm.skillsaves, "perception") ?? wisMod;
+      const passivePerc = extractPassivePerception(fm.senses) ?? (10 + percMod);
+      const hp = typeof fm.hp === "number" ? fm.hp : (typeof fm.hp_max === "number" ? fm.hp_max : 10);
+      const maxHP = typeof fm.hp_max === "number" ? fm.hp_max : hp;
+      let size = "medium";
+      if (typeof fm.size === "string") size = fm.size.toLowerCase();
+
+      creatures.push({
+        name: fm.name || file.basename,
+        speeds,
+        strScore: str,
+        conModifier: conMod,
+        stealthModifier: stealthMod,
+        passivePerception: passivePerc,
+        perceptionModifier: percMod,
+        initBonus: dexMod,
+        currentHP: hp,
+        maxHP,
+        size,
+        wisModifier: wisMod,
+        intModifier: intMod,
+        chaModifier: chaMod,
+      });
+    }
+    creatures.sort((a, b) => a.name.localeCompare(b.name));
+
+    // Build overlay
+    const overlay = document.createElement("div");
+    overlay.className = "dnd-pursuit-add-overlay";
+    const panel = overlay.appendChild(document.createElement("div"));
+    panel.className = "dnd-pursuit-add-panel";
+    panel.createEl("h3", { text: `🐲 Add Encounter Creature` });
+    panel.createEl("p", { text: `Near ${encounterSource} at ${position}ft`, cls: "setting-item-description" });
+
+    let selected: VaultCreature | null = null;
+    let role: PursuitRole = "pursuer";
+
+    // Search input
+    const searchRow = panel.createDiv({ cls: "dnd-pursuit-add-row" });
+    searchRow.createEl("label", { text: "Search" });
+    const searchInput = searchRow.createEl("input", {
+      type: "text",
+      attr: { placeholder: "Search creatures…" },
+      cls: "dnd-creature-search-input",
+    });
+    const resultsDiv = panel.createDiv({ cls: "dnd-creature-search-results" });
+    resultsDiv.style.display = "none";
+
+    const showResults = (query: string) => {
+      if (!query || query.length < 1) { resultsDiv.style.display = "none"; return; }
+      const q = query.toLowerCase().trim();
+      const filtered = creatures.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 10);
+      resultsDiv.empty();
+      if (filtered.length === 0) {
+        resultsDiv.createEl("div", { text: "No creatures found", cls: "dnd-creature-search-no-results" });
+        resultsDiv.style.display = "block";
+        return;
+      }
+      for (const c of filtered) {
+        const row = resultsDiv.createDiv({ cls: "dnd-creature-search-result" });
+        row.createDiv({ text: `🐉 ${c.name}`, cls: "dnd-creature-search-result-name" });
+        const speed = c.speeds.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
+        row.createDiv({ text: `${speed} | HP ${c.currentHP} | STR ${c.strScore}`, cls: "dnd-creature-search-result-stats" });
+        row.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          selected = c;
+          searchInput.value = c.name;
+          resultsDiv.style.display = "none";
+        });
+      }
+      resultsDiv.style.display = "block";
+    };
+    searchInput.addEventListener("input", () => showResults(searchInput.value));
+
+    // Role selector
+    const roleRow = panel.createDiv({ cls: "dnd-pursuit-add-row" });
+    roleRow.createEl("label", { text: "Role" });
+    const roleSel = roleRow.createEl("select");
+    roleSel.createEl("option", { text: "🔍 Pursuer", attr: { value: "pursuer" } });
+    roleSel.createEl("option", { text: "🏃 Quarry", attr: { value: "quarry" } });
+    roleSel.addEventListener("change", () => { role = roleSel.value as PursuitRole; });
+
+    // Buttons
+    const btnRow = panel.createDiv({ cls: "dnd-pursuit-add-row dnd-pursuit-add-btns" });
+    const addBtn = btnRow.createEl("button", { text: "Add", cls: "dnd-pursuit-btn dnd-pursuit-btn-primary" });
+    const cancelBtn = btnRow.createEl("button", { text: "Cancel", cls: "dnd-pursuit-btn" });
+
+    addBtn.addEventListener("click", () => {
+      if (!selected) { new Notice("Search and select a creature first."); return; }
+      const now = Date.now();
+      const weight = SIZE_WEIGHT_ESTIMATE[selected.size as keyof typeof SIZE_WEIGHT_ESTIMATE] ?? SIZE_WEIGHT_ESTIMATE.medium ?? 150;
+      tracker.addParticipant({
+        id: `pursuit_${now}_enc`,
+        name: selected.name,
+        display: selected.name,
+        role,
+        initiative: 0,
+        initiativeModifier: selected.initBonus,
+        speeds: selected.speeds,
+        activeSpeed: selected.speeds[0]?.mode ?? "walk",
+        position,
+        dashesUsed: 0,
+        freeDashes: Math.max(3 + selected.conModifier, 0),
+        conModifier: selected.conModifier,
+        exhaustionLevel: 0,
+        hasActed: false,
+        hasCunningAction: false,
+        hasMoved: false,
+        feetMovedThisTurn: 0,
+        pendingDashSave: false,
+        strScore: selected.strScore,
+        estimatedWeight: weight,
+        stealthModifier: selected.stealthModifier,
+        passivePerception: selected.passivePerception,
+        perceptionModifier: selected.perceptionModifier,
+        lineOfSightBroken: false,
+        targetIds: [],
+        currentHP: selected.currentHP,
+        maxHP: selected.maxHP,
+        incapacitated: false,
+        conditions: [],
+        escaped: false,
+        droppedOut: false,
+        player: false,
+        hidden: false,
+        isHidden: false,
+        hiddenStealthRoll: undefined,
+        movementPenalty: "none",
+        complicationLoSBreak: false,
+        wisModifier: selected.wisModifier,
+        intModifier: selected.intModifier,
+        chaModifier: selected.chaModifier,
+        wasOutOfSightThisRound: false,
+        movementReductionFeet: 0,
+        tempHP: 0,
+        carrying: [],
+        grappling: [],
+        movementPlane: "ground",
+        hasTremorsense: false,
+        startPenalty: "none",
+        startPenaltyApplied: false,
+      });
+      overlay.remove();
+      new Notice(`🐲 Added ${selected.name} at ${position}ft!`);
+    });
+
+    cancelBtn.addEventListener("click", () => overlay.remove());
+    overlay.addEventListener("click", (ev) => { if (ev.target === overlay) overlay.remove(); });
+
+    document.body.appendChild(overlay);
+    searchInput.focus();
   }
 
   // ── Helpers ────────────────────────────────────────────────

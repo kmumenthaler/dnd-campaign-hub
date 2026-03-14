@@ -204,6 +204,7 @@ const WILDERNESS_TABLE: ChaseComplicationTable = {
       roll: 10, title: "Territorial Creature", type: "gm-adjudicate",
       description: "A creature indigenous to the area attacks! GM decides the creature and resolves.",
       autoEffect: { description: "GM: choose a creature and resolve the encounter." },
+      isEncounter: true,
     },
   ],
   obstacleTemplates: [
@@ -301,6 +302,7 @@ const UNDERGROUND_TABLE: ChaseComplicationTable = {
       roll: 10, title: "Denizen", type: "gm-adjudicate",
       description: "A creature inhabiting the area strikes from the shadows!",
       autoEffect: { description: "GM: choose a creature (ooze, rat swarm, etc.) and resolve." },
+      isEncounter: true,
     },
   ],
   obstacleTemplates: [

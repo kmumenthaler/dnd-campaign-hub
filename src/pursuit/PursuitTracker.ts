@@ -170,6 +170,7 @@ export class PursuitTracker {
       catchDistance: 5,
       maxDistance,
       maxRounds,
+      catchUpAlerts: [],
       log: [{ round: 0, text: `Chase "${name}" initialized with ${participants.length} participants.` }],
     };
     this.emit();
@@ -1221,6 +1222,16 @@ export class PursuitTracker {
     this.emit();
   }
 
+  /** Dismiss a catch-up alert (GM chose to continue the chase). */
+  dismissCatchUpAlert(pursuerId: string, quarryId: string): void {
+    if (!this.state) return;
+    this.state.catchUpAlerts = this.state.catchUpAlerts.filter(
+      (a) => !(a.pursuerId === pursuerId && a.quarryId === quarryId)
+    );
+    this.addLog(`Chase continues despite catch-up.`);
+    this.emit();
+  }
+
   /** Add a new participant mid-chase (inserted at end of initiative order). */
   addParticipant(p: PursuitParticipant): void {
     if (!this.state) return;
@@ -1451,7 +1462,7 @@ export class PursuitTracker {
 
   /**
    * Check if any pursuer has caught up with a quarry (position within catchDistance).
-   * Logs a notice but does NOT auto-end — the GM decides what happens.
+   * Populates catchUpAlerts for GM decision (initiate combat or continue).
    */
   private checkCatchUp(): void {
     if (!this.state) return;
@@ -1468,6 +1479,13 @@ export class PursuitTracker {
         const dist = q.position - pur.position;
         if (dist <= catchDist && dist >= 0 && this.canCatch(pur, q)) {
           this.addLog(`⚔️ ${pur.display} catches up to ${q.display}! (${dist}ft apart)`);
+          // Add alert if not already present for this pair
+          const exists = this.state.catchUpAlerts.some(
+            (a) => a.pursuerId === pur.id && a.quarryId === q.id
+          );
+          if (!exists) {
+            this.state.catchUpAlerts.push({ pursuerId: pur.id, quarryId: q.id });
+          }
         }
       }
     }
