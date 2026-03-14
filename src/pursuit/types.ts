@@ -71,6 +71,12 @@ export interface PursuitParticipant {
   hasCunningAction: boolean;
   /** Bonus action used this turn (for Cunning Action tracking). */
   bonusAction?: TurnAction;
+  /** Whether this participant has moved this turn. */
+  hasMoved: boolean;
+  /** Feet moved this turn (for display). */
+  feetMovedThisTurn: number;
+  /** Whether a CON save from an extra dash is currently pending. */
+  pendingDashSave: boolean;
 
   // ── Carry mechanic ──
   /** ID of participant being carried by this one. */
@@ -192,6 +198,12 @@ export interface PursuitState {
   stealthCondition: StealthCondition;
   /** Whether any pursuer is a ranger / has Survival proficiency. */
   hasRangerPursuer: boolean;
+
+  /**
+   * Feet of separation needed for auto-catch detection.
+   * A pursuer catches a quarry when within this distance (default 5).
+   */
+  catchDistance: number;
 
   // ── Log ──
   log: PursuitLogEntry[];

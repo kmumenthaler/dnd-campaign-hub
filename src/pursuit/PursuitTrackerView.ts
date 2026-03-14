@@ -1,8 +1,10 @@
 /**
  * PursuitTrackerView — GM sidebar view for managing an active chase.
  *
- * Shows turn order, participant stats, action selectors, LoS toggles,
- * carry pairings, end-of-round stealth panel, and chase log.
+ * Phase-based guided UI:
+ *   ACTION  →  BONUS  →  MOVE  →  END TURN
+ * Each phase shows only valid controls, with clear feedback for
+ * actions already taken. Pending CON saves block turn advancement.
  */
 
 import { App, ItemView, Menu, Modal, Notice, Setting, WorkspaceLeaf } from "obsidian";
@@ -109,7 +111,18 @@ export class PursuitTrackerView extends ItemView {
       const roundLabel = toolbar.createEl("span", { cls: "dnd-pursuit-toolbar-round" });
       roundLabel.textContent = `Round ${state.round}`;
 
-      const nextBtn = toolbar.createEl("button", { text: "▶", cls: "dnd-pursuit-toolbar-btn dnd-pursuit-toolbar-btn-primary", attr: { title: "Next Turn" } });
+      const nextBtn = toolbar.createEl("button", {
+        text: "▶ Next Turn",
+        cls: "dnd-pursuit-toolbar-btn dnd-pursuit-toolbar-btn-primary",
+        attr: { title: "Next Turn" },
+      });
+      // Disable if CON save pending
+      const active = state.participants[state.turnIndex];
+      if (active?.pendingDashSave) {
+        nextBtn.disabled = true;
+        nextBtn.addClass("dnd-pursuit-btn-disabled");
+        nextBtn.title = "Resolve pending CON save first!";
+      }
       nextBtn.addEventListener("click", () => tracker.nextTurn());
     }
 
@@ -280,145 +293,40 @@ export class PursuitTrackerView extends ItemView {
       });
     }
 
-    // ── Action controls (only for active participant) ──
+    // ══════════════════════════════════════════════════════════
+    // ACTIVE TURN — GUIDED PHASE UI
+    // ══════════════════════════════════════════════════════════
     if (isActive && !p.incapacitated) {
-      const actionLine = row.createDiv({ cls: "dnd-pursuit-row-actions" });
 
-      // Action buttons
-      const actions: Array<{ label: string; action: TurnAction; tip: string }> = [
-        { label: "🏃 Dash", action: "dash", tip: "Double movement, no Hide" },
-        { label: "🫥 Hide", action: "hide", tip: "Stealth check at end of round (needs LoS broken)" },
-        { label: "🛡️ Disengage", action: "disengage", tip: "No opportunity attacks" },
-        { label: "🔄 Dodge", action: "dodge", tip: "Attacks have disadvantage" },
-        { label: "✨ Other", action: "other", tip: "Spell, Help, item, etc." },
-      ];
-
-      for (const a of actions) {
-        const btn = actionLine.createEl("button", {
-          text: a.label,
-          cls: `dnd-pursuit-action-btn ${p.turnAction === a.action ? "dnd-pursuit-action-active" : ""}`,
-          attr: { title: a.tip },
-        });
-        btn.addEventListener("click", () => {
-          if (a.action === "dash") {
-            const needsSave = tracker.dash(p.id);
-            if (needsSave) {
-              new DashConSaveModal(this.app, p, tracker).open();
-            }
-          } else {
-            tracker.setTurnAction(p.id, a.action);
-          }
-        });
+      // ── Phase banner: show what's pending / done ──
+      if (p.pendingDashSave) {
+        const banner = row.createDiv({ cls: "dnd-pursuit-phase-banner dnd-pursuit-phase-save" });
+        banner.createEl("span", { text: "⚠️ DC 10 CON Save Required", cls: "dnd-pursuit-phase-title" });
+        banner.createEl("span", { text: `(Dash ${p.dashesUsed}/${p.freeDashes} free)`, cls: "dnd-pursuit-phase-detail" });
+        this.renderDashSaveInline(row, p, tracker);
+        return; // Block everything else until save resolved
       }
 
-      // Bonus action for Cunning Action users
+      // ── Phase 1: ACTION ──
+      this.renderActionPhase(row, p, tracker, state);
+
+      // ── Phase 2: BONUS (Cunning Action only) ──
       if (p.hasCunningAction) {
-        actionLine.createEl("span", { text: " | Bonus:", cls: "dnd-pursuit-bonus-label" });
-        for (const ba of [
-          { label: "Dash", action: "dash" as TurnAction },
-          { label: "Hide", action: "hide" as TurnAction },
-          { label: "Disengage", action: "disengage" as TurnAction },
-        ]) {
-          const btn = actionLine.createEl("button", {
-            text: ba.label,
-            cls: `dnd-pursuit-bonus-btn ${p.bonusAction === ba.action ? "dnd-pursuit-action-active" : ""}`,
-          });
-          btn.addEventListener("click", () => tracker.setBonusAction(p.id, ba.action));
-        }
+        this.renderBonusPhase(row, p, tracker);
       }
 
-      // LoS toggle (quarry only)
+      // ── Phase 3: MOVEMENT ──
+      this.renderMovementPhase(row, p, tracker, state);
+
+      // ── Carry controls ──
+      this.renderCarryControls(row, p, tracker, state);
+
+      // ── LoS toggle (quarry only) ──
       if (p.role === "quarry") {
-        const losLine = row.createDiv({ cls: "dnd-pursuit-los-line" });
-        const losCheck = losLine.createEl("input", { type: "checkbox" }) as HTMLInputElement;
-        losCheck.checked = p.lineOfSightBroken;
-        losCheck.addEventListener("change", () => tracker.setLineOfSightBroken(p.id, losCheck.checked));
-        losLine.createEl("label", { text: " Line of Sight broken" });
-
-        // LoS hint panel
-        const hintDiv = losLine.createDiv({ cls: "dnd-pursuit-los-hints" });
-        const env = state.environment;
-        const hints: string[] = [];
-        if (env.hasCover) hints.push("✅ Cover available (stalls, buildings)");
-        if (env.hasObscurement) hints.push("✅ Obscurement (fog, darkness)");
-        if (env.hasElevation) hints.push("✅ Elevation (rooftops, balconies)");
-        if (env.crowdedOrNoisy) hints.push("✅ Crowded/noisy area");
-        if (env.wideOpen) hints.push("⚠️ Wide open — few hiding spots");
-        if (hints.length === 0) hints.push("No environment factors set");
-        for (const h of hints) {
-          hintDiv.createEl("div", { text: h, cls: "dnd-pursuit-hint" });
-        }
-
-        // Eligibility warning
-        if (p.lineOfSightBroken) {
-          const canHide = p.turnAction === "hide" || (p.hasCunningAction && p.bonusAction === "hide");
-          if (!canHide) {
-            losLine.createEl("div", {
-              text: "⚠️ LoS broken but no Hide action taken — cannot make stealth check",
-              cls: "dnd-pursuit-warning",
-            });
-          }
-        }
+        this.renderLosToggle(row, p, tracker, state);
       }
 
-      // Carry controls
-      if (p.role === "quarry" && !p.carrying) {
-        const incapMembers = state.participants.filter(
-          (q) => q.role === "quarry" && q.incapacitated && !q.carriedBy && q.id !== p.id
-        );
-        if (incapMembers.length > 0) {
-          const carryLine = row.createDiv({ cls: "dnd-pursuit-carry-line" });
-          carryLine.createEl("span", { text: "Pick up: " });
-          for (const inc of incapMembers) {
-            const result = computeCarryPenalty(p.strScore, inc.estimatedWeight);
-            const label = result.status === "impossible"
-              ? `${inc.display} (too heavy)`
-              : result.status === "drag"
-                ? `${inc.display} (drag, 5ft)`
-                : `${inc.display} (½ speed)`;
-            const btn = carryLine.createEl("button", {
-              text: label,
-              cls: "dnd-pursuit-carry-btn",
-            });
-            btn.disabled = result.status === "impossible";
-            btn.addEventListener("click", () => tracker.pickUp(p.id, inc.id));
-          }
-        }
-      }
-      if (p.carrying) {
-        const carried = state.participants.find((q) => q.id === p.carrying);
-        if (carried) {
-          const carryLine = row.createDiv({ cls: "dnd-pursuit-carry-line" });
-          carryLine.createEl("span", { text: `Carrying: ${carried.display}` });
-          const dropBtn = carryLine.createEl("button", { text: "Put Down", cls: "dnd-pursuit-carry-btn" });
-          dropBtn.addEventListener("click", () => tracker.putDown(p.id));
-        }
-      }
-
-      // Movement controls
-      const moveLine = row.createDiv({ cls: "dnd-pursuit-move-line" });
-      const moveLabel = moveLine.createEl("span", { text: `Move (${effectiveSpeed}ft): ` });
-      const moveInput = moveLine.createEl("input", {
-        type: "number",
-        cls: "dnd-pursuit-move-input",
-        attr: { value: String(effectiveSpeed), min: "0", max: String(effectiveSpeed * 2) },
-      });
-      const moveBtn = moveLine.createEl("button", { text: "Move ▶", cls: "dnd-pursuit-btn" });
-      moveBtn.addEventListener("click", () => {
-        const feet = parseInt(moveInput.value, 10) || 0;
-        tracker.move(p.id, feet);
-      });
-
-      // Pursuer: Search action + Drop Out
-      if (p.role === "pursuer") {
-        const pursuerLine = row.createDiv({ cls: "dnd-pursuit-pursuer-actions" });
-        const searchBtn = pursuerLine.createEl("button", { text: "🔎 Search", cls: "dnd-pursuit-action-btn" });
-        searchBtn.addEventListener("click", () => {
-          new PerceptionRollModal(this.app, p, tracker).open();
-        });
-      }
-
-      // Drop out button
+      // ── Drop out ──
       const dropLine = row.createDiv({ cls: "dnd-pursuit-drop-line" });
       const dropBtn = dropLine.createEl("button", { text: "🏳️ Drop Out", cls: "dnd-pursuit-btn dnd-pursuit-btn-danger" });
       dropBtn.addEventListener("click", () => tracker.dropOut(p.id));
@@ -428,41 +336,391 @@ export class PursuitTrackerView extends ItemView {
     if (p.role === "quarry" && p.lineOfSightBroken && p.hasActed) {
       const canHide = p.turnAction === "hide" || (p.hasCunningAction && p.bonusAction === "hide");
       if (canHide && !p.stealthRoll) {
-        const stealthLine = row.createDiv({ cls: "dnd-pursuit-stealth-line" });
-        stealthLine.createEl("span", { text: `Stealth check (mod ${p.stealthModifier >= 0 ? "+" : ""}${p.stealthModifier}): ` });
-        const stInput = stealthLine.createEl("input", {
-          type: "number",
-          cls: "dnd-pursuit-stealth-input",
-          attr: { placeholder: "Roll result" },
-        });
-        const stBtn = stealthLine.createEl("button", { text: "Check", cls: "dnd-pursuit-btn" });
-        stBtn.addEventListener("click", () => {
-          const roll = parseInt((stInput as HTMLInputElement).value, 10);
-          if (isNaN(roll)) { new Notice("Enter a stealth roll result."); return; }
-          tracker.resolveStealthCheck(p.id, roll);
-        });
+        this.renderStealthCheck(row, p, tracker, state);
+      }
+    }
+  }
 
-        // Show the DC (highest pursuer Perception)
-        const pursuers = state.participants.filter((q) => q.role === "pursuer" && !q.droppedOut);
-        let highestPerc = 0;
-        let highestName = "";
-        for (const pur of pursuers) {
-          const eff = Math.max(pur.passivePerception, pur.activePerceptionRoll ?? 0);
-          if (eff > highestPerc) { highestPerc = eff; highestName = pur.display; }
-        }
-        stealthLine.createEl("span", {
-          text: ` vs DC ${highestPerc} (${highestName})`,
-          cls: "dnd-pursuit-stealth-dc",
-        });
+  // ── Phase 1: ACTION PHASE ─────────────────────────────────
 
-        // Condition note
-        if (state.stealthCondition !== "normal") {
-          stealthLine.createEl("span", {
-            text: ` [${state.stealthCondition}]`,
-            cls: `dnd-pursuit-stealth-cond dnd-pursuit-condition-${state.stealthCondition}`,
+  private renderActionPhase(
+    row: HTMLElement,
+    p: PursuitParticipant,
+    tracker: PursuitTracker,
+    state: PursuitState,
+  ) {
+    const phase = row.createDiv({ cls: "dnd-pursuit-phase" });
+
+    if (p.turnAction !== undefined) {
+      // Action already used — show summary
+      const done = phase.createDiv({ cls: "dnd-pursuit-phase-done" });
+      done.createEl("span", { text: "✅ Action: ", cls: "dnd-pursuit-phase-label" });
+      const label = this.actionLabel(p.turnAction);
+      done.createEl("span", { text: label, cls: "dnd-pursuit-phase-value" });
+
+      if (p.turnAction === "dash") {
+        const dashed = p.turnAction === "dash" || p.bonusAction === "dash";
+        const maxMove = tracker.getMaxMovement(p);
+        done.createEl("span", { text: ` (movement: ${maxMove}ft)`, cls: "dnd-pursuit-phase-detail" });
+      }
+
+      // Pursuer search badge
+      if (p.role === "pursuer" && p.activePerceptionRoll !== undefined) {
+        done.createEl("span", { text: ` Perception: ${p.activePerceptionRoll}`, cls: "dnd-pursuit-phase-detail" });
+      }
+    } else {
+      // Awaiting action
+      const pending = phase.createDiv({ cls: "dnd-pursuit-phase-pending" });
+      pending.createEl("span", { text: "⬜ Action:", cls: "dnd-pursuit-phase-label" });
+
+      const btnGroup = pending.createDiv({ cls: "dnd-pursuit-btn-group" });
+
+      const actions: Array<{ label: string; action: TurnAction; tip: string }> = [
+        { label: "🏃 Dash", action: "dash", tip: "Double movement (+ CON save if over free dashes)" },
+        { label: "🫥 Hide", action: "hide", tip: "Stealth check at end of round (needs LoS broken)" },
+        { label: "🛡️ Dsng", action: "disengage", tip: "No opportunity attacks" },
+        { label: "🔄 Dodge", action: "dodge", tip: "Attacks have disadvantage" },
+      ];
+
+      // Add Search for pursuers
+      if (p.role === "pursuer") {
+        actions.push({ label: "🔎 Search", action: "other", tip: "Use action to roll active Perception" });
+      } else {
+        actions.push({ label: "✨ Other", action: "other", tip: "Spell, Help, item, etc." });
+      }
+
+      for (const a of actions) {
+        const btn = btnGroup.createEl("button", {
+          text: a.label,
+          cls: "dnd-pursuit-action-btn",
+          attr: { title: a.tip },
+        });
+        btn.addEventListener("click", () => {
+          if (a.action === "dash") {
+            const result = tracker.dash(p.id);
+            if (result === "save-needed") {
+              // View will re-render with pendingDashSave = true → save UI shown
+            }
+          } else if (a.action === "other" && p.role === "pursuer") {
+            new PerceptionRollModal(this.app, p, tracker).open();
+          } else {
+            tracker.setTurnAction(p.id, a.action);
+          }
+        });
+      }
+    }
+  }
+
+  // ── Phase 2: BONUS PHASE (Cunning Action) ─────────────────
+
+  private renderBonusPhase(
+    row: HTMLElement,
+    p: PursuitParticipant,
+    tracker: PursuitTracker,
+  ) {
+    const phase = row.createDiv({ cls: "dnd-pursuit-phase" });
+
+    if (p.bonusAction !== undefined) {
+      const done = phase.createDiv({ cls: "dnd-pursuit-phase-done" });
+      done.createEl("span", { text: "✅ Bonus: ", cls: "dnd-pursuit-phase-label" });
+      done.createEl("span", { text: this.actionLabel(p.bonusAction), cls: "dnd-pursuit-phase-value" });
+
+      if (p.bonusAction === "dash") {
+        const maxMove = tracker.getMaxMovement(p);
+        done.createEl("span", { text: ` (movement: ${maxMove}ft)`, cls: "dnd-pursuit-phase-detail" });
+      }
+    } else {
+      const pending = phase.createDiv({ cls: "dnd-pursuit-phase-pending" });
+      pending.createEl("span", { text: "⬜ Bonus (Cunning):", cls: "dnd-pursuit-phase-label" });
+
+      const btnGroup = pending.createDiv({ cls: "dnd-pursuit-btn-group" });
+      for (const ba of [
+        { label: "Dash", action: "dash" as TurnAction, tip: "Bonus Dash (+CON save if over free)" },
+        { label: "Hide", action: "hide" as TurnAction, tip: "Bonus Hide (needs LoS broken)" },
+        { label: "Dsng", action: "disengage" as TurnAction, tip: "Bonus Disengage" },
+      ]) {
+        const btn = btnGroup.createEl("button", {
+          text: ba.label,
+          cls: "dnd-pursuit-bonus-btn",
+          attr: { title: ba.tip },
+        });
+        btn.addEventListener("click", () => {
+          if (ba.action === "dash") {
+            const result = tracker.dashBonus(p.id);
+            if (result === "save-needed") {
+              // re-render will show save UI
+            }
+          } else {
+            tracker.setBonusAction(p.id, ba.action);
+          }
+        });
+      }
+
+      // Skip bonus button
+      const skipBtn = btnGroup.createEl("button", {
+        text: "Skip",
+        cls: "dnd-pursuit-bonus-btn dnd-pursuit-btn-skip",
+        attr: { title: "Skip bonus action" },
+      });
+      skipBtn.addEventListener("click", () => {
+        tracker.setBonusAction(p.id, "other");
+      });
+    }
+  }
+
+  // ── Phase 3: MOVEMENT PHASE ────────────────────────────────
+
+  private renderMovementPhase(
+    row: HTMLElement,
+    p: PursuitParticipant,
+    tracker: PursuitTracker,
+    state: PursuitState,
+  ) {
+    const phase = row.createDiv({ cls: "dnd-pursuit-phase" });
+    const baseSpeed = tracker.getEffectiveSpeed(p);
+    const maxMove = tracker.getMaxMovement(p);
+    const dashed = p.turnAction === "dash" || p.bonusAction === "dash";
+
+    if (p.hasMoved) {
+      // Movement done
+      const done = phase.createDiv({ cls: "dnd-pursuit-phase-done" });
+      done.createEl("span", { text: "✅ Moved: ", cls: "dnd-pursuit-phase-label" });
+      done.createEl("span", { text: `${p.feetMovedThisTurn}ft`, cls: "dnd-pursuit-phase-value" });
+      done.createEl("span", { text: ` → position ${p.position}ft`, cls: "dnd-pursuit-phase-detail" });
+    } else {
+      // Movement pending
+      const pending = phase.createDiv({ cls: "dnd-pursuit-phase-pending" });
+
+      // Speed info label
+      const speedInfo = pending.createDiv({ cls: "dnd-pursuit-speed-info" });
+      speedInfo.createEl("span", { text: "⬜ Movement: ", cls: "dnd-pursuit-phase-label" });
+      if (dashed) {
+        speedInfo.createEl("span", { text: `${baseSpeed}ft base × 2 = `, cls: "dnd-pursuit-phase-detail" });
+        speedInfo.createEl("span", { text: `${maxMove}ft`, cls: "dnd-pursuit-dash-speed" });
+      } else {
+        speedInfo.createEl("span", { text: `${maxMove}ft`, cls: "dnd-pursuit-phase-value" });
+      }
+
+      if (maxMove === 0) {
+        pending.createEl("div", { text: "Speed is 0 — cannot move.", cls: "dnd-pursuit-warning" });
+        return;
+      }
+
+      // Quick move buttons: full speed, half, none
+      const moveLine = pending.createDiv({ cls: "dnd-pursuit-move-line" });
+      const quickBtns = moveLine.createDiv({ cls: "dnd-pursuit-btn-group" });
+
+      const fullBtn = quickBtns.createEl("button", {
+        text: `Full (${maxMove}ft)`,
+        cls: "dnd-pursuit-btn dnd-pursuit-btn-primary",
+      });
+      fullBtn.addEventListener("click", () => tracker.move(p.id, maxMove));
+
+      if (maxMove >= 10) {
+        const halfBtn = quickBtns.createEl("button", {
+          text: `Half (${Math.floor(maxMove / 2)}ft)`,
+          cls: "dnd-pursuit-btn",
+        });
+        halfBtn.addEventListener("click", () => tracker.move(p.id, Math.floor(maxMove / 2)));
+      }
+
+      const stayBtn = quickBtns.createEl("button", {
+        text: "Stay (0ft)",
+        cls: "dnd-pursuit-btn",
+      });
+      stayBtn.addEventListener("click", () => tracker.move(p.id, 0));
+
+      // Custom input
+      const customDiv = moveLine.createDiv({ cls: "dnd-pursuit-move-custom" });
+      const moveInput = customDiv.createEl("input", {
+        type: "number",
+        cls: "dnd-pursuit-move-input",
+        attr: { min: "0", max: String(maxMove), placeholder: `0-${maxMove}` },
+      });
+      const moveBtn = customDiv.createEl("button", { text: "Move", cls: "dnd-pursuit-btn" });
+      moveBtn.addEventListener("click", () => {
+        const val = parseInt(moveInput.value, 10);
+        if (isNaN(val) || val < 0) { new Notice("Enter a valid number of feet."); return; }
+        if (val > maxMove) { new Notice(`Max movement is ${maxMove}ft.`); return; }
+        tracker.move(p.id, val);
+      });
+    }
+  }
+
+  // ── Inline Dash CON Save ───────────────────────────────────
+
+  private renderDashSaveInline(
+    row: HTMLElement,
+    p: PursuitParticipant,
+    tracker: PursuitTracker,
+  ) {
+    const saveDiv = row.createDiv({ cls: "dnd-pursuit-save-inline" });
+    saveDiv.createEl("p", {
+      text: `Free dashes exhausted (${p.dashesUsed}/${p.freeDashes}). Roll DC 10 Constitution saving throw.`,
+    });
+    saveDiv.createEl("p", {
+      text: `CON modifier: ${p.conModifier >= 0 ? "+" : ""}${p.conModifier}`,
+      cls: "dnd-pursuit-phase-detail",
+    });
+
+    const inputDiv = saveDiv.createDiv({ cls: "dnd-pursuit-save-row" });
+    const input = inputDiv.createEl("input", {
+      type: "number",
+      cls: "dnd-pursuit-save-input",
+      attr: { placeholder: "d20 + CON mod total" },
+    });
+    const btn = inputDiv.createEl("button", { text: "Resolve", cls: "dnd-pursuit-btn dnd-pursuit-btn-primary" });
+    btn.addEventListener("click", () => {
+      const roll = parseInt(input.value, 10);
+      if (isNaN(roll)) { new Notice("Enter the save result."); return; }
+      const success = tracker.resolveDashSave(p.id, roll);
+      new Notice(success
+        ? `✅ ${p.display} succeeds the CON save!`
+        : `❌ ${p.display} fails! Exhaustion → ${p.exhaustionLevel + 1}`
+      );
+    });
+    input.focus();
+  }
+
+  // ── LoS Toggle ─────────────────────────────────────────────
+
+  private renderLosToggle(
+    row: HTMLElement,
+    p: PursuitParticipant,
+    tracker: PursuitTracker,
+    state: PursuitState,
+  ) {
+    const losLine = row.createDiv({ cls: "dnd-pursuit-los-line" });
+    const losCheck = losLine.createEl("input", { type: "checkbox" }) as HTMLInputElement;
+    losCheck.checked = p.lineOfSightBroken;
+    losCheck.addEventListener("change", () => tracker.setLineOfSightBroken(p.id, losCheck.checked));
+    losLine.createEl("label", { text: " Line of Sight broken" });
+
+    // LoS hint panel
+    const hintDiv = losLine.createDiv({ cls: "dnd-pursuit-los-hints" });
+    const env = state.environment;
+    const hints: string[] = [];
+    if (env.hasCover) hints.push("✅ Cover available");
+    if (env.hasObscurement) hints.push("✅ Obscurement");
+    if (env.hasElevation) hints.push("✅ Elevation");
+    if (env.crowdedOrNoisy) hints.push("✅ Crowded/noisy");
+    if (env.wideOpen) hints.push("⚠️ Wide open");
+    if (hints.length === 0) hints.push("No environment factors");
+    for (const h of hints) {
+      hintDiv.createEl("div", { text: h, cls: "dnd-pursuit-hint" });
+    }
+
+    // Eligibility warning
+    if (p.lineOfSightBroken) {
+      const canHide = p.turnAction === "hide" || (p.hasCunningAction && p.bonusAction === "hide");
+      if (!canHide) {
+        losLine.createEl("div", {
+          text: "⚠️ LoS broken but no Hide action — cannot stealth-check at end of round",
+          cls: "dnd-pursuit-warning",
+        });
+      } else {
+        losLine.createEl("div", {
+          text: "✅ Eligible for stealth check at end of round",
+          cls: "dnd-pursuit-success",
+        });
+      }
+    }
+  }
+
+  // ── Carry Controls ─────────────────────────────────────────
+
+  private renderCarryControls(
+    row: HTMLElement,
+    p: PursuitParticipant,
+    tracker: PursuitTracker,
+    state: PursuitState,
+  ) {
+    // Pick up incapacitated ally
+    if (p.role === "quarry" && !p.carrying) {
+      const incapMembers = state.participants.filter(
+        (q) => q.role === "quarry" && q.incapacitated && !q.carriedBy && q.id !== p.id
+      );
+      if (incapMembers.length > 0) {
+        const carryLine = row.createDiv({ cls: "dnd-pursuit-carry-line" });
+        carryLine.createEl("span", { text: "Pick up: " });
+        for (const inc of incapMembers) {
+          const result = computeCarryPenalty(p.strScore, inc.estimatedWeight);
+          const label = result.status === "impossible"
+            ? `${inc.display} (too heavy)`
+            : result.status === "drag"
+              ? `${inc.display} (drag, 5ft)`
+              : `${inc.display} (½ speed)`;
+          const btn = carryLine.createEl("button", {
+            text: label,
+            cls: "dnd-pursuit-carry-btn",
           });
+          btn.disabled = result.status === "impossible";
+          btn.addEventListener("click", () => tracker.pickUp(p.id, inc.id));
         }
       }
+    }
+
+    // Already carrying someone
+    if (p.carrying) {
+      const carried = state.participants.find((q) => q.id === p.carrying);
+      if (carried) {
+        const carryLine = row.createDiv({ cls: "dnd-pursuit-carry-line" });
+        carryLine.createEl("span", { text: `Carrying: ${carried.display}` });
+        const dropBtn = carryLine.createEl("button", { text: "Put Down", cls: "dnd-pursuit-carry-btn" });
+        dropBtn.addEventListener("click", () => tracker.putDown(p.id));
+      }
+    }
+  }
+
+  // ── Stealth Check (end-of-round) ──────────────────────────
+
+  private renderStealthCheck(
+    row: HTMLElement,
+    p: PursuitParticipant,
+    tracker: PursuitTracker,
+    state: PursuitState,
+  ) {
+    const stealthLine = row.createDiv({ cls: "dnd-pursuit-stealth-line" });
+    stealthLine.createEl("span", {
+      text: `🎯 Stealth check (mod ${p.stealthModifier >= 0 ? "+" : ""}${p.stealthModifier}): `,
+    });
+
+    const stInput = stealthLine.createEl("input", {
+      type: "number",
+      cls: "dnd-pursuit-stealth-input",
+      attr: { placeholder: "Roll result" },
+    });
+    const stBtn = stealthLine.createEl("button", { text: "Check", cls: "dnd-pursuit-btn dnd-pursuit-btn-primary" });
+    stBtn.addEventListener("click", () => {
+      const roll = parseInt((stInput as HTMLInputElement).value, 10);
+      if (isNaN(roll)) { new Notice("Enter a stealth roll result."); return; }
+      const result = tracker.resolveStealthCheck(p.id, roll);
+      if (result === "escaped") {
+        new Notice(`🏃 ${p.display} ESCAPES!`);
+      } else if (result === "detected") {
+        new Notice(`👁️ ${p.display} is detected!`);
+      }
+    });
+
+    // Show the DC (highest pursuer Perception)
+    const pursuers = state.participants.filter((q) => q.role === "pursuer" && !q.droppedOut);
+    let highestPerc = 0;
+    let highestName = "";
+    for (const pur of pursuers) {
+      const eff = Math.max(pur.passivePerception, pur.activePerceptionRoll ?? 0);
+      if (eff > highestPerc) { highestPerc = eff; highestName = pur.display; }
+    }
+    stealthLine.createEl("span", {
+      text: ` vs DC ${highestPerc} (${highestName})`,
+      cls: "dnd-pursuit-stealth-dc",
+    });
+
+    // Condition note
+    if (state.stealthCondition !== "normal") {
+      stealthLine.createEl("span", {
+        text: ` [${state.stealthCondition}]`,
+        cls: `dnd-pursuit-stealth-cond dnd-pursuit-condition-${state.stealthCondition}`,
+      });
     }
   }
 
@@ -559,51 +817,21 @@ export class PursuitTrackerView extends ItemView {
     }
     menu.showAtMouseEvent(e);
   }
+
+  // ── Helpers ────────────────────────────────────────────────
+
+  private actionLabel(action: TurnAction): string {
+    switch (action) {
+      case "dash": return "🏃 Dash";
+      case "hide": return "🫥 Hide";
+      case "disengage": return "🛡️ Disengage";
+      case "dodge": return "🔄 Dodge";
+      case "other": return "✨ Other";
+    }
+  }
 }
 
 // ── Helper Modals ────────────────────────────────────────────
-
-/** Modal for rolling a DC 10 CON save after extra dash. */
-class DashConSaveModal extends Modal {
-  private p: PursuitParticipant;
-  private tracker: PursuitTracker;
-
-  constructor(app: App, p: PursuitParticipant, tracker: PursuitTracker) {
-    super(app);
-    this.p = p;
-    this.tracker = tracker;
-  }
-
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.createEl("h3", { text: `DC 10 CON Save — ${this.p.display}` });
-    contentEl.createEl("p", { text: `Free dashes exhausted (${this.p.dashesUsed}/${this.p.freeDashes}). Roll a DC 10 Constitution saving throw.` });
-    contentEl.createEl("p", { text: `CON modifier: ${this.p.conModifier >= 0 ? "+" : ""}${this.p.conModifier}` });
-
-    const inputDiv = contentEl.createDiv();
-    const input = inputDiv.createEl("input", {
-      type: "number",
-      cls: "dnd-pursuit-save-input",
-      attr: { placeholder: "d20 + CON mod total" },
-    });
-
-    const btnDiv = contentEl.createDiv({ cls: "dnd-pursuit-footer" });
-    const btn = btnDiv.createEl("button", { text: "Resolve", cls: "dnd-pursuit-btn dnd-pursuit-btn-primary" });
-    btn.addEventListener("click", () => {
-      const roll = parseInt(input.value, 10);
-      if (isNaN(roll)) { new Notice("Enter the save result."); return; }
-      const success = this.tracker.resolveDashSave(this.p.id, roll);
-      new Notice(success
-        ? `✅ ${this.p.display} succeeds the CON save!`
-        : `❌ ${this.p.display} fails! Exhaustion → ${this.p.exhaustionLevel + 1}`
-      );
-      this.close();
-    });
-  }
-
-  onClose() { this.contentEl.empty(); }
-}
 
 /** Modal for a pursuer's active Perception roll. */
 class PerceptionRollModal extends Modal {

@@ -12360,6 +12360,41 @@
 .dnd-pursuit-los-hints { font-size: 0.75em; color: var(--text-muted); margin-top: 2px; }
 .dnd-pursuit-hint { padding: 1px 0; }
 .dnd-pursuit-warning { font-size: 0.75em; color: #e90; margin-top: 2px; }
+.dnd-pursuit-success { font-size: 0.75em; color: #0d6; margin-top: 2px; }
+
+/* ── Phase-based Turn UI ── */
+.dnd-pursuit-phase { margin-top: 6px; padding: 6px 8px; background: var(--background-secondary); border-radius: 6px; border-left: 3px solid var(--background-modifier-border); }
+.dnd-pursuit-phase-done { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.dnd-pursuit-phase-done .dnd-pursuit-phase-label { color: var(--text-muted); font-size: 0.85em; }
+.dnd-pursuit-phase-done .dnd-pursuit-phase-value { font-weight: 600; }
+.dnd-pursuit-phase-done .dnd-pursuit-phase-detail { font-size: 0.8em; color: var(--text-muted); }
+.dnd-pursuit-phase-pending { display: flex; flex-direction: column; gap: 4px; }
+.dnd-pursuit-phase-pending .dnd-pursuit-phase-label { font-size: 0.85em; color: var(--text-muted); font-weight: 600; }
+.dnd-pursuit-btn-group { display: flex; gap: 4px; flex-wrap: wrap; }
+.dnd-pursuit-btn-skip { opacity: 0.6; }
+.dnd-pursuit-btn-skip:hover { opacity: 1; }
+.dnd-pursuit-btn-disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Dash speed highlight */
+.dnd-pursuit-dash-speed { font-weight: 700; color: var(--interactive-accent); }
+
+/* Speed info line */
+.dnd-pursuit-speed-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+
+/* Custom movement input */
+.dnd-pursuit-move-custom { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+
+/* CON save banner */
+.dnd-pursuit-phase-banner { padding: 8px; border-radius: 6px; margin-top: 6px; }
+.dnd-pursuit-phase-save { background: rgba(255, 60, 60, 0.08); border-left: 3px solid var(--text-error); }
+.dnd-pursuit-phase-title { font-weight: 700; color: var(--text-error); }
+.dnd-pursuit-phase-detail { font-size: 0.8em; color: var(--text-muted); }
+.dnd-pursuit-save-inline { padding: 6px 8px; margin-top: 4px; }
+.dnd-pursuit-save-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+
+/* Player view action/movement badges */
+.dnd-pursuit-pv-action-badge { font-size: 0.65em; color: #ffb020; font-weight: 600; text-transform: uppercase; }
+.dnd-pursuit-pv-moved-badge { font-size: 0.6em; color: #0ca; font-weight: 600; }
 
 /* ── Carry / Move / Stealth Controls ── */
 .dnd-pursuit-carry-line { margin-top: 4px; font-size: 0.85em; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }

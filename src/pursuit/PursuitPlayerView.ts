@@ -274,6 +274,19 @@ export class PursuitPlayerView extends ItemView {
       token.createEl("div", { text: "YOUR TURN", cls: "dnd-pursuit-pv-your-turn" });
     }
 
+    // Action summary (show what they're doing)
+    if (p.turnAction) {
+      const actionText = p.turnAction === "dash" ? "Dashing!" : p.turnAction === "hide" ? "Hiding..." : "";
+      if (actionText) {
+        token.createEl("div", { text: actionText, cls: "dnd-pursuit-pv-action-badge" });
+      }
+    }
+
+    // Movement info
+    if (p.feetMovedThisTurn > 0) {
+      token.createEl("div", { text: `+${p.feetMovedThisTurn}ft`, cls: "dnd-pursuit-pv-moved-badge" });
+    }
+
     // Carrying indicator
     if (p.carrying) {
       const carried = state.participants.find((q) => q.id === p.carrying);
@@ -287,11 +300,11 @@ export class PursuitPlayerView extends ItemView {
       token.createEl("div", { text: "👁️‍🗨️ Hidden", cls: "dnd-pursuit-pv-hidden-badge" });
     }
 
-    // Stealth result (if rolled this round)
+    // Stealth result (if rolled this round) — hide exact numbers from players
     if (p.stealthRoll !== undefined) {
       const isEscaped = p.escaped;
       token.createEl("div", {
-        text: isEscaped ? `Stealth ${p.stealthRoll} ✅` : `Stealth ${p.stealthRoll} ❌`,
+        text: isEscaped ? "Vanished! ✅" : "Spotted! ❌",
         cls: `dnd-pursuit-pv-stealth-result ${isEscaped ? "dnd-pursuit-pv-stealth-pass" : "dnd-pursuit-pv-stealth-fail"}`,
       });
     }
