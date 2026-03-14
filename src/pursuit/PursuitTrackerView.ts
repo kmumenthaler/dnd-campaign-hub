@@ -6,7 +6,7 @@
  * Shows only the current phase. NPCs auto-resolve; PCs prompt for rolls.
  */
 
-import { App, ItemView, Menu, Notice, WorkspaceLeaf } from "obsidian";
+import { App, ItemView, Menu, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { PURSUIT_TRACKER_VIEW_TYPE } from "../constants";
 import type { PursuitTracker } from "./PursuitTracker";
@@ -1128,7 +1128,101 @@ export class PursuitTrackerView extends ItemView {
     const state = tracker.getState();
     if (!state) return;
 
-    // Create a simple modal-like overlay for quick add
+    // Scan vault for PCs, NPCs, and creatures
+    interface VaultEntry {
+      name: string;
+      type: "player" | "npc" | "creature";
+      speeds: SpeedEntry[];
+      strScore: number;
+      conModifier: number;
+      stealthModifier: number;
+      passivePerception: number;
+      perceptionModifier: number;
+      initBonus: number;
+      currentHP: number;
+      maxHP: number;
+      size: string;
+      notePath: string;
+      tokenId?: string;
+      wisModifier: number;
+      intModifier: number;
+      chaModifier: number;
+    }
+
+    const extractSkillBonus = (skillsaves: unknown, skillName: string): number | null => {
+      if (!Array.isArray(skillsaves)) return null;
+      const lower = skillName.toLowerCase();
+      for (const entry of skillsaves) {
+        if (typeof entry !== "object" || entry === null) continue;
+        for (const [key, val] of Object.entries(entry as Record<string, unknown>)) {
+          if (key.toLowerCase() === lower && typeof val === "number") return val;
+        }
+      }
+      return null;
+    };
+
+    const extractPassivePerc = (senses: unknown): number | null => {
+      if (typeof senses !== "string") return null;
+      const m = senses.match(/passive perception\s+(\d+)/i);
+      return m ? parseInt(m[1]!, 10) : null;
+    };
+
+    const vaultEntries: VaultEntry[] = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache?.frontmatter;
+      if (!fm) continue;
+      const type = fm.type;
+      const isPlayer = type === "player" || type === "pc";
+      const isNPC = type === "npc";
+      const isCreature = !isPlayer && !isNPC && fm.statblock === true;
+      if (!isPlayer && !isNPC && !isCreature) continue;
+
+      const speeds = parseSpeed(fm.speed);
+      const hasStats = Array.isArray(fm.stats) && fm.stats.length >= 6;
+      const str = hasStats && typeof fm.stats[0] === "number" ? fm.stats[0] : 10;
+      const dex = hasStats && typeof fm.stats[1] === "number" ? fm.stats[1] : 10;
+      const con = hasStats && typeof fm.stats[2] === "number" ? fm.stats[2] : 10;
+      const wis = hasStats && typeof fm.stats[4] === "number" ? fm.stats[4] : 10;
+      const int = hasStats && typeof fm.stats[3] === "number" ? fm.stats[3] : 10;
+      const cha = hasStats && typeof fm.stats[5] === "number" ? fm.stats[5] : 10;
+      const dexMod = Math.floor((dex - 10) / 2);
+      const conMod = Math.floor((con - 10) / 2);
+      const wisMod = Math.floor((wis - 10) / 2);
+      const intMod = Math.floor((int - 10) / 2);
+      const chaMod = Math.floor((cha - 10) / 2);
+      const initBonus = isPlayer && typeof fm.init_bonus === "number" ? fm.init_bonus : dexMod;
+      const stealthMod = extractSkillBonus(fm.skillsaves, "stealth") ?? dexMod;
+      const percMod = extractSkillBonus(fm.skillsaves, "perception") ?? wisMod;
+      const passivePerc = extractPassivePerc(fm.senses) ?? (10 + percMod);
+      let size = "medium";
+      if (typeof fm.size === "string") size = fm.size.toLowerCase();
+      const hp = typeof fm.hp === "number" ? fm.hp : (typeof fm.hp_max === "number" ? fm.hp_max : 10);
+      const maxHP = typeof fm.hp_max === "number" ? fm.hp_max : hp;
+
+      vaultEntries.push({
+        name: fm.name || file.basename,
+        type: isPlayer ? "player" : isNPC ? "npc" : "creature",
+        speeds,
+        strScore: str,
+        conModifier: conMod,
+        stealthModifier: stealthMod,
+        passivePerception: passivePerc,
+        perceptionModifier: percMod,
+        initBonus,
+        currentHP: hp,
+        maxHP,
+        size,
+        notePath: file.path,
+        tokenId: fm.token_id,
+        wisModifier: wisMod,
+        intModifier: intMod,
+        chaModifier: chaMod,
+      });
+    }
+    vaultEntries.sort((a, b) => a.name.localeCompare(b.name));
+
+    // Create overlay
     const overlay = document.createElement("div");
     overlay.className = "dnd-pursuit-add-overlay";
 
@@ -1136,19 +1230,79 @@ export class PursuitTrackerView extends ItemView {
     panel.className = "dnd-pursuit-add-panel";
     panel.createEl("h3", { text: "➕ Add Participant" });
 
-    let name = "";
+    let selected: VaultEntry | null = null;
     let role: PursuitRole = "pursuer";
-    let speed = 30;
-    let strScore = 10;
     let position = 0;
+    let manualName = "";
+    let manualSpeed = 30;
+    let manualStr = 10;
 
-    // Name
-    const nameRow = panel.createDiv({ cls: "dnd-pursuit-add-row" });
-    nameRow.createEl("label", { text: "Name" });
-    const nameInput = nameRow.createEl("input", { type: "text", attr: { placeholder: "Name" } });
-    nameInput.addEventListener("input", () => { name = nameInput.value; });
+    // ── Vault search ──
+    const searchRow = panel.createDiv({ cls: "dnd-pursuit-add-row" });
+    searchRow.createEl("label", { text: "Search" });
+    const searchInput = searchRow.createEl("input", {
+      type: "text",
+      attr: { placeholder: "Search PCs, NPCs, creatures…" },
+      cls: "dnd-creature-search-input",
+    });
+    const resultsDiv = panel.createDiv({ cls: "dnd-creature-search-results" });
+    resultsDiv.style.display = "none";
 
-    // Role
+    // Stats display area
+    const statsArea = panel.createDiv({ cls: "dnd-pursuit-add-stats-area" });
+    statsArea.style.display = "none";
+
+    const showResults = (query: string) => {
+      if (!query || query.length < 1) { resultsDiv.style.display = "none"; return; }
+      const q = query.toLowerCase().trim();
+      const filtered = vaultEntries.filter((e) => e.name.toLowerCase().includes(q)).slice(0, 10);
+      resultsDiv.empty();
+      if (filtered.length === 0) {
+        resultsDiv.createEl("div", { text: "No matches found", cls: "dnd-creature-search-no-results" });
+        resultsDiv.style.display = "block";
+        return;
+      }
+      for (const entry of filtered) {
+        const row = resultsDiv.createDiv({ cls: "dnd-creature-search-result" });
+        const typeIcon = entry.type === "player" ? "👤" : entry.type === "npc" ? "🎭" : "🐉";
+        row.createDiv({ text: `${typeIcon} ${entry.name}`, cls: "dnd-creature-search-result-name" });
+        const speed = entry.speeds.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
+        row.createDiv({ text: `${speed} | HP ${entry.currentHP}/${entry.maxHP} | STR ${entry.strScore}`, cls: "dnd-creature-search-result-stats" });
+        row.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          selected = entry;
+          searchInput.value = entry.name;
+          resultsDiv.style.display = "none";
+          // Show stats preview
+          statsArea.empty();
+          statsArea.style.display = "block";
+          const statParts = [
+            speed,
+            `STR ${entry.strScore}`,
+            `Stealth ${entry.stealthModifier >= 0 ? "+" : ""}${entry.stealthModifier}`,
+            `PPerc ${entry.passivePerception}`,
+            `HP ${entry.currentHP}/${entry.maxHP}`,
+          ];
+          statsArea.createEl("div", { text: statParts.join(" | "), cls: "setting-item-description" });
+        });
+      }
+      resultsDiv.style.display = "block";
+    };
+
+    searchInput.addEventListener("input", () => {
+      selected = null;
+      statsArea.style.display = "none";
+      showResults(searchInput.value);
+    });
+    searchInput.addEventListener("focus", () => {
+      if (searchInput.value.length >= 1) showResults(searchInput.value);
+    });
+    searchInput.addEventListener("blur", () => {
+      setTimeout(() => { resultsDiv.style.display = "none"; }, 250);
+    });
+
+    // ── Role ──
     const roleRow = panel.createDiv({ cls: "dnd-pursuit-add-row" });
     roleRow.createEl("label", { text: "Role" });
     const roleSel = roleRow.createEl("select");
@@ -1156,92 +1310,173 @@ export class PursuitTrackerView extends ItemView {
     roleSel.createEl("option", { text: "🏃 Quarry", attr: { value: "quarry" } });
     roleSel.addEventListener("change", () => { role = roleSel.value as PursuitRole; });
 
-    // Speed
-    const speedRow = panel.createDiv({ cls: "dnd-pursuit-add-row" });
-    speedRow.createEl("label", { text: "Speed (ft)" });
-    const speedInput = speedRow.createEl("input", { type: "number", attr: { value: "30" } });
-    speedInput.addEventListener("input", () => { speed = parseInt(speedInput.value) || 30; });
-
-    // STR
-    const strRow = panel.createDiv({ cls: "dnd-pursuit-add-row" });
-    strRow.createEl("label", { text: "STR Score" });
-    const strInput = strRow.createEl("input", { type: "number", attr: { value: "10" } });
-    strInput.addEventListener("input", () => { strScore = parseInt(strInput.value) || 10; });
-
-    // Position
+    // ── Position ──
     const posRow = panel.createDiv({ cls: "dnd-pursuit-add-row" });
     posRow.createEl("label", { text: "Position (ft)" });
     const posInput = posRow.createEl("input", { type: "number", attr: { value: "0" } });
     posInput.addEventListener("input", () => { position = parseInt(posInput.value) || 0; });
 
-    // Buttons
+    // ── Manual fallback (collapsed) ──
+    const manualToggle = panel.createEl("div", {
+      text: "▸ Manual entry (no vault note)",
+      cls: "dnd-pursuit-add-manual-toggle setting-item-description",
+    });
+    manualToggle.style.cursor = "pointer";
+    manualToggle.style.marginTop = "8px";
+    const manualSection = panel.createDiv({ cls: "dnd-pursuit-add-manual-section" });
+    manualSection.style.display = "none";
+
+    manualToggle.addEventListener("click", () => {
+      const isVisible = manualSection.style.display !== "none";
+      manualSection.style.display = isVisible ? "none" : "block";
+      manualToggle.textContent = isVisible ? "▸ Manual entry (no vault note)" : "▾ Manual entry (no vault note)";
+    });
+
+    const nameRow = manualSection.createDiv({ cls: "dnd-pursuit-add-row" });
+    nameRow.createEl("label", { text: "Name" });
+    const nameInput = nameRow.createEl("input", { type: "text", attr: { placeholder: "Name" } });
+    nameInput.addEventListener("input", () => { manualName = nameInput.value; });
+
+    const speedRow = manualSection.createDiv({ cls: "dnd-pursuit-add-row" });
+    speedRow.createEl("label", { text: "Speed (ft)" });
+    const speedInput = speedRow.createEl("input", { type: "number", attr: { value: "30" } });
+    speedInput.addEventListener("input", () => { manualSpeed = parseInt(speedInput.value) || 30; });
+
+    const strRow = manualSection.createDiv({ cls: "dnd-pursuit-add-row" });
+    strRow.createEl("label", { text: "STR Score" });
+    const strInput = strRow.createEl("input", { type: "number", attr: { value: "10" } });
+    strInput.addEventListener("input", () => { manualStr = parseInt(strInput.value) || 10; });
+
+    // ── Buttons ──
     const btnRow = panel.createDiv({ cls: "dnd-pursuit-add-row dnd-pursuit-add-btns" });
     const addBtn = btnRow.createEl("button", { text: "Add", cls: "dnd-pursuit-btn dnd-pursuit-btn-primary" });
     const cancelBtn = btnRow.createEl("button", { text: "Cancel", cls: "dnd-pursuit-btn" });
 
     addBtn.addEventListener("click", () => {
-      if (!name.trim()) { new Notice("Enter a name."); return; }
       const now = Date.now();
-      tracker.addParticipant({
-        id: `pursuit_${now}_add`,
-        name: name.trim(),
-        display: name.trim(),
-        role,
-        initiative: 0,
-        initiativeModifier: 0,
-        speeds: [{ mode: "walk", feet: speed }],
-        activeSpeed: "walk",
-        position,
-        dashesUsed: 0,
-        freeDashes: 3,
-        conModifier: 0,
-        exhaustionLevel: 0,
-        hasActed: false,
-        hasCunningAction: false,
-        hasMoved: false,
-        feetMovedThisTurn: 0,
-        pendingDashSave: false,
-        strScore,
-        estimatedWeight: SIZE_WEIGHT_ESTIMATE.medium ?? 150,
-        stealthModifier: 0,
-        passivePerception: 10,
-        perceptionModifier: 0,
-        lineOfSightBroken: false,
-        targetIds: [],
-        currentHP: 10,
-        maxHP: 10,
-        incapacitated: false,
-        conditions: [],
-        escaped: false,
-        droppedOut: false,
-        player: false,
-        hidden: false,
-        isHidden: false,
-        hiddenStealthRoll: undefined,
-        movementPenalty: "none",
-        complicationLoSBreak: false,
-        wisModifier: 0,
-        intModifier: 0,
-        chaModifier: 0,
-        wasOutOfSightThisRound: false,
-        movementReductionFeet: 0,
-        tempHP: 0,
-        carrying: [],
-        grappling: [],
-        movementPlane: "ground",
-        hasTremorsense: false,
-        startPenalty: "none",
-        startPenaltyApplied: false,
-      });
-      overlay.remove();
-      new Notice(`Added ${name.trim()} to the chase!`);
+      if (selected) {
+        // Add from vault entity with full stats
+        const weight = SIZE_WEIGHT_ESTIMATE[selected.size as keyof typeof SIZE_WEIGHT_ESTIMATE] ?? SIZE_WEIGHT_ESTIMATE.medium ?? 150;
+        tracker.addParticipant({
+          id: `pursuit_${now}_add`,
+          name: selected.name,
+          display: selected.name,
+          role,
+          initiative: 0,
+          initiativeModifier: selected.initBonus,
+          speeds: selected.speeds,
+          activeSpeed: selected.speeds[0]?.mode ?? "walk",
+          position,
+          dashesUsed: 0,
+          freeDashes: Math.max(3 + selected.conModifier, 0),
+          conModifier: selected.conModifier,
+          exhaustionLevel: 0,
+          hasActed: false,
+          hasCunningAction: false,
+          hasMoved: false,
+          feetMovedThisTurn: 0,
+          pendingDashSave: false,
+          strScore: selected.strScore,
+          estimatedWeight: weight,
+          stealthModifier: selected.stealthModifier,
+          passivePerception: selected.passivePerception,
+          perceptionModifier: selected.perceptionModifier,
+          lineOfSightBroken: false,
+          targetIds: [],
+          currentHP: selected.currentHP,
+          maxHP: selected.maxHP,
+          incapacitated: false,
+          conditions: [],
+          escaped: false,
+          droppedOut: false,
+          player: selected.type === "player",
+          hidden: false,
+          isHidden: false,
+          hiddenStealthRoll: undefined,
+          movementPenalty: "none",
+          complicationLoSBreak: false,
+          notePath: selected.notePath,
+          tokenId: selected.tokenId,
+          wisModifier: selected.wisModifier,
+          intModifier: selected.intModifier,
+          chaModifier: selected.chaModifier,
+          wasOutOfSightThisRound: false,
+          movementReductionFeet: 0,
+          tempHP: 0,
+          carrying: [],
+          grappling: [],
+          movementPlane: "ground",
+          hasTremorsense: false,
+          startPenalty: "none",
+          startPenaltyApplied: false,
+        });
+        overlay.remove();
+        new Notice(`Added ${selected.name} to the chase!`);
+      } else if (manualName.trim()) {
+        // Manual entry
+        tracker.addParticipant({
+          id: `pursuit_${now}_add`,
+          name: manualName.trim(),
+          display: manualName.trim(),
+          role,
+          initiative: 0,
+          initiativeModifier: 0,
+          speeds: [{ mode: "walk", feet: manualSpeed }],
+          activeSpeed: "walk",
+          position,
+          dashesUsed: 0,
+          freeDashes: 3,
+          conModifier: 0,
+          exhaustionLevel: 0,
+          hasActed: false,
+          hasCunningAction: false,
+          hasMoved: false,
+          feetMovedThisTurn: 0,
+          pendingDashSave: false,
+          strScore: manualStr,
+          estimatedWeight: SIZE_WEIGHT_ESTIMATE.medium ?? 150,
+          stealthModifier: 0,
+          passivePerception: 10,
+          perceptionModifier: 0,
+          lineOfSightBroken: false,
+          targetIds: [],
+          currentHP: 10,
+          maxHP: 10,
+          incapacitated: false,
+          conditions: [],
+          escaped: false,
+          droppedOut: false,
+          player: false,
+          hidden: false,
+          isHidden: false,
+          hiddenStealthRoll: undefined,
+          movementPenalty: "none",
+          complicationLoSBreak: false,
+          wisModifier: 0,
+          intModifier: 0,
+          chaModifier: 0,
+          wasOutOfSightThisRound: false,
+          movementReductionFeet: 0,
+          tempHP: 0,
+          carrying: [],
+          grappling: [],
+          movementPlane: "ground",
+          hasTremorsense: false,
+          startPenalty: "none",
+          startPenaltyApplied: false,
+        });
+        overlay.remove();
+        new Notice(`Added ${manualName.trim()} to the chase!`);
+      } else {
+        new Notice("Search and select an entity, or enter a name manually.");
+      }
     });
 
     cancelBtn.addEventListener("click", () => overlay.remove());
     overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
 
     document.body.appendChild(overlay);
-    nameInput.focus();
+    searchInput.focus();
   }
 
   // ── Player View Projection ─────────────────────────────────

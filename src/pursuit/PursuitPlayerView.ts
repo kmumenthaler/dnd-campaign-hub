@@ -483,12 +483,15 @@ export class PursuitPlayerView extends ItemView {
   private renderInfoBar(container: HTMLElement, state: PursuitState) {
     const bar = container.createDiv({ cls: "dnd-pursuit-pv-info-bar" });
 
-    const visible = state.participants.filter((p) => !p.hidden && !p.escaped && !p.droppedOut);
+    // Only show dash/exhaustion info for player characters (not GM-controlled creatures)
+    const playerVisible = state.participants.filter((p) => !p.hidden && !p.escaped && !p.droppedOut && p.player);
+
+    if (playerVisible.length === 0) return;
 
     // Dash counters
     const dashDiv = bar.createDiv({ cls: "dnd-pursuit-pv-dash-section" });
     dashDiv.createEl("span", { text: "Dashes: ", cls: "dnd-pursuit-pv-info-label" });
-    for (const p of visible) {
+    for (const p of playerVisible) {
       const span = dashDiv.createEl("span", { cls: "dnd-pursuit-pv-dash-entry" });
       span.textContent = `${p.display} ${p.dashesUsed}/${p.freeDashes}`;
       if (p.dashesUsed > p.freeDashes) span.addClass("dnd-pursuit-pv-dash-over");
@@ -497,7 +500,7 @@ export class PursuitPlayerView extends ItemView {
     // Exhaustion pips
     const exDiv = bar.createDiv({ cls: "dnd-pursuit-pv-exhaustion-section" });
     exDiv.createEl("span", { text: "Exhaustion: ", cls: "dnd-pursuit-pv-info-label" });
-    for (const p of visible) {
+    for (const p of playerVisible) {
       const entry = exDiv.createDiv({ cls: "dnd-pursuit-pv-ex-entry" });
       entry.createEl("span", { text: `${p.display} `, cls: "dnd-pursuit-pv-ex-name" });
       for (let i = 0; i < 5; i++) {

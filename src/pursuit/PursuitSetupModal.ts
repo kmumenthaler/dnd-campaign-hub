@@ -98,6 +98,8 @@ interface CreatureEntry {
   startPenalty: "none" | "halved" | "zero";
   startPosition?: number;
   hasTremorsense: boolean;
+  combatInitiative?: number;
+  isPlayer?: boolean;
 }
 
 export class PursuitSetupModal extends Modal {
@@ -994,6 +996,8 @@ export class PursuitSetupModal extends Modal {
         chaModifier: chaMod,
         startPenalty: "none",
         hasTremorsense: false,
+        combatInitiative: c.initiative,
+        isPlayer: c.player === true,
       });
     }
   }
@@ -1092,7 +1096,7 @@ export class PursuitSetupModal extends Modal {
           name,
           display: name,
           role: c.role,
-          initiative: 0,
+          initiative: c.combatInitiative ?? 0,
           initiativeModifier: c.initBonus,
           speeds: c.speed,
           activeSpeed: c.speed[0]?.mode ?? "walk",
@@ -1119,7 +1123,7 @@ export class PursuitSetupModal extends Modal {
           conditions: [],
           escaped: false,
           droppedOut: false,
-          player: false,
+          player: c.isPlayer === true,
           hidden: false,
           isHidden: false,
           hiddenStealthRoll: undefined,
