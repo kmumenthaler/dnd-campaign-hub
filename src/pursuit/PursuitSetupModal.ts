@@ -156,7 +156,7 @@ export class PursuitSetupModal extends Modal {
   async onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass("dnd-pursuit-setup-modal");
+    this.modalEl.addClass("dnd-pursuit-setup-modal");
 
     // Pre-load vault entities
     this.allVaultEntities = await this.loadVaultEntities();
