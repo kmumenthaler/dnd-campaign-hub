@@ -12574,3 +12574,34 @@
 /* Hidden quarry token overlay on player view */
 .dnd-pursuit-pv-token-hidden .dnd-pursuit-pv-token-circle { border-color: #8cf; background: rgba(136, 204, 255, 0.15); box-shadow: 0 0 0.8em rgba(136, 204, 255, 0.3); }
 .dnd-pursuit-pv-token-hidden .dnd-pursuit-pv-token-label { color: #8cf; font-style: italic; }
+
+/* ── HP Controls (inline damage/heal/tempHP) ── */
+.dnd-pursuit-hp-controls { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; }
+.dnd-pursuit-hp-input { width: 42px; height: 22px; font-size: 0.8em; padding: 1px 4px; text-align: center; border-radius: 4px; border: 1px solid var(--background-modifier-border); background: var(--background-primary); color: var(--text-normal); }
+.dnd-pursuit-hp-btn { padding: 1px 6px; font-size: 0.8em; min-width: 26px; height: 22px; border-radius: 4px; cursor: pointer; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); }
+.dnd-pursuit-hp-btn:hover { background: var(--background-modifier-hover); }
+.dnd-pursuit-btn-heal { color: #0c6; }
+
+/* ── Condition Badges ── */
+.dnd-pursuit-conditions { display: inline-flex; flex-wrap: wrap; gap: 3px; margin-left: 4px; }
+.dnd-pursuit-condition-badge { display: inline-flex; align-items: center; gap: 2px; font-size: 0.7em; padding: 1px 6px; border-radius: 8px; background: rgba(255, 160, 0, 0.15); color: #e90; font-weight: 600; white-space: nowrap; }
+.dnd-pursuit-condition-remove { cursor: pointer; opacity: 0.6; margin-left: 2px; font-size: 0.9em; }
+.dnd-pursuit-condition-remove:hover { opacity: 1; color: #f44; }
+.dnd-pursuit-condition-add { cursor: pointer; font-size: 0.8em; padding: 1px 5px; border-radius: 8px; background: var(--background-secondary); color: var(--text-muted); border: 1px dashed var(--background-modifier-border); }
+.dnd-pursuit-condition-add:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+
+/* ── Check Options Selector ── */
+.dnd-pursuit-check-options { margin: 4px 0; }
+.dnd-pursuit-check-options select { margin-right: 6px; }
+
+/* ── Complication Roll (end-of-turn d20) ── */
+.dnd-pursuit-complication-roll { margin-top: 6px; padding: 8px; background: rgba(180, 120, 255, 0.06); border-left: 3px solid #a6f; border-radius: 6px; }
+
+/* ── Escape Check (end-of-round stealth) ── */
+.dnd-pursuit-escape-check { margin-top: 6px; padding: 8px; background: rgba(100, 200, 255, 0.06); border-left: 3px solid #6cf; border-radius: 6px; }
+
+/* ── Player View: Condition badges on tokens ── */
+.dnd-pursuit-pv-token-conditions { display: flex; flex-wrap: wrap; gap: 0.15em; justify-content: center; }
+.dnd-pursuit-pv-cond-badge { font-size: 0.55em; padding: 0.1em 0.4em; border-radius: 0.5em; background: rgba(255, 160, 0, 0.25); color: #fa0; white-space: nowrap; }
+.dnd-pursuit-pv-token-incapacitated .dnd-pursuit-pv-token-circle { opacity: 0.4; filter: grayscale(0.8); }
+.dnd-pursuit-pv-down-badge { font-size: 0.65em; color: #f44; font-weight: 700; }

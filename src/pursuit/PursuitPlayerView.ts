@@ -276,7 +276,12 @@ export class PursuitPlayerView extends ItemView {
 
     // Action summary (show what they're doing)
     if (p.turnAction) {
-      const actionText = p.turnAction === "dash" ? "Dashing!" : p.turnAction === "hide" ? "Hiding..." : p.turnAction === "search" ? "Searching..." : "";
+      const actionText = p.turnAction === "dash" ? "Dashing!"
+        : p.turnAction === "hide" ? "Hiding..."
+        : p.turnAction === "search" ? "Searching..."
+        : p.turnAction === "attack" ? "Attacking!"
+        : p.turnAction === "create-obstacle" ? "Creating obstacle!"
+        : "";
       if (actionText) {
         token.createEl("div", { text: actionText, cls: "dnd-pursuit-pv-action-badge" });
       }
@@ -299,6 +304,20 @@ export class PursuitPlayerView extends ItemView {
     if (p.isHidden && p.role === "quarry") {
       token.addClass("dnd-pursuit-pv-token-hidden");
       token.createEl("div", { text: "👁️‍🗨️ Hidden", cls: "dnd-pursuit-pv-hidden-badge" });
+    }
+
+    // Condition badges
+    if (p.conditions.length > 0) {
+      const condRow = token.createDiv({ cls: "dnd-pursuit-pv-token-conditions" });
+      for (const c of p.conditions) {
+        condRow.createEl("span", { text: c, cls: "dnd-pursuit-pv-cond-badge" });
+      }
+    }
+
+    // Incapacitated
+    if (p.incapacitated) {
+      token.addClass("dnd-pursuit-pv-token-incapacitated");
+      token.createEl("div", { text: "💀 Down", cls: "dnd-pursuit-pv-down-badge" });
     }
 
     // Escaped via stealth

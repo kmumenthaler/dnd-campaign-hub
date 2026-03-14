@@ -19,6 +19,7 @@ import type {
   SpeedEntry,
 } from "./types";
 import { parseSpeed, SIZE_WEIGHT_ESTIMATE } from "./types";
+import { COMPLICATION_TABLES } from "./complications";
 import { PartySelector } from "../party/PartySelector";
 
 // ── Color names for multiple creatures (same list as EncounterBuilder) ──
@@ -66,6 +67,9 @@ interface VaultEntity {
   maxHP: number;
   size: string;
   tokenId?: string;
+  wisModifier: number;
+  intModifier: number;
+  chaModifier: number;
 }
 
 /** A creature/NPC entry in the creature list (supports count > 1). */
@@ -88,6 +92,9 @@ interface CreatureEntry {
   tokenId?: string;
   isCustom: boolean;
   hasCunningAction: boolean;
+  wisModifier: number;
+  intModifier: number;
+  chaModifier: number;
 }
 
 export class PursuitSetupModal extends Modal {
@@ -102,6 +109,7 @@ export class PursuitSetupModal extends Modal {
     wideOpen: false,
     hasElevation: false,
     crowdedOrNoisy: false,
+    complicationTableId: "urban",
     notes: "",
   };
   private hasRangerPursuer = false;
@@ -252,6 +260,17 @@ export class PursuitSetupModal extends Modal {
       .addToggle((t) =>
         t.setValue(this.environment.hasElevation).onChange((v) => { this.environment.hasElevation = v; })
       );
+
+    new Setting(contentEl)
+      .setName("Complication Table")
+      .setDesc("Environment-specific d20 complication table used each turn")
+      .addDropdown((dd) => {
+        for (const table of COMPLICATION_TABLES) {
+          dd.addOption(table.id, `${table.icon} ${table.name}`);
+        }
+        dd.setValue(this.environment.complicationTableId);
+        dd.onChange((v) => { this.environment.complicationTableId = v; });
+      });
 
     new Setting(contentEl)
       .setName("Ranger / Survival pursuer")
@@ -512,6 +531,9 @@ export class PursuitSetupModal extends Modal {
           tokenId: selectedEntity.tokenId,
           isCustom: false,
           hasCunningAction: false,
+          wisModifier: selectedEntity.wisModifier,
+          intModifier: selectedEntity.intModifier,
+          chaModifier: selectedEntity.chaModifier,
         });
         this.renderCreatureList();
         this.updateFooter();
@@ -625,6 +647,9 @@ export class PursuitSetupModal extends Modal {
           entityType: "creature",
           isCustom: true,
           hasCunningAction: false,
+          wisModifier: 0,
+          intModifier: 0,
+          chaModifier: 0,
         });
         this.renderCreatureList();
         this.updateFooter();
@@ -780,6 +805,11 @@ export class PursuitSetupModal extends Modal {
       const hp = typeof fm.hp === "number" ? fm.hp : (typeof fm.hp_max === "number" ? fm.hp_max : 10);
       const maxHP = typeof fm.hp_max === "number" ? fm.hp_max : hp;
 
+      const int = hasStats && typeof fm.stats[3] === "number" ? fm.stats[3] : 10;
+      const cha = hasStats && typeof fm.stats[5] === "number" ? fm.stats[5] : 10;
+      const intMod = Math.floor((int - 10) / 2);
+      const chaMod = Math.floor((cha - 10) / 2);
+
       entities.push({
         name: fm.name || file.basename,
         notePath: file.path,
@@ -795,6 +825,9 @@ export class PursuitSetupModal extends Modal {
         maxHP,
         size,
         tokenId: fm.token_id,
+        wisModifier: wisMod,
+        intModifier: intMod,
+        chaModifier: chaMod,
       });
     }
 
@@ -817,6 +850,10 @@ export class PursuitSetupModal extends Modal {
       let size = "medium";
       let tokenId = c.tokenId;
 
+      let wisMod = 0;
+      let intMod = 0;
+      let chaMod = 0;
+
       if (c.notePath) {
         const file = this.app.vault.getAbstractFileByPath(c.notePath);
         if (file instanceof TFile) {
@@ -829,10 +866,14 @@ export class PursuitSetupModal extends Modal {
               strScore = typeof fm.stats[0] === "number" ? fm.stats[0] : 10;
               const dex = typeof fm.stats[1] === "number" ? fm.stats[1] : 10;
               const con = typeof fm.stats[2] === "number" ? fm.stats[2] : 10;
+              const int = typeof fm.stats[3] === "number" ? fm.stats[3] : 10;
               const wis = typeof fm.stats[4] === "number" ? fm.stats[4] : 10;
+              const cha = typeof fm.stats[5] === "number" ? fm.stats[5] : 10;
               dexMod = Math.floor((dex - 10) / 2);
               conMod = Math.floor((con - 10) / 2);
-              const wisMod = Math.floor((wis - 10) / 2);
+              wisMod = Math.floor((wis - 10) / 2);
+              intMod = Math.floor((int - 10) / 2);
+              chaMod = Math.floor((cha - 10) / 2);
               stealthMod = extractSkillBonus(fm.skillsaves, "stealth") ?? dexMod;
               percMod = extractSkillBonus(fm.skillsaves, "perception") ?? wisMod;
               passivePerc = extractPassivePerception(fm.senses) ?? (10 + percMod);
@@ -864,6 +905,9 @@ export class PursuitSetupModal extends Modal {
         tokenId,
         isCustom: false,
         hasCunningAction: false,
+        wisModifier: wisMod,
+        intModifier: intMod,
+        chaModifier: chaMod,
       });
     }
   }
@@ -934,6 +978,12 @@ export class PursuitSetupModal extends Modal {
           complicationLoSBreak: false,
           notePath: data?.notePath,
           tokenId: data?.tokenId,
+          wisModifier: data?.wisModifier ?? 0,
+          intModifier: data?.intModifier ?? 0,
+          chaModifier: data?.chaModifier ?? 0,
+          wasOutOfSightThisRound: false,
+          movementReductionFeet: 0,
+          tempHP: 0,
         });
       }
     }
@@ -985,6 +1035,12 @@ export class PursuitSetupModal extends Modal {
           complicationLoSBreak: false,
           notePath: c.notePath,
           tokenId: c.tokenId,
+          wisModifier: c.wisModifier,
+          intModifier: c.intModifier,
+          chaModifier: c.chaModifier,
+          wasOutOfSightThisRound: false,
+          movementReductionFeet: 0,
+          tempHP: 0,
         });
       }
     }

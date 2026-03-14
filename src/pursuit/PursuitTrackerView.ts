@@ -17,8 +17,11 @@ import type {
   TurnPhase,
   PendingInput,
   ActiveComplication,
+  ComplicationCheckOption,
 } from "./types";
-import { computeCarryPenalty } from "./types";
+import { computeCarryPenalty, STANDARD_CONDITIONS } from "./types";
+import { getComplicationTable, COMPLICATION_TABLES } from "./complications";
+import type { ChaseComplicationTable } from "./complications";
 import { enumerateScreens, screenKey } from "../utils/ScreenEnumeration";
 
 export class PursuitTrackerView extends ItemView {
@@ -277,7 +280,8 @@ export class PursuitTrackerView extends ItemView {
     }
 
     // HP
-    statsLine.createEl("span", { text: `HP ${p.currentHP}/${p.maxHP}`, cls: "dnd-pursuit-row-hp" });
+    const hpText = p.tempHP > 0 ? `HP ${p.currentHP}/${p.maxHP} +${p.tempHP}` : `HP ${p.currentHP}/${p.maxHP}`;
+    statsLine.createEl("span", { text: hpText, cls: "dnd-pursuit-row-hp" });
 
     // Dash counter
     statsLine.createEl("span", {
@@ -293,6 +297,12 @@ export class PursuitTrackerView extends ItemView {
         cls: `dnd-pursuit-exhaustion-pip ${e < p.exhaustionLevel ? "dnd-pursuit-exhaustion-filled" : ""}`,
       });
     }
+
+    // ── Condition badges (always visible) ──
+    this.renderConditionBadges(row, tracker, p);
+
+    // ── HP controls (always visible for GM) ──
+    this.renderHPControls(row, tracker, p);
 
     // ══════════════════════════════════════════════════════════
     // ACTIVE TURN — GUIDED PHASE UI (shows only current phase)
@@ -344,6 +354,12 @@ export class PursuitTrackerView extends ItemView {
       case "movement":
         this.renderMovementPhase(row, tracker, p, state);
         break;
+      case "complication-roll":
+        this.renderComplicationRoll(row, tracker, state);
+        break;
+      case "escape-check":
+        this.renderEscapeCheck(row, tracker, state);
+        break;
       case "turn-end":
         this.renderTurnEnd(row, tracker, p, state);
         break;
@@ -366,17 +382,19 @@ export class PursuitTrackerView extends ItemView {
     }
 
     const header = div.createDiv({ cls: "dnd-pursuit-complication-header" });
-    header.createEl("span", { text: `🎲 d6 = ${comp.roll}: `, cls: "dnd-pursuit-phase-label" });
+    header.createEl("span", { text: `⚠️ d20 = ${comp.d20Roll}: `, cls: "dnd-pursuit-phase-label" });
     header.createEl("span", { text: comp.entry.title, cls: "dnd-pursuit-complication-title" });
+    if (comp.rolledByName) {
+      header.createEl("span", { text: ` (from ${comp.rolledByName})`, cls: "dnd-pursuit-phase-detail" });
+    }
 
     div.createEl("p", { text: comp.entry.description, cls: "dnd-pursuit-complication-desc" });
 
     if (comp.resolved) {
-      // Show result
-      if (comp.entry.requiresCheck) {
+      if (comp.entry.type === "check" && comp.selectedCheck) {
         const resultDiv = div.createDiv({ cls: "dnd-pursuit-complication-result" });
         const passText = comp.passed ? "✅ Passed" : "❌ Failed";
-        resultDiv.createEl("span", { text: `${comp.entry.checkAbility} check: ${comp.checkResult}` });
+        resultDiv.createEl("span", { text: `${comp.selectedCheck.label}: ${comp.checkResult}` });
         if (comp.checkNatural != null) {
           resultDiv.createEl("span", { text: ` (d20=${comp.checkNatural})`, cls: "dnd-pursuit-phase-detail" });
         }
@@ -409,6 +427,21 @@ export class PursuitTrackerView extends ItemView {
       div.createEl("span", { text: ` · DC ${pending.dc}`, cls: "dnd-pursuit-phase-detail" });
     }
 
+    // Check option selector (when complication offers multiple checks)
+    let selectedOption: ComplicationCheckOption | undefined;
+    if (pending.checkOptions && pending.checkOptions.length > 1) {
+      const optRow = div.createDiv({ cls: "dnd-pursuit-check-options" });
+      optRow.createEl("span", { text: "Choose check: ", cls: "dnd-pursuit-phase-detail" });
+      const optSel = optRow.createEl("select", { cls: "dnd-pursuit-speed-select" });
+      for (const opt of pending.checkOptions) {
+        optSel.createEl("option", { text: opt.label, attr: { value: opt.abilityKey } });
+      }
+      selectedOption = pending.checkOptions[0];
+      optSel.addEventListener("change", () => {
+        selectedOption = pending.checkOptions!.find((o) => o.abilityKey === optSel.value);
+      });
+    }
+
     const inputRow = div.createDiv({ cls: "dnd-pursuit-save-row" });
     const input = inputRow.createEl("input", {
       type: "number",
@@ -421,7 +454,7 @@ export class PursuitTrackerView extends ItemView {
       if (isNaN(val)) { new Notice("Enter a roll result."); return; }
 
       if (pending.type === "complication-check") {
-        tracker.submitComplicationCheck(val);
+        tracker.submitComplicationCheck(val, selectedOption);
       } else {
         tracker.submitActionInput(val);
       }
@@ -468,10 +501,20 @@ export class PursuitTrackerView extends ItemView {
     }
 
     actions.push(
+      { label: "⚔️ Attack", action: "attack", tip: "Attack, cast a spell, multiattack" },
       { label: "🛡️ Dsng", action: "disengage", tip: "No opportunity attacks" },
       { label: "🔄 Dodge", action: "dodge", tip: "Attacks have disadvantage" },
       { label: "✨ Other", action: "other", tip: "Spell, Help, item, etc." },
     );
+
+    // Create Obstacle: only for quarry
+    if (p.role === "quarry") {
+      actions.push({
+        label: "🪵 Obstacle",
+        action: "create-obstacle",
+        tip: "Create obstacle for next pursuer",
+      });
+    }
 
     for (const a of actions) {
       const btn = btnGroup.createEl("button", {
@@ -644,6 +687,147 @@ export class PursuitTrackerView extends ItemView {
     nextBtn.addEventListener("click", () => tracker.nextTurn());
   }
 
+  // ── Complication Roll Phase (end-of-turn d20) ──────────────
+
+  private renderComplicationRoll(
+    row: HTMLElement,
+    tracker: PursuitTracker,
+    state: PursuitState,
+  ) {
+    const div = row.createDiv({ cls: "dnd-pursuit-phase dnd-pursuit-complication" });
+    const d20 = state.endOfTurnD20 ?? 0;
+    const comp = state.currentComplication;
+
+    div.createEl("span", { text: "End-of-Turn Complication Roll", cls: "dnd-pursuit-phase-label" });
+
+    const rollLine = div.createDiv({ cls: "dnd-pursuit-complication-header" });
+    rollLine.createEl("span", { text: `🎲 d20 = ${d20}`, cls: "dnd-pursuit-phase-value" });
+
+    if (d20 > 10 || !comp) {
+      rollLine.createEl("span", { text: " — No complication", cls: "dnd-pursuit-success" });
+    } else {
+      const nextName = comp.effectDescription ?? comp.entry.title;
+      div.createEl("p", {
+        text: `⚠️ ${nextName}`,
+        cls: "dnd-pursuit-warning",
+      });
+    }
+
+    this.addContinueButton(div, () => tracker.advanceFromComplicationRoll());
+  }
+
+  // ── Escape Check Phase (end-of-round) ─────────────────────
+
+  private renderEscapeCheck(
+    row: HTMLElement,
+    tracker: PursuitTracker,
+    state: PursuitState,
+  ) {
+    const div = row.createDiv({ cls: "dnd-pursuit-phase dnd-pursuit-complication" });
+    div.createEl("span", { text: "End-of-Round: Escape Check", cls: "dnd-pursuit-phase-label" });
+
+    const pending = state.pendingInput;
+    if (pending && pending.type === "escape-stealth") {
+      div.createEl("p", { text: pending.description, cls: "dnd-pursuit-roll-desc" });
+      div.createEl("span", {
+        text: `Stealth modifier: ${pending.modifier >= 0 ? "+" : ""}${pending.modifier} (${state.stealthCondition})`,
+        cls: "dnd-pursuit-phase-detail",
+      });
+
+      const inputRow = div.createDiv({ cls: "dnd-pursuit-save-row" });
+      const input = inputRow.createEl("input", {
+        type: "number",
+        cls: "dnd-pursuit-save-input",
+        attr: { placeholder: "Stealth total" },
+      });
+      const btn = inputRow.createEl("button", { text: "Submit", cls: "dnd-pursuit-btn dnd-pursuit-btn-primary" });
+      btn.addEventListener("click", () => {
+        const val = parseInt(input.value, 10);
+        if (isNaN(val)) { new Notice("Enter a roll result."); return; }
+        tracker.submitEscapeCheck(val);
+      });
+      input.focus();
+    } else {
+      div.createEl("p", { text: "Processing escape checks...", cls: "dnd-pursuit-phase-detail" });
+    }
+  }
+
+  // ── Inline HP & Condition Controls ─────────────────────────
+
+  private renderHPControls(
+    container: HTMLElement,
+    tracker: PursuitTracker,
+    p: PursuitParticipant,
+  ) {
+    const div = container.createDiv({ cls: "dnd-pursuit-hp-controls" });
+
+    // Damage
+    const dmgInput = div.createEl("input", {
+      type: "number",
+      cls: "dnd-pursuit-hp-input",
+      attr: { placeholder: "Dmg", min: "1" },
+    });
+    const dmgBtn = div.createEl("button", { text: "💥", cls: "dnd-pursuit-hp-btn dnd-pursuit-btn-danger", attr: { title: "Apply damage" } });
+    dmgBtn.addEventListener("click", () => {
+      const val = parseInt(dmgInput.value, 10);
+      if (val > 0) { tracker.applyDamage(p.id, val); dmgInput.value = ""; }
+    });
+
+    // Heal
+    const healInput = div.createEl("input", {
+      type: "number",
+      cls: "dnd-pursuit-hp-input",
+      attr: { placeholder: "Heal", min: "1" },
+    });
+    const healBtn = div.createEl("button", { text: "💚", cls: "dnd-pursuit-hp-btn dnd-pursuit-btn-heal", attr: { title: "Heal" } });
+    healBtn.addEventListener("click", () => {
+      const val = parseInt(healInput.value, 10);
+      if (val > 0) { tracker.applyHealing(p.id, val); healInput.value = ""; }
+    });
+
+    // TempHP
+    const tempInput = div.createEl("input", {
+      type: "number",
+      cls: "dnd-pursuit-hp-input",
+      attr: { placeholder: "Tmp", min: "0" },
+    });
+    const tempBtn = div.createEl("button", { text: "🛡️", cls: "dnd-pursuit-hp-btn", attr: { title: "Set temp HP" } });
+    tempBtn.addEventListener("click", () => {
+      const val = parseInt(tempInput.value, 10);
+      if (val >= 0) { tracker.setTempHP(p.id, val); tempInput.value = ""; }
+    });
+  }
+
+  private renderConditionBadges(
+    container: HTMLElement,
+    tracker: PursuitTracker,
+    p: PursuitParticipant,
+  ) {
+    if (p.conditions.length === 0 && p.escaped) return;
+    const div = container.createDiv({ cls: "dnd-pursuit-conditions" });
+
+    // Active conditions
+    for (const cond of p.conditions) {
+      const badge = div.createEl("span", { text: cond, cls: "dnd-pursuit-condition-badge" });
+      const removeBtn = badge.createEl("span", { text: " ×", cls: "dnd-pursuit-condition-remove" });
+      removeBtn.addEventListener("click", (e) => { e.stopPropagation(); tracker.removeCondition(p.id, cond); });
+    }
+
+    // Add condition button
+    if (!p.escaped && !p.droppedOut) {
+      const addBtn = div.createEl("button", { text: "+", cls: "dnd-pursuit-condition-add", attr: { title: "Add condition" } });
+      addBtn.addEventListener("click", (e) => {
+        const menu = new Menu();
+        for (const c of STANDARD_CONDITIONS) {
+          if (!p.conditions.includes(c)) {
+            menu.addItem((item) => item.setTitle(c).onClick(() => tracker.addCondition(p.id, c)));
+          }
+        }
+        menu.showAtMouseEvent(e as MouseEvent);
+      });
+    }
+  }
+
   // ── Continue Button Helper ─────────────────────────────────
 
   private addContinueButton(container: HTMLElement, onClick: () => void) {
@@ -802,6 +986,8 @@ export class PursuitTrackerView extends ItemView {
       case "search": return "🔎 Search";
       case "disengage": return "🛡️ Disengage";
       case "dodge": return "🔄 Dodge";
+      case "attack": return "⚔️ Attack";
+      case "create-obstacle": return "🪵 Obstacle";
       case "other": return "✨ Other";
     }
   }

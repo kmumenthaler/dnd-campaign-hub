@@ -25,10 +25,13 @@ import type {
   TurnPhase,
   ActiveComplication,
   PendingInput,
+  PendingComplicationForNext,
+  ComplicationCheckOption,
   StealthCondition,
   ChaseEnvironment,
 } from "./types";
-import { computeStealthCondition, computeCarryPenalty, CHASE_COMPLICATIONS } from "./types";
+import { computeStealthCondition, computeCarryPenalty } from "./types";
+import { getComplicationTable } from "./complications";
 
 export class PursuitTracker {
   private app: App;
@@ -82,7 +85,8 @@ export class PursuitTracker {
     const dashed = p.turnAction === "dash" || p.bonusAction === "dash";
     if (dashed) speed *= 2;
     if (p.movementPenalty === "halved") speed = Math.floor(speed / 2);
-    return speed;
+    speed -= (p.movementReductionFeet ?? 0);
+    return Math.max(0, speed);
   }
 
   /** Whether Line of Sight is auto-broken for a quarry based on distance + environment + complication. */
@@ -124,7 +128,14 @@ export class PursuitTracker {
     switch (ability) {
       case "DEX": return p.initiativeModifier;
       case "STR": return Math.floor((p.strScore - 10) / 2);
+      case "CON": return p.conModifier;
+      case "WIS": return p.wisModifier;
+      case "INT": return p.intModifier;
+      case "CHA": return p.chaModifier;
       case "Stealth": return p.stealthModifier;
+      case "Perception": return p.perceptionModifier;
+      case "Athletics": return Math.floor((p.strScore - 10) / 2);
+      case "Acrobatics": return p.initiativeModifier;
       default: return 0;
     }
   }
@@ -150,6 +161,7 @@ export class PursuitTracker {
       started: false,
       ended: false,
       turnPhase: "complication" as TurnPhase,
+      complicationTableId: environment.complicationTableId ?? "urban",
       environment,
       stealthCondition,
       hasRangerPursuer,
@@ -220,6 +232,7 @@ export class PursuitTracker {
     p.activePerceptionRoll = undefined;
     p.stealthRoll = undefined;
     p.movementPenalty = "none";
+    p.movementReductionFeet = 0;
     p.complicationLoSBreak = false;
   }
 
@@ -237,6 +250,8 @@ export class PursuitTracker {
     if (next >= len) {
       this.runEndOfRound();
       if (this.state.ended) return;
+      // If escape checks are pending, don't advance yet
+      if (this.state.escapeCheckQueue && this.state.escapeCheckQueue.length > 0) return;
       this.state.round++;
       next = 0;
       for (const p of this.state.participants) {
@@ -305,7 +320,7 @@ export class PursuitTracker {
   //
   // NPCs auto-roll all checks. PCs set pendingInput for GM entry.
 
-  /** Begin the current participant's turn: reset flags, compute LoS, roll complication. */
+  /** Begin the current participant's turn: reset flags, resolve any pending complication, or go to action. */
   private beginTurn(): void {
     if (!this.state || this.state.ended) return;
     const p = this.getActive();
@@ -316,64 +331,176 @@ export class PursuitTracker {
     }
     this.state.currentComplication = undefined;
     this.state.pendingInput = undefined;
-    this.rollComplication();
+    this.state.endOfTurnD20 = undefined;
+
+    // Check for pending complication from previous participant's d20 roll
+    const pending = this.state.pendingComplicationForNext;
+    if (pending) {
+      this.state.pendingComplicationForNext = undefined;
+      this.resolvePendingComplication(p, pending);
+    } else {
+      this.state.turnPhase = "action";
+      this.emit();
+    }
   }
 
-  /** Roll d6 complication for the active participant. */
-  private rollComplication(): void {
+  /** Resolve a complication that was rolled by the previous participant (or quarry obstacle). */
+  private resolvePendingComplication(p: PursuitParticipant, pending: PendingComplicationForNext): void {
     if (!this.state) return;
-    const p = this.getActive();
-    if (!p) return;
-    const roll = Math.floor(Math.random() * 6) + 1;
-    const entry = CHASE_COMPLICATIONS[roll - 1];
-    if (!entry) return;
-    const comp: ActiveComplication = { entry, roll, resolved: false };
+    const comp: ActiveComplication = {
+      entry: pending.entry,
+      d20Roll: pending.d20Roll,
+      rolledByName: pending.rolledByName,
+      resolved: false,
+    };
     this.state.currentComplication = comp;
-    this.addLog(`🎲 ${p.display} — Complication: ${entry.title} (d6 = ${roll}).`);
+    const src = pending.isQuarryObstacle
+      ? `obstacle from ${pending.rolledByName}`
+      : `complication from ${pending.rolledByName}`;
+    this.addLog(`⚠️ ${p.display} faces ${src}: ${pending.entry.title} (d20=${pending.d20Roll}).`);
 
-    if (!entry.requiresCheck) {
+    if (pending.entry.type === "gm-adjudicate") {
+      comp.resolved = true;
+      comp.effectDescription = pending.entry.autoEffect?.description ?? pending.entry.description;
+      this.state.turnPhase = "complication";
+      this.emit();
+      return;
+    }
+
+    const checkOptions = pending.entry.checkOptions;
+    if (!checkOptions || checkOptions.length === 0) {
       comp.resolved = true;
       this.state.turnPhase = "complication";
       this.emit();
       return;
     }
 
-    // Check needed — auto-roll for NPCs, prompt for PCs
     if (!p.player) {
-      const mod = this.getAbilityModifier(p, entry.checkAbility);
+      // NPC: auto-pick best check and roll
+      const best = this.pickBestCheck(p, checkOptions);
+      comp.selectedCheck = best;
+      const mod = this.getAbilityModifier(p, best.abilityKey);
       const { natural, total } = this.autoRoll(mod);
       comp.checkNatural = natural;
       comp.checkResult = total;
       comp.resolved = true;
-      comp.passed = total >= (entry.checkDC ?? 0);
+      comp.passed = total >= best.dc;
       this.applyComplicationResult(p, comp);
       this.state.turnPhase = "complication";
       this.emit();
     } else {
-      const mod = this.getAbilityModifier(p, entry.checkAbility);
-      this.state.pendingInput = {
-        type: "complication-check",
-        participantId: p.id,
-        label: `${entry.checkAbility} DC ${entry.checkDC}`,
-        modifier: mod,
-        dc: entry.checkDC,
-        description: entry.description,
-      };
+      // PC: prompt GM for check
+      if (checkOptions.length === 1) {
+        const opt = checkOptions[0]!;
+        comp.selectedCheck = opt;
+        const mod = this.getAbilityModifier(p, opt.abilityKey);
+        this.state.pendingInput = {
+          type: "complication-check",
+          participantId: p.id,
+          label: opt.label,
+          modifier: mod,
+          dc: opt.dc,
+          description: pending.entry.description,
+        };
+      } else {
+        // Multiple options — view will let GM pick
+        const mod = this.getAbilityModifier(p, checkOptions[0]!.abilityKey);
+        this.state.pendingInput = {
+          type: "complication-check",
+          participantId: p.id,
+          label: checkOptions.map((o) => o.label).join(" or "),
+          modifier: mod,
+          dc: checkOptions[0]!.dc,
+          description: pending.entry.description,
+          checkOptions,
+        };
+      }
       this.state.turnPhase = "complication-check";
       this.emit();
     }
   }
 
+  /** Pick the check option where the NPC has the highest modifier. */
+  private pickBestCheck(p: PursuitParticipant, options: ComplicationCheckOption[]): ComplicationCheckOption {
+    let best = options[0]!;
+    let bestMod = this.getAbilityModifier(p, best.abilityKey);
+    for (const opt of options) {
+      const mod = this.getAbilityModifier(p, opt.abilityKey);
+      if (mod > bestMod) { best = opt; bestMod = mod; }
+    }
+    return best;
+  }
+
+  /** Roll d20 at end of turn — d20 ≤ 10 stores a complication for the next participant. */
+  private rollComplicationD20(): void {
+    if (!this.state) return;
+    const p = this.getActive();
+    if (!p) return;
+
+    const d20 = Math.floor(Math.random() * 20) + 1;
+    this.state.endOfTurnD20 = d20;
+    const table = getComplicationTable(this.state.complicationTableId);
+
+    if (d20 <= 10) {
+      const entry = table.entries[d20 - 1];
+      if (entry) {
+        const nextP = this.getNextActiveParticipant();
+        const nextName = nextP?.display ?? "the next participant";
+        this.state.pendingComplicationForNext = {
+          entry,
+          d20Roll: d20,
+          rolledByName: p.display,
+          rolledById: p.id,
+        };
+        this.state.currentComplication = {
+          entry,
+          d20Roll: d20,
+          rolledByName: p.display,
+          resolved: true,
+          effectDescription: `Complication for ${nextName}: ${entry.title}`,
+        };
+        this.addLog(`🎲 ${p.display} rolls d20=${d20}: Complication "${entry.title}" for ${nextName}!`);
+      }
+    } else {
+      this.state.currentComplication = undefined;
+      this.addLog(`🎲 ${p.display} rolls d20=${d20}: No complication.`);
+    }
+
+    this.state.turnPhase = "complication-roll";
+    this.emit();
+  }
+
+  /** Get the next active participant in initiative after the current one. */
+  private getNextActiveParticipant(): PursuitParticipant | undefined {
+    if (!this.state) return undefined;
+    const len = this.state.participants.length;
+    for (let i = 1; i < len; i++) {
+      const idx = (this.state.turnIndex + i) % len;
+      const p = this.state.participants[idx];
+      if (p && !p.droppedOut && !p.escaped && !p.incapacitated) return p;
+    }
+    return undefined;
+  }
+
+  /** Advance from complication-roll phase to turn-end. */
+  advanceFromComplicationRoll(): void {
+    if (!this.state) return;
+    this.state.turnPhase = "turn-end";
+    this.emit();
+  }
+
   /** Submit a complication check result (PC roll from GM). */
-  submitComplicationCheck(total: number): void {
+  submitComplicationCheck(total: number, selectedCheck?: ComplicationCheckOption): void {
     if (!this.state) return;
     const comp = this.state.currentComplication;
     const p = this.getActive();
     if (!comp || !p || comp.resolved) return;
 
+    if (selectedCheck) comp.selectedCheck = selectedCheck;
+    const dc = comp.selectedCheck?.dc ?? 10;
     comp.checkResult = total;
     comp.resolved = true;
-    comp.passed = total >= (comp.entry.checkDC ?? 0);
+    comp.passed = total >= dc;
     this.applyComplicationResult(p, comp);
     this.state.pendingInput = undefined;
     this.state.turnPhase = "action";
@@ -400,18 +527,21 @@ export class PursuitTracker {
       p.movementPenalty = "zero";
       this.addLog(`${p.display}: loses all movement this turn.`);
     }
+    if (effect.movementReduction && effect.movementReduction > 0) {
+      p.movementReductionFeet += effect.movementReduction;
+      this.addLog(`${p.display}: ${effect.movementReduction}ft of difficult terrain.`);
+    }
+    if (effect.condition) {
+      const cond = effect.condition.charAt(0).toUpperCase() + effect.condition.slice(1).toLowerCase();
+      if (!p.conditions.includes(cond)) {
+        p.conditions.push(cond);
+        this.addLog(`${p.display} gains condition: ${cond}.`);
+      }
+    }
     if (effect.damage) {
       const dmg = this.rollDice(effect.damage);
-      p.currentHP -= dmg;
-      if (p.currentHP <= 0) {
-        p.currentHP = 0;
-        p.incapacitated = true;
-        p.droppedOut = true;
-        this.addLog(`${p.display} takes ${dmg} damage and is incapacitated!`);
-        this.checkChaseEnd();
-      } else {
-        this.addLog(`${p.display} takes ${dmg} damage (HP: ${p.currentHP}/${p.maxHP}).`);
-      }
+      const dtype = effect.damageType ? ` ${effect.damageType}` : "";
+      this.applyDamageInternal(p, dmg, dtype);
     }
   }
 
@@ -436,10 +566,32 @@ export class PursuitTracker {
       this.handleHide(p, false);
     } else if (action === "search") {
       this.handleSearch(p, false);
+    } else if (action === "attack") {
+      this.addLog(`${p.display} takes the Attack action. (GM: resolve attacks manually.)`);
+      this.advanceAfterAction(p);
+    } else if (action === "create-obstacle") {
+      this.addLog(`${p.display} creates an obstacle. (GM: select obstacle template or adjudicate.)`);
+      this.advanceAfterAction(p);
     } else {
       this.addLog(`${p.display} takes the ${action} action.`);
       this.advanceAfterAction(p);
     }
+  }
+
+  /** Create a quarry obstacle (sets pending complication for next pursuer). */
+  createObstacle(entry: import("./types").ComplicationEntry): void {
+    if (!this.state) return;
+    const p = this.getActive();
+    if (!p) return;
+    this.state.pendingComplicationForNext = {
+      entry,
+      d20Roll: 0,
+      rolledByName: p.display,
+      rolledById: p.id,
+      isQuarryObstacle: true,
+    };
+    this.addLog(`${p.display} creates obstacle: ${entry.title}.`);
+    this.emit();
   }
 
   /** Handle a Dash action (or bonus dash). */
@@ -611,6 +763,8 @@ export class PursuitTracker {
     } else if (pending.type === "perception") {
       const isBonus = this.state.turnPhase === "bonus-resolve";
       this.resolveSearch(p, total, undefined, isBonus);
+    } else if (pending.type === "escape-stealth") {
+      this.submitEscapeCheck(total);
     }
   }
 
@@ -681,10 +835,11 @@ export class PursuitTracker {
 
     if (p.role === "quarry") {
       p.lineOfSightBroken = this.isLoSBroken(p);
+      if (p.lineOfSightBroken) p.wasOutOfSightThisRound = true;
     }
 
-    this.state.turnPhase = "turn-end";
-    this.emit();
+    // End-of-turn d20 complication roll (DMG RAW)
+    this.rollComplicationD20();
   }
 
   /** Set a participant's position directly (GM override). */
@@ -793,6 +948,86 @@ export class PursuitTracker {
     this.emit();
   }
 
+  // ── HP & Conditions (combat-like, accessible any time) ─────
+
+  /** Apply damage to a participant. TempHP absorbs first. */
+  applyDamage(id: string, amount: number): void {
+    if (!this.state || amount <= 0) return;
+    const p = this.getParticipant(id);
+    if (!p) return;
+    this.applyDamageInternal(p, amount, "");
+    this.emit();
+  }
+
+  /** Internal damage application (tempHP absorbs first). */
+  private applyDamageInternal(p: PursuitParticipant, dmg: number, damageLabel: string): void {
+    let remaining = dmg;
+    if (p.tempHP > 0) {
+      const absorbed = Math.min(p.tempHP, remaining);
+      p.tempHP -= absorbed;
+      remaining -= absorbed;
+    }
+    p.currentHP -= remaining;
+    if (p.currentHP <= 0) {
+      p.currentHP = 0;
+      p.incapacitated = true;
+      p.droppedOut = true;
+      this.addLog(`${p.display} takes ${dmg}${damageLabel} damage and is incapacitated!`);
+      this.checkChaseEnd();
+    } else {
+      this.addLog(`${p.display} takes ${dmg}${damageLabel} damage (HP: ${p.currentHP}/${p.maxHP}${p.tempHP > 0 ? ` +${p.tempHP} temp` : ""}).`);
+    }
+  }
+
+  /** Heal a participant. */
+  applyHealing(id: string, amount: number): void {
+    if (!this.state || amount <= 0) return;
+    const p = this.getParticipant(id);
+    if (!p) return;
+    const before = p.currentHP;
+    p.currentHP = Math.min(p.maxHP, p.currentHP + amount);
+    const healed = p.currentHP - before;
+    if (healed > 0) {
+      this.addLog(`${p.display} heals ${healed} HP (now ${p.currentHP}/${p.maxHP}).`);
+    }
+    this.emit();
+  }
+
+  /** Set temporary hit points (does not stack — takes highest). */
+  setTempHP(id: string, amount: number): void {
+    if (!this.state || amount < 0) return;
+    const p = this.getParticipant(id);
+    if (!p) return;
+    p.tempHP = Math.max(p.tempHP, amount);
+    this.addLog(`${p.display} gains ${amount} temp HP (total: ${p.tempHP}).`);
+    this.emit();
+  }
+
+  /** Add a condition to a participant. */
+  addCondition(id: string, condition: string): void {
+    if (!this.state) return;
+    const p = this.getParticipant(id);
+    if (!p) return;
+    if (!p.conditions.includes(condition)) {
+      p.conditions.push(condition);
+      this.addLog(`${p.display} gains condition: ${condition}.`);
+      this.emit();
+    }
+  }
+
+  /** Remove a condition from a participant. */
+  removeCondition(id: string, condition: string): void {
+    if (!this.state) return;
+    const p = this.getParticipant(id);
+    if (!p) return;
+    const idx = p.conditions.indexOf(condition);
+    if (idx >= 0) {
+      p.conditions.splice(idx, 1);
+      this.addLog(`${p.display} loses condition: ${condition}.`);
+      this.emit();
+    }
+  }
+
   /** End the chase with a specific outcome. */
   endChase(outcome: PursuitState["outcome"]): void {
     if (!this.state) return;
@@ -814,6 +1049,7 @@ export class PursuitTracker {
   updateEnvironment(env: ChaseEnvironment): void {
     if (!this.state) return;
     this.state.environment = env;
+    this.state.complicationTableId = env.complicationTableId ?? this.state.complicationTableId;
     this.state.stealthCondition = computeStealthCondition(env, this.state.hasRangerPursuer);
     this.addLog(`Environment changed: ${env.name} (stealth: ${this.state.stealthCondition}).`);
     this.emit();
@@ -829,14 +1065,14 @@ export class PursuitTracker {
 
   // ── Internal helpers ───────────────────────────────────────
 
-  /** Run end-of-round logic: hidden quarry that weren't found this round escape. */
+  /** Run end-of-round logic: DMG escape check for quarry that were out of sight. */
   private runEndOfRound(): void {
     if (!this.state) return;
 
+    // Hidden quarry that weren't found still escape (backwards compat)
     const hidden = this.state.participants.filter(
       (p) => p.role === "quarry" && p.isHidden && !p.droppedOut && !p.escaped && !p.incapacitated
     );
-
     for (const quarry of hidden) {
       quarry.escaped = true;
       if (quarry.carrying) {
@@ -845,16 +1081,159 @@ export class PursuitTracker {
       }
       this.addLog(`🏃 ${quarry.display} escapes! Hidden quarry was not found by end of round ${this.state.round}.`);
     }
+    if (hidden.length > 0) this.checkChaseEnd();
+    if (this.state.ended) return;
 
-    if (hidden.length > 0) {
-      this.checkChaseEnd();
+    // DMG end-of-round escape check: quarry that were ever out of sight
+    // (but are NOT already hidden/escaped) make a Stealth check
+    const escapeEligible = this.state.participants.filter(
+      (p) =>
+        p.role === "quarry" &&
+        p.wasOutOfSightThisRound &&
+        !p.isHidden &&
+        !p.escaped &&
+        !p.droppedOut &&
+        !p.incapacitated
+    );
+
+    if (escapeEligible.length > 0) {
+      this.state.escapeCheckQueue = escapeEligible.map((p) => p.id);
+      this.processNextEscapeCheck();
+      return; // nextTurn will resume after escape checks complete
     }
 
-    // Reset per-turn LoS (will be recomputed at start of each turn)
+    this.finishEndOfRound();
+  }
+
+  /** Finish end-of-round cleanup (after escape checks are done). */
+  private finishEndOfRound(): void {
+    if (!this.state) return;
+    // Reset per-round flags
     for (const q of this.state.participants.filter((p) => p.role === "quarry")) {
       q.lineOfSightBroken = false;
       q.complicationLoSBreak = false;
+      q.wasOutOfSightThisRound = false;
     }
+    this.state.escapeCheckQueue = undefined;
+  }
+
+  /** Process the next quarry in the escape check queue. */
+  private processNextEscapeCheck(): void {
+    if (!this.state) return;
+    const queue = this.state.escapeCheckQueue;
+    if (!queue || queue.length === 0) {
+      this.finishEndOfRound();
+      this.checkChaseEnd();
+      return;
+    }
+
+    const quarryId = queue[0]!;
+    const quarry = this.getParticipant(quarryId);
+    if (!quarry || quarry.escaped || quarry.droppedOut || quarry.incapacitated) {
+      queue.shift();
+      this.processNextEscapeCheck();
+      return;
+    }
+
+    this.state.turnPhase = "escape-check";
+
+    if (!quarry.player) {
+      // NPC: auto-roll Stealth with advantage/disadvantage from environment
+      const { natural, total } = this.autoRollWithAdvantage(
+        quarry.stealthModifier,
+        this.state.stealthCondition
+      );
+      this.resolveEscapeCheck(quarry, total, natural);
+    } else {
+      // PC: prompt GM for Stealth roll
+      this.state.pendingInput = {
+        type: "escape-stealth",
+        participantId: quarry.id,
+        label: `Stealth (${this.state.stealthCondition})`,
+        modifier: quarry.stealthModifier,
+        description: `End-of-round escape check: ${quarry.display} was out of sight — Stealth vs pursuers' passive Perception.`,
+      };
+      this.emit();
+    }
+  }
+
+  /** Submit a PC's escape Stealth check result. */
+  submitEscapeCheck(total: number): void {
+    if (!this.state) return;
+    const queue = this.state.escapeCheckQueue;
+    if (!queue || queue.length === 0) return;
+
+    const quarryId = queue[0]!;
+    const quarry = this.getParticipant(quarryId);
+    if (!quarry) return;
+
+    this.state.pendingInput = undefined;
+    this.resolveEscapeCheck(quarry, total, undefined);
+  }
+
+  /** Resolve an escape check: compare Stealth to highest pursuer perception. */
+  private resolveEscapeCheck(quarry: PursuitParticipant, total: number, natural: number | undefined): void {
+    if (!this.state) return;
+    const queue = this.state.escapeCheckQueue;
+
+    // Highest pursuer passive Perception (or active if Search was used)
+    const pursuers = this.state.participants.filter(
+      (p) => p.role === "pursuer" && !p.droppedOut && !p.incapacitated
+    );
+    let highestPerception = 0;
+    for (const pur of pursuers) {
+      const perception = pur.activePerceptionRoll ?? pur.passivePerception;
+      if (perception > highestPerception) highestPerception = perception;
+    }
+
+    const rollStr = natural != null ? ` (d20=${natural})` : "";
+    if (total > highestPerception) {
+      quarry.escaped = true;
+      if (quarry.carrying) {
+        const carried = this.getParticipant(quarry.carrying);
+        if (carried) carried.escaped = true;
+      }
+      this.addLog(`🏃 ${quarry.display} escape check: Stealth ${total}${rollStr} > ${highestPerception} — ESCAPED!`);
+    } else {
+      this.addLog(`${quarry.display} escape check: Stealth ${total}${rollStr} ≤ ${highestPerception} — still being pursued.`);
+    }
+
+    queue?.shift();
+    if (queue && queue.length > 0) {
+      this.processNextEscapeCheck();
+    } else {
+      this.finishEndOfRound();
+      this.checkChaseEnd();
+      if (!this.state.ended) {
+        // Advance to the next round
+        this.state.round++;
+        for (const pp of this.state.participants) {
+          pp.hasActed = false;
+          this.resetTurnFlags(pp);
+        }
+        this.addLog(`Round ${this.state.round} begins.`);
+        this.state.turnIndex = 0;
+        this.skipInactiveForward();
+        this.beginTurn();
+      } else {
+        this.emit();
+      }
+    }
+  }
+
+  /** Auto-roll with advantage or disadvantage. */
+  private autoRollWithAdvantage(modifier: number, condition: StealthCondition): { natural: number; total: number } {
+    const r1 = Math.floor(Math.random() * 20) + 1;
+    const r2 = Math.floor(Math.random() * 20) + 1;
+    let natural: number;
+    if (condition === "advantage") {
+      natural = Math.max(r1, r2);
+    } else if (condition === "disadvantage") {
+      natural = Math.min(r1, r2);
+    } else {
+      natural = r1;
+    }
+    return { natural, total: natural + modifier };
   }
 
   /**

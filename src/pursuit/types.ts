@@ -18,98 +18,97 @@ export interface SpeedEntry {
  * the view renders based on the current phase.
  */
 export type TurnPhase =
-  | "complication"        // Auto-rolled d6, showing result
+  | "complication"        // Resolving complication from previous participant's d20
   | "complication-check"  // Waiting for PC to roll complication check
   | "action"              // Choose action
   | "action-resolve"      // Waiting for action resolution (stealth/CON save)
   | "bonus"               // Choose bonus action (Cunning Action only)
   | "bonus-resolve"       // Waiting for bonus resolution
   | "movement"            // Movement phase
+  | "complication-roll"   // End-of-turn d20 roll (affects next participant)
+  | "escape-check"        // End-of-round quarry escape Stealth check
   | "turn-end";           // Summary, ready to advance
 
 // ── Complications ──────────────────────────────────────────────
 
-/** Definition of a single complication result in the d6 table. */
+/** A single check option when a complication allows player choice. */
+export interface ComplicationCheckOption {
+  /** Display label, e.g. "DEX (Acrobatics) DC 15". */
+  label: string;
+  /** Key for modifier lookup: "DEX"|"STR"|"CON"|"WIS"|"INT"|"CHA"|"Athletics"|"Acrobatics"|"Stealth"|"Perception". */
+  abilityKey: string;
+  /** Difficulty class for the check / save. */
+  dc: number;
+}
+
+/** Whether the complication has a check or must be adjudicated by the GM. */
+export type ComplicationType = "check" | "gm-adjudicate";
+
+/** Definition of a single complication result (d20 entries 1–10). */
 export interface ComplicationEntry {
+  /** Position in the table (1–10). 0 for quarry-created obstacles. */
   roll: number;
   title: string;
+  /** Read-aloud / narration text for the GM. */
   description: string;
-  requiresCheck: boolean;
-  checkAbility?: string;  // "DEX" | "STR" | "Stealth"
-  checkDC?: number;
+  type: ComplicationType;
+  /** Available check / save options (player may choose when multiple). */
+  checkOptions?: ComplicationCheckOption[];
   onSuccess?: ComplicationEffect;
   onFail?: ComplicationEffect;
+  /** Description for gm-adjudicate entries (suggested handling). */
+  autoEffect?: ComplicationEffect;
 }
 
 /** Effect applied from a complication check pass or fail. */
 export interface ComplicationEffect {
   description: string;
-  grantsLoS?: boolean;
+  damage?: string;              // dice formula like "1d6"
+  damageType?: string;          // "bludgeoning" | "piercing" | "slashing" etc.
   speedPenalty?: "halved" | "zero";
-  damage?: string;  // dice formula like "1d6"
+  movementReduction?: number;   // feet of movement lost (difficult terrain)
+  condition?: string;           // "prone" | "restrained" | "blinded" | "poisoned"
+  grantsLoS?: boolean;
 }
 
-/** Active complication for the current turn. */
+/** Active complication being resolved on the current turn. */
 export interface ActiveComplication {
   entry: ComplicationEntry;
-  roll: number;
+  /** The actual d20 value that triggered this (1–10). */
+  d20Roll: number;
+  /** Display name of who rolled the d20 (previous participant). */
+  rolledByName: string;
   resolved: boolean;
+  /** Which check option was selected (if multiple available). */
+  selectedCheck?: ComplicationCheckOption;
   checkResult?: number;
   checkNatural?: number;
   passed?: boolean;
   effectDescription?: string;
 }
 
-/** Default Urban Chase Complications (d6). */
-export const CHASE_COMPLICATIONS: ComplicationEntry[] = [
-  {
-    roll: 1, title: "Clear path",
-    description: "No complication.",
-    requiresCheck: false,
-  },
-  {
-    roll: 2, title: "Uneven ground",
-    description: "DEX save DC 12 or fall prone.",
-    requiresCheck: true, checkAbility: "DEX", checkDC: 12,
-    onFail: { description: "Falls prone! Speed halved this turn.", speedPenalty: "halved" },
-  },
-  {
-    roll: 3, title: "Obstacle",
-    description: "Athletics/Acrobatics DC 13 to get past.",
-    requiresCheck: true, checkAbility: "DEX", checkDC: 13,
-    onFail: { description: "Blocked! Loses all movement this turn.", speedPenalty: "zero" },
-  },
-  {
-    roll: 4, title: "Crowd",
-    description: "Stealth DC 12 to slip through.",
-    requiresCheck: true, checkAbility: "Stealth", checkDC: 12,
-    onSuccess: { description: "Slips through the crowd — line of sight broken!", grantsLoS: true },
-    onFail: { description: "Struggles through the crowd. Speed halved.", speedPenalty: "halved" },
-  },
-  {
-    roll: 5, title: "Hazard",
-    description: "DEX save DC 14 or take damage.",
-    requiresCheck: true, checkAbility: "DEX", checkDC: 14,
-    onFail: { description: "Hit by hazard!", damage: "1d6" },
-  },
-  {
-    roll: 6, title: "Dead end",
-    description: "Athletics DC 15 to find another way.",
-    requiresCheck: true, checkAbility: "STR", checkDC: 15,
-    onFail: { description: "Dead end! Must backtrack — loses all movement.", speedPenalty: "zero" },
-  },
-];
+/** Pending complication stored between turns (rolled by one, affects next). */
+export interface PendingComplicationForNext {
+  entry: ComplicationEntry;
+  d20Roll: number;
+  rolledByName: string;
+  rolledById: string;
+  /** True when the quarry deliberately created this obstacle. */
+  isQuarryObstacle?: boolean;
+}
 
 // ── Pending Input ──────────────────────────────────────────────
 
 /** Describes a roll the system is waiting for from the GM (for PCs). */
 export interface PendingInput {
-  type: "complication-check" | "stealth" | "con-save" | "perception";
+  type: "complication-check" | "stealth" | "con-save" | "perception" | "escape-stealth";
   participantId: string;
   label: string;
   modifier: number;
   dc?: number;
   description: string;
+  /** Available check options when participant can choose. */
+  checkOptions?: ComplicationCheckOption[];
 }
 
 // ── Participant ────────────────────────────────────────────────
@@ -125,7 +124,7 @@ export type PursuitRole = "quarry" | "pursuer";
  * - search: pursuers only — active Perception vs hidden quarry
  * - other: spell, Help, item, etc.
  */
-export type TurnAction = "dash" | "hide" | "disengage" | "dodge" | "search" | "other";
+export type TurnAction = "dash" | "hide" | "disengage" | "dodge" | "search" | "attack" | "create-obstacle" | "other";
 
 /** Advantage / disadvantage modifier for the Stealth check. */
 export type StealthCondition = "advantage" | "disadvantage" | "normal";
@@ -184,6 +183,8 @@ export interface PursuitParticipant {
   // ── Complication state (per-turn) ──
   /** Speed penalty from complications this turn. */
   movementPenalty: "none" | "halved" | "zero";
+  /** Flat movement reduction in feet from complications (difficult terrain). */
+  movementReductionFeet: number;
   /** Complication granted LoS break this turn. */
   complicationLoSBreak: boolean;
 
@@ -222,9 +223,23 @@ export interface PursuitParticipant {
   /** IDs of quarry members this pursuer is chasing. */
   targetIds: string[];
 
+  // ── Ability modifiers (for complication checks) ──
+  /** Wisdom modifier (for WIS saves / checks). */
+  wisModifier: number;
+  /** Intelligence modifier (for INT checks). */
+  intModifier: number;
+  /** Charisma modifier (for CHA / Intimidation checks). */
+  chaModifier: number;
+
+  // ── Escape tracking (per-round) ──
+  /** Was this quarry ever out of the lead pursuer's sight this round? */
+  wasOutOfSightThisRound: boolean;
+
   // ── Health & status (carried from combat or vault) ──
   currentHP: number;
   maxHP: number;
+  /** Temporary hit points (absorb damage first, don't stack). */
+  tempHP: number;
   /** True when at 0 HP or otherwise unable to act. */
   incapacitated: boolean;
   /** Active conditions (e.g. "prone", "restrained"). */
@@ -265,6 +280,8 @@ export interface ChaseEnvironment {
   hasElevation: boolean;
   /** Whether the area is crowded or noisy. */
   crowdedOrNoisy: boolean;
+  /** ID of the complication table to use ("urban", "wilderness", etc.). */
+  complicationTableId: string;
   /** Free-form GM notes. */
   notes: string;
 }
@@ -315,6 +332,16 @@ export interface PursuitState {
   currentComplication?: ActiveComplication;
   /** Pending input the system is waiting for from the GM (PC rolls only). */
   pendingInput?: PendingInput;
+
+  // ── Complication system (d20, targets next participant) ──
+  /** ID of the complication table in use ("urban", "wilderness", etc.). */
+  complicationTableId: string;
+  /** Complication stored from a previous participant's end-of-turn d20 roll. */
+  pendingComplicationForNext?: PendingComplicationForNext;
+  /** Queue of quarry IDs awaiting end-of-round escape Stealth checks. */
+  escapeCheckQueue?: string[];
+  /** The d20 value rolled at end of the current turn (for display). */
+  endOfTurnD20?: number;
 
   // ── Environment ──
   environment: ChaseEnvironment;
@@ -369,6 +396,14 @@ export function computeCarryPenalty(strScore: number, weightLbs: number): CarryR
   if (weightLbs <= pushDragLiftLimit(strScore)) return { status: "drag", speedFeet: 5 };
   return { status: "impossible" };
 }
+
+// ── Standard D&D conditions ────────────────────────────────────
+
+export const STANDARD_CONDITIONS = [
+  "Blinded", "Charmed", "Deafened", "Frightened", "Grappled",
+  "Incapacitated", "Invisible", "Paralyzed", "Petrified", "Poisoned",
+  "Prone", "Restrained", "Stunned", "Unconscious", "Exhaustion",
+] as const;
 
 // ── Speed parsing ──────────────────────────────────────────────
 
