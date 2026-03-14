@@ -215,12 +215,19 @@ export class PursuitTracker {
   }
 
   /** Start the chase (initiative has been set). */
-  startChase(): void {
+  startChase(activeName?: string): void {
     if (!this.state) return;
     this.sortByInitiative();
     this.state.started = true;
-    this.state.turnIndex = 0;
     this.state.round = 1;
+
+    // If coming from combat, start on the combatant whose turn it was
+    let startIdx = 0;
+    if (activeName) {
+      const idx = this.state.participants.findIndex((p) => p.name === activeName);
+      if (idx >= 0) startIdx = idx;
+    }
+    this.state.turnIndex = startIdx;
     this.skipInactiveForward();
     this.addLog(`Chase begins! Round 1.`);
     this.beginTurn();

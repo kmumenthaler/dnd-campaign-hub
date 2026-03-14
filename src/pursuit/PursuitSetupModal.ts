@@ -1160,7 +1160,9 @@ export class PursuitSetupModal extends Modal {
     // If coming from combat with initiative already set, keep it
     if (this.fromCombat) {
       this.plugin.pursuitTracker.keepInitiativeFromCombat();
-      this.plugin.pursuitTracker.startChase();
+      // Start on the combatant whose turn it was in combat
+      const activeCombatant = this.fromCombat.combatants[this.fromCombat.turnIndex];
+      this.plugin.pursuitTracker.startChase(activeCombatant?.name);
     }
 
     this.close();
