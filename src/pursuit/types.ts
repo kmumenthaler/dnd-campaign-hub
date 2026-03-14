@@ -127,6 +127,24 @@ export interface PendingInput {
   checkOptions?: ComplicationCheckOption[];
 }
 
+// ── Creature size helpers ──────────────────────────────────────
+
+/** Standard D&D 5e size categories. */
+export type CreatureSize = "tiny" | "small" | "medium" | "large" | "huge" | "gargantuan";
+
+/** Numeric ordering for size comparison (higher = larger). */
+export const SIZE_ORDER: Record<CreatureSize, number> = {
+  tiny: 0, small: 1, medium: 2, large: 3, huge: 4, gargantuan: 5,
+};
+
+/**
+ * Return how many size categories `a` is larger than `b`.
+ * Positive = a is larger; negative = a is smaller.
+ */
+export function sizeDifference(a: CreatureSize, b: CreatureSize): number {
+  return SIZE_ORDER[a] - SIZE_ORDER[b];
+}
+
 // ── Participant ────────────────────────────────────────────────
 
 export type PursuitRole = "quarry" | "pursuer";
@@ -213,6 +231,8 @@ export interface PursuitParticipant {
   strScore: number;
   /** Estimated weight of this participant in lbs (size-based). */
   estimatedWeight: number;
+  /** Creature size category (for grapple speed rules). */
+  size: CreatureSize;
 
   // ── Grapple mechanic ──
   /** IDs of participants this one is actively grappling (hostile carry). */
@@ -434,21 +454,32 @@ export function pushDragLiftLimit(strScore: number): number {
   return strScore * 30;
 }
 
+/**
+ * Weight-based carry result (D&D 5e RAW).
+ * - "ok"        — within carrying capacity, no weight-based speed penalty.
+ * - "drag"      — over capacity but within push/drag/lift limit; speed 5 ft.
+ * - "impossible" — exceeds push/drag/lift limit entirely.
+ *
+ * NOTE: grapple-based half-speed is applied separately in getEffectiveSpeed,
+ * not as part of this weight calculation.
+ */
 export type CarryResult =
-  | { status: "ok"; speedMultiplier: 0.5 }
+  | { status: "ok" }
   | { status: "drag"; speedFeet: 5 }
   | { status: "impossible" };
 
-/** Determine carry penalty based on 5e encumbrance rules. */
+/** Determine carry result based on 5e weight rules (RAW). */
 export function computeCarryPenalty(strScore: number, weightLbs: number): CarryResult {
-  if (weightLbs <= carryCapacity(strScore)) return { status: "ok", speedMultiplier: 0.5 };
+  if (weightLbs <= 0) return { status: "ok" };
+  if (weightLbs <= carryCapacity(strScore)) return { status: "ok" };
   if (weightLbs <= pushDragLiftLimit(strScore)) return { status: "drag", speedFeet: 5 };
   return { status: "impossible" };
 }
 
 /**
  * Total the effective weight of everything a participant carries + grapples.
- * Grappled creatures count as 2× weight (struggling makes them harder to move).
+ * Under D&D 5e RAW the grapple speed penalty (half speed) is separate from
+ * the weight calculation, so grappled weight is counted at 1×.
  */
 export function totalBurdenWeight(
   carrier: PursuitParticipant,
@@ -461,7 +492,7 @@ export function totalBurdenWeight(
   }
   for (const id of carrier.grappling) {
     const p = allParticipants.find((x) => x.id === id);
-    if (p) total += p.estimatedWeight * 2; // struggling = 2× effective weight
+    if (p) total += p.estimatedWeight;
   }
   return total;
 }

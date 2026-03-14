@@ -30,7 +30,7 @@ import {
   StealthCondition,
   ChaseEnvironment,
 } from "./types";
-import { computeStealthCondition, computeCarryPenalty, totalBurdenWeight } from "./types";
+import { computeStealthCondition, computeCarryPenalty, totalBurdenWeight, sizeDifference } from "./types";
 import { getComplicationTable } from "./complications";
 
 export class PursuitTracker {
@@ -890,54 +890,85 @@ export class PursuitTracker {
 
   // ── Movement ───────────────────────────────────────────────
 
-  /** Confirm movement for the active participant (called from movement phase). */
+  /** How many feet the active participant can still move this turn. */
+  getRemainingMovement(p: PursuitParticipant): number {
+    return Math.max(0, this.getMaxMovement(p) - p.feetMovedThisTurn);
+  }
+
+  /**
+   * Move the active participant a number of feet (supports multi-step movement).
+   * When not dashing, the participant can move partially, perform a free
+   * interaction (e.g. pick up an ally), then continue moving with the remaining
+   * feet. When dashing or when no movement remains, the movement finalises
+   * automatically.
+   */
   confirmMovement(feet: number): void {
     if (!this.state) return;
     const p = this.getActive();
     if (!p || p.hasMoved) return;
 
-    const maxFeet = this.getMaxMovement(p);
-    const clamped = Math.min(Math.max(feet, 0), maxFeet);
+    const remaining = this.getRemainingMovement(p);
+    const clamped = Math.min(Math.max(feet, 0), remaining);
     const oldPos = p.position;
 
-    p.position += clamped;
-    p.hasMoved = true;
-    p.feetMovedThisTurn = clamped;
-
     if (clamped > 0) {
+      p.position += clamped;
+      p.feetMovedThisTurn += clamped;
       this.addLog(`${p.display} moves ${clamped}ft → position ${p.position}ft.`);
-    } else {
+
+      // Snap all carried and grappled to carrier position
+      for (const id of [...p.carrying, ...p.grappling]) {
+        const dep = this.getParticipant(id);
+        if (dep) dep.position = p.position;
+      }
+
+      // Check if pursuer crosses any placed obstacle
+      if (p.role === "pursuer") {
+        const hit = this.findCrossedObstacle(oldPos, p.position);
+        if (hit) {
+          const pending: PendingComplicationForNext = {
+            entry: hit.entry,
+            d20Roll: 0,
+            rolledByName: hit.createdByName,
+            rolledById: hit.createdById,
+            isQuarryObstacle: true,
+          };
+          this.state.placedObstacles = this.state.placedObstacles.filter((o) => o.id !== hit.id);
+          this.addLog(`⚠️ ${p.display} encounters obstacle at ${hit.position}ft: ${hit.entry.title}!`);
+          (this.state as any).__obstacleComplication = true;
+          this.resolvePendingComplication(p, pending);
+          return;
+        }
+      }
+
+      // Multi-step: stay in movement phase if not dashing and movement remains
+      const dashed = p.turnAction === "dash" || p.bonusAction === "dash";
+      const newRemaining = this.getRemainingMovement(p);
+      if (!dashed && newRemaining > 0) {
+        this.emit();
+        return;
+      }
+    } else if (p.feetMovedThisTurn === 0) {
       this.addLog(`${p.display} stays in place (position ${p.position}ft).`);
     }
 
-    // Snap all carried and grappled to carrier position
-    for (const id of [...p.carrying, ...p.grappling]) {
-      const dep = this.getParticipant(id);
-      if (dep) dep.position = p.position;
-    }
+    this.finalizeMovement(p);
+  }
 
-    // Check if pursuer crosses any placed obstacle
-    if (p.role === "pursuer" && clamped > 0) {
-      const hit = this.findCrossedObstacle(oldPos, p.position);
-      if (hit) {
-        // Trigger this obstacle as a pending complication for this turn
-        const pending: PendingComplicationForNext = {
-          entry: hit.entry,
-          d20Roll: 0,
-          rolledByName: hit.createdByName,
-          rolledById: hit.createdById,
-          isQuarryObstacle: true,
-        };
-        // Remove the obstacle after triggering
-        this.state.placedObstacles = this.state.placedObstacles.filter((o) => o.id !== hit.id);
-        this.addLog(`⚠️ ${p.display} encounters obstacle at ${hit.position}ft: ${hit.entry.title}!`);
-        // Mark that this is a mid-movement obstacle complication
-        (this.state as any).__obstacleComplication = true;
-        // Resolve the obstacle as a complication
-        this.resolvePendingComplication(p, pending);
-        return; // Don't proceed to complication roll yet — complication phase will handle flow
-      }
+  /** End the movement phase early (when the participant has remaining feet but chooses to stop). */
+  endMovement(): void {
+    if (!this.state) return;
+    const p = this.getActive();
+    if (!p || p.hasMoved) return;
+    if (p.feetMovedThisTurn === 0) {
+      this.addLog(`${p.display} stays in place (position ${p.position}ft).`);
     }
+    this.finalizeMovement(p);
+  }
+
+  /** Complete the movement phase: mark done, check catch-up/LoS, roll complication. */
+  private finalizeMovement(p: PursuitParticipant): void {
+    p.hasMoved = true;
 
     this.checkCatchUp();
 
@@ -986,19 +1017,30 @@ export class PursuitTracker {
     return crossed[0];
   }
 
-  /** Get effective speed in feet, accounting for carry penalty and exhaustion. */
+  /** Get effective speed in feet, accounting for carry weight, grapple, and exhaustion (D&D 5e RAW). */
   getEffectiveSpeed(p: PursuitParticipant): number {
     // Base speed from active mode
     const entry = p.speeds.find((s) => s.mode === p.activeSpeed) ?? p.speeds[0];
     let speed = entry?.feet ?? 30;
 
-    // Carry + grapple penalty (sum all burden weight)
-    const burdenWeight = totalBurdenWeight(p, this.state?.participants ?? []);
+    const allParticipants = this.state?.participants ?? [];
+    const burdenWeight = totalBurdenWeight(p, allParticipants);
     if (burdenWeight > 0) {
       const result = computeCarryPenalty(p.strScore, burdenWeight);
-      if (result.status === "ok") speed = Math.floor(speed * result.speedMultiplier);
-      else if (result.status === "drag") speed = result.speedFeet;
-      else speed = 0;
+      if (result.status === "impossible") return 0;
+      // Push/drag: hard cap at 5 ft, no further reductions apply
+      if (result.status === "drag") return result.speedFeet;
+      // "ok": within carrying capacity — no weight-based speed penalty
+    }
+
+    // Grapple penalty (5e RAW): half speed unless target is 2+ sizes smaller
+    if (p.grappling.length > 0) {
+      const halvesSpeed = p.grappling.some((id) => {
+        const target = allParticipants.find((x) => x.id === id);
+        if (!target) return false;
+        return sizeDifference(p.size, target.size) < 2;
+      });
+      if (halvesSpeed) speed = Math.floor(speed / 2);
     }
 
     // Exhaustion penalty (5e RAW: exhaustion 2+ halves speed)
@@ -1012,12 +1054,30 @@ export class PursuitTracker {
 
   // ── Carry ──────────────────────────────────────────────────
 
-  /** One participant picks up another (voluntary carry). */
+  /**
+   * One participant picks up another (voluntary carry — same role only).
+   * Cross-role carries require a grapple action instead.
+   * Both must be at the same position (0 ft apart).
+   */
   pickUp(carrierId: string, targetId: string): boolean {
     if (!this.state) return false;
     const carrier = this.getParticipant(carrierId);
     const target = this.getParticipant(targetId);
     if (!carrier || !target) return false;
+
+    // Must be same role (willing carry — hostiles require grapple)
+    if (carrier.role !== target.role) {
+      this.addLog(`${carrier.display} cannot pick up ${target.display} (hostile — use Grapple instead).`);
+      this.emit();
+      return false;
+    }
+
+    // Must be at the same position (0 ft apart)
+    if (carrier.position !== target.position) {
+      this.addLog(`${carrier.display} cannot pick up ${target.display} (not at the same position).`);
+      this.emit();
+      return false;
+    }
 
     // Check total burden weight with new target
     const currentWeight = totalBurdenWeight(carrier, this.state.participants);
@@ -1033,7 +1093,7 @@ export class PursuitTracker {
     target.carriedBy = carrierId;
     target.position = carrier.position;
 
-    const penalty = result.status === "ok" ? "speed halved" : "speed 5ft (dragging)";
+    const penalty = result.status === "drag" ? "speed 5ft (dragging)" : "no speed penalty";
     this.addLog(`${carrier.display} picks up ${target.display} (${penalty}).`);
     this.emit();
     return true;
@@ -1069,13 +1129,12 @@ export class PursuitTracker {
 
   // ── Grapple ────────────────────────────────────────────────
 
-  /** Handle a grapple action — pursuer attempts to restrain a quarry within 5ft. */
+  /** Handle a grapple action — participant attempts to grapple an opponent at the same position. */
   private handleGrapple(pursuer: PursuitParticipant): void {
     if (!this.state) return;
-    // Find the closest quarry within 5ft
     const target = this.getGrappleTarget(pursuer);
     if (!target) {
-      this.addLog(`${pursuer.display} tries to grapple but no target within 5ft!`);
+      this.addLog(`${pursuer.display} tries to grapple but no opponent at the same position!`);
       this.advanceAfterAction(pursuer);
       return;
     }
@@ -1089,23 +1148,20 @@ export class PursuitTracker {
       description: `Grapple check: ${pursuer.display}'s Athletics vs ${target.display}'s Athletics or Acrobatics.`,
     };
     this.state.turnPhase = "action-resolve";
-    // Store grapple target in a way the resolver can find it
     (this.state as any).__grappleTargetId = target.id;
     this.emit();
   }
 
-  /** Find the closest grappable target within 5ft of the active participant. */
+  /** Find a grappable opponent at the same position (0 ft apart). */
   private getGrappleTarget(p: PursuitParticipant): PursuitParticipant | undefined {
     if (!this.state) return undefined;
     const opponents = this.state.participants.filter(
       (q) => q.role !== p.role && !q.droppedOut && !q.escaped && !q.incapacitated
         && !q.grappledBy
         && this.canCatch(p, q)
-        && Math.abs(q.position - p.position) <= 5
+        && q.position === p.position
     );
     if (opponents.length === 0) return undefined;
-    // Return the closest
-    opponents.sort((a, b) => Math.abs(a.position - p.position) - Math.abs(b.position - p.position));
     return opponents[0];
   }
 

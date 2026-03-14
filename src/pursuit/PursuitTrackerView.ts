@@ -19,8 +19,8 @@ import type {
   ActiveComplication,
   ComplicationCheckOption,
 } from "./types";
-import { computeCarryPenalty, STANDARD_CONDITIONS, SIZE_WEIGHT_ESTIMATE, parseSpeed } from "./types";
-import type { PursuitRole, SpeedEntry } from "./types";
+import { computeCarryPenalty, totalBurdenWeight, sizeDifference, STANDARD_CONDITIONS, SIZE_WEIGHT_ESTIMATE, parseSpeed } from "./types";
+import type { PursuitRole, SpeedEntry, CreatureSize } from "./types";
 import { getComplicationTable, COMPLICATION_TABLES } from "./complications";
 import type { ChaseComplicationTable } from "./complications";
 import { enumerateScreens, screenKey } from "../utils/ScreenEnumeration";
@@ -621,17 +621,17 @@ export class PursuitTrackerView extends ItemView {
       });
     }
 
-    // Grapple: only for participants within 5ft of an opponent
+    // Grapple: only for participants at the same position as an opponent (0 ft apart)
     {
       const opponents = state.participants.filter((q) =>
         q.role !== p.role && !q.escaped && !q.droppedOut && !q.incapacitated && !q.grappledBy
-        && Math.abs(q.position - p.position) <= 5
+        && q.position === p.position
       );
       if (opponents.length > 0) {
         actions.push({
           label: "🤼 Grapple",
           action: "grapple",
-          tip: `Grapple nearby target (${opponents.map((o) => o.display).join(", ")})`,
+          tip: `Grapple opponent at same position (${opponents.map((o) => o.display).join(", ")})`,
           highlight: true,
         });
       }
@@ -714,26 +714,60 @@ export class PursuitTrackerView extends ItemView {
     state: PursuitState,
   ) {
     const div = row.createDiv({ cls: "dnd-pursuit-phase" });
+    const remaining = tracker.getRemainingMovement(p);
     const maxMove = tracker.getMaxMovement(p);
     const dashed = p.turnAction === "dash" || p.bonusAction === "dash";
     const baseSpeed = tracker.getEffectiveSpeed(p);
+    const alreadyMoved = p.feetMovedThisTurn > 0;
 
+    // ── Speed info header ──
     const speedInfo = div.createDiv({ cls: "dnd-pursuit-speed-info" });
-    speedInfo.createEl("span", { text: "Movement: ", cls: "dnd-pursuit-phase-label" });
-    if (p.movementPenalty === "zero") {
-      speedInfo.createEl("span", { text: "0ft (lost to complication)", cls: "dnd-pursuit-warning" });
-    } else if (dashed) {
-      speedInfo.createEl("span", { text: `${baseSpeed}ft × 2 = `, cls: "dnd-pursuit-phase-detail" });
-      speedInfo.createEl("span", { text: `${maxMove}ft`, cls: "dnd-pursuit-dash-speed" });
+
+    if (alreadyMoved) {
+      speedInfo.createEl("span", { text: "Remaining: ", cls: "dnd-pursuit-phase-label" });
+      speedInfo.createEl("span", { text: `${remaining}ft`, cls: "dnd-pursuit-phase-value" });
+      speedInfo.createEl("span", {
+        text: ` (moved ${p.feetMovedThisTurn}ft of ${maxMove}ft)`,
+        cls: "dnd-pursuit-phase-detail",
+      });
     } else {
-      speedInfo.createEl("span", { text: `${maxMove}ft`, cls: "dnd-pursuit-phase-value" });
-    }
-    if (p.movementPenalty === "halved") {
-      speedInfo.createEl("span", { text: " (halved by complication)", cls: "dnd-pursuit-warning" });
+      speedInfo.createEl("span", { text: "Movement: ", cls: "dnd-pursuit-phase-label" });
+      if (p.movementPenalty === "zero") {
+        speedInfo.createEl("span", { text: "0ft (lost to complication)", cls: "dnd-pursuit-warning" });
+      } else if (dashed) {
+        speedInfo.createEl("span", { text: `${baseSpeed}ft × 2 = `, cls: "dnd-pursuit-phase-detail" });
+        speedInfo.createEl("span", { text: `${maxMove}ft`, cls: "dnd-pursuit-dash-speed" });
+      } else {
+        speedInfo.createEl("span", { text: `${remaining}ft`, cls: "dnd-pursuit-phase-value" });
+      }
+      if (p.movementPenalty === "halved") {
+        speedInfo.createEl("span", { text: " (halved by complication)", cls: "dnd-pursuit-warning" });
+      }
     }
 
-    if (maxMove === 0) {
-      this.addContinueButton(div, () => tracker.confirmMovement(0));
+    // Carry/grapple speed annotations
+    if (p.carrying.length > 0 || p.grappling.length > 0) {
+      const burden = totalBurdenWeight(p, state.participants);
+      if (burden > 0) {
+        const result = computeCarryPenalty(p.strScore, burden);
+        if (result.status === "drag") {
+          speedInfo.createEl("span", { text: " ⚠️ Dragging (5ft max)", cls: "dnd-pursuit-warning" });
+        }
+      }
+      if (p.grappling.length > 0) {
+        const halvesSpeed = p.grappling.some((id) => {
+          const target = state.participants.find((x) => x.id === id);
+          if (!target) return false;
+          return sizeDifference(p.size, target.size) < 2;
+        });
+        if (halvesSpeed) {
+          speedInfo.createEl("span", { text: " 🤼 ½ speed (grapple)", cls: "dnd-pursuit-warning" });
+        }
+      }
+    }
+
+    if (remaining === 0) {
+      this.addContinueButton(div, () => tracker.endMovement());
       return;
     }
 
@@ -741,36 +775,40 @@ export class PursuitTrackerView extends ItemView {
     const quickBtns = moveLine.createDiv({ cls: "dnd-pursuit-btn-group" });
 
     const fullBtn = quickBtns.createEl("button", {
-      text: `Full (${maxMove}ft)`,
+      text: `Full (${remaining}ft)`,
       cls: "dnd-pursuit-btn dnd-pursuit-btn-primary",
     });
-    fullBtn.addEventListener("click", () => tracker.confirmMovement(maxMove));
+    fullBtn.addEventListener("click", () => tracker.confirmMovement(remaining));
 
-    if (maxMove >= 10) {
+    if (remaining >= 10) {
       const halfBtn = quickBtns.createEl("button", {
-        text: `Half (${Math.floor(maxMove / 2)}ft)`,
+        text: `Half (${Math.floor(remaining / 2)}ft)`,
         cls: "dnd-pursuit-btn",
       });
-      halfBtn.addEventListener("click", () => tracker.confirmMovement(Math.floor(maxMove / 2)));
+      halfBtn.addEventListener("click", () => tracker.confirmMovement(Math.floor(remaining / 2)));
     }
 
-    const stayBtn = quickBtns.createEl("button", {
-      text: "Stay (0ft)",
+    // End Movement / Stay button
+    const endBtn = quickBtns.createEl("button", {
+      text: alreadyMoved ? "⏹ End Movement" : "Stay (0ft)",
       cls: "dnd-pursuit-btn",
     });
-    stayBtn.addEventListener("click", () => tracker.confirmMovement(0));
+    endBtn.addEventListener("click", () => {
+      if (alreadyMoved) tracker.endMovement();
+      else tracker.confirmMovement(0);
+    });
 
     const customDiv = moveLine.createDiv({ cls: "dnd-pursuit-move-custom" });
     const moveInput = customDiv.createEl("input", {
       type: "number",
       cls: "dnd-pursuit-move-input",
-      attr: { min: "0", max: String(maxMove), placeholder: `0-${maxMove}` },
+      attr: { min: "0", max: String(remaining), placeholder: `0-${remaining}` },
     });
     const moveBtn = customDiv.createEl("button", { text: "Move", cls: "dnd-pursuit-btn" });
     moveBtn.addEventListener("click", () => {
       const val = parseInt(moveInput.value, 10);
       if (isNaN(val) || val < 0) { new Notice("Enter a valid number of feet."); return; }
-      if (val > maxMove) { new Notice(`Max movement is ${maxMove}ft.`); return; }
+      if (val > remaining) { new Notice(`Max remaining movement is ${remaining}ft.`); return; }
       tracker.confirmMovement(val);
     });
   }
@@ -978,26 +1016,29 @@ export class PursuitTrackerView extends ItemView {
     tracker: PursuitTracker,
     state: PursuitState,
   ) {
-    // Pick up same-role ally: incapacitated OR willing (not already carried/self)
+    // Pick up same-role ally at the same position (0 ft apart, voluntary carry)
     const candidates = state.participants.filter(
       (q) =>
         q.role === p.role &&
-        !q.carriedBy &&
         q.id !== p.id &&
+        !q.carriedBy &&
         !q.droppedOut &&
-        !q.escaped
+        !q.escaped &&
+        q.position === p.position
     );
     if (candidates.length > 0) {
       const carryLine = row.createDiv({ cls: "dnd-pursuit-carry-line" });
-      carryLine.createEl("span", { text: "Pick up: " });
+      carryLine.createEl("span", { text: "🤝 Pick up: " });
       for (const cand of candidates) {
-        const result = computeCarryPenalty(p.strScore, cand.estimatedWeight);
+        const currentBurden = totalBurdenWeight(p, state.participants);
+        const newBurden = currentBurden + cand.estimatedWeight;
+        const result = computeCarryPenalty(p.strScore, newBurden);
         const tag = cand.incapacitated ? " 💀" : "";
         const label = result.status === "impossible"
           ? `${cand.display}${tag} (too heavy)`
           : result.status === "drag"
             ? `${cand.display}${tag} (drag, 5ft)`
-            : `${cand.display}${tag} (½ speed)`;
+            : `${cand.display}${tag}`;
         const btn = carryLine.createEl("button", {
           text: label,
           cls: "dnd-pursuit-carry-btn",
@@ -1013,7 +1054,7 @@ export class PursuitTrackerView extends ItemView {
       for (const carriedId of p.carrying) {
         const carried = state.participants.find((q) => q.id === carriedId);
         if (!carried) continue;
-        const span = carryLine.createEl("span", { text: `Carrying: ${carried.display} ` });
+        const span = carryLine.createEl("span", { text: `📦 Carrying: ${carried.display} ` });
         const dropBtn = span.createEl("button", { text: "Put Down", cls: "dnd-pursuit-carry-btn" });
         dropBtn.addEventListener("click", () => tracker.putDown(p.id, carriedId));
       }
@@ -1378,6 +1419,7 @@ export class PursuitTrackerView extends ItemView {
           pendingDashSave: false,
           strScore: selected.strScore,
           estimatedWeight: weight,
+          size: (selected.size || "medium") as CreatureSize,
           stealthModifier: selected.stealthModifier,
           passivePerception: selected.passivePerception,
           perceptionModifier: selected.perceptionModifier,
@@ -1435,6 +1477,7 @@ export class PursuitTrackerView extends ItemView {
           pendingDashSave: false,
           strScore: manualStr,
           estimatedWeight: SIZE_WEIGHT_ESTIMATE.medium ?? 150,
+          size: "medium" as CreatureSize,
           stealthModifier: 0,
           passivePerception: 10,
           perceptionModifier: 0,
@@ -1729,6 +1772,7 @@ export class PursuitTrackerView extends ItemView {
         pendingDashSave: false,
         strScore: selected.strScore,
         estimatedWeight: weight,
+        size: (selected.size || "medium") as CreatureSize,
         stealthModifier: selected.stealthModifier,
         passivePerception: selected.passivePerception,
         perceptionModifier: selected.perceptionModifier,

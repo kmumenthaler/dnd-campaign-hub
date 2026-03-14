@@ -18,6 +18,7 @@ import type {
   PursuitRole,
   ChaseEnvironment,
   SpeedEntry,
+  CreatureSize,
 } from "./types";
 import { parseSpeed, SIZE_WEIGHT_ESTIMATE } from "./types";
 import { COMPLICATION_TABLES } from "./complications";
@@ -1052,6 +1053,7 @@ export class PursuitSetupModal extends Modal {
           pendingDashSave: false,
           strScore: data?.strScore ?? 10,
           estimatedWeight: SIZE_WEIGHT_ESTIMATE[data?.size ?? "medium"] ?? 150,
+          size: (data?.size ?? "medium") as CreatureSize,
           stealthModifier: data?.stealthModifier ?? 0,
           passivePerception: data?.passivePerception ?? 10,
           perceptionModifier: data?.perceptionModifier ?? 0,
@@ -1115,6 +1117,7 @@ export class PursuitSetupModal extends Modal {
           pendingDashSave: false,
           strScore: c.strScore,
           estimatedWeight: SIZE_WEIGHT_ESTIMATE[c.size] ?? 150,
+          size: (c.size || "medium") as CreatureSize,
           stealthModifier: c.stealthModifier,
           passivePerception: c.passivePerception,
           perceptionModifier: c.perceptionModifier,
