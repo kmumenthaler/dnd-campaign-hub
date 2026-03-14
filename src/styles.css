@@ -12509,15 +12509,14 @@
 /* 2D Scene (replaces flat rows) */
 .dnd-pursuit-pv-scene { flex: 1; position: relative; min-height: 50vh; }
 
-/* Flex rows for quarry/pursuer halves */
-.dnd-pursuit-pv-flex-row { position: absolute; left: 0; right: 0; overflow: visible; }
-.dnd-pursuit-pv-flex-quarry { top: 5%; height: 40%; }
-.dnd-pursuit-pv-flex-pursuer { top: 55%; height: 40%; }
+/* Token row — single full-height band, tokens share the entire scene height */
+.dnd-pursuit-pv-flex-row { position: absolute; top: 2%; bottom: 2%; left: 0; right: 0; overflow: visible; }
 /* Position column — placed at a horizontal %, tokens stack vertically inside */
-.dnd-pursuit-pv-pos-column { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.2em; }
-/* Distance label bar (between quarry and pursuer rows) */
-.dnd-pursuit-pv-distance-bar { position: absolute; top: 46%; left: 0; right: 0; height: 8%; }
-.dnd-pursuit-pv-dist-inline { position: absolute; top: 0; transform: translateX(-50%); font-size: 0.65em; color: #aaa; white-space: nowrap; background: rgba(0,0,0,0.6); padding: 0.1em 0.5em; border-radius: 0.4em; }
+.dnd-pursuit-pv-pos-column { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.15em; max-height: 100%; overflow-y: auto; overflow-x: visible; scrollbar-width: none; }
+.dnd-pursuit-pv-pos-column::-webkit-scrollbar { display: none; }
+/* Distance label bar (overlaid at bottom of scene) */
+.dnd-pursuit-pv-distance-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 2em; pointer-events: none; }
+.dnd-pursuit-pv-dist-inline { position: absolute; bottom: 0; transform: translateX(-50%); font-size: 0.65em; color: #aaa; white-space: nowrap; background: rgba(0,0,0,0.6); padding: 0.1em 0.5em; border-radius: 0.4em; }
 
 /* Distance markers */
 .dnd-pursuit-pv-dist-marker { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,0.08); }

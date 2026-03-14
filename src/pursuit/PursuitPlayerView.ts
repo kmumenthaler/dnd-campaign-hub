@@ -192,34 +192,27 @@ export class PursuitPlayerView extends ItemView {
     const escapedList = state.participants.filter((p) => !p.hidden && p.escaped);
 
     // ── Render quarry and pursuer rows as flex columns per position ──
-    const quarryRow = scene.createDiv({ cls: "dnd-pursuit-pv-flex-row dnd-pursuit-pv-flex-quarry" });
-    const pursuerRow = scene.createDiv({ cls: "dnd-pursuit-pv-flex-row dnd-pursuit-pv-flex-pursuer" });
+    // Single token row uses full scene height — all tokens share the space
+    const tokenRow = scene.createDiv({ cls: "dnd-pursuit-pv-flex-row" });
 
-    // Group by position
+    // Merge all visible tokens into combined position groups
+    const allActive = [...quarries, ...pursuers];
+    const allGroups = this.groupByPosition(allActive);
+
+    for (const [pos, group] of allGroups) {
+      const pct = this.posToPercent(pos, rangeStart, rangeSize);
+      const col = tokenRow.createDiv({ cls: "dnd-pursuit-pv-pos-column" });
+      col.style.left = `${pct}%`;
+      // Render quarries first, then pursuers within each column
+      const colQuarries = group.filter((p) => p.role === "quarry");
+      const colPursuers = group.filter((p) => p.role === "pursuer");
+      for (const p of colQuarries) this.renderFlexToken(col, p, state);
+      for (const p of colPursuers) this.renderFlexToken(col, p, state);
+    }
+
+    // ── Distance labels between pursuer and quarry positions ──
     const quarryGroups = this.groupByPosition(quarries);
     const pursuerGroups = this.groupByPosition(pursuers);
-
-    // Render quarry groups
-    for (const [pos, group] of quarryGroups) {
-      const pct = this.posToPercent(pos, rangeStart, rangeSize);
-      const col = quarryRow.createDiv({ cls: "dnd-pursuit-pv-pos-column" });
-      col.style.left = `${pct}%`;
-      for (const p of group) {
-        this.renderFlexToken(col, p, state);
-      }
-    }
-
-    // Render pursuer groups
-    for (const [pos, group] of pursuerGroups) {
-      const pct = this.posToPercent(pos, rangeStart, rangeSize);
-      const col = pursuerRow.createDiv({ cls: "dnd-pursuit-pv-pos-column" });
-      col.style.left = `${pct}%`;
-      for (const p of group) {
-        this.renderFlexToken(col, p, state);
-      }
-    }
-
-    // ── Distance labels between pursuer groups and quarry groups ──
     const distBar = scene.createDiv({ cls: "dnd-pursuit-pv-distance-bar" });
     if (quarryGroups.size > 0 && pursuerGroups.size > 0) {
       const nearestQuarryPos = Math.min(...quarryGroups.keys());
