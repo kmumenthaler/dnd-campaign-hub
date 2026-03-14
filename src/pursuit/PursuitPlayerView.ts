@@ -265,6 +265,17 @@ export class PursuitPlayerView extends ItemView {
       this.render2DToken(scene, p, state);
     }
 
+    // ── Render placed obstacles ──
+    if (state.placedObstacles && state.placedObstacles.length > 0) {
+      for (const obs of state.placedObstacles) {
+        const xPct = this.posToPercent(obs.position, rangeStart, rangeSize);
+        const marker = scene.createDiv({ cls: "dnd-pursuit-pv-obstacle-marker" });
+        marker.style.left = `${xPct}%`;
+        marker.createEl("span", { text: "⚠️", cls: "dnd-pursuit-pv-obstacle-icon" });
+        marker.createEl("span", { text: obs.entry.title, cls: "dnd-pursuit-pv-obstacle-label" });
+      }
+    }
+
     // ── Escaped tokens (right edge cluster) ──
     if (escapedList.length > 0) {
       const escRow = scene.createDiv({ cls: "dnd-pursuit-pv-escaped-row" });
@@ -285,31 +296,34 @@ export class PursuitPlayerView extends ItemView {
       pos: this.tokenPositions.get(p.id)!,
     })).filter((e) => e.pos);
 
-    // Sort by x then y
-    entries.sort((a, b) => a.pos.x - b.pos.x || a.pos.y - b.pos.y);
+    const minGapX = 8; // minimum horizontal gap (percent)
+    const minGapY = 16; // minimum vertical gap (percent)
 
-    const minGapX = 6; // minimum horizontal gap (percent)
-    const minGapY = 12; // minimum vertical gap (percent)
+    // Multiple passes to settle overlaps
+    for (let pass = 0; pass < 3; pass++) {
+      // Sort by x then y each pass
+      entries.sort((a, b) => a.pos.x - b.pos.x || a.pos.y - b.pos.y);
 
-    for (let i = 0; i < entries.length; i++) {
-      for (let j = i + 1; j < entries.length; j++) {
-        const a = entries[i]!;
-        const b = entries[j]!;
-        const dx = Math.abs(a.pos.x - b.pos.x);
-        const dy = Math.abs(a.pos.y - b.pos.y);
+      for (let i = 0; i < entries.length; i++) {
+        for (let j = i + 1; j < entries.length; j++) {
+          const a = entries[i]!;
+          const b = entries[j]!;
+          const dx = Math.abs(a.pos.x - b.pos.x);
+          const dy = Math.abs(a.pos.y - b.pos.y);
 
-        if (dx < minGapX && dy < minGapY) {
-          // Nudge b away vertically
-          const shift = (minGapY - dy) / 2 + 1;
-          if (b.pos.y >= a.pos.y) {
-            b.pos.y = Math.min(88, b.pos.y + shift);
-            a.pos.y = Math.max(12, a.pos.y - shift);
-          } else {
-            a.pos.y = Math.min(88, a.pos.y + shift);
-            b.pos.y = Math.max(12, b.pos.y - shift);
+          if (dx < minGapX && dy < minGapY) {
+            // Nudge b away vertically
+            const shift = (minGapY - dy) / 2 + 1;
+            if (b.pos.y >= a.pos.y) {
+              b.pos.y = Math.min(88, b.pos.y + shift);
+              a.pos.y = Math.max(12, a.pos.y - shift);
+            } else {
+              a.pos.y = Math.min(88, a.pos.y + shift);
+              b.pos.y = Math.max(12, b.pos.y - shift);
+            }
+            this.tokenPositions.set(a.id, a.pos);
+            this.tokenPositions.set(b.id, b.pos);
           }
-          this.tokenPositions.set(a.id, a.pos);
-          this.tokenPositions.set(b.id, b.pos);
         }
       }
     }
@@ -355,11 +369,8 @@ export class PursuitPlayerView extends ItemView {
     if (p.tokenId) {
       const marker = this.plugin.markerLibrary.getMarker(p.tokenId);
       if (marker?.imageFile) {
-        const file = this.app.vault.getAbstractFileByPath(marker.imageFile);
-        if (file) {
-          const img = iconEl.createEl("img", { cls: "dnd-pursuit-pv-token-img" });
-          img.src = this.app.vault.getResourcePath(file as any);
-        }
+        const img = iconEl.createEl("img", { cls: "dnd-pursuit-pv-token-img" });
+        img.src = this.app.vault.adapter.getResourcePath(marker.imageFile);
       } else if (marker) {
         iconEl.createEl("span", { text: marker.icon || "⬤", cls: "dnd-pursuit-pv-token-icon-text" });
         if (marker.backgroundColor) iconEl.style.backgroundColor = marker.backgroundColor;
@@ -390,6 +401,7 @@ export class PursuitPlayerView extends ItemView {
         : p.turnAction === "search" ? "Searching..."
         : p.turnAction === "attack" ? "Attacking!"
         : p.turnAction === "grapple" ? "Grappling!"
+        : p.turnAction === "escape-grapple" ? "Breaking free!"
         : p.turnAction === "create-obstacle" ? "Creating obstacle!"
         : "";
       if (actionText) {
@@ -458,12 +470,9 @@ export class PursuitPlayerView extends ItemView {
     if (p.tokenId) {
       const marker = this.plugin.markerLibrary.getMarker(p.tokenId);
       if (marker?.imageFile) {
-        const file = this.app.vault.getAbstractFileByPath(marker.imageFile);
-        if (file) {
-          const img = el.createEl("img", { cls: "dnd-pursuit-pv-sub-img" });
-          img.src = this.app.vault.getResourcePath(file as any);
-          return;
-        }
+        const img = el.createEl("img", { cls: "dnd-pursuit-pv-sub-img" });
+        img.src = this.app.vault.adapter.getResourcePath(marker.imageFile);
+        return;
       }
     }
     el.createEl("span", { text: this.getTokenIcon(p), cls: "dnd-pursuit-pv-sub-icon" });

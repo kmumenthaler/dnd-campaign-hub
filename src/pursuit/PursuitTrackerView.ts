@@ -637,6 +637,17 @@ export class PursuitTrackerView extends ItemView {
       }
     }
 
+    // Escape Grapple: only for grappled participants
+    if (p.grappledBy) {
+      const grappler = state.participants.find((q) => q.id === p.grappledBy);
+      actions.push({
+        label: "💪 Break Free",
+        action: "escape-grapple",
+        tip: `Contested Athletics/Acrobatics vs ${grappler?.display ?? "grappler"}'s Athletics`,
+        highlight: true,
+      });
+    }
+
     for (const a of actions) {
       const btn = btnGroup.createEl("button", {
         text: a.label,
@@ -1536,6 +1547,7 @@ export class PursuitTrackerView extends ItemView {
       case "attack": return "⚔️ Attack";
       case "create-obstacle": return "🪵 Obstacle";
       case "grapple": return "🤼 Grapple";
+      case "escape-grapple": return "💪 Break Free";
       case "other": return "✨ Other";
     }
   }

@@ -99,11 +99,25 @@ export interface PendingComplicationForNext {
   isQuarryObstacle?: boolean;
 }
 
+/** An obstacle placed at a specific position on the chase lane by a quarry. */
+export interface PlacedObstacle {
+  /** Unique ID for this obstacle instance. */
+  id: string;
+  /** Complication entry describing the obstacle. */
+  entry: ComplicationEntry;
+  /** Position (feet) where the obstacle was placed. */
+  position: number;
+  /** Name of the quarry who created this obstacle. */
+  createdByName: string;
+  /** ID of the quarry who created this obstacle. */
+  createdById: string;
+}
+
 // ── Pending Input ──────────────────────────────────────────────
 
 /** Describes a roll the system is waiting for from the GM (for PCs). */
 export interface PendingInput {
-  type: "complication-check" | "stealth" | "con-save" | "perception" | "escape-stealth" | "grapple-check";
+  type: "complication-check" | "stealth" | "con-save" | "perception" | "escape-stealth" | "grapple-check" | "grapple-defense" | "escape-grapple-check" | "escape-grapple-defense";
   participantId: string;
   label: string;
   modifier: number;
@@ -126,7 +140,7 @@ export type PursuitRole = "quarry" | "pursuer";
  * - search: pursuers only — active Perception vs hidden quarry
  * - other: spell, Help, item, etc.
  */
-export type TurnAction = "dash" | "hide" | "disengage" | "dodge" | "search" | "attack" | "create-obstacle" | "grapple" | "other";
+export type TurnAction = "dash" | "hide" | "disengage" | "dodge" | "search" | "attack" | "create-obstacle" | "grapple" | "escape-grapple" | "other";
 
 /** Advantage / disadvantage modifier for the Stealth check. */
 export type StealthCondition = "advantage" | "disadvantage" | "normal";
@@ -385,6 +399,9 @@ export interface PursuitState {
 
   /** Pending catch-up alerts requiring GM decision (initiate combat or continue). */
   catchUpAlerts: { pursuerId: string; quarryId: string }[];
+
+  /** Obstacles placed on the chase lane by quarry (position-based). */
+  placedObstacles: PlacedObstacle[];
 
   // ── Log ──
   log: PursuitLogEntry[];

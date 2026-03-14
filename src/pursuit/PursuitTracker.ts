@@ -8,8 +8,7 @@
  *   COMPLICATION → COMPLICATION_CHECK → ACTION → ACTION_RESOLVE
  *   → BONUS → BONUS_RESOLVE → MOVEMENT → TURN_END
  *
- * NPCs auto-roll all checks (d20 + modifier).
- * PCs prompt the GM for roll results via pendingInput.
+ * NPCs and PCs both require the GM to enter roll results via pendingInput.
  * Line of Sight is auto-computed (distance + environment + complication).
  * Hidden quarry not found by end of round → ESCAPE.
  */
@@ -26,6 +25,7 @@ import {
   ActiveComplication,
   PendingInput,
   PendingComplicationForNext,
+  PlacedObstacle,
   ComplicationCheckOption,
   StealthCondition,
   ChaseEnvironment,
@@ -171,6 +171,7 @@ export class PursuitTracker {
       maxDistance,
       maxRounds,
       catchUpAlerts: [],
+      placedObstacles: [],
       log: [{ round: 0, text: `Chase "${name}" initialized with ${participants.length} participants.` }],
     };
     this.emit();
@@ -435,17 +436,31 @@ export class PursuitTracker {
     }
 
     if (!p.player) {
-      // NPC: auto-pick best check and roll
+      // NPC: prompt GM for check (same flow as PC)
       const best = this.pickBestCheck(p, checkOptions);
       comp.selectedCheck = best;
       const mod = this.getAbilityModifier(p, best.abilityKey);
-      const { natural, total } = this.autoRoll(mod);
-      comp.checkNatural = natural;
-      comp.checkResult = total;
-      comp.resolved = true;
-      comp.passed = total >= best.dc;
-      this.applyComplicationResult(p, comp);
-      this.state.turnPhase = "complication";
+      if (checkOptions.length === 1) {
+        this.state.pendingInput = {
+          type: "complication-check",
+          participantId: p.id,
+          label: best.label,
+          modifier: mod,
+          dc: best.dc,
+          description: pending.entry.description,
+        };
+      } else {
+        this.state.pendingInput = {
+          type: "complication-check",
+          participantId: p.id,
+          label: checkOptions.map((o) => o.label).join(" or "),
+          modifier: mod,
+          dc: best.dc,
+          description: pending.entry.description,
+          checkOptions,
+        };
+      }
+      this.state.turnPhase = "complication-check";
       this.emit();
     } else {
       // PC: prompt GM for check
@@ -562,7 +577,10 @@ export class PursuitTracker {
     comp.passed = total >= dc;
     this.applyComplicationResult(p, comp);
     this.state.pendingInput = undefined;
-    this.state.turnPhase = "action";
+
+    // If this complication was triggered by an obstacle mid-movement, go to complication phase
+    // so the GM can review the result before continuing to the complication roll
+    this.state.turnPhase = "complication";
     this.emit();
   }
 
@@ -608,6 +626,20 @@ export class PursuitTracker {
   advanceToAction(): void {
     if (!this.state) return;
     this.state.pendingInput = undefined;
+    // If this complication was triggered by an obstacle mid-movement, skip to complication roll
+    if ((this.state as any).__obstacleComplication) {
+      delete (this.state as any).__obstacleComplication;
+      const p = this.getActive();
+      if (p) {
+        this.checkCatchUp();
+        if (p.role === "quarry") {
+          p.lineOfSightBroken = this.isLoSBroken(p);
+          if (p.lineOfSightBroken) p.wasOutOfSightThisRound = true;
+        }
+      }
+      this.rollComplicationD20();
+      return;
+    }
     this.state.turnPhase = "action";
     this.emit();
   }
@@ -633,25 +665,28 @@ export class PursuitTracker {
       this.advanceAfterAction(p);
     } else if (action === "grapple") {
       this.handleGrapple(p);
+    } else if (action === "escape-grapple") {
+      this.handleEscapeGrapple(p);
     } else {
       this.addLog(`${p.display} takes the ${action} action.`);
       this.advanceAfterAction(p);
     }
   }
 
-  /** Create a quarry obstacle (sets pending complication for next pursuer). */
+  /** Create a quarry obstacle (placed at the quarry's current position). */
   createObstacle(entry: import("./types").ComplicationEntry): void {
     if (!this.state) return;
     const p = this.getActive();
     if (!p) return;
-    this.state.pendingComplicationForNext = {
+    const obstacle: PlacedObstacle = {
+      id: `obs_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       entry,
-      d20Roll: 0,
-      rolledByName: p.display,
-      rolledById: p.id,
-      isQuarryObstacle: true,
+      position: p.position,
+      createdByName: p.display,
+      createdById: p.id,
     };
-    this.addLog(`${p.display} creates obstacle: ${entry.title}.`);
+    this.state.placedObstacles.push(obstacle);
+    this.addLog(`${p.display} creates obstacle: ${entry.title} at ${p.position}ft.`);
     this.emit();
   }
 
@@ -661,36 +696,18 @@ export class PursuitTracker {
     const needsSave = p.dashesUsed > p.freeDashes;
     const label = isBonus ? "bonus-dashes" : "dashes";
     if (needsSave) {
-      if (!p.player) {
-        const { natural, total } = this.autoRoll(p.conModifier);
-        const passed = total >= 10;
-        if (!passed) {
-          p.exhaustionLevel++;
-          this.addLog(`${p.display} ${label} (${p.dashesUsed}/${p.freeDashes} free). CON save ${total} (d20=${natural}) — FAIL! Exhaustion → ${p.exhaustionLevel}.`);
-          if (p.exhaustionLevel >= 5) {
-            p.incapacitated = true;
-            p.droppedOut = true;
-            this.addLog(`${p.display} collapses from exhaustion!`);
-            this.checkChaseEnd();
-          }
-        } else {
-          this.addLog(`${p.display} ${label} (${p.dashesUsed}/${p.freeDashes} free). CON save ${total} (d20=${natural}) — passed.`);
-        }
-        this.advanceAfterAction(p, isBonus);
-      } else {
-        p.pendingDashSave = true;
-        this.addLog(`${p.display} ${label} (${p.dashesUsed}/${p.freeDashes} free). DC 10 CON save required!`);
-        this.state!.pendingInput = {
-          type: "con-save",
-          participantId: p.id,
-          label: "CON Save DC 10",
-          modifier: p.conModifier,
-          dc: 10,
-          description: `DC 10 Constitution save to avoid exhaustion (dash ${p.dashesUsed}, ${p.freeDashes} free).`,
-        };
-        this.state!.turnPhase = isBonus ? "bonus-resolve" : "action-resolve";
-        this.emit();
-      }
+      p.pendingDashSave = true;
+      this.addLog(`${p.display} ${label} (${p.dashesUsed}/${p.freeDashes} free). DC 10 CON save required!`);
+      this.state!.pendingInput = {
+        type: "con-save",
+        participantId: p.id,
+        label: "CON Save DC 10",
+        modifier: p.conModifier,
+        dc: 10,
+        description: `DC 10 Constitution save to avoid exhaustion (dash ${p.dashesUsed}, ${p.freeDashes} free).`,
+      };
+      this.state!.turnPhase = isBonus ? "bonus-resolve" : "action-resolve";
+      this.emit();
     } else {
       this.addLog(`${p.display} ${label} (${p.dashesUsed}/${p.freeDashes} free).`);
       this.advanceAfterAction(p, isBonus);
@@ -708,20 +725,15 @@ export class PursuitTracker {
       return;
     }
 
-    if (!p.player) {
-      const { natural, total } = this.autoRoll(p.stealthModifier);
-      this.resolveHide(p, total, natural, isBonus);
-    } else {
-      this.state!.pendingInput = {
-        type: "stealth",
-        participantId: p.id,
-        label: "Stealth Check",
-        modifier: p.stealthModifier,
-        description: "Roll Stealth to hide from pursuers.",
-      };
-      this.state!.turnPhase = isBonus ? "bonus-resolve" : "action-resolve";
-      this.emit();
-    }
+    this.state!.pendingInput = {
+      type: "stealth",
+      participantId: p.id,
+      label: "Stealth Check",
+      modifier: p.stealthModifier,
+      description: "Roll Stealth to hide from pursuers.",
+    };
+    this.state!.turnPhase = isBonus ? "bonus-resolve" : "action-resolve";
+    this.emit();
   }
 
   /** Resolve a Hide attempt: compare stealth to all pursuers' passive perception. */
@@ -753,20 +765,15 @@ export class PursuitTracker {
 
   /** Handle a Search action (pursuers only, to find hidden quarry). */
   private handleSearch(p: PursuitParticipant, isBonus: boolean): void {
-    if (!p.player) {
-      const { natural, total } = this.autoRoll(p.perceptionModifier);
-      this.resolveSearch(p, total, natural, isBonus);
-    } else {
-      this.state!.pendingInput = {
-        type: "perception",
-        participantId: p.id,
-        label: "Perception Check",
-        modifier: p.perceptionModifier,
-        description: "Roll Perception to find hidden quarry.",
-      };
-      this.state!.turnPhase = isBonus ? "bonus-resolve" : "action-resolve";
-      this.emit();
-    }
+    this.state!.pendingInput = {
+      type: "perception",
+      participantId: p.id,
+      label: "Perception Check",
+      modifier: p.perceptionModifier,
+      description: "Roll Perception to find hidden quarry.",
+    };
+    this.state!.turnPhase = isBonus ? "bonus-resolve" : "action-resolve";
+    this.emit();
   }
 
   /** Resolve a Search: compare perception to all hidden quarry's stealth rolls. */
@@ -828,6 +835,12 @@ export class PursuitTracker {
       this.submitEscapeCheck(total);
     } else if (pending.type === "grapple-check") {
       this.resolveGrappleCheck(p, total);
+    } else if (pending.type === "grapple-defense") {
+      this.resolveGrappleDefense(total);
+    } else if (pending.type === "escape-grapple-check") {
+      this.resolveEscapeGrappleCheck(p, total);
+    } else if (pending.type === "escape-grapple-defense") {
+      this.resolveEscapeGrappleDefense(total);
     }
   }
 
@@ -878,6 +891,7 @@ export class PursuitTracker {
 
     const maxFeet = this.getMaxMovement(p);
     const clamped = Math.min(Math.max(feet, 0), maxFeet);
+    const oldPos = p.position;
 
     p.position += clamped;
     p.hasMoved = true;
@@ -893,6 +907,29 @@ export class PursuitTracker {
     for (const id of [...p.carrying, ...p.grappling]) {
       const dep = this.getParticipant(id);
       if (dep) dep.position = p.position;
+    }
+
+    // Check if pursuer crosses any placed obstacle
+    if (p.role === "pursuer" && clamped > 0) {
+      const hit = this.findCrossedObstacle(oldPos, p.position);
+      if (hit) {
+        // Trigger this obstacle as a pending complication for this turn
+        const pending: PendingComplicationForNext = {
+          entry: hit.entry,
+          d20Roll: 0,
+          rolledByName: hit.createdByName,
+          rolledById: hit.createdById,
+          isQuarryObstacle: true,
+        };
+        // Remove the obstacle after triggering
+        this.state.placedObstacles = this.state.placedObstacles.filter((o) => o.id !== hit.id);
+        this.addLog(`⚠️ ${p.display} encounters obstacle at ${hit.position}ft: ${hit.entry.title}!`);
+        // Mark that this is a mid-movement obstacle complication
+        (this.state as any).__obstacleComplication = true;
+        // Resolve the obstacle as a complication
+        this.resolvePendingComplication(p, pending);
+        return; // Don't proceed to complication roll yet — complication phase will handle flow
+      }
     }
 
     this.checkCatchUp();
@@ -927,6 +964,19 @@ export class PursuitTracker {
     if (!p) return;
     p.activeSpeed = mode;
     this.emit();
+  }
+
+  /** Find the first placed obstacle crossed during movement from oldPos to newPos. */
+  private findCrossedObstacle(oldPos: number, newPos: number): PlacedObstacle | undefined {
+    if (!this.state) return undefined;
+    // Find obstacles whose position is between oldPos (exclusive) and newPos (inclusive)
+    const crossed = this.state.placedObstacles.filter(
+      (o) => o.position > oldPos && o.position <= newPos
+    );
+    if (crossed.length === 0) return undefined;
+    // Return the first one encountered (closest to oldPos)
+    crossed.sort((a, b) => a.position - b.position);
+    return crossed[0];
   }
 
   /** Get effective speed in feet, accounting for carry penalty and exhaustion. */
@@ -1023,36 +1073,18 @@ export class PursuitTracker {
       return;
     }
 
-    if (!pursuer.player) {
-      // NPC auto-roll: Athletics vs Athletics or Acrobatics
-      const atkMod = this.getAbilityModifier(pursuer, "Athletics");
-      const { total: atkTotal, natural: atkNat } = this.autoRoll(atkMod);
-      const defMod = Math.max(
-        this.getAbilityModifier(target, "Athletics"),
-        this.getAbilityModifier(target, "Acrobatics"),
-      );
-      const { total: defTotal, natural: defNat } = this.autoRoll(defMod);
-      if (atkTotal >= defTotal) {
-        this.applyGrapple(pursuer, target);
-        this.addLog(`${pursuer.display} grapples ${target.display}! (Athletics ${atkTotal}, d20=${atkNat} vs ${defTotal}, d20=${defNat})`);
-      } else {
-        this.addLog(`${pursuer.display} fails to grapple ${target.display} (Athletics ${atkTotal}, d20=${atkNat} vs ${defTotal}, d20=${defNat}).`);
-      }
-      this.advanceAfterAction(pursuer);
-    } else {
-      // PC: prompt for Athletics check
-      this.state.pendingInput = {
-        type: "grapple-check",
-        participantId: pursuer.id,
-        label: `Athletics (Grapple vs ${target.display})`,
-        modifier: this.getAbilityModifier(pursuer, "Athletics"),
-        description: `Grapple check: Athletics vs ${target.display}'s Athletics or Acrobatics.`,
-      };
-      this.state.turnPhase = "action-resolve";
-      // Store grapple target in a way the resolver can find it
-      (this.state as any).__grappleTargetId = target.id;
-      this.emit();
-    }
+    // Always prompt GM for Athletics check
+    this.state.pendingInput = {
+      type: "grapple-check",
+      participantId: pursuer.id,
+      label: `Athletics (Grapple vs ${target.display})`,
+      modifier: this.getAbilityModifier(pursuer, "Athletics"),
+      description: `Grapple check: ${pursuer.display}'s Athletics vs ${target.display}'s Athletics or Acrobatics.`,
+    };
+    this.state.turnPhase = "action-resolve";
+    // Store grapple target in a way the resolver can find it
+    (this.state as any).__grappleTargetId = target.id;
+    this.emit();
   }
 
   /** Find the closest grappable target within 5ft of the active participant. */
@@ -1095,29 +1127,130 @@ export class PursuitTracker {
     this.emit();
   }
 
-  /** Resolve a PC grapple check (called from submitActionInput). */
-  private resolveGrappleCheck(pursuer: PursuitParticipant, total: number): void {
-    if (!this.state) return;
-    const targetId = (this.state as any).__grappleTargetId;
-    delete (this.state as any).__grappleTargetId;
-    const target = targetId ? this.getParticipant(targetId) : undefined;
-    if (!target) {
-      this.advanceAfterAction(pursuer);
+  /** Handle an escape-grapple action — grappled participant tries to break free via contested Athletics/Acrobatics check. */
+  private handleEscapeGrapple(p: PursuitParticipant): void {
+    if (!this.state || !p.grappledBy) return;
+    const grappler = this.getParticipant(p.grappledBy);
+    if (!grappler) {
+      this.breakGrapple(p.id);
+      this.advanceAfterAction(p);
       return;
     }
-    // NPC target auto-rolls defense
+
+    // Prompt for the escaping participant's Athletics or Acrobatics check
+    const mod = Math.max(
+      this.getAbilityModifier(p, "Athletics"),
+      this.getAbilityModifier(p, "Acrobatics"),
+    );
+    this.state.pendingInput = {
+      type: "escape-grapple-check",
+      participantId: p.id,
+      label: `Athletics or Acrobatics (Escape Grapple)`,
+      modifier: mod,
+      description: `${p.display} attempts to escape ${grappler.display}'s grapple: Athletics or Acrobatics vs ${grappler.display}'s Athletics.`,
+    };
+    this.state.turnPhase = "action-resolve";
+    (this.state as any).__escapeGrappleGrapplerId = grappler.id;
+    this.emit();
+  }
+
+  /** Resolve the escape-grapple attacker roll — now prompt for the grappler's defense. */
+  private resolveEscapeGrappleCheck(escapee: PursuitParticipant, total: number): void {
+    if (!this.state) return;
+    const grapplerId = (this.state as any).__escapeGrappleGrapplerId;
+    const grappler = grapplerId ? this.getParticipant(grapplerId) : undefined;
+    if (!grappler) {
+      delete (this.state as any).__escapeGrappleGrapplerId;
+      this.breakGrapple(escapee.id);
+      this.advanceAfterAction(escapee);
+      return;
+    }
+
+    // Store escapee's roll and prompt for grappler's Athletics
+    (this.state as any).__escapeGrappleTotal = total;
+    const defMod = this.getAbilityModifier(grappler, "Athletics");
+    this.state.pendingInput = {
+      type: "escape-grapple-defense",
+      participantId: grappler.id,
+      label: `Athletics (Resist Escape)`,
+      modifier: defMod,
+      description: `${grappler.display} contests the escape: Athletics vs ${escapee.display}'s ${total}.`,
+    };
+    this.state.turnPhase = "action-resolve";
+    this.emit();
+  }
+
+  /** Resolve the grappler's defense roll for escape-grapple. */
+  private resolveEscapeGrappleDefense(defenseTotal: number): void {
+    if (!this.state) return;
+    const grapplerId = (this.state as any).__escapeGrappleGrapplerId;
+    const escapeTotal: number = (this.state as any).__escapeGrappleTotal ?? 0;
+    delete (this.state as any).__escapeGrappleGrapplerId;
+    delete (this.state as any).__escapeGrappleTotal;
+    const escapee = this.getActive();
+    const grappler = grapplerId ? this.getParticipant(grapplerId) : undefined;
+    if (!escapee) return;
+    if (!grappler) {
+      this.breakGrapple(escapee.id);
+      this.advanceAfterAction(escapee);
+      return;
+    }
+    if (escapeTotal >= defenseTotal) {
+      this.breakGrapple(escapee.id);
+      this.addLog(`${escapee.display} breaks free from ${grappler.display}'s grapple! (${escapeTotal} vs ${defenseTotal})`);
+    } else {
+      this.addLog(`${escapee.display} fails to escape ${grappler.display}'s grapple (${escapeTotal} vs ${defenseTotal}).`);
+    }
+    this.advanceAfterAction(escapee);
+  }
+
+  /** Resolve a grapple check (attacker's roll submitted). Now prompt for defender's roll. */
+  private resolveGrappleCheck(attacker: PursuitParticipant, total: number): void {
+    if (!this.state) return;
+    const targetId = (this.state as any).__grappleTargetId;
+    const target = targetId ? this.getParticipant(targetId) : undefined;
+    if (!target) {
+      delete (this.state as any).__grappleTargetId;
+      this.advanceAfterAction(attacker);
+      return;
+    }
+    // Store the attacker's roll and prompt for the defender's roll
+    (this.state as any).__grappleAttackTotal = total;
     const defMod = Math.max(
       this.getAbilityModifier(target, "Athletics"),
       this.getAbilityModifier(target, "Acrobatics"),
     );
-    const { total: defTotal } = this.autoRoll(defMod);
-    if (total >= defTotal) {
-      this.applyGrapple(pursuer, target);
-      this.addLog(`${pursuer.display} grapples ${target.display}! (Athletics ${total} vs ${defTotal})`);
-    } else {
-      this.addLog(`${pursuer.display} fails to grapple ${target.display} (Athletics ${total} vs ${defTotal}).`);
+    this.state.pendingInput = {
+      type: "grapple-defense",
+      participantId: target.id,
+      label: `Athletics or Acrobatics (Resist Grapple)`,
+      modifier: defMod,
+      description: `${target.display} resists grapple: Athletics or Acrobatics vs ${attacker.display}'s ${total}.`,
+    };
+    this.state.turnPhase = "action-resolve";
+    this.emit();
+  }
+
+  /** Resolve the grapple defense roll (opposed check). */
+  private resolveGrappleDefense(defenseTotal: number): void {
+    if (!this.state) return;
+    const targetId = (this.state as any).__grappleTargetId;
+    const attackTotal: number = (this.state as any).__grappleAttackTotal ?? 0;
+    delete (this.state as any).__grappleTargetId;
+    delete (this.state as any).__grappleAttackTotal;
+    const attacker = this.getActive();
+    const target = targetId ? this.getParticipant(targetId) : undefined;
+    if (!attacker || !target) {
+      if (attacker) this.advanceAfterAction(attacker);
+      return;
     }
-    this.advanceAfterAction(pursuer);
+    if (attackTotal >= defenseTotal) {
+      this.applyGrapple(attacker, target);
+      this.addLog(`${attacker.display} grapples ${target.display}! (Athletics ${attackTotal} vs ${defenseTotal})`);
+    } else {
+      this.addLog(`${attacker.display} fails to grapple ${target.display} (Athletics ${attackTotal} vs ${defenseTotal}).`);
+    }
+    this.advanceAfterAction(attacker);
   }
 
   // ── Drop out / state changes ───────────────────────────────
@@ -1127,10 +1260,28 @@ export class PursuitTracker {
     if (!this.state) return;
     const p = this.getParticipant(id);
     if (!p) return;
+
+    // Check if this is the active participant before marking dropped
+    const wasActive = this.state.started && !this.state.ended
+      && this.state.participants[this.state.turnIndex]?.id === id;
+
     p.droppedOut = true;
     this.addLog(`${p.display} drops out of the chase.`);
+
+    // Release anyone this participant was grappling
+    for (const gId of [...p.grappling]) {
+      this.breakGrapple(gId);
+    }
+
     this.checkChaseEnd();
-    this.emit();
+
+    // If the active participant dropped out, advance the turn
+    if (wasActive && !this.state.ended) {
+      this.skipInactiveForward();
+      this.beginTurn();
+    } else {
+      this.emit();
+    }
   }
 
   // ── HP & Conditions (combat-like, accessible any time) ─────
@@ -1174,6 +1325,12 @@ export class PursuitTracker {
     const healed = p.currentHP - before;
     if (healed > 0) {
       this.addLog(`${p.display} heals ${healed} HP (now ${p.currentHP}/${p.maxHP}).`);
+    }
+    // Restore consciousness if healed above 0 HP
+    if (p.currentHP > 0 && p.incapacitated) {
+      p.incapacitated = false;
+      p.droppedOut = false;
+      this.addLog(`${p.display} regains consciousness and rejoins the chase!`);
     }
     this.emit();
   }
@@ -1364,24 +1521,15 @@ export class PursuitTracker {
 
     this.state.turnPhase = "escape-check";
 
-    if (!quarry.player) {
-      // NPC: auto-roll Stealth with advantage/disadvantage from environment
-      const { natural, total } = this.autoRollWithAdvantage(
-        quarry.stealthModifier,
-        this.state.stealthCondition
-      );
-      this.resolveEscapeCheck(quarry, total, natural);
-    } else {
-      // PC: prompt GM for Stealth roll
-      this.state.pendingInput = {
-        type: "escape-stealth",
-        participantId: quarry.id,
-        label: `Stealth (${this.state.stealthCondition})`,
-        modifier: quarry.stealthModifier,
-        description: `End-of-round escape check: ${quarry.display} was out of sight — Stealth vs pursuers' passive Perception.`,
-      };
-      this.emit();
-    }
+    // Always prompt GM for Stealth roll (both PC and NPC)
+    this.state.pendingInput = {
+      type: "escape-stealth",
+      participantId: quarry.id,
+      label: `Stealth (${this.state.stealthCondition})`,
+      modifier: quarry.stealthModifier,
+      description: `End-of-round escape check: ${quarry.display} was out of sight — Stealth vs pursuers' passive Perception.`,
+    };
+    this.emit();
   }
 
   /** Submit a PC's escape Stealth check result. */
@@ -1398,19 +1546,20 @@ export class PursuitTracker {
     this.resolveEscapeCheck(quarry, total, undefined);
   }
 
-  /** Resolve an escape check: compare Stealth to highest pursuer perception. */
+  /** Resolve an escape check: compare Stealth to highest pursuer passive Perception. */
   private resolveEscapeCheck(quarry: PursuitParticipant, total: number, natural: number | undefined): void {
     if (!this.state) return;
     const queue = this.state.escapeCheckQueue;
 
-    // Highest pursuer passive Perception (or active if Search was used)
+    // Use only passive Perception for end-of-round escape checks.
+    // Active Perception (Search action) only helps find already-hidden quarry during a turn,
+    // it should not prevent end-of-round escape attempts.
     const pursuers = this.state.participants.filter(
       (p) => p.role === "pursuer" && !p.droppedOut && !p.incapacitated
     );
     let highestPerception = 0;
     for (const pur of pursuers) {
-      const perception = pur.activePerceptionRoll ?? pur.passivePerception;
-      if (perception > highestPerception) highestPerception = perception;
+      if (pur.passivePerception > highestPerception) highestPerception = pur.passivePerception;
     }
 
     const rollStr = natural != null ? ` (d20=${natural})` : "";
