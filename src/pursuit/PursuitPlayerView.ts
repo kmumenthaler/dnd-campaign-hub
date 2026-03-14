@@ -8,10 +8,11 @@
  * Designed for projection to a player-facing monitor via ProjectionManager.
  */
 
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { PURSUIT_PLAYER_VIEW_TYPE } from "../constants";
 import type { PursuitState, PursuitParticipant, StealthCondition } from "./types";
+import type { MarkerDefinition } from "../marker/MarkerTypes";
 
 /** Previous render state for animation diffing. */
 interface PrevRenderState {
@@ -301,15 +302,13 @@ export class PursuitPlayerView extends ItemView {
 
     // Token circle with image or icon
     const iconEl = token.createDiv({ cls: "dnd-pursuit-pv-token-circle" });
-    if (p.tokenId) {
-      const marker = this.plugin.markerLibrary.getMarker(p.tokenId);
-      if (marker?.imageFile) {
-        const img = iconEl.createEl("img", { cls: "dnd-pursuit-pv-token-img" });
-        img.src = this.app.vault.adapter.getResourcePath(marker.imageFile);
-      } else if (marker) {
-        iconEl.createEl("span", { text: marker.icon || "⬤", cls: "dnd-pursuit-pv-token-icon-text" });
-        if (marker.backgroundColor) iconEl.style.backgroundColor = marker.backgroundColor;
-      }
+    const resolved = this.resolveTokenImage(p);
+    if (resolved.imageFile) {
+      const img = iconEl.createEl("img", { cls: "dnd-pursuit-pv-token-img" });
+      img.src = this.app.vault.adapter.getResourcePath(resolved.imageFile);
+    } else if (resolved.marker) {
+      iconEl.createEl("span", { text: resolved.marker.icon || "⬤", cls: "dnd-pursuit-pv-token-icon-text" });
+      if (resolved.marker.backgroundColor) iconEl.style.backgroundColor = resolved.marker.backgroundColor;
     } else {
       iconEl.createEl("span", { text: this.getTokenIcon(p), cls: "dnd-pursuit-pv-token-icon-text" });
     }
@@ -402,15 +401,50 @@ export class PursuitPlayerView extends ItemView {
 
   /** Render a small token icon for carried/grappled sub-tokens. */
   private renderSubTokenIcon(el: HTMLElement, p: PursuitParticipant) {
-    if (p.tokenId) {
-      const marker = this.plugin.markerLibrary.getMarker(p.tokenId);
-      if (marker?.imageFile) {
-        const img = el.createEl("img", { cls: "dnd-pursuit-pv-sub-img" });
-        img.src = this.app.vault.adapter.getResourcePath(marker.imageFile);
-        return;
-      }
+    const resolved = this.resolveTokenImage(p);
+    if (resolved.imageFile) {
+      const img = el.createEl("img", { cls: "dnd-pursuit-pv-sub-img" });
+      img.src = this.app.vault.adapter.getResourcePath(resolved.imageFile);
+      return;
     }
     el.createEl("span", { text: this.getTokenIcon(p), cls: "dnd-pursuit-pv-sub-icon" });
+  }
+
+  /**
+   * Resolve the token image for a participant using 3-level fallback:
+   * 1. Direct tokenId lookup
+   * 2. Vault note frontmatter token_id
+   * 3. Name match in marker library
+   */
+  private resolveTokenImage(p: PursuitParticipant): { imageFile?: string; marker?: MarkerDefinition } {
+    // 1. Direct tokenId
+    if (p.tokenId) {
+      const marker = this.plugin.markerLibrary.getMarker(p.tokenId);
+      if (marker?.imageFile) return { imageFile: marker.imageFile, marker };
+      if (marker) return { marker };
+    }
+
+    // 2. Vault note frontmatter token_id
+    if (p.notePath) {
+      const file = this.app.vault.getAbstractFileByPath(p.notePath);
+      if (file instanceof TFile) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        const noteTokenId = cache?.frontmatter?.token_id;
+        if (noteTokenId) {
+          const marker = this.plugin.markerLibrary.getMarker(noteTokenId);
+          if (marker?.imageFile) return { imageFile: marker.imageFile, marker };
+          if (marker) return { marker };
+        }
+      }
+    }
+
+    // 3. Name match in marker library
+    const matches = this.plugin.markerLibrary.findMarkersByName(p.display);
+    const withImage = matches.find((m) => m.imageFile);
+    if (withImage) return { imageFile: withImage.imageFile, marker: withImage };
+    if (matches.length > 0) return { marker: matches[0] };
+
+    return {};
   }
 
   // ── Info Bar (bottom) ──────────────────────────────────────
