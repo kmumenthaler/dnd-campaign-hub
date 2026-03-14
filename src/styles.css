@@ -12509,6 +12509,16 @@
 /* 2D Scene (replaces flat rows) */
 .dnd-pursuit-pv-scene { flex: 1; position: relative; min-height: 50vh; }
 
+/* Flex rows for quarry/pursuer halves */
+.dnd-pursuit-pv-flex-row { position: absolute; left: 0; right: 0; overflow: visible; }
+.dnd-pursuit-pv-flex-quarry { top: 5%; height: 40%; }
+.dnd-pursuit-pv-flex-pursuer { top: 55%; height: 40%; }
+/* Position column — placed at a horizontal %, tokens stack vertically inside */
+.dnd-pursuit-pv-pos-column { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.2em; }
+/* Distance label bar (between quarry and pursuer rows) */
+.dnd-pursuit-pv-distance-bar { position: absolute; top: 46%; left: 0; right: 0; height: 8%; }
+.dnd-pursuit-pv-dist-inline { position: absolute; top: 0; transform: translateX(-50%); font-size: 0.65em; color: #aaa; white-space: nowrap; background: rgba(0,0,0,0.6); padding: 0.1em 0.5em; border-radius: 0.4em; }
+
 /* Distance markers */
 .dnd-pursuit-pv-dist-marker { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,0.08); }
 .dnd-pursuit-pv-dist-label { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-size: 0.6em; color: #555; white-space: nowrap; }
@@ -12531,9 +12541,8 @@
 .dnd-pursuit-pv-pursuer-row { top: 10%; }
 
 /* Tokens */
-.dnd-pursuit-pv-token { position: absolute; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.3em; transition: left 0.6s ease-in-out, top 0.6s ease-in-out; z-index: 2; }
-.dnd-pursuit-pv-token-2d { transform: translate(-50%, -50%); }
-.dnd-pursuit-pv-token-moving { transition: left 0.6s ease-in-out, top 0.6s ease-in-out; }
+.dnd-pursuit-pv-token { display: flex; flex-direction: column; align-items: center; gap: 0.3em; z-index: 2; }
+.dnd-pursuit-pv-token-moving { animation: dnd-pursuit-token-slide 0.6s ease-in-out; }
 
 .dnd-pursuit-pv-token-circle { width: 3em; height: 3em; border-radius: 50%; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 0.15em solid rgba(255,255,255,0.3); }
 .dnd-pursuit-pv-token-quarry .dnd-pursuit-pv-token-circle { border-color: #0d6; background: rgba(0, 220, 100, 0.15); }
@@ -12578,9 +12587,14 @@
 /* Escape animation */
 .dnd-pursuit-pv-token-just-escaped { animation: dnd-pursuit-escape-burst 1.2s ease-out; }
 @keyframes dnd-pursuit-escape-burst {
-  0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-  30% { transform: translate(-50%, -50%) scale(1.4); opacity: 1; filter: brightness(2); }
-  100% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; filter: brightness(1); }
+  0% { transform: scale(1); opacity: 1; }
+  30% { transform: scale(1.4); opacity: 1; filter: brightness(2); }
+  100% { transform: scale(1); opacity: 0.7; filter: brightness(1); }
+}
+
+@keyframes dnd-pursuit-token-slide {
+  0% { opacity: 0.6; }
+  100% { opacity: 1; }
 }
 
 /* Distance lines */

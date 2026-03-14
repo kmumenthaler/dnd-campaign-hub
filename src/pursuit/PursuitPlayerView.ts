@@ -153,9 +153,6 @@ export class PursuitPlayerView extends ItemView {
 
   // ── Chase Lane (2D dynamic layout) ──────────────────────
 
-  /** Resolved 2D position for a token. */
-  private tokenPositions = new Map<string, { x: number; y: number }>();
-
   private renderChaseLane(container: HTMLElement, state: PursuitState) {
     const visible = state.participants.filter((p) => !p.hidden && !p.carriedBy && !p.grappledBy);
     if (visible.length === 0) return;
@@ -176,7 +173,7 @@ export class PursuitPlayerView extends ItemView {
     dirBar.createEl("span", { text: "← CAUGHT", cls: "dnd-pursuit-pv-dir-caught" });
     dirBar.createEl("span", { text: "ESCAPED →", cls: "dnd-pursuit-pv-dir-escaped" });
 
-    // Scene area (2D absolute positioning)
+    // Scene area
     const scene = lane.createDiv({ cls: "dnd-pursuit-pv-scene" });
 
     // Distance markers (bottom)
@@ -189,56 +186,49 @@ export class PursuitPlayerView extends ItemView {
       m.createEl("span", { text: `${ft}ft`, cls: "dnd-pursuit-pv-dist-label" });
     }
 
-    // ── Compute 2D positions ──
     const quarries = visible.filter((p) => p.role === "quarry" && !p.escaped && !p.droppedOut);
     const pursuers = visible.filter((p) => p.role === "pursuer" && !p.droppedOut);
     const escapedList = state.participants.filter((p) => !p.hidden && p.escaped);
 
-    this.tokenPositions.clear();
+    // ── Render quarry and pursuer rows as flex columns per position ──
+    const quarryRow = scene.createDiv({ cls: "dnd-pursuit-pv-flex-row dnd-pursuit-pv-flex-quarry" });
+    const pursuerRow = scene.createDiv({ cls: "dnd-pursuit-pv-flex-row dnd-pursuit-pv-flex-pursuer" });
 
-    // Layout tokens by grouping same-position tokens and spreading them
-    this.layoutTokenGroup(quarries, rangeStart, rangeSize, 10, 50);
-    this.layoutTokenGroup(pursuers, rangeStart, rangeSize, 55, 92);
+    // Group by position
+    const quarryGroups = this.groupByPosition(quarries);
+    const pursuerGroups = this.groupByPosition(pursuers);
 
-    // ── Collision resolution: nudge overlapping tokens ──
-    this.resolveOverlaps(visible.filter((p) => !p.escaped && !p.droppedOut));
-
-    // ── Draw connection lines (pursuer → target) using SVG ──
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("class", "dnd-pursuit-pv-svg");
-    svg.setAttribute("viewBox", "0 0 100 100");
-    svg.setAttribute("preserveAspectRatio", "none");
-    scene.appendChild(svg);
-
-    for (const p of pursuers) {
-      if (!p.activeTargetId) continue;
-      const from = this.tokenPositions.get(p.id);
-      const to = this.tokenPositions.get(p.activeTargetId);
-      if (!from || !to) continue;
-
-      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.setAttribute("x1", String(from.x));
-      line.setAttribute("y1", String(from.y));
-      line.setAttribute("x2", String(to.x));
-      line.setAttribute("y2", String(to.y));
-      const dist = Math.abs(p.position - (state.participants.find((q) => q.id === p.activeTargetId)?.position ?? p.position));
-      line.setAttribute("class", dist <= 5 ? "dnd-pursuit-pv-line dnd-pursuit-pv-line-melee" : "dnd-pursuit-pv-line");
-      svg.appendChild(line);
-
-      // Distance label at midpoint
-      const mx = (from.x + to.x) / 2;
-      const my = (from.y + to.y) / 2;
-      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      text.setAttribute("x", String(mx));
-      text.setAttribute("y", String(my - 1.5));
-      text.setAttribute("class", "dnd-pursuit-pv-line-label");
-      text.textContent = dist <= 5 ? `${dist}ft ⚔️` : `${dist}ft`;
-      svg.appendChild(text);
+    // Render quarry groups
+    for (const [pos, group] of quarryGroups) {
+      const pct = this.posToPercent(pos, rangeStart, rangeSize);
+      const col = quarryRow.createDiv({ cls: "dnd-pursuit-pv-pos-column" });
+      col.style.left = `${pct}%`;
+      for (const p of group) {
+        this.renderFlexToken(col, p, state);
+      }
     }
 
-    // ── Render tokens ──
-    for (const p of [...quarries, ...pursuers].filter((p) => !p.escaped && !p.droppedOut)) {
-      this.render2DToken(scene, p, state);
+    // Render pursuer groups
+    for (const [pos, group] of pursuerGroups) {
+      const pct = this.posToPercent(pos, rangeStart, rangeSize);
+      const col = pursuerRow.createDiv({ cls: "dnd-pursuit-pv-pos-column" });
+      col.style.left = `${pct}%`;
+      for (const p of group) {
+        this.renderFlexToken(col, p, state);
+      }
+    }
+
+    // ── Distance labels between pursuer groups and quarry groups ──
+    const distBar = scene.createDiv({ cls: "dnd-pursuit-pv-distance-bar" });
+    if (quarryGroups.size > 0 && pursuerGroups.size > 0) {
+      const nearestQuarryPos = Math.min(...quarryGroups.keys());
+      for (const [pos] of pursuerGroups) {
+        const dist = Math.abs(nearestQuarryPos - pos);
+        const midPct = this.posToPercent((nearestQuarryPos + pos) / 2, rangeStart, rangeSize);
+        const label = distBar.createDiv({ cls: "dnd-pursuit-pv-dist-inline" });
+        label.style.left = `${midPct}%`;
+        label.textContent = dist <= 5 ? `${dist}ft ⚔️` : `${dist}ft`;
+      }
     }
 
     // ── Render placed obstacles ──
@@ -266,121 +256,30 @@ export class PursuitPlayerView extends ItemView {
 
   // ── Token Layout ───────────────────────────────────────────
 
-  /**
-   * Lay out a group of tokens (quarries or pursuers) within a Y band.
-   * Tokens at the same position get spread vertically and nudged
-   * horizontally to avoid overlap.
-   */
-  private layoutTokenGroup(
-    tokens: PursuitParticipant[],
-    rangeStart: number,
-    rangeSize: number,
-    yMin: number,
-    yMax: number,
-  ) {
-    if (tokens.length === 0) return;
-
-    // Group tokens by their position (feet)
+  /** Group participants by their position (feet). */
+  private groupByPosition(tokens: PursuitParticipant[]): Map<number, PursuitParticipant[]> {
     const groups = new Map<number, PursuitParticipant[]>();
     for (const p of tokens) {
       const existing = groups.get(p.position) ?? [];
       existing.push(p);
       groups.set(p.position, existing);
     }
-
-    // For each position group, spread tokens vertically within the band
-    const yRange = yMax - yMin;
-    const totalTokens = tokens.length;
-
-    // If only one group, spread all tokens evenly across the full Y band
-    if (groups.size === 1) {
-      const group = [...groups.values()][0]!;
-      const baseX = this.posToPercent(group[0]!.position, rangeStart, rangeSize);
-      const step = totalTokens > 1 ? yRange / (totalTokens - 1) : 0;
-      const xSpread = Math.min(3, 12 / totalTokens); // slight horizontal spread
-      group.forEach((p, i) => {
-        const y = totalTokens === 1 ? yMin + yRange / 2 : yMin + i * step;
-        const xOffset = totalTokens > 1 ? (i - (totalTokens - 1) / 2) * xSpread : 0;
-        this.tokenPositions.set(p.id, { x: baseX + xOffset, y });
-      });
-      return;
-    }
-
-    // Multiple position groups: spread each group in its own vertical sub-band
-    // Each group gets a proportional share of the Y space
-    let yOffset = yMin;
-    const sortedPositions = [...groups.keys()].sort((a, b) => a - b);
-
-    for (const pos of sortedPositions) {
-      const group = groups.get(pos)!;
-      const share = (group.length / totalTokens) * yRange;
-      const baseX = this.posToPercent(pos, rangeStart, rangeSize);
-      const step = group.length > 1 ? share / (group.length - 1) : 0;
-      const xSpread = Math.min(2.5, 10 / group.length);
-      group.forEach((p, i) => {
-        const y = group.length === 1 ? yOffset + share / 2 : yOffset + i * step;
-        const xOffset = group.length > 1 ? (i - (group.length - 1) / 2) * xSpread : 0;
-        this.tokenPositions.set(p.id, { x: baseX + xOffset, y });
-      });
-      yOffset += share + (yRange * 0.05); // small gap between position groups
-    }
+    return groups;
   }
 
-  // ── Overlap Resolution ─────────────────────────────────────
+  // ── Flex Token Rendering ───────────────────────────────────
 
-  private resolveOverlaps(participants: PursuitParticipant[]) {
-    const entries = participants.map((p) => ({
-      id: p.id,
-      pos: this.tokenPositions.get(p.id)!,
-    })).filter((e) => e.pos);
-
-    const minGapX = 6;
-    const minGapY = 10;
-
-    // Multiple passes to settle overlaps
-    for (let pass = 0; pass < 5; pass++) {
-      entries.sort((a, b) => a.pos.x - b.pos.x || a.pos.y - b.pos.y);
-
-      for (let i = 0; i < entries.length; i++) {
-        for (let j = i + 1; j < entries.length; j++) {
-          const a = entries[i]!;
-          const b = entries[j]!;
-          const dx = Math.abs(a.pos.x - b.pos.x);
-          const dy = Math.abs(a.pos.y - b.pos.y);
-
-          if (dx < minGapX && dy < minGapY) {
-            const shift = (minGapY - dy) / 2 + 0.5;
-            if (b.pos.y >= a.pos.y) {
-              b.pos.y = Math.min(95, b.pos.y + shift);
-              a.pos.y = Math.max(5, a.pos.y - shift);
-            } else {
-              a.pos.y = Math.min(95, a.pos.y + shift);
-              b.pos.y = Math.max(5, b.pos.y - shift);
-            }
-            this.tokenPositions.set(a.id, a.pos);
-            this.tokenPositions.set(b.id, b.pos);
-          }
-        }
-      }
-    }
-  }
-
-  // ── 2D Token Rendering ─────────────────────────────────────
-
-  private render2DToken(
-    scene: HTMLElement,
+  /** Render a single token into a flex column container (no absolute positioning). */
+  private renderFlexToken(
+    column: HTMLElement,
     p: PursuitParticipant,
     state: PursuitState,
   ) {
-    const pos = this.tokenPositions.get(p.id);
-    if (!pos) return;
     const isActive = state.started && state.participants[state.turnIndex]?.id === p.id;
 
-    const token = scene.createDiv({
+    const token = column.createDiv({
       cls: `dnd-pursuit-pv-token dnd-pursuit-pv-token-2d ${p.role === "quarry" ? "dnd-pursuit-pv-token-quarry" : "dnd-pursuit-pv-token-pursuer"} ${isActive ? "dnd-pursuit-pv-token-active" : ""}`,
     });
-    token.style.left = `${pos.x}%`;
-    token.style.top = `${pos.y}%`;
 
     // Animate movement
     const prevPos = this.prev.positions.get(p.id);
