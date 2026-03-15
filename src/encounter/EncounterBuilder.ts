@@ -110,8 +110,8 @@ export class EncounterBuilder {
     return null;
   }
 
-  async getAvailablePartyMembers(): Promise<Array<{ name: string; level: number; hp: number; ac: number }>> {
-    const members: Array<{ name: string; level: number; hp: number; ac: number }> = [];
+  async getAvailablePartyMembers(): Promise<Array<{ name: string; level: number; hp: number; ac: number; cr?: string }>> {
+    const members: Array<{ name: string; level: number; hp: number; ac: number; cr?: string }> = [];
 
     try {
       const party = this.resolveParty();
@@ -124,6 +124,7 @@ export class EncounterBuilder {
           level: m.level,
           hp: m.maxHp,
           ac: m.ac,
+          cr: m.cr,
         });
       }
     } catch (error) {
@@ -642,7 +643,7 @@ export class EncounterBuilder {
    * Parse statblock YAML to extract real combat stats
    * Returns hp, ac, dpr (damage per round), and attackBonus
    */
-  async parseStatblockStats(filePath: string): Promise<{ hp: number; ac: number; dpr: number; attackBonus: number } | null> {
+  async parseStatblockStats(filePath: string): Promise<{ hp: number; ac: number; dpr: number; attackBonus: number; hasPackTactics?: boolean } | null> {
     try {
       const file = this.app.vault.getAbstractFileByPath(filePath);
       if (!(file instanceof TFile)) {
@@ -665,11 +666,30 @@ export class EncounterBuilder {
       let highestAttackBonus = 0;
       let attackCount = 0;
       
-      // Check for actions array (where attacks are defined)
+      // Parse standard actions for base DPR
       if (fm.actions && Array.isArray(fm.actions)) {
-        
         for (const action of fm.actions) {
           if (!action.name) continue;
+          
+          const actionName = String(action.name).toLowerCase();
+          
+          // Skip multiattack (handled separately as a multiplier)
+          if (actionName.includes('multiattack')) continue;
+          
+          // === Detect Recharge abilities (e.g. "Fire Breath (Recharge 5-6)") ===
+          // These are powerful but not available every round
+          let rechargeWeight = 1.0;
+          const rechargeMatch = actionName.match(/recharge\s+(\d+)(?:\s*[-–]\s*(\d+))?/i);
+          if (rechargeMatch) {
+            const low = parseInt(rechargeMatch[1]!);
+            const high = rechargeMatch[2] ? parseInt(rechargeMatch[2]) : 6;
+            // Probability of recharging on a d6 roll
+            const rechargeChance = (high - low + 1) / 6;
+            // Effective weight: use on round 1 + expected uses from recharges
+            // Over a 4-round combat: 1 initial use + (3 rounds × rechargeChance)
+            // Average DPR contribution = totalDamage × (1 + 3 × chance) / 4
+            rechargeWeight = (1 + 3 * rechargeChance) / 4;
+          }
           
           // === CHECK STRUCTURED FIELDS FIRST ===
           let actionDPR = 0;
@@ -687,19 +707,16 @@ export class EncounterBuilder {
           
           // Check for damage_dice and damage_bonus fields
           if (action.damage_dice || action.damage_bonus) {
-            
-            // Parse damage_dice (e.g., "1d6" or "2d8")
             let diceDamage = 0;
             if (action.damage_dice && typeof action.damage_dice === 'string') {
               const diceMatch = action.damage_dice.match(/(\d+)d(\d+)/i);
               if (diceMatch) {
                 const numDice = parseInt(diceMatch[1]);
                 const dieSize = parseInt(diceMatch[2]);
-                diceDamage = numDice * ((dieSize + 1) / 2); // Average of dice
+                diceDamage = numDice * ((dieSize + 1) / 2);
               }
             }
             
-            // Add damage bonus
             let damageBonus = 0;
             if (typeof action.damage_bonus === 'number') {
               damageBonus = action.damage_bonus;
@@ -710,62 +727,77 @@ export class EncounterBuilder {
             actionDPR = diceDamage + damageBonus;
             
             if (actionDPR > 0) {
-              totalDPR += actionDPR;
-              attackCount++;
+              // For recharge abilities, don't add to the main DPR total yet —
+              // they'll be weighted and added after multiattack calculation
+              if (rechargeMatch) {
+                totalDPR += actionDPR * rechargeWeight;
+              } else {
+                totalDPR += actionDPR;
+                attackCount++;
+              }
               usedStructuredData = true;
             }
           }
           
-          // If we successfully used structured data, skip text parsing for this action
-          if (usedStructuredData) {
-            continue;
-          }
+          if (usedStructuredData) continue;
           
           // === FALLBACK TO TEXT PARSING ===
           if (action.desc && typeof action.desc === 'string') {
             const desc = action.desc;
             
-            // Look for attack bonus
+            // Also check desc for recharge if not found in name
+            let descRechargeWeight = rechargeWeight;
+            if (descRechargeWeight === 1.0) {
+              const descRechargeMatch = desc.match(/recharge\s+(\d+)(?:\s*[-–]\s*(\d+))?/i);
+              if (descRechargeMatch) {
+                const low = parseInt(descRechargeMatch[1]);
+                const high = descRechargeMatch[2] ? parseInt(descRechargeMatch[2]) : 6;
+                descRechargeWeight = (1 + 3 * ((high - low + 1) / 6)) / 4;
+              }
+            }
+            
             const attackMatch = desc.match(/[+\-]\d+\s+to\s+hit/i);
             if (attackMatch) {
               const bonusMatch = attackMatch[0].match(/[+\-]\d+/);
               if (bonusMatch) {
-                attackCount++;
+                if (descRechargeWeight === 1.0) attackCount++;
                 const bonus = parseInt(bonusMatch[0]);
                 if (bonus > highestAttackBonus) highestAttackBonus = bonus;
               }
             }
             
-            // Look for damage
             let damageFound = false;
             const avgDamageMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/i);
             if (avgDamageMatch) {
               const avgDamage = parseInt(avgDamageMatch[1]);
-              totalDPR += avgDamage;
+              if (descRechargeWeight < 1.0) {
+                totalDPR += avgDamage * descRechargeWeight;
+              } else {
+                totalDPR += avgDamage;
+              }
               damageFound = true;
-              if (!attackMatch) attackCount++;
+              if (!attackMatch && descRechargeWeight === 1.0) attackCount++;
             } else {
               const diceMatch = desc.match(/(\d+)d(\d+)\s*([+\-]?\s*\d+)?/i);
               if (diceMatch) {
-                if (!attackMatch) attackCount++;
+                if (!attackMatch && descRechargeWeight === 1.0) attackCount++;
                 const numDice = parseInt(diceMatch[1]);
                 const dieSize = parseInt(diceMatch[2]);
                 const modifier = diceMatch[3] ? parseInt(diceMatch[3].replace(/\s/g, '')) : 0;
                 const avgDamage = Math.floor(numDice * (dieSize + 1) / 2) + modifier;
-                totalDPR += avgDamage;
+                if (descRechargeWeight < 1.0) {
+                  totalDPR += avgDamage * descRechargeWeight;
+                } else {
+                  totalDPR += avgDamage;
+                }
                 damageFound = true;
               }
             }
-            
-            if (!damageFound) {
-            }
           }
         }
-      } else {
       }
       
-      
-      // Check for multiattack
+      // Check for multiattack (only applies to non-recharge standard attacks)
       let multiattackMultiplier = 1;
       if (fm.actions && Array.isArray(fm.actions)) {
         const multiattack = fm.actions.find((a: any) => 
@@ -782,9 +814,177 @@ export class EncounterBuilder {
         }
       }
       
-      // Apply multiattack multiplier
+      // Apply multiattack multiplier to standard attack DPR
       if (totalDPR > 0 && multiattackMultiplier > 1) {
         totalDPR *= multiattackMultiplier;
+      }
+      
+      // === LEGENDARY ACTIONS ===
+      // Creatures with legendary actions get extra actions per round (typically 3).
+      // Each legendary action usually costs 1 action; some cost 2-3.
+      // We parse the damage from legendary actions and add it as extra DPR.
+      if (fm.legendary_actions && Array.isArray(fm.legendary_actions)) {
+        let legendaryDPR = 0;
+        let legendaryActionsPerRound = 3; // Default per D&D 5e rules
+        
+        // Check for legendary action budget description
+        const legendaryDesc = fm.legendary_description;
+        if (typeof legendaryDesc === 'string') {
+          const budgetMatch = legendaryDesc.match(/(\d+)\s+legendary\s+action/i);
+          if (budgetMatch) {
+            legendaryActionsPerRound = parseInt(budgetMatch[1]!);
+          }
+        }
+        
+        // Parse each legendary action: find its cost and damage
+        const parsedLegActions: { dpr: number; cost: number }[] = [];
+        
+        for (const la of fm.legendary_actions) {
+          const name = la.name ? String(la.name).toLowerCase() : '';
+          const desc = la.desc ? String(la.desc) : '';
+          
+          // Determine cost (default 1; look for "Costs 2 Actions" or "2 actions")
+          let cost = 1;
+          const costMatch = (name + ' ' + desc).match(/costs?\s+(\d+)\s+action/i);
+          if (costMatch) cost = parseInt(costMatch[1]!);
+          
+          // Parse damage from desc
+          let laDPR = 0;
+          const avgMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/i);
+          if (avgMatch) {
+            laDPR = parseInt(avgMatch[1]!);
+          } else {
+            const diceMatch = desc.match(/(\d+)d(\d+)\s*([+\-]?\s*\d+)?/i);
+            if (diceMatch) {
+              const n = parseInt(diceMatch[1]!);
+              const d = parseInt(diceMatch[2]!);
+              const m = diceMatch[3] ? parseInt(diceMatch[3].replace(/\s/g, '')) : 0;
+              laDPR = Math.floor(n * (d + 1) / 2) + m;
+            }
+          }
+          
+          if (laDPR > 0) {
+            parsedLegActions.push({ dpr: laDPR, cost });
+          }
+        }
+        
+        // Estimate DPR from legendary actions: greedily pick highest DPR/cost
+        if (parsedLegActions.length > 0) {
+          // Sort by damage efficiency (dpr per cost)
+          parsedLegActions.sort((a, b) => (b.dpr / b.cost) - (a.dpr / a.cost));
+          
+          let budget = legendaryActionsPerRound;
+          for (const la of parsedLegActions) {
+            while (budget >= la.cost) {
+              legendaryDPR += la.dpr;
+              budget -= la.cost;
+            }
+          }
+          
+          totalDPR += legendaryDPR;
+        }
+      }
+      
+      // === BONUS ACTIONS (extra DPR beyond standard actions) ===
+      if (fm.bonus_actions && Array.isArray(fm.bonus_actions)) {
+        let bestBonusDPR = 0;
+        
+        for (const ba of fm.bonus_actions) {
+          const desc = ba.desc ? String(ba.desc) : '';
+          let baDPR = 0;
+          
+          const avgMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/i);
+          if (avgMatch) {
+            baDPR = parseInt(avgMatch[1]!);
+          } else {
+            const diceMatch = desc.match(/(\d+)d(\d+)\s*([+\-]?\s*\d+)?/i);
+            if (diceMatch) {
+              const n = parseInt(diceMatch[1]!);
+              const d = parseInt(diceMatch[2]!);
+              const m = diceMatch[3] ? parseInt(diceMatch[3].replace(/\s/g, '')) : 0;
+              baDPR = Math.floor(n * (d + 1) / 2) + m;
+            }
+          }
+          
+          // Track the best bonus action (creature uses its best one each round)
+          if (baDPR > bestBonusDPR) bestBonusDPR = baDPR;
+        }
+        
+        totalDPR += bestBonusDPR;
+      }
+      
+      // === DAMAGE RESISTANCES & IMMUNITIES → Effective HP Multiplier ===
+      let effectiveHP = hp || 1;
+      
+      // Count resistance/immunity categories to estimate effective HP increase.
+      // Common damage types in 5e roughly distribute as:
+      //   Physical (bludgeoning/piercing/slashing) ~50% of incoming damage
+      //   Elemental/magical ~50%
+      // Resistance = half damage → effectively 1/(1-0.5×proportion) HP multiplier
+      const resistanceStr = typeof fm.damage_resistances === 'string' ? fm.damage_resistances : '';
+      const immunityStr = typeof fm.damage_immunities === 'string' ? fm.damage_immunities : '';
+      
+      const physicalTypes = ['bludgeoning', 'piercing', 'slashing'];
+      const hasPhysicalResistance = physicalTypes.some(t => resistanceStr.toLowerCase().includes(t));
+      const hasPhysicalImmunity = physicalTypes.some(t => immunityStr.toLowerCase().includes(t));
+      
+      // Count non-physical resistance/immunity types
+      const allDamageTypes = ['acid', 'cold', 'fire', 'force', 'lightning', 'necrotic', 'poison', 'psychic', 'radiant', 'thunder'];
+      const elementalResistCount = allDamageTypes.filter(t => resistanceStr.toLowerCase().includes(t)).length;
+      const elementalImmuneCount = allDamageTypes.filter(t => immunityStr.toLowerCase().includes(t)).length;
+      
+      // Calculate effective HP multiplier based on damage reduction
+      // Physical damage is ~50% of incoming; each elemental type is ~5%
+      let damageReductionFraction = 0;
+      
+      if (hasPhysicalImmunity) {
+        damageReductionFraction += 0.50; // Immune to all physical = 50% less damage taken
+      } else if (hasPhysicalResistance) {
+        damageReductionFraction += 0.25; // Resistant to physical = 25% less damage taken
+      }
+      
+      // Each elemental resistance/immunity is worth ~5% of incoming damage
+      damageReductionFraction += elementalResistCount * 0.025; // Resistance = half of 5%
+      damageReductionFraction += elementalImmuneCount * 0.05;  // Immunity = full 5%
+      
+      // Cap the reduction at 60% to avoid unrealistic values
+      damageReductionFraction = Math.min(damageReductionFraction, 0.60);
+      
+      if (damageReductionFraction > 0) {
+        effectiveHP = Math.round(effectiveHP / (1 - damageReductionFraction));
+      }
+      
+      // === PACK TACTICS & SIMILAR ADVANTAGE TRAITS ===
+      // Traits that grant advantage on attack rolls effectively increase hit chance
+      let attackBonusAdjustment = 0;
+      let hasPackTactics = false;
+      
+      if (fm.traits && Array.isArray(fm.traits)) {
+        for (const trait of fm.traits) {
+          const name = trait.name ? String(trait.name).toLowerCase() : '';
+          const desc = trait.desc ? String(trait.desc).toLowerCase() : '';
+          const traitText = name + ' ' + desc;
+          
+          // Pack Tactics: advantage when ally is adjacent — flag it for encounter-level adjustment
+          if (traitText.includes('pack tactics')) {
+            hasPackTactics = true;
+          }
+          
+          // Reckless Attack / Reckless: advantage on attacks (always active, creature's choice)
+          if (name.includes('reckless')) {
+            attackBonusAdjustment = Math.max(attackBonusAdjustment, 4);
+          }
+          
+          // Surprise Attack / Ambusher: extra damage in first round
+          if (traitText.includes('surprise attack') || traitText.includes('ambush')) {
+            const surpriseMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\)/i);
+            if (surpriseMatch) {
+              // Add ~25% of surprise damage as averaged across combat
+              const surpriseDmg = parseInt(surpriseMatch[1]!);
+              totalDPR += Math.round(surpriseDmg * 0.25);
+            }
+          }
+        }
       }
       
       // If we couldn't parse DPR, return null to fall back to CR estimates
@@ -797,11 +997,15 @@ export class EncounterBuilder {
         highestAttackBonus = Math.max(2, Math.floor(totalDPR / 5));
       }
       
+      // Apply advantage-based attack bonus adjustment
+      highestAttackBonus += attackBonusAdjustment;
+      
       const result = {
-        hp: hp || 1,
+        hp: effectiveHP,
         ac: ac || 10,
         dpr: totalDPR,
-        attackBonus: highestAttackBonus
+        attackBonus: highestAttackBonus,
+        hasPackTactics,
       };
       return result;
     } catch (error) {
@@ -927,6 +1131,8 @@ export class EncounterBuilder {
     let friendlyTotalAttackBonus = 0;
     let friendlyCount = 0;
     
+    // Track Pack Tactics creatures for post-processing
+    const packTacticsCreatures: { attackBonus: number; count: number }[] = [];
     
     for (const creature of this.creatures) {
       const count = creature.count || 1;
@@ -979,7 +1185,6 @@ export class EncounterBuilder {
       let realStats = null;
       if (creature.path && typeof creature.path === 'string') {
         realStats = await this.parseStatblockStats(creature.path);
-      } else {
       }
       
       // Fall back to CR-based estimates if no statblock or parsing failed
@@ -990,10 +1195,10 @@ export class EncounterBuilder {
       const dpr = realStats?.dpr || crStats.dpr;
       const attackBonus = realStats?.attackBonus || crStats.attackBonus;
       
-      const dprSource = realStats?.dpr ? '📊 STATBLOCK' : '📖 CR_TABLE';
-      const hpSource = realStats?.hp ? '📊 STATBLOCK' : creature.hp ? '✏️ MANUAL' : '📖 CR_TABLE';
-      const acSource = realStats?.ac ? '📊 STATBLOCK' : creature.ac ? '✏️ MANUAL' : '📖 CR_TABLE';
-      
+      // Track Pack Tactics for post-loop adjustment
+      if (realStats?.hasPackTactics) {
+        packTacticsCreatures.push({ attackBonus, count });
+      }
 
       enemyTotalHP += hp * count;
       enemyTotalAC += ac * count;
@@ -1002,6 +1207,14 @@ export class EncounterBuilder {
       enemyCount += count;
     }
     
+    // Apply Pack Tactics bonus only when the creature has allies (enemyCount > 1)
+    // Advantage ≈ +4 to hit. We add this to the total attack bonus for Pack Tactics creatures.
+    if (enemyCount > 1) {
+      for (const pt of packTacticsCreatures) {
+        // Add +4 attack bonus for each Pack Tactics creature instance
+        enemyTotalAttackBonus += 4 * pt.count;
+      }
+    }
 
     const avgEnemyAC = enemyCount > 0 ? enemyTotalAC / enemyCount : 13;
     const avgEnemyAttackBonus = enemyCount > 0 ? enemyTotalAttackBonus / enemyCount : 3;

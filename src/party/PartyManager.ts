@@ -408,7 +408,7 @@ export class PartyManager {
     return {
       name: fm.name || file.basename,
       notePath,
-      level: parseInt(fm.level) || (fm.cr ? 0 : 1),
+      level: parseInt(fm.level) || (fm.cr != null ? this.estimateLevelFromCR(String(fm.cr)) : 1),
       hp: parseInt(fm.hp) || parseInt(fm.hp_max) || 0,
       maxHp: parseInt(fm.hp_max) || parseInt(fm.hp) || 0,
       thp: parseInt(fm.thp) || 0,
@@ -422,6 +422,26 @@ export class PartyManager {
       role: role || "pc",
       cr: fm.cr != null ? String(fm.cr) : undefined,
     };
+  }
+
+  /**
+   * Estimate an effective PC level from a creature's CR.
+   * Used when a companion NPC has CR but no explicit level field.
+   * Based on D&D 5e guidelines: CR roughly maps to the level of a party
+   * that would find the creature a medium challenge (1:1).
+   */
+  private estimateLevelFromCR(cr: string): number {
+    const crMap: Record<string, number> = {
+      "0": 1, "1/8": 1, "1/4": 1, "1/2": 1,
+      "1": 1, "2": 2, "3": 3, "4": 4, "5": 5,
+      "6": 6, "7": 7, "8": 8, "9": 9, "10": 10,
+      "11": 11, "12": 12, "13": 13, "14": 14, "15": 15,
+      "16": 16, "17": 17, "18": 18, "19": 19, "20": 20,
+    };
+    const trimmed = cr.trim();
+    if (crMap[trimmed] !== undefined) return crMap[trimmed];
+    const numeric = parseFloat(trimmed);
+    return isNaN(numeric) ? 1 : Math.max(1, Math.round(numeric));
   }
 
   /**
