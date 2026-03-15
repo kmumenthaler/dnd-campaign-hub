@@ -82,9 +82,23 @@ export class MapController {
 		return this.handle?.mapId ?? null;
 	}
 
-	/** Grid size in pixels of the active map, or null. */
+	/** Base grid size in pixels of the active map, or null. */
 	getGridSize(): number | null {
 		return this.handle?.config?.gridSize ?? null;
+	}
+
+	/**
+	 * Effective grid cell size in pixels, accounting for fine-tuned W/H calibration.
+	 * Returns the average of gridSizeW and gridSizeH when set, otherwise gridSize.
+	 */
+	getEffectiveGridCellSize(): number | null {
+		const cfg = this.handle?.config;
+		if (!cfg) return null;
+		const base = cfg.gridSize ?? null;
+		if (base == null) return null;
+		const w = cfg.gridSizeW || base;
+		const h = cfg.gridSizeH || base;
+		return (w + h) / 2;
 	}
 
 	/** Scale of the active map (e.g. { value: 5, unit: "feet" }), or null. */

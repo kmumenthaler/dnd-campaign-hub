@@ -1079,7 +1079,7 @@ export class PursuitSetupModal extends Modal {
       return;
     }
 
-    const gridSize = mc.getGridSize();
+    const gridSize = mc.getEffectiveGridCellSize();
     const scale = mc.getScale();
     if (!gridSize || !scale) {
       new Notice("Could not read map grid size or scale.");
@@ -1094,9 +1094,12 @@ export class PursuitSetupModal extends Modal {
 
     const library = this.plugin.markerLibrary;
 
-    // Match each creature entry to a map token position
+    // Match each creature entry to a map token position.
+    // Track consumed marker instance IDs so duplicates (e.g. 3 goblins
+    // sharing the same token definition) map to distinct instances.
     type TokenMatch = { creature: CreatureEntry; index: number; x: number; y: number };
     const matched: TokenMatch[] = [];
+    const consumedMarkerIds = new Set<string>();
     let unmatched = 0;
 
     for (let i = 0; i < this.creatures.length; i++) {
@@ -1104,9 +1107,12 @@ export class PursuitSetupModal extends Modal {
       let found = false;
 
       for (const m of markers) {
-        // Match by tokenId
+        if (consumedMarkerIds.has(m.id)) continue;
+
+        // Match by tokenId (marker definition id)
         if (c.tokenId && m.markerId === c.tokenId) {
           matched.push({ creature: c, index: i, x: m.position.x, y: m.position.y });
+          consumedMarkerIds.add(m.id);
           found = true;
           break;
         }
@@ -1114,6 +1120,7 @@ export class PursuitSetupModal extends Modal {
         const def = library.getMarker(m.markerId);
         if (def && def.name.toLowerCase() === c.name.toLowerCase()) {
           matched.push({ creature: c, index: i, x: m.position.x, y: m.position.y });
+          consumedMarkerIds.add(m.id);
           found = true;
           break;
         }
@@ -1136,7 +1143,8 @@ export class PursuitSetupModal extends Modal {
         return curDist < bestDist ? cur : best;
       });
 
-    // Convert pixel distances to feet relative to the reference token
+    // Convert pixel distances to feet relative to the reference token.
+    // Uses effective grid cell size (accounts for fine-tuned W/H calibration).
     const feetPerPixel = scale.value / gridSize;
 
     for (const m of matched) {
