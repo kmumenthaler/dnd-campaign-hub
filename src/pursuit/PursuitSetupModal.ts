@@ -12,7 +12,8 @@
 import { App, Modal, Notice, Setting, TFile } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import type { CombatState } from "../combat/types";
-import type { MarkerReference } from "../marker/MarkerTypes";
+import type { MarkerReference, MarkerDefinition } from "../marker/MarkerTypes";
+import { CREATURE_SIZE_SQUARES } from "../marker/MarkerTypes";
 import { CombatPursuitSync } from "./CombatPursuitSync";
 import type {
   PursuitParticipant,
@@ -145,6 +146,9 @@ export class PursuitSetupModal extends Modal {
 
   // ── Per-party-member starting positions (memberName → feet) ──
   private partyMemberStartPositions: Map<string, number> = new Map();
+
+  // ── Flee direction for map import (compass direction the quarry is running) ──
+  private fleeDirection: "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW" = "S";
 
   // ── Pre-populated from combat? ──
   private fromCombat: CombatState | null = null;
@@ -346,7 +350,20 @@ export class PursuitSetupModal extends Modal {
     if (this.fromCombat && this.plugin.mapController.isMapActive()) {
       const importSetting = new Setting(contentEl)
         .setName("Import distances from map")
-        .setDesc("Calculate starting distances from token positions on the linked battle map.");
+        .setDesc("Set the direction the quarry is fleeing, then import token positions.");
+      importSetting.addDropdown((dd) =>
+        dd
+          .addOption("N", "⬆ North")
+          .addOption("NE", "↗ North-East")
+          .addOption("E", "➡ East")
+          .addOption("SE", "↘ South-East")
+          .addOption("S", "⬇ South")
+          .addOption("SW", "↙ South-West")
+          .addOption("W", "⬅ West")
+          .addOption("NW", "↖ North-West")
+          .setValue(this.fleeDirection)
+          .onChange((v) => { this.fleeDirection = v as typeof this.fleeDirection; })
+      );
       importSetting.addButton((btn) =>
         btn.setButtonText("📍 Import from Map").setCta().onClick(() => {
           this.importDistancesFromMap();
@@ -1094,38 +1111,90 @@ export class PursuitSetupModal extends Modal {
 
     const library = this.plugin.markerLibrary;
 
-    // Match each creature entry to a map token position.
-    // Track consumed marker instance IDs so duplicates (e.g. 3 goblins
-    // sharing the same token definition) map to distinct instances.
-    type TokenMatch = { creature: CreatureEntry; index: number; x: number; y: number };
+    // ── Flee-direction unit vector ──
+    // In image coordinates: +x = right (east), +y = down (south).
+    const DIRECTION_VECTORS: Record<string, { x: number; y: number }> = {
+      N:  { x:  0, y: -1 },
+      NE: { x:  1, y: -1 },
+      E:  { x:  1, y:  0 },
+      SE: { x:  1, y:  1 },
+      S:  { x:  0, y:  1 },
+      SW: { x: -1, y:  1 },
+      W:  { x: -1, y:  0 },
+      NW: { x: -1, y: -1 },
+    };
+    const raw = DIRECTION_VECTORS[this.fleeDirection] ?? { x: 0, y: 1 };
+    const len = Math.sqrt(raw.x * raw.x + raw.y * raw.y);
+    const axis = { x: raw.x / len, y: raw.y / len };
+
+    // ── Match ALL participants (creatures + party members) to map tokens ──
+    // Each matched token records: pixel position, creature size in grid squares,
+    // and a callback to write the computed start distance back.
+    type TokenMatch = {
+      x: number;
+      y: number;
+      sizeSquares: number;
+      applyPosition: (feet: number) => void;
+    };
     const matched: TokenMatch[] = [];
     const consumedMarkerIds = new Set<string>();
     let unmatched = 0;
 
-    for (let i = 0; i < this.creatures.length; i++) {
-      const c = this.creatures[i]!;
-      let found = false;
-
+    /** Try to find an unconsumed marker by tokenId or name. */
+    const findMarker = (tokenId: string | undefined, name: string): { ref: MarkerReference; def: MarkerDefinition | undefined } | null => {
       for (const m of markers) {
         if (consumedMarkerIds.has(m.id)) continue;
-
-        // Match by tokenId (marker definition id)
-        if (c.tokenId && m.markerId === c.tokenId) {
-          matched.push({ creature: c, index: i, x: m.position.x, y: m.position.y });
+        if (tokenId && m.markerId === tokenId) {
           consumedMarkerIds.add(m.id);
-          found = true;
-          break;
+          return { ref: m, def: library.getMarker(m.markerId) };
         }
-        // Match by marker definition name
         const def = library.getMarker(m.markerId);
-        if (def && def.name.toLowerCase() === c.name.toLowerCase()) {
-          matched.push({ creature: c, index: i, x: m.position.x, y: m.position.y });
+        if (def && def.name.toLowerCase() === name.toLowerCase()) {
           consumedMarkerIds.add(m.id);
-          found = true;
-          break;
+          return { ref: m, def };
         }
       }
-      if (!found) unmatched++;
+      return null;
+    };
+
+    // Match party members (quarry PCs)
+    if (this.includeParty) {
+      const memberByName = new Map(
+        this.allVaultEntities.filter((e) => e.type === "player").map((e) => [e.name, e]),
+      );
+      for (const memberName of this.selectedPartyMembers) {
+        const data = memberByName.get(memberName);
+        const hit = findMarker(data?.tokenId, memberName);
+        if (hit) {
+          const sq = data?.size ? (CREATURE_SIZE_SQUARES[data.size as keyof typeof CREATURE_SIZE_SQUARES] ?? 1) : 1;
+          matched.push({
+            x: hit.ref.position.x,
+            y: hit.ref.position.y,
+            sizeSquares: sq,
+            applyPosition: (feet) => this.partyMemberStartPositions.set(memberName, feet),
+          });
+        } else {
+          unmatched++;
+        }
+      }
+    }
+
+    // Match creature entries
+    for (const c of this.creatures) {
+      const hit = findMarker(c.tokenId, c.name);
+      if (hit) {
+        const sq = hit.def?.creatureSize
+          ? (CREATURE_SIZE_SQUARES[hit.def.creatureSize] ?? 1)
+          : (CREATURE_SIZE_SQUARES[c.size as keyof typeof CREATURE_SIZE_SQUARES] ?? 1);
+        matched.push({
+          x: hit.ref.position.x,
+          y: hit.ref.position.y,
+          sizeSquares: sq,
+          applyPosition: (feet) => { c.startPosition = feet; },
+        });
+      } else {
+        unmatched++;
+      }
     }
 
     if (matched.length === 0) {
@@ -1133,75 +1202,49 @@ export class PursuitSetupModal extends Modal {
       return;
     }
 
-    // Pixel-to-feet factor (same formula the map ruler uses)
-    const feetPerPixel = scale.value / gridSize;
+    // ── D&D 5e edge-to-edge distance (same formula as Token Distance Tool) ──
+    const sv = scale.value; // feet per grid cell (e.g. 5)
+    const dnd5eDistance = (
+      ax: number, ay: number, aSq: number,
+      bx: number, by: number, bSq: number,
+    ): number => {
+      const aHalf = (aSq * gridSize) / 2;
+      const bHalf = (bSq * gridSize) / 2;
+      const edgeDx = Math.max(0, Math.abs(bx - ax) - aHalf - bHalf);
+      const edgeDy = Math.max(0, Math.abs(by - ay) - aHalf - bHalf);
+      const pixelDist = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
+      const feet = (pixelDist / gridSize) * sv;
+      // "Count into the target's space" + round to scale increment (D&D 5e RAW)
+      return Math.max(sv, Math.round((feet + sv) / sv) * sv);
+    };
 
-    // Split into roles for chase-axis projection
-    const pursuerMatches = matched.filter((m) => m.creature.role === "pursuer");
-    const quarryMatches = matched.filter((m) => m.creature.role === "quarry");
+    // ── Find rearmost token (smallest projection onto flee axis) ──
+    const projections = matched.map((m) => m.x * axis.x + m.y * axis.y);
+    let refIdx = 0;
+    for (let i = 1; i < projections.length; i++) {
+      if (projections[i]! < projections[refIdx]!) refIdx = i;
+    }
+    const ref = matched[refIdx]!;
 
-    if (pursuerMatches.length > 0 && quarryMatches.length > 0) {
-      // Compute chase axis: pursuer centroid → quarry centroid.
-      // Projecting onto this axis properly separates "ahead" from "behind"
-      // instead of collapsing 2D positions into ambiguous Euclidean radii.
-      const centroid = (arr: TokenMatch[]) => ({
-        x: arr.reduce((s, m) => s + m.x, 0) / arr.length,
-        y: arr.reduce((s, m) => s + m.y, 0) / arr.length,
-      });
-      const pC = centroid(pursuerMatches);
-      const qC = centroid(quarryMatches);
-      let axisX = qC.x - pC.x;
-      let axisY = qC.y - pC.y;
-      const axisLen = Math.sqrt(axisX * axisX + axisY * axisY);
-
-      if (axisLen > 1) {
-        axisX /= axisLen;
-        axisY /= axisLen;
-
-        // Project every token onto the chase axis (relative to pursuer centroid)
-        const projections: number[] = [];
-        for (const m of matched) {
-          projections.push((m.x - pC.x) * axisX + (m.y - pC.y) * axisY);
-        }
-        // Shift so the rearmost token maps to 0ft
-        const minP = Math.min(...projections);
-        for (let i = 0; i < matched.length; i++) {
-          const feetDist = Math.round((projections[i]! - minP) * feetPerPixel / 5) * 5;
-          matched[i]!.creature.startPosition = feetDist;
-        }
+    // ── Set each token's chase position = D&D distance from rearmost ──
+    for (let i = 0; i < matched.length; i++) {
+      if (i === refIdx) {
+        matched[i]!.applyPosition(0);
       } else {
-        // Groups overlap in 2D → fallback to Euclidean from pursuer centroid
-        this.applyEuclideanDistances(matched, pC, feetPerPixel);
+        matched[i]!.applyPosition(
+          dnd5eDistance(ref.x, ref.y, ref.sizeSquares, matched[i]!.x, matched[i]!.y, matched[i]!.sizeSquares),
+        );
       }
-    } else {
-      // Only one role matched → Euclidean from token closest to (0,0)
-      const refToken = matched.reduce((best, cur) =>
-        (cur.x * cur.x + cur.y * cur.y) < (best.x * best.x + best.y * best.y) ? cur : best,
-      );
-      this.applyEuclideanDistances(matched, refToken, feetPerPixel);
     }
 
     this.renderCreatureList();
+    if (this.partyMemberListContainer) this.renderPartyMemberList();
     this.updateFooter();
 
     const msg = unmatched > 0
       ? `📍 Imported distances for ${matched.length} participants (${unmatched} unmatched).`
       : `📍 Imported distances for ${matched.length} participants from map!`;
     new Notice(msg);
-  }
-
-  /** Fallback: Euclidean distance from a reference point (loses direction). */
-  private applyEuclideanDistances(
-    matched: { creature: CreatureEntry; x: number; y: number }[],
-    ref: { x: number; y: number },
-    feetPerPixel: number,
-  ): void {
-    for (const m of matched) {
-      const dx = m.x - ref.x;
-      const dy = m.y - ref.y;
-      const pixelDist = Math.sqrt(dx * dx + dy * dy);
-      m.creature.startPosition = Math.round(pixelDist * feetPerPixel / 5) * 5;
-    }
   }
 
   // ── Start Chase ────────────────────────────────────────────
