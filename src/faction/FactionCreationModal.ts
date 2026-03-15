@@ -263,16 +263,7 @@ export class FactionCreationModal extends Modal {
         }
       }
 
-      // Get Faction template
-      const templatePath = "z_Templates/Frontmatter - Faction.md";
-      const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
-      let factionContent: string;
-
-      if (templateFile instanceof TFile) {
-        factionContent = await this.app.vault.read(templateFile);
-      } else {
-        factionContent = FACTION_TEMPLATE;
-      }
+      let factionContent = FACTION_TEMPLATE;
 
       // Get current date
       const currentDate = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);

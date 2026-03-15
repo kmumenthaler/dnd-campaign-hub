@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
+import { App, Modal, Notice, Setting, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { WORLD_TEMPLATE } from "../templates";
 import { CalendarDateInputModal } from './CalendarDateInputModal';
@@ -350,14 +350,7 @@ export class CampaignCreationModal extends Modal {
         await this.plugin.ensureFolderExists(folder);
       }
 
-      const worldTemplate = this.app.vault.getAbstractFileByPath("z_Templates/world.md");
-      let worldContent: string;
-
-      if (worldTemplate instanceof TFile) {
-        worldContent = await this.app.vault.read(worldTemplate);
-      } else {
-        worldContent = WORLD_TEMPLATE;
-      }
+      let worldContent = WORLD_TEMPLATE;
 
       const worldTemplateVersion = TEMPLATE_VERSIONS.world || "1.3.0";
 

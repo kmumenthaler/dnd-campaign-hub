@@ -432,16 +432,7 @@ export class AdventureCreationModal extends Modal {
   async createMainAdventureNote(filePath: string, campaignName: string, worldName: string, currentDate: string) {
     const adventureTemplateVersion = TEMPLATE_VERSIONS.adventure || "1.4.0";
 
-    // Get Adventure template
-    const templatePath = "z_Templates/Frontmatter - Adventure.md";
-    const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
-    let adventureContent: string;
-
-    if (templateFile instanceof TFile) {
-      adventureContent = await this.app.vault.read(templateFile);
-    } else {
-      adventureContent = ADVENTURE_TEMPLATE;
-    }
+    let adventureContent = ADVENTURE_TEMPLATE;
 
     adventureContent = updateYamlFrontmatter(adventureContent, (fm) => ({
       ...fm,

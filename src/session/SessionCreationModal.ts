@@ -501,16 +501,7 @@ export class SessionCreationModal extends Modal {
         }
       }
 
-      // Get appropriate template
-      const templatePath = isGM ? "z_Templates/session-gm.md" : "z_Templates/session-player.md";
-      const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
-      let sessionContent: string;
-
-      if (templateFile instanceof TFile) {
-        sessionContent = await this.app.vault.read(templateFile);
-      } else {
-        sessionContent = isGM ? SESSION_GM_TEMPLATE : SESSION_PLAYER_TEMPLATE;
-      }
+      let sessionContent = isGM ? SESSION_GM_TEMPLATE : SESSION_PLAYER_TEMPLATE;
 
       // Create filename: 001_20260120.md format
       const dateStr = this.sessionDate.replace(/-/g, '');

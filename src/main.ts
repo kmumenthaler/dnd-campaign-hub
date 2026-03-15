@@ -1538,6 +1538,11 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
+
+    // Keep z_Templates in sync with bundled template constants
+    if (this.isVaultInitialized()) {
+      await this.createTemplateFiles();
+    }
   }
 
   onunload() {
