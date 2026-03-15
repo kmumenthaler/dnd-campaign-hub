@@ -1079,7 +1079,7 @@ export class PursuitSetupModal extends Modal {
       return;
     }
 
-    const gridSize = mc.getEffectiveGridCellSize();
+    const gridSize = mc.getGridSize();
     const scale = mc.getScale();
     if (!gridSize || !scale) {
       new Notice("Could not read map grid size or scale.");
@@ -1133,26 +1133,52 @@ export class PursuitSetupModal extends Modal {
       return;
     }
 
-    // Find the reference point: the pursuer closest to map origin (0,0),
-    // or if no pursuers matched, use the token closest to origin.
-    const pursuerMatches = matched.filter((m) => m.creature.role === "pursuer");
-    const refToken = (pursuerMatches.length > 0 ? pursuerMatches : matched)
-      .reduce((best, cur) => {
-        const bestDist = Math.sqrt(best.x * best.x + best.y * best.y);
-        const curDist = Math.sqrt(cur.x * cur.x + cur.y * cur.y);
-        return curDist < bestDist ? cur : best;
-      });
-
-    // Convert pixel distances to feet relative to the reference token.
-    // Uses effective grid cell size (accounts for fine-tuned W/H calibration).
+    // Pixel-to-feet factor (same formula the map ruler uses)
     const feetPerPixel = scale.value / gridSize;
 
-    for (const m of matched) {
-      const dx = m.x - refToken.x;
-      const dy = m.y - refToken.y;
-      const pixelDist = Math.sqrt(dx * dx + dy * dy);
-      const feetDist = Math.round(pixelDist * feetPerPixel / 5) * 5; // Snap to 5ft increments
-      m.creature.startPosition = feetDist;
+    // Split into roles for chase-axis projection
+    const pursuerMatches = matched.filter((m) => m.creature.role === "pursuer");
+    const quarryMatches = matched.filter((m) => m.creature.role === "quarry");
+
+    if (pursuerMatches.length > 0 && quarryMatches.length > 0) {
+      // Compute chase axis: pursuer centroid → quarry centroid.
+      // Projecting onto this axis properly separates "ahead" from "behind"
+      // instead of collapsing 2D positions into ambiguous Euclidean radii.
+      const centroid = (arr: TokenMatch[]) => ({
+        x: arr.reduce((s, m) => s + m.x, 0) / arr.length,
+        y: arr.reduce((s, m) => s + m.y, 0) / arr.length,
+      });
+      const pC = centroid(pursuerMatches);
+      const qC = centroid(quarryMatches);
+      let axisX = qC.x - pC.x;
+      let axisY = qC.y - pC.y;
+      const axisLen = Math.sqrt(axisX * axisX + axisY * axisY);
+
+      if (axisLen > 1) {
+        axisX /= axisLen;
+        axisY /= axisLen;
+
+        // Project every token onto the chase axis (relative to pursuer centroid)
+        const projections: number[] = [];
+        for (const m of matched) {
+          projections.push((m.x - pC.x) * axisX + (m.y - pC.y) * axisY);
+        }
+        // Shift so the rearmost token maps to 0ft
+        const minP = Math.min(...projections);
+        for (let i = 0; i < matched.length; i++) {
+          const feetDist = Math.round((projections[i]! - minP) * feetPerPixel / 5) * 5;
+          matched[i]!.creature.startPosition = feetDist;
+        }
+      } else {
+        // Groups overlap in 2D → fallback to Euclidean from pursuer centroid
+        this.applyEuclideanDistances(matched, pC, feetPerPixel);
+      }
+    } else {
+      // Only one role matched → Euclidean from token closest to (0,0)
+      const refToken = matched.reduce((best, cur) =>
+        (cur.x * cur.x + cur.y * cur.y) < (best.x * best.x + best.y * best.y) ? cur : best,
+      );
+      this.applyEuclideanDistances(matched, refToken, feetPerPixel);
     }
 
     this.renderCreatureList();
@@ -1162,6 +1188,20 @@ export class PursuitSetupModal extends Modal {
       ? `📍 Imported distances for ${matched.length} participants (${unmatched} unmatched).`
       : `📍 Imported distances for ${matched.length} participants from map!`;
     new Notice(msg);
+  }
+
+  /** Fallback: Euclidean distance from a reference point (loses direction). */
+  private applyEuclideanDistances(
+    matched: { creature: CreatureEntry; x: number; y: number }[],
+    ref: { x: number; y: number },
+    feetPerPixel: number,
+  ): void {
+    for (const m of matched) {
+      const dx = m.x - ref.x;
+      const dy = m.y - ref.y;
+      const pixelDist = Math.sqrt(dx * dx + dy * dy);
+      m.creature.startPosition = Math.round(pixelDist * feetPerPixel / 5) * 5;
+    }
   }
 
   // ── Start Chase ────────────────────────────────────────────
