@@ -12,6 +12,7 @@
 import { App, Modal, Notice, Setting, TFile } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import type { CombatState } from "../combat/types";
+import type { MarkerReference } from "../marker/MarkerTypes";
 import { CombatPursuitSync } from "./CombatPursuitSync";
 import type {
   PursuitParticipant,
@@ -141,6 +142,9 @@ export class PursuitSetupModal extends Modal {
 
   // ── All vault entities (including PCs, for combat-state import) ──
   private allVaultEntities: VaultEntity[] = [];
+
+  // ── Per-party-member starting positions (memberName → feet) ──
+  private partyMemberStartPositions: Map<string, number> = new Map();
 
   // ── Pre-populated from combat? ──
   private fromCombat: CombatState | null = null;
@@ -295,8 +299,8 @@ export class PursuitSetupModal extends Modal {
     contentEl.createEl("h3", { text: "Chase Rules" });
 
     new Setting(contentEl)
-      .setName("Quarry head start (ft)")
-      .setDesc("Starting position for quarry members (pursuers start at their own configured position)")
+      .setName("Default quarry head start (ft)")
+      .setDesc("Default starting position for quarry members (can be overridden per participant)")
       .addText((text) => {
         text.setPlaceholder("60").setValue(String(this.quarryHeadStart)).onChange((v) => {
           this.quarryHeadStart = parseInt(v) || 60;
@@ -306,8 +310,8 @@ export class PursuitSetupModal extends Modal {
       });
 
     new Setting(contentEl)
-      .setName("Pursuer start position (ft)")
-      .setDesc("Default starting position for all pursuers")
+      .setName("Default pursuer start position (ft)")
+      .setDesc("Default starting position for pursuers (can be overridden per participant)")
       .addText((text) => {
         text.setPlaceholder("0").setValue(String(this.pursuerStart)).onChange((v) => {
           this.pursuerStart = parseInt(v) || 0;
@@ -337,6 +341,18 @@ export class PursuitSetupModal extends Modal {
         text.inputEl.type = "number";
         text.inputEl.style.width = "70px";
       });
+
+    // ── Import distances from map (only when started from combat with linked map) ──
+    if (this.fromCombat && this.plugin.mapController.isMapActive()) {
+      const importSetting = new Setting(contentEl)
+        .setName("Import distances from map")
+        .setDesc("Calculate starting distances from token positions on the linked battle map.");
+      importSetting.addButton((btn) =>
+        btn.setButtonText("📍 Import from Map").setCta().onClick(() => {
+          this.importDistancesFromMap();
+        })
+      );
+    }
 
     // ── Creatures & NPCs ──
     contentEl.createEl("h3", { text: "Creatures & NPCs" });
@@ -428,12 +444,34 @@ export class PursuitSetupModal extends Modal {
         statsEl.setText(` | ${parts.join(" | ")}`);
       }
 
+      // Start position input
+      const posContainer = memberItem.createSpan({ cls: "dnd-pursuit-start-pos" });
+      posContainer.createSpan({ text: "Start: " });
+      const posInput = posContainer.createEl("input", {
+        type: "number",
+        cls: "dnd-pursuit-start-pos-input",
+        attr: { title: "Starting position (ft)" },
+      });
+      posInput.style.width = "60px";
+      const savedPos = this.partyMemberStartPositions.get(memberName);
+      posInput.placeholder = String(this.quarryHeadStart);
+      posInput.value = savedPos !== undefined ? String(savedPos) : "";
+      posInput.addEventListener("change", () => {
+        const v = posInput.value.trim();
+        if (v === "") {
+          this.partyMemberStartPositions.delete(memberName);
+        } else {
+          this.partyMemberStartPositions.set(memberName, parseInt(v) || this.quarryHeadStart);
+        }
+      });
+
       const removeBtn = memberItem.createEl("button", {
         text: "Remove",
         cls: "dnd-creature-remove",
       });
       removeBtn.addEventListener("click", () => {
         this.selectedPartyMembers = this.selectedPartyMembers.filter((n) => n !== memberName);
+        this.partyMemberStartPositions.delete(memberName);
         this.renderPartySelection();
         this.renderPartyMemberList();
         this.updateFooter();
@@ -789,6 +827,27 @@ export class PursuitSetupModal extends Modal {
         this.renderCreatureList();
       });
 
+      // Start position input
+      const posContainer = creatureItem.createSpan({ cls: "dnd-pursuit-start-pos" });
+      posContainer.createSpan({ text: "Start: " });
+      const posInput = posContainer.createEl("input", {
+        type: "number",
+        cls: "dnd-pursuit-start-pos-input",
+        attr: { title: "Starting position (ft) — blank uses default" },
+      });
+      posInput.style.width = "60px";
+      const defaultPos = creature.role === "quarry" ? this.quarryHeadStart : this.pursuerStart;
+      posInput.placeholder = String(defaultPos);
+      posInput.value = creature.startPosition !== undefined ? String(creature.startPosition) : "";
+      posInput.addEventListener("change", () => {
+        const v = posInput.value.trim();
+        if (v === "") {
+          creature.startPosition = undefined;
+        } else {
+          creature.startPosition = parseInt(v) || defaultPos;
+        }
+      });
+
       // Start penalty selector
       const penaltySelect = creatureItem.createEl("select", {
         cls: "dropdown dnd-pursuit-penalty-select",
@@ -1006,6 +1065,97 @@ export class PursuitSetupModal extends Modal {
     }
   }
 
+  // ── Import Distances from Map ──────────────────────────────
+
+  /**
+   * Calculate starting distances from token positions on the linked battle map.
+   * Uses the pursuer closest to map origin as zero-reference, then computes
+   * each participant's distance from that reference point.
+   */
+  private importDistancesFromMap(): void {
+    const mc = this.plugin.mapController;
+    if (!mc.isMapActive()) {
+      new Notice("No active battle map to import from.");
+      return;
+    }
+
+    const gridSize = mc.getGridSize();
+    const scale = mc.getScale();
+    if (!gridSize || !scale) {
+      new Notice("Could not read map grid size or scale.");
+      return;
+    }
+
+    const markers: readonly MarkerReference[] = mc.getPlacedMarkers();
+    if (markers.length === 0) {
+      new Notice("No tokens placed on the map.");
+      return;
+    }
+
+    const library = this.plugin.markerLibrary;
+
+    // Match each creature entry to a map token position
+    type TokenMatch = { creature: CreatureEntry; index: number; x: number; y: number };
+    const matched: TokenMatch[] = [];
+    let unmatched = 0;
+
+    for (let i = 0; i < this.creatures.length; i++) {
+      const c = this.creatures[i]!;
+      let found = false;
+
+      for (const m of markers) {
+        // Match by tokenId
+        if (c.tokenId && m.markerId === c.tokenId) {
+          matched.push({ creature: c, index: i, x: m.position.x, y: m.position.y });
+          found = true;
+          break;
+        }
+        // Match by marker definition name
+        const def = library.getMarker(m.markerId);
+        if (def && def.name.toLowerCase() === c.name.toLowerCase()) {
+          matched.push({ creature: c, index: i, x: m.position.x, y: m.position.y });
+          found = true;
+          break;
+        }
+      }
+      if (!found) unmatched++;
+    }
+
+    if (matched.length === 0) {
+      new Notice("Could not match any participants to map tokens.");
+      return;
+    }
+
+    // Find the reference point: the pursuer closest to map origin (0,0),
+    // or if no pursuers matched, use the token closest to origin.
+    const pursuerMatches = matched.filter((m) => m.creature.role === "pursuer");
+    const refToken = (pursuerMatches.length > 0 ? pursuerMatches : matched)
+      .reduce((best, cur) => {
+        const bestDist = Math.sqrt(best.x * best.x + best.y * best.y);
+        const curDist = Math.sqrt(cur.x * cur.x + cur.y * cur.y);
+        return curDist < bestDist ? cur : best;
+      });
+
+    // Convert pixel distances to feet relative to the reference token
+    const feetPerPixel = scale.value / gridSize;
+
+    for (const m of matched) {
+      const dx = m.x - refToken.x;
+      const dy = m.y - refToken.y;
+      const pixelDist = Math.sqrt(dx * dx + dy * dy);
+      const feetDist = Math.round(pixelDist * feetPerPixel / 5) * 5; // Snap to 5ft increments
+      m.creature.startPosition = feetDist;
+    }
+
+    this.renderCreatureList();
+    this.updateFooter();
+
+    const msg = unmatched > 0
+      ? `📍 Imported distances for ${matched.length} participants (${unmatched} unmatched).`
+      : `📍 Imported distances for ${matched.length} participants from map!`;
+    new Notice(msg);
+  }
+
   // ── Start Chase ────────────────────────────────────────────
 
   private startChase() {
@@ -1041,7 +1191,7 @@ export class PursuitSetupModal extends Modal {
           initiativeModifier: data?.initBonus ?? 0,
           speeds: speed,
           activeSpeed: speed[0]?.mode ?? "walk",
-          position: this.quarryHeadStart,
+          position: this.partyMemberStartPositions.get(memberName) ?? this.quarryHeadStart,
           dashesUsed: 0,
           freeDashes: 3 + Math.max(0, data?.conModifier ?? 0),
           conModifier: data?.conModifier ?? 0,

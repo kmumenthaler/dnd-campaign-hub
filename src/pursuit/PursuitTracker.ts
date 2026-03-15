@@ -167,10 +167,8 @@ export class PursuitTracker {
       environment,
       stealthCondition,
       hasRangerPursuer,
-      catchDistance: 5,
       maxDistance,
       maxRounds,
-      catchUpAlerts: [],
       placedObstacles: [],
       log: [{ round: 0, text: `Chase "${name}" initialized with ${participants.length} participants.` }],
     };
@@ -638,7 +636,7 @@ export class PursuitTracker {
       delete (this.state as any).__obstacleComplication;
       const p = this.getActive();
       if (p) {
-        this.checkCatchUp();
+        this.checkMaxDistanceEscape();
         if (p.role === "quarry") {
           p.lineOfSightBroken = this.isLoSBroken(p);
           if (p.lineOfSightBroken) p.wasOutOfSightThisRound = true;
@@ -966,11 +964,11 @@ export class PursuitTracker {
     this.finalizeMovement(p);
   }
 
-  /** Complete the movement phase: mark done, check catch-up/LoS, roll complication. */
+  /** Complete the movement phase: mark done, check max-distance escape/LoS, roll complication. */
   private finalizeMovement(p: PursuitParticipant): void {
     p.hasMoved = true;
 
-    this.checkCatchUp();
+    this.checkMaxDistanceEscape();
 
     if (p.role === "quarry") {
       p.lineOfSightBroken = this.isLoSBroken(p);
@@ -991,7 +989,7 @@ export class PursuitTracker {
       const carried = this.getParticipant(id2);
       if (carried) carried.position = p.position;
     }
-    this.checkCatchUp();
+    this.checkMaxDistanceEscape();
     this.emit();
   }
 
@@ -1442,16 +1440,6 @@ export class PursuitTracker {
     this.emit();
   }
 
-  /** Dismiss a catch-up alert (GM chose to continue the chase). */
-  dismissCatchUpAlert(pursuerId: string, quarryId: string): void {
-    if (!this.state) return;
-    this.state.catchUpAlerts = this.state.catchUpAlerts.filter(
-      (a) => !(a.pursuerId === pursuerId && a.quarryId === quarryId)
-    );
-    this.addLog(`Chase continues despite catch-up.`);
-    this.emit();
-  }
-
   /** Add a new participant mid-chase (inserted at end of initiative order). */
   addParticipant(p: PursuitParticipant): void {
     if (!this.state) return;
@@ -1672,47 +1660,22 @@ export class PursuitTracker {
     return { natural, total: natural + modifier };
   }
 
-  /**
-   * Check if any pursuer has caught up with a quarry (position within catchDistance).
-   * Populates catchUpAlerts for GM decision (initiate combat or continue).
-   */
-  private checkCatchUp(): void {
-    if (!this.state) return;
-    const catchDist = this.state.catchDistance;
+  /** Check if any quarry has reached the max escape distance and auto-escapes. */
+  private checkMaxDistanceEscape(): void {
+    if (!this.state || this.state.maxDistance <= 0) return;
+
     const quarries = this.state.participants.filter(
       (p) => p.role === "quarry" && !p.droppedOut && !p.escaped && !p.incapacitated
     );
-    const pursuers = this.state.participants.filter(
-      (p) => p.role === "pursuer" && !p.droppedOut && !p.incapacitated
-    );
 
-    for (const pur of pursuers) {
-      for (const q of quarries) {
-        const dist = q.position - pur.position;
-        if (dist <= catchDist && dist >= 0 && this.canCatch(pur, q)) {
-          this.addLog(`⚔️ ${pur.display} catches up to ${q.display}! (${dist}ft apart)`);
-          // Add alert if not already present for this pair
-          const exists = this.state.catchUpAlerts.some(
-            (a) => a.pursuerId === pur.id && a.quarryId === q.id
-          );
-          if (!exists) {
-            this.state.catchUpAlerts.push({ pursuerId: pur.id, quarryId: q.id });
-          }
-        }
+    for (const q of quarries) {
+      if (q.position >= this.state.maxDistance) {
+        q.escaped = true;
+        this.addLog(`🏃 ${q.display} reaches ${q.position}ft — auto-escaped! (max distance: ${this.state.maxDistance}ft)`);
+        this.escapeCarried(q);
       }
     }
-
-    // Check max distance escape
-    if (this.state.maxDistance > 0) {
-      for (const q of quarries) {
-        if (q.position >= this.state.maxDistance) {
-          q.escaped = true;
-          this.addLog(`🏃 ${q.display} reaches ${q.position}ft — auto-escaped! (max distance: ${this.state.maxDistance}ft)`);
-          this.escapeCarried(q);
-        }
-      }
-      this.checkChaseEnd();
-    }
+    this.checkChaseEnd();
   }
 
   /** Escape all carried/grappled participants along with the escapee. */

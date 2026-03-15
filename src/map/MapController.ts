@@ -87,6 +87,13 @@ export class MapController {
 		return this.handle?.config?.gridSize ?? null;
 	}
 
+	/** Scale of the active map (e.g. { value: 5, unit: "feet" }), or null. */
+	getScale(): { value: number; unit: string } | null {
+		const s = this.handle?.config?.scale;
+		if (!s || typeof s.value !== "number") return null;
+		return { value: s.value, unit: s.unit ?? "feet" };
+	}
+
 	/** All currently placed marker references on the map. */
 	getPlacedMarkers(): readonly MarkerReference[] {
 		return this.handle?.config?.markers ?? [];

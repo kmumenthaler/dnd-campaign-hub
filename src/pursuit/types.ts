@@ -381,7 +381,7 @@ export interface PursuitState {
   /** Whether the chase has ended. */
   ended: boolean;
   /** How the chase ended. */
-  outcome?: "escaped" | "caught" | "surrendered" | "returned-to-combat" | "gm-ended";
+  outcome?: "escaped" | "caught" | "surrendered" | "gm-ended";
 
   // ── Phase machine ──
   /** Current phase of the active participant's turn. */
@@ -408,19 +408,10 @@ export interface PursuitState {
   /** Whether any pursuer is a ranger / has Survival proficiency. */
   hasRangerPursuer: boolean;
 
-  /**
-   * Feet of separation needed for auto-catch detection.
-   * A pursuer catches a quarry when within this distance (default 5).
-   */
-  catchDistance: number;
-
   /** Maximum distance (feet) a quarry must reach to auto-escape. 0 = disabled. */
   maxDistance: number;
   /** Maximum rounds before the chase auto-ends. 0 = disabled. */
   maxRounds: number;
-
-  /** Pending catch-up alerts requiring GM decision (initiate combat or continue). */
-  catchUpAlerts: { pursuerId: string; quarryId: string }[];
 
   /** Obstacles placed on the chase lane by quarry (position-based). */
   placedObstacles: PlacedObstacle[];

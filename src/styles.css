@@ -12508,6 +12508,28 @@
 
 /* 2D Scene (replaces flat rows) */
 .dnd-pursuit-pv-scene { flex: 1; position: relative; min-height: 50vh; }
+.dnd-pursuit-pv-scene-2d { overflow: visible; }
+
+/* ── 2D Scatter Token positioning ── */
+.dnd-pursuit-pv-scatter-token { position: absolute; transform: translate(-50%, -50%); z-index: 3; transition: left 0.6s ease-in-out, top 0.6s ease-in-out; }
+
+/* ── Role region labels (pursuers / quarry) ── */
+.dnd-pursuit-pv-role-label { position: absolute; left: 0.5em; font-size: 0.5em; color: rgba(255,255,255,0.18); font-weight: 700; text-transform: uppercase; letter-spacing: 0.15em; pointer-events: none; z-index: 0; }
+.dnd-pursuit-pv-role-pursuers { top: 10%; color: rgba(255, 60, 60, 0.2); }
+.dnd-pursuit-pv-role-quarry { bottom: 10%; color: rgba(0, 220, 100, 0.2); }
+
+/* ── Range SVG overlay ── */
+.dnd-pursuit-pv-range-svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; overflow: visible; }
+.dnd-pursuit-pv-range-label { font-size: 10px; fill: #aaa; font-weight: 600; }
+
+/* ── Environment zone tag bar ── */
+.dnd-pursuit-pv-env-zones { position: absolute; top: 0.3em; right: 0.5em; display: flex; gap: 0.3em; z-index: 4; pointer-events: none; }
+.dnd-pursuit-pv-env-zone-tag { font-size: 0.5em; padding: 0.15em 0.5em; border-radius: 0.6em; background: rgba(255,255,255,0.08); color: #999; white-space: nowrap; }
+.dnd-pursuit-pv-zone-cover { background: rgba(100, 200, 100, 0.12); color: #8c8; }
+.dnd-pursuit-pv-zone-obscured { background: rgba(150, 150, 200, 0.12); color: #aac; }
+.dnd-pursuit-pv-zone-crowd { background: rgba(200, 180, 100, 0.12); color: #ca8; }
+.dnd-pursuit-pv-zone-elevation { background: rgba(100, 180, 255, 0.12); color: #8cf; }
+.dnd-pursuit-pv-zone-open { background: rgba(200, 160, 80, 0.12); color: #c96; }
 
 /* Token row — single full-height band, tokens share the entire scene height */
 .dnd-pursuit-pv-flex-row { position: absolute; top: 2%; bottom: 2%; left: 0; right: 0; overflow: visible; }
@@ -12541,6 +12563,7 @@
 
 /* Tokens */
 .dnd-pursuit-pv-token { display: flex; flex-direction: column; align-items: center; gap: 0.3em; z-index: 2; }
+.dnd-pursuit-pv-token-2d { position: relative; }
 .dnd-pursuit-pv-token-moving { animation: dnd-pursuit-token-slide 0.6s ease-in-out; }
 
 .dnd-pursuit-pv-token-circle { width: 3em; height: 3em; border-radius: 50%; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 0.15em solid rgba(255,255,255,0.3); }

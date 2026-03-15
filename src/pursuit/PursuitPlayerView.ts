@@ -152,13 +152,13 @@ export class PursuitPlayerView extends ItemView {
     }
   }
 
-  // ── Chase Lane (2D dynamic layout) ──────────────────────
+  // ── Chase Lane (2D scatter layout) ──────────────────────
 
   private renderChaseLane(container: HTMLElement, state: PursuitState) {
     const visible = state.participants.filter((p) => !p.hidden && !p.carriedBy && !p.grappledBy);
     if (visible.length === 0) return;
 
-    // Calculate position range for scaling
+    // Calculate position range for horizontal scaling
     const allPos = state.participants.filter((p) => !p.hidden).map((p) => p.position);
     const minPos = Math.min(...allPos);
     const maxPos = Math.max(...allPos);
@@ -167,17 +167,20 @@ export class PursuitPlayerView extends ItemView {
     const rangeStart = minPos - pad;
     const rangeSize = range + pad * 2;
 
-    const lane = container.createDiv({ cls: "dnd-pursuit-pv-lane" });
+    const lane = container.createDiv({ cls: "dnd-pursuit-pv-lane dnd-pursuit-pv-lane-2d" });
 
     // Direction labels
     const dirBar = lane.createDiv({ cls: "dnd-pursuit-pv-dir-bar" });
     dirBar.createEl("span", { text: "← CAUGHT", cls: "dnd-pursuit-pv-dir-caught" });
     dirBar.createEl("span", { text: "ESCAPED →", cls: "dnd-pursuit-pv-dir-escaped" });
 
-    // Scene area
-    const scene = lane.createDiv({ cls: "dnd-pursuit-pv-scene" });
+    // Scene area (2D scatter field)
+    const scene = lane.createDiv({ cls: "dnd-pursuit-pv-scene dnd-pursuit-pv-scene-2d" });
 
-    // Distance markers (bottom)
+    // ── Environment zone overlays ──
+    this.renderEnvironmentZones(scene, state);
+
+    // ── Distance markers (bottom ruler) ──
     const mStart = Math.floor(rangeStart / 30) * 30;
     const mEnd = Math.ceil((rangeStart + rangeSize) / 30) * 30;
     for (let ft = mStart; ft <= mEnd; ft += 30) {
@@ -191,24 +194,32 @@ export class PursuitPlayerView extends ItemView {
     const pursuers = visible.filter((p) => p.role === "pursuer" && !p.droppedOut);
     const escapedList = state.participants.filter((p) => !p.hidden && p.escaped);
 
-    // ── Render quarry and pursuer rows as flex columns per position ──
-    // Single token row uses full scene height — all tokens share the space
-    const tokenRow = scene.createDiv({ cls: "dnd-pursuit-pv-flex-row" });
+    // ── SVG range lines between pursuers and nearest quarry ──
+    this.renderRangeLines(scene, quarries, pursuers, rangeStart, rangeSize);
 
-    // Merge all visible tokens into combined position groups
-    const allActive = [...quarries, ...pursuers];
-    const allGroups = this.groupByPosition(allActive);
+    // ── Render tokens with 2D scatter positioning ──
+    // Pursuers occupy top band (10%-40%), quarry occupy bottom band (60%-90%)
+    // Within each band, spread tokens vertically to avoid overlap
+    const pursuerYSlots = this.assignYSlots(pursuers, 12, 40);
+    const quarryYSlots = this.assignYSlots(quarries, 60, 88);
 
-    for (const [pos, group] of allGroups) {
-      const pct = this.posToPercent(pos, rangeStart, rangeSize);
-      const col = tokenRow.createDiv({ cls: "dnd-pursuit-pv-pos-column" });
-      col.style.left = `${pct}%`;
-      // Render quarries first, then pursuers within each column
-      const colQuarries = group.filter((p) => p.role === "quarry");
-      const colPursuers = group.filter((p) => p.role === "pursuer");
-      for (const p of colQuarries) this.renderFlexToken(col, p, state);
-      for (const p of colPursuers) this.renderFlexToken(col, p, state);
+    for (const p of pursuers) {
+      const xPct = this.posToPercent(p.position, rangeStart, rangeSize);
+      const yPct = pursuerYSlots.get(p.id) ?? 25;
+      this.renderScatterToken(scene, p, state, xPct, yPct);
     }
+
+    for (const p of quarries) {
+      const xPct = this.posToPercent(p.position, rangeStart, rangeSize);
+      const yPct = quarryYSlots.get(p.id) ?? 75;
+      this.renderScatterToken(scene, p, state, xPct, yPct);
+    }
+
+    // ── Role region labels ──
+    const pursuerLabel = scene.createDiv({ cls: "dnd-pursuit-pv-role-label dnd-pursuit-pv-role-pursuers" });
+    pursuerLabel.textContent = "🔍 Pursuers";
+    const quarryLabel = scene.createDiv({ cls: "dnd-pursuit-pv-role-label dnd-pursuit-pv-role-quarry" });
+    quarryLabel.textContent = "🏃 Quarry";
 
     // ── Distance labels between pursuer and quarry positions ──
     const quarryGroups = this.groupByPosition(quarries);
@@ -248,30 +259,163 @@ export class PursuitPlayerView extends ItemView {
     }
   }
 
-  // ── Token Layout ───────────────────────────────────────────
+  // ── Environment Zones ──────────────────────────────────────
 
-  /** Group participants by their position (feet). */
-  private groupByPosition(tokens: PursuitParticipant[]): Map<number, PursuitParticipant[]> {
-    const groups = new Map<number, PursuitParticipant[]>();
-    for (const p of tokens) {
-      const existing = groups.get(p.position) ?? [];
-      existing.push(p);
-      groups.set(p.position, existing);
+  /** Render subtle background zone indicators based on environment flags. */
+  private renderEnvironmentZones(scene: HTMLElement, state: PursuitState): void {
+    const env = state.environment;
+    const tags: { label: string; cls: string }[] = [];
+    if (env.hasCover) tags.push({ label: "🛡️ Cover", cls: "dnd-pursuit-pv-zone-cover" });
+    if (env.hasObscurement) tags.push({ label: "🌫️ Obscured", cls: "dnd-pursuit-pv-zone-obscured" });
+    if (env.crowdedOrNoisy) tags.push({ label: "👥 Crowded", cls: "dnd-pursuit-pv-zone-crowd" });
+    if (env.hasElevation) tags.push({ label: "⬆️ Elevation", cls: "dnd-pursuit-pv-zone-elevation" });
+    if (env.wideOpen) tags.push({ label: "🏜️ Wide Open", cls: "dnd-pursuit-pv-zone-open" });
+    if (tags.length === 0) return;
+
+    const zoneBar = scene.createDiv({ cls: "dnd-pursuit-pv-env-zones" });
+    for (const tag of tags) {
+      zoneBar.createEl("span", { text: tag.label, cls: `dnd-pursuit-pv-env-zone-tag ${tag.cls}` });
     }
-    return groups;
   }
 
-  // ── Flex Token Rendering ───────────────────────────────────
+  // ── Range Lines (SVG) ──────────────────────────────────────
 
-  /** Render a single token into a flex column container (no absolute positioning). */
-  private renderFlexToken(
-    column: HTMLElement,
+  /** Draw SVG lines connecting each pursuer to their nearest quarry. */
+  private renderRangeLines(
+    scene: HTMLElement,
+    quarries: PursuitParticipant[],
+    pursuers: PursuitParticipant[],
+    rangeStart: number,
+    rangeSize: number,
+  ): void {
+    if (quarries.length === 0 || pursuers.length === 0) return;
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "dnd-pursuit-pv-range-svg");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+    svg.style.position = "absolute";
+    svg.style.top = "0";
+    svg.style.left = "0";
+    svg.style.pointerEvents = "none";
+    svg.style.overflow = "visible";
+
+    // Assign consistent Y slots for positioning
+    const pursuerYSlots = this.assignYSlots(pursuers, 12, 40);
+    const quarryYSlots = this.assignYSlots(quarries, 60, 88);
+
+    for (const pur of pursuers) {
+      // Find nearest quarry
+      let nearest: PursuitParticipant | null = null;
+      let nearestDist = Infinity;
+      for (const q of quarries) {
+        const d = Math.abs(q.position - pur.position);
+        if (d < nearestDist) { nearestDist = d; nearest = q; }
+      }
+      if (!nearest) continue;
+
+      const x1Pct = this.posToPercent(pur.position, rangeStart, rangeSize);
+      const y1Pct = pursuerYSlots.get(pur.id) ?? 25;
+      const x2Pct = this.posToPercent(nearest.position, rangeStart, rangeSize);
+      const y2Pct = quarryYSlots.get(nearest.id) ?? 75;
+
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", `${x1Pct}%`);
+      line.setAttribute("y1", `${y1Pct}%`);
+      line.setAttribute("x2", `${x2Pct}%`);
+      line.setAttribute("y2", `${y2Pct}%`);
+
+      // Color-code by distance
+      const dist = Math.abs(nearest.position - pur.position);
+      const strokeColor = dist <= 5 ? "rgba(220, 38, 38, 0.6)"   // Red — melee range
+        : dist <= 30 ? "rgba(234, 179, 8, 0.4)"                   // Yellow — close
+          : "rgba(100, 116, 139, 0.2)";                            // Gray — far
+      line.setAttribute("stroke", strokeColor);
+      line.setAttribute("stroke-width", dist <= 5 ? "3" : "2");
+      line.setAttribute("stroke-dasharray", dist <= 5 ? "none" : "6 4");
+
+      svg.appendChild(line);
+
+      // Range label at midpoint
+      if (dist <= 60) {
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", `${(x1Pct + x2Pct) / 2}%`);
+        text.setAttribute("y", `${(y1Pct + y2Pct) / 2}%`);
+        text.setAttribute("text-anchor", "middle");
+        text.setAttribute("dominant-baseline", "middle");
+        text.setAttribute("class", "dnd-pursuit-pv-range-label");
+        text.textContent = `${dist}ft`;
+        svg.appendChild(text);
+      }
+    }
+
+    scene.appendChild(svg);
+  }
+
+  // ── Y-Slot Assignment ──────────────────────────────────────
+
+  /**
+   * Assign vertical Y% positions for a group of tokens within a band.
+   * Tokens at the same X position get staggered vertically within the band.
+   */
+  private assignYSlots(
+    tokens: PursuitParticipant[],
+    bandMin: number,
+    bandMax: number,
+  ): Map<string, number> {
+    const slots = new Map<string, number>();
+    if (tokens.length === 0) return slots;
+
+    // Group by position to detect stacking
+    const byPos = this.groupByPosition(tokens);
+    const bandMid = (bandMin + bandMax) / 2;
+    const bandHalf = (bandMax - bandMin) / 2;
+
+    for (const [, group] of byPos) {
+      if (group.length === 1) {
+        slots.set(group[0]!.id, bandMid);
+      } else {
+        // Spread evenly within the band
+        const step = (bandMax - bandMin) / (group.length + 1);
+        for (let i = 0; i < group.length; i++) {
+          slots.set(group[i]!.id, bandMin + step * (i + 1));
+        }
+      }
+    }
+
+    // If multiple position-groups exist, add slight jitter to avoid exact same Y
+    if (byPos.size > 1) {
+      const positions = [...byPos.keys()].sort((a, b) => a - b);
+      for (let gi = 0; gi < positions.length; gi++) {
+        const group = byPos.get(positions[gi]!)!;
+        const jitter = ((gi % 3) - 1) * bandHalf * 0.15; // ±15% vertical jitter
+        for (const p of group) {
+          const base = slots.get(p.id) ?? bandMid;
+          slots.set(p.id, Math.max(bandMin, Math.min(bandMax, base + jitter)));
+        }
+      }
+    }
+
+    return slots;
+  }
+
+  // ── 2D Scatter Token Rendering ─────────────────────────────
+
+  /** Render a single token at an absolute (x%, y%) position within the scene. */
+  private renderScatterToken(
+    scene: HTMLElement,
     p: PursuitParticipant,
     state: PursuitState,
+    xPct: number,
+    yPct: number,
   ) {
     const isActive = state.started && state.participants[state.turnIndex]?.id === p.id;
 
-    const token = column.createDiv({
+    const wrapper = scene.createDiv({ cls: "dnd-pursuit-pv-scatter-token" });
+    wrapper.style.left = `${xPct}%`;
+    wrapper.style.top = `${yPct}%`;
+
+    const token = wrapper.createDiv({
       cls: `dnd-pursuit-pv-token dnd-pursuit-pv-token-2d ${p.role === "quarry" ? "dnd-pursuit-pv-token-quarry" : "dnd-pursuit-pv-token-pursuer"} ${isActive ? "dnd-pursuit-pv-token-active" : ""}`,
     });
 
@@ -325,12 +469,12 @@ export class PursuitPlayerView extends ItemView {
     if (p.turnAction) {
       const actionText = p.turnAction === "dash" ? "Dashing!"
         : p.turnAction === "hide" ? "Hiding..."
-        : p.turnAction === "search" ? "Searching..."
-        : p.turnAction === "attack" ? "Attacking!"
-        : p.turnAction === "grapple" ? "Grappling!"
-        : p.turnAction === "escape-grapple" ? "Breaking free!"
-        : p.turnAction === "create-obstacle" ? "Creating obstacle!"
-        : "";
+          : p.turnAction === "search" ? "Searching..."
+            : p.turnAction === "attack" ? "Attacking!"
+              : p.turnAction === "grapple" ? "Grappling!"
+                : p.turnAction === "escape-grapple" ? "Breaking free!"
+                  : p.turnAction === "create-obstacle" ? "Creating obstacle!"
+                    : "";
       if (actionText) {
         token.createEl("div", { text: actionText, cls: "dnd-pursuit-pv-action-badge" });
       }
@@ -509,6 +653,17 @@ export class PursuitPlayerView extends ItemView {
   private posToPercent(pos: number, rangeStart: number, rangeSize: number): number {
     if (rangeSize === 0) return 50;
     return ((pos - rangeStart) / rangeSize) * 100;
+  }
+
+  /** Group participants by their position (for stacking detection). */
+  private groupByPosition(participants: PursuitParticipant[]): Map<number, PursuitParticipant[]> {
+    const map = new Map<number, PursuitParticipant[]>();
+    for (const p of participants) {
+      const group = map.get(p.position);
+      if (group) group.push(p);
+      else map.set(p.position, [p]);
+    }
+    return map;
   }
 
   private getTokenIcon(p: PursuitParticipant): string {

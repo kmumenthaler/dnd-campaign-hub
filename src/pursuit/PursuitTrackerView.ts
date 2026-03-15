@@ -75,7 +75,6 @@ export class PursuitTrackerView extends ItemView {
     } else if (state.ended) {
       this.renderEnded(container, state);
     } else {
-      this.renderCatchUpAlerts(container, tracker, state);
       this.renderActiveTurns(container, tracker, state);
       this.renderEnvironmentSummary(container, state);
       this.renderLog(container, state);
@@ -201,44 +200,6 @@ export class PursuitTrackerView extends ItemView {
     if (state.maxRounds > 0) infoItems.push(`Max rounds: ${state.round}/${state.maxRounds}`);
     if (infoItems.length > 0) {
       header.createEl("span", { text: infoItems.join(" · "), cls: "dnd-pursuit-limits-badge" });
-    }
-  }
-
-  // ── Catch-Up Alerts ────────────────────────────────────────
-
-  private renderCatchUpAlerts(container: HTMLElement, tracker: PursuitTracker, state: PursuitState) {
-    if (!state.catchUpAlerts || state.catchUpAlerts.length === 0) return;
-
-    for (const alert of state.catchUpAlerts) {
-      const pursuer = state.participants.find((p) => p.id === alert.pursuerId);
-      const quarry = state.participants.find((p) => p.id === alert.quarryId);
-      if (!pursuer || !quarry) continue;
-
-      const alertDiv = container.createDiv({ cls: "dnd-pursuit-catch-alert" });
-      alertDiv.createEl("h4", {
-        text: `⚔️ ${pursuer.display} caught ${quarry.display}!`,
-      });
-      alertDiv.createEl("p", {
-        text: "The pursuer is within striking distance. Initiate combat or continue the chase?",
-        cls: "setting-item-description",
-      });
-
-      const btnRow = alertDiv.createDiv({ cls: "dnd-pursuit-catch-alert-btns" });
-      const combatBtn = btnRow.createEl("button", {
-        text: "⚔️ Initiate Combat",
-        cls: "dnd-pursuit-btn dnd-pursuit-btn-primary",
-      });
-      combatBtn.addEventListener("click", () => {
-        tracker.endChase("returned-to-combat");
-      });
-
-      const continueBtn = btnRow.createEl("button", {
-        text: "🏃 Continue Chase",
-        cls: "dnd-pursuit-btn",
-      });
-      continueBtn.addEventListener("click", () => {
-        tracker.dismissCatchUpAlert(alert.pursuerId, alert.quarryId);
-      });
     }
   }
 
@@ -1129,7 +1090,6 @@ export class PursuitTrackerView extends ItemView {
       escaped: "🏃 The quarry escaped!",
       caught: "⚔️ The quarry was caught!",
       surrendered: "🏳️ The chase was called off.",
-      "returned-to-combat": "⚔️ Returned to combat.",
       "gm-ended": "🏁 The chase ended.",
     };
 
