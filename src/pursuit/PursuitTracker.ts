@@ -33,11 +33,15 @@ import {
 import { computeStealthCondition, computeCarryPenalty, totalBurdenWeight, sizeDifference } from "./types";
 import { getComplicationTable } from "./complications";
 
+/** Maximum number of undo snapshots to retain. */
+const UNDO_STACK_LIMIT = 50;
+
 export class PursuitTracker {
   private app: App;
   private plugin: DndCampaignHubPlugin;
   private state: PursuitState | null = null;
   private listeners: Set<PursuitListener> = new Set();
+  private undoStack: PursuitState[] = [];
 
   constructor(app: App, plugin: DndCampaignHubPlugin) {
     this.app = app;
@@ -63,6 +67,30 @@ export class PursuitTracker {
   getState(): PursuitState | null {
     if (!this.state) return null;
     return JSON.parse(JSON.stringify(this.state));
+  }
+
+  // ── Undo ────────────────────────────────────────────────────
+
+  /** Push a snapshot of the current state onto the undo stack. */
+  private pushUndo(): void {
+    if (!this.state) return;
+    this.undoStack.push(JSON.parse(JSON.stringify(this.state)));
+    if (this.undoStack.length > UNDO_STACK_LIMIT) {
+      this.undoStack.shift();
+    }
+  }
+
+  /** Restore the most recent undo snapshot. */
+  undo(): void {
+    const prev = this.undoStack.pop();
+    if (!prev) return;
+    this.state = prev;
+    this.emit();
+  }
+
+  /** Whether there are undo snapshots available. */
+  canUndo(): boolean {
+    return this.undoStack.length > 0;
   }
 
   /** Get a participant by ID (live reference — internal use). */
@@ -215,6 +243,7 @@ export class PursuitTracker {
   /** Start the chase (initiative has been set). */
   startChase(activeName?: string): void {
     if (!this.state) return;
+    this.pushUndo();
     this.sortByInitiative();
     this.state.started = true;
     this.state.round = 1;
@@ -250,6 +279,7 @@ export class PursuitTracker {
   /** Advance to the next participant's turn. */
   nextTurn(): void {
     if (!this.state || !this.state.started || this.state.ended) return;
+    this.pushUndo();
 
     const active = this.getActive();
     if (active) active.hasActed = true;
@@ -274,36 +304,6 @@ export class PursuitTracker {
 
     this.state.turnIndex = next;
     this.skipInactiveForward();
-    this.beginTurn();
-  }
-
-  /** Go back to the previous participant's turn (GM undo). */
-  prevTurn(): void {
-    if (!this.state || !this.state.started) return;
-
-    let prev = this.state.turnIndex - 1;
-    if (prev < 0) {
-      if (this.state.round > 1) {
-        this.state.round--;
-        prev = this.state.participants.length - 1;
-      } else {
-        return;
-      }
-    }
-
-    while (prev >= 0) {
-      const p = this.state.participants[prev];
-      if (p && !p.droppedOut && !p.escaped && !p.incapacitated) break;
-      prev--;
-    }
-    if (prev < 0) prev = 0;
-
-    this.state.turnIndex = prev;
-    const p = this.getActive();
-    if (p) {
-      p.hasActed = false;
-      this.resetTurnFlags(p);
-    }
     this.beginTurn();
   }
 
@@ -564,6 +564,7 @@ export class PursuitTracker {
   /** Advance from complication-roll phase to turn-end. */
   advanceFromComplicationRoll(): void {
     if (!this.state) return;
+    this.pushUndo();
     this.state.turnPhase = "turn-end";
     this.emit();
   }
@@ -574,6 +575,7 @@ export class PursuitTracker {
     const comp = this.state.currentComplication;
     const p = this.getActive();
     if (!comp || !p || comp.resolved) return;
+    this.pushUndo();
 
     if (selectedCheck) comp.selectedCheck = selectedCheck;
     const dc = comp.selectedCheck?.dc ?? 10;
@@ -630,6 +632,7 @@ export class PursuitTracker {
   /** Advance from complication to action phase (called by view "Continue" button). */
   advanceToAction(): void {
     if (!this.state) return;
+    this.pushUndo();
     this.state.pendingInput = undefined;
     // If this complication was triggered by an obstacle mid-movement, skip to complication roll
     if ((this.state as any).__obstacleComplication) {
@@ -654,6 +657,7 @@ export class PursuitTracker {
     if (!this.state) return;
     const p = this.getActive();
     if (!p || p.turnAction !== undefined) return;
+    this.pushUndo();
 
     p.turnAction = action;
     if (action === "dash") {
@@ -810,6 +814,7 @@ export class PursuitTracker {
     const p = this.getActive();
     const pending = this.state.pendingInput;
     if (!p || !pending) return;
+    this.pushUndo();
 
     this.state.pendingInput = undefined;
 
@@ -866,6 +871,7 @@ export class PursuitTracker {
     if (!this.state) return;
     const p = this.getActive();
     if (!p || !p.hasCunningAction || p.bonusAction !== undefined) return;
+    this.pushUndo();
 
     p.bonusAction = action;
     if (action === "dash") {
@@ -882,6 +888,7 @@ export class PursuitTracker {
   /** Skip the bonus action phase. */
   skipBonusAction(): void {
     if (!this.state) return;
+    this.pushUndo();
     this.state.turnPhase = "movement";
     this.emit();
   }
@@ -904,6 +911,7 @@ export class PursuitTracker {
     if (!this.state) return;
     const p = this.getActive();
     if (!p || p.hasMoved) return;
+    this.pushUndo();
 
     const remaining = this.getRemainingMovement(p);
     const clamped = Math.min(Math.max(feet, 0), remaining);
@@ -939,10 +947,9 @@ export class PursuitTracker {
         }
       }
 
-      // Multi-step: stay in movement phase if not dashing and movement remains
-      const dashed = p.turnAction === "dash" || p.bonusAction === "dash";
+      // Multi-step: stay in movement phase if movement remains
       const newRemaining = this.getRemainingMovement(p);
-      if (!dashed && newRemaining > 0) {
+      if (newRemaining > 0) {
         this.emit();
         return;
       }
@@ -958,6 +965,7 @@ export class PursuitTracker {
     if (!this.state) return;
     const p = this.getActive();
     if (!p || p.hasMoved) return;
+    this.pushUndo();
     if (p.feetMovedThisTurn === 0) {
       this.addLog(`${p.display} stays in place (position ${p.position}ft).`);
     }
@@ -1062,6 +1070,7 @@ export class PursuitTracker {
     const carrier = this.getParticipant(carrierId);
     const target = this.getParticipant(targetId);
     if (!carrier || !target) return false;
+    this.pushUndo();
 
     // Must be same role (willing carry — hostiles require grapple)
     if (carrier.role !== target.role) {
@@ -1102,6 +1111,7 @@ export class PursuitTracker {
     if (!this.state) return;
     const carrier = this.getParticipant(carrierId);
     if (!carrier || carrier.carrying.length === 0) return;
+    this.pushUndo();
 
     if (targetId) {
       const idx = carrier.carrying.indexOf(targetId);
@@ -1174,6 +1184,7 @@ export class PursuitTracker {
   /** Break a grapple (target breaks free on their turn, or GM override). */
   breakGrapple(targetId: string): void {
     if (!this.state) return;
+    this.pushUndo();
     const target = this.getParticipant(targetId);
     if (!target || !target.grappledBy) return;
     const grappler = this.getParticipant(target.grappledBy);
@@ -1319,6 +1330,7 @@ export class PursuitTracker {
   /** Participant voluntarily drops out of the chase. */
   dropOut(id: string): void {
     if (!this.state) return;
+    this.pushUndo();
     const p = this.getParticipant(id);
     if (!p) return;
 
@@ -1350,6 +1362,7 @@ export class PursuitTracker {
   /** Apply damage to a participant. TempHP absorbs first. */
   applyDamage(id: string, amount: number): void {
     if (!this.state || amount <= 0) return;
+    this.pushUndo();
     const p = this.getParticipant(id);
     if (!p) return;
     this.applyDamageInternal(p, amount, "");
@@ -1379,6 +1392,7 @@ export class PursuitTracker {
   /** Heal a participant. */
   applyHealing(id: string, amount: number): void {
     if (!this.state || amount <= 0) return;
+    this.pushUndo();
     const p = this.getParticipant(id);
     if (!p) return;
     const before = p.currentHP;
@@ -1399,6 +1413,7 @@ export class PursuitTracker {
   /** Set temporary hit points (does not stack — takes highest). */
   setTempHP(id: string, amount: number): void {
     if (!this.state || amount < 0) return;
+    this.pushUndo();
     const p = this.getParticipant(id);
     if (!p) return;
     p.tempHP = Math.max(p.tempHP, amount);
@@ -1409,6 +1424,7 @@ export class PursuitTracker {
   /** Add a condition to a participant. */
   addCondition(id: string, condition: string): void {
     if (!this.state) return;
+    this.pushUndo();
     const p = this.getParticipant(id);
     if (!p) return;
     if (!p.conditions.includes(condition)) {
@@ -1421,6 +1437,7 @@ export class PursuitTracker {
   /** Remove a condition from a participant. */
   removeCondition(id: string, condition: string): void {
     if (!this.state) return;
+    this.pushUndo();
     const p = this.getParticipant(id);
     if (!p) return;
     const idx = p.conditions.indexOf(condition);
@@ -1434,6 +1451,7 @@ export class PursuitTracker {
   /** End the chase with a specific outcome. */
   endChase(outcome: PursuitState["outcome"]): void {
     if (!this.state) return;
+    this.pushUndo();
     this.state.ended = true;
     this.state.outcome = outcome;
     this.addLog(`Chase ended: ${outcome}.`);
@@ -1586,6 +1604,7 @@ export class PursuitTracker {
   /** Submit a PC's escape Stealth check result. */
   submitEscapeCheck(total: number): void {
     if (!this.state) return;
+    this.pushUndo();
     const queue = this.state.escapeCheckQueue;
     if (!queue || queue.length === 0) return;
 

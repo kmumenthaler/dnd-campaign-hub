@@ -109,9 +109,13 @@ export class PursuitTrackerView extends ItemView {
         tracker.startChase();
       });
     } else if (!state.ended) {
-      // Turn navigation
-      const prevBtn = toolbar.createEl("button", { text: "◀", cls: "dnd-pursuit-toolbar-btn", attr: { title: "Previous Turn" } });
-      prevBtn.addEventListener("click", () => tracker.prevTurn());
+      // Undo button
+      const undoBtn = toolbar.createEl("button", { text: "↩", cls: "dnd-pursuit-toolbar-btn", attr: { title: "Undo" } });
+      if (!tracker.canUndo()) {
+        undoBtn.disabled = true;
+        undoBtn.addClass("dnd-pursuit-btn-disabled");
+      }
+      undoBtn.addEventListener("click", () => tracker.undo());
 
       const roundLabel = toolbar.createEl("span", { cls: "dnd-pursuit-toolbar-round" });
       roundLabel.textContent = `Round ${state.round}`;
@@ -568,9 +572,6 @@ export class PursuitTrackerView extends ItemView {
 
     actions.push(
       { label: "⚔️ Attack", action: "attack", tip: "Attack, cast a spell, multiattack" },
-      { label: "🛡️ Dsng", action: "disengage", tip: "No opportunity attacks" },
-      { label: "🔄 Dodge", action: "dodge", tip: "Attacks have disadvantage" },
-      { label: "✨ Other", action: "other", tip: "Spell, Help, item, etc." },
     );
 
     // Create Obstacle: only for quarry
@@ -648,7 +649,6 @@ export class PursuitTrackerView extends ItemView {
     for (const ba of [
       { label: "🏃 Dash", action: "dash" as TurnAction, tip: "Bonus Dash" },
       { label: "🫥 Hide", action: "hide" as TurnAction, tip: "Bonus Hide (needs LoS broken)" },
-      { label: "🛡️ Dsng", action: "disengage" as TurnAction, tip: "Bonus Disengage" },
     ]) {
       const btn = btnGroup.createEl("button", {
         text: ba.label,
@@ -1781,13 +1781,10 @@ export class PursuitTrackerView extends ItemView {
       case "dash": return "🏃 Dash";
       case "hide": return "🫥 Hide";
       case "search": return "🔎 Search";
-      case "disengage": return "🛡️ Disengage";
-      case "dodge": return "🔄 Dodge";
       case "attack": return "⚔️ Attack";
       case "create-obstacle": return "🪵 Obstacle";
       case "grapple": return "🤼 Grapple";
       case "escape-grapple": return "💪 Break Free";
-      case "other": return "✨ Other";
     }
   }
 }

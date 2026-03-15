@@ -151,14 +151,15 @@ export type PursuitRole = "quarry" | "pursuer";
 
 /**
  * Action a participant can take on their turn.
- * - dash: double movement, cannot Hide
+ * - dash: double movement (split freely per 5e RAW)
  * - hide: attempt Stealth (requires LoS broken), base movement only
- * - disengage: avoid opportunity attacks, base movement only
- * - dodge: attacks have disadvantage, base movement only
  * - search: pursuers only — active Perception vs hidden quarry
- * - other: spell, Help, item, etc.
+ * - attack: attack, cast a spell, multiattack (GM resolves)
+ * - create-obstacle: quarry places obstacle for next pursuer
+ * - grapple: grapple opponent at same position
+ * - escape-grapple: break free from grapple
  */
-export type TurnAction = "dash" | "hide" | "disengage" | "dodge" | "search" | "attack" | "create-obstacle" | "grapple" | "escape-grapple" | "other";
+export type TurnAction = "dash" | "hide" | "search" | "attack" | "create-obstacle" | "grapple" | "escape-grapple";
 
 /** Advantage / disadvantage modifier for the Stealth check. */
 export type StealthCondition = "advantage" | "disadvantage" | "normal";
