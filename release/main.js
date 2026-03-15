@@ -8366,11 +8366,11 @@ var MarkerPickerModal_exports = {};
 __export(MarkerPickerModal_exports, {
   MarkerPickerModal: () => MarkerPickerModal
 });
-var import_obsidian75, SIZE_LABELS, TYPE_LABELS, TYPE_ORDER, MarkerPickerModal;
+var import_obsidian78, SIZE_LABELS, TYPE_LABELS, TYPE_ORDER, MarkerPickerModal;
 var init_MarkerPickerModal = __esm({
   "src/marker/MarkerPickerModal.ts"() {
     "use strict";
-    import_obsidian75 = require("obsidian");
+    import_obsidian78 = require("obsidian");
     init_MarkerLibraryModal();
     SIZE_LABELS = {
       tiny: "Tiny",
@@ -8388,7 +8388,7 @@ var init_MarkerPickerModal = __esm({
       other: "\u{1F4E6} Other"
     };
     TYPE_ORDER = ["player", "npc", "creature", "poi", "other"];
-    MarkerPickerModal = class extends import_obsidian75.Modal {
+    MarkerPickerModal = class extends import_obsidian78.Modal {
       constructor(app, markerLibrary, onSelect) {
         super(app);
         this.markerLibrary = markerLibrary;
@@ -8499,7 +8499,7 @@ var init_MarkerPickerModal = __esm({
               const confirmed = confirm(`Delete marker "${marker.name}"?`);
               if (confirmed) {
                 await this.markerLibrary.deleteMarker(marker.id);
-                new import_obsidian75.Notice(`Deleted marker: ${marker.name}`);
+                new import_obsidian78.Notice(`Deleted marker: ${marker.name}`);
                 this.onOpen();
               }
             });
@@ -8610,13 +8610,13 @@ var init_MarkerPickerModal = __esm({
 });
 
 // src/envasset/EnvAssetLibraryModal.ts
-var import_obsidian76, EnvAssetLibraryModal, EnvAssetImageBrowser;
+var import_obsidian79, EnvAssetLibraryModal, EnvAssetImageBrowser;
 var init_EnvAssetLibraryModal = __esm({
   "src/envasset/EnvAssetLibraryModal.ts"() {
     "use strict";
-    import_obsidian76 = require("obsidian");
+    import_obsidian79 = require("obsidian");
     init_EnvAssetTypes();
-    EnvAssetLibraryModal = class extends import_obsidian76.Modal {
+    EnvAssetLibraryModal = class extends import_obsidian79.Modal {
       constructor(app, assetLibrary, asset, onSave) {
         var _a;
         super(app);
@@ -8653,12 +8653,12 @@ var init_EnvAssetLibraryModal = __esm({
         previewWrap.createEl("h3", { text: "Preview" });
         this.previewEl = previewWrap.createDiv({ cls: "env-asset-preview" });
         this.updatePreview();
-        new import_obsidian76.Setting(contentEl).setName("Name").setDesc("A descriptive name for this asset").addText(
+        new import_obsidian79.Setting(contentEl).setName("Name").setDesc("A descriptive name for this asset").addText(
           (text) => text.setValue(this.name).setPlaceholder("e.g. Wooden Door, Boulder, \u2026").onChange((v) => {
             this.name = v;
           })
         );
-        const imgSetting = new import_obsidian76.Setting(contentEl).setName("Asset Image (PNG)").setDesc(this.imageFile ? `Selected: ${this.imageFile}` : "Choose a PNG with transparency");
+        const imgSetting = new import_obsidian79.Setting(contentEl).setName("Asset Image (PNG)").setDesc(this.imageFile ? `Selected: ${this.imageFile}` : "Choose a PNG with transparency");
         imgSetting.addButton(
           (btn) => btn.setButtonText("Browse Vault").onClick(() => {
             const pngFiles = this.app.vault.getFiles().filter(
@@ -8705,9 +8705,9 @@ var init_EnvAssetLibraryModal = __esm({
                 imgSetting.setDesc(`Selected: ${this.imageFile}`);
                 this.readImageDimensions(dest);
                 this.updatePreview();
-                new import_obsidian76.Notice(`Image saved to ${dest}`);
+                new import_obsidian79.Notice(`Image saved to ${dest}`);
               } catch (err) {
-                new import_obsidian76.Notice("Failed to import image");
+                new import_obsidian79.Notice("Failed to import image");
                 console.error(err);
               }
             });
@@ -8723,26 +8723,26 @@ var init_EnvAssetLibraryModal = __esm({
             })
           );
         }
-        new import_obsidian76.Setting(contentEl).setName("Default Width (px)").setDesc("Initial width when placed on the map").addText(
+        new import_obsidian79.Setting(contentEl).setName("Default Width (px)").setDesc("Initial width when placed on the map").addText(
           (text) => text.setValue(String(this.defaultWidth)).setPlaceholder("70").onChange((v) => {
             this.defaultWidth = Math.max(10, parseInt(v) || 70);
           })
         );
-        new import_obsidian76.Setting(contentEl).setName("Default Height (px)").setDesc("Initial height when placed on the map").addText(
+        new import_obsidian79.Setting(contentEl).setName("Default Height (px)").setDesc("Initial height when placed on the map").addText(
           (text) => text.setValue(String(this.defaultHeight)).setPlaceholder("70").onChange((v) => {
             this.defaultHeight = Math.max(10, parseInt(v) || 70);
           })
         );
         this.scatterConfigEl = contentEl.createDiv({ cls: "env-asset-scatter-config" });
         this.scatterConfigEl.createEl("h3", { text: "\u{1FAA8} Scatter Configuration" });
-        new import_obsidian76.Setting(this.scatterConfigEl).setName("Blocks Vision").setDesc("If enabled, a wall segment is generated along the bounding box").addToggle(
+        new import_obsidian79.Setting(this.scatterConfigEl).setName("Blocks Vision").setDesc("If enabled, a wall segment is generated along the bounding box").addToggle(
           (toggle) => toggle.setValue(this.scatterBlocksVision).onChange((v) => {
             this.scatterBlocksVision = v;
             this.toggleScatterHeightControl();
           })
         );
         this.scatterHeightEl = this.scatterConfigEl.createDiv();
-        new import_obsidian76.Setting(this.scatterHeightEl).setName("Wall Height (ft)").setDesc("Effective height of the scatter for partial cover (5 = normal wall)").addText(
+        new import_obsidian79.Setting(this.scatterHeightEl).setName("Wall Height (ft)").setDesc("Effective height of the scatter for partial cover (5 = normal wall)").addText(
           (t) => t.setValue(String(this.scatterWallHeight)).setPlaceholder("5").onChange((v) => {
             this.scatterWallHeight = Math.max(0, parseInt(v) || 5);
           })
@@ -8810,11 +8810,11 @@ var init_EnvAssetLibraryModal = __esm({
       async save() {
         var _a, _b;
         if (!this.name.trim()) {
-          new import_obsidian76.Notice("Enter a name for the asset");
+          new import_obsidian79.Notice("Enter a name for the asset");
           return;
         }
         if (!this.imageFile) {
-          new import_obsidian76.Notice("Select an image for the asset");
+          new import_obsidian79.Notice("Select an image for the asset");
           return;
         }
         const now = Date.now();
@@ -8843,7 +8843,7 @@ var init_EnvAssetLibraryModal = __esm({
         this.contentEl.empty();
       }
     };
-    EnvAssetImageBrowser = class extends import_obsidian76.Modal {
+    EnvAssetImageBrowser = class extends import_obsidian79.Modal {
       constructor(app, files, onSelect) {
         super(app);
         this.files = files;
@@ -8921,18 +8921,18 @@ var EnvAssetPickerModal_exports = {};
 __export(EnvAssetPickerModal_exports, {
   EnvAssetPickerModal: () => EnvAssetPickerModal
 });
-var import_obsidian77, CATEGORY_LABELS, CATEGORY_ORDER, EnvAssetPickerModal;
+var import_obsidian80, CATEGORY_LABELS, CATEGORY_ORDER, EnvAssetPickerModal;
 var init_EnvAssetPickerModal = __esm({
   "src/envasset/EnvAssetPickerModal.ts"() {
     "use strict";
-    import_obsidian77 = require("obsidian");
+    import_obsidian80 = require("obsidian");
     init_EnvAssetLibraryModal();
     init_EnvAssetTypes();
     CATEGORY_LABELS = {
       scatter: "\u{1FAA8} Scatter"
     };
     CATEGORY_ORDER = ["scatter"];
-    EnvAssetPickerModal = class extends import_obsidian77.Modal {
+    EnvAssetPickerModal = class extends import_obsidian80.Modal {
       constructor(app, assetLibrary, onSelect) {
         super(app);
         this.assetLibrary = assetLibrary;
@@ -9026,7 +9026,7 @@ var init_EnvAssetPickerModal = __esm({
               e.stopPropagation();
               if (confirm(`Delete asset "${asset.name}"?`)) {
                 await this.assetLibrary.deleteAsset(asset.id);
-                new import_obsidian77.Notice(`Deleted asset: ${asset.name}`);
+                new import_obsidian80.Notice(`Deleted asset: ${asset.name}`);
                 this.onOpen();
               }
             });
@@ -9131,16 +9131,16 @@ __export(PoiModals_exports, {
   PoiPickerModal: () => PoiPickerModal,
   PoiPickerMultiModal: () => PoiPickerMultiModal
 });
-var import_obsidian78, PoiEditModal, PoiPickerModal, PoiCreationModal, PoiPickerMultiModal;
+var import_obsidian81, PoiEditModal, PoiPickerModal, PoiCreationModal, PoiPickerMultiModal;
 var init_PoiModals = __esm({
   "src/poi/PoiModals.ts"() {
     "use strict";
-    import_obsidian78 = require("obsidian");
+    import_obsidian81 = require("obsidian");
     init_types();
     init_migration();
     init_templates();
     init_YamlFrontmatter();
-    PoiEditModal = class extends import_obsidian78.Modal {
+    PoiEditModal = class extends import_obsidian81.Modal {
       constructor(app, filePath) {
         super(app);
         this.name = "";
@@ -9160,14 +9160,14 @@ var init_PoiModals = __esm({
         contentEl.addClass("poi-creation-modal");
         contentEl.createEl("h2", { text: "\u270F\uFE0F Edit Point of Interest" });
         const file = this.app.vault.getAbstractFileByPath(this.filePath);
-        if (!(file instanceof import_obsidian78.TFile)) {
-          new import_obsidian78.Notice("PoI file not found");
+        if (!(file instanceof import_obsidian81.TFile)) {
+          new import_obsidian81.Notice("PoI file not found");
           this.close();
           return;
         }
         const cache = this.app.metadataCache.getFileCache(file);
         if (!(cache == null ? void 0 : cache.frontmatter)) {
-          new import_obsidian78.Notice("Invalid PoI file: missing frontmatter");
+          new import_obsidian81.Notice("Invalid PoI file: missing frontmatter");
           this.close();
           return;
         }
@@ -9181,10 +9181,10 @@ var init_PoiModals = __esm({
         this.dangerLevel = cache.frontmatter["danger-level"] || "";
         const tagsArray = cache.frontmatter.tags || [];
         this.tags = Array.isArray(tagsArray) ? tagsArray.join(", ") : "";
-        new import_obsidian78.Setting(contentEl).setName("Name").setDesc("Name of this location").addText(
+        new import_obsidian81.Setting(contentEl).setName("Name").setDesc("Name of this location").addText(
           (text) => text.setPlaceholder("Waterdeep").setValue(this.name).onChange((value) => this.name = value)
         );
-        new import_obsidian78.Setting(contentEl).setName("Type").setDesc("Category of this point of interest (icon will be set automatically)").addDropdown((dropdown) => {
+        new import_obsidian81.Setting(contentEl).setName("Type").setDesc("Category of this point of interest (icon will be set automatically)").addDropdown((dropdown) => {
           POI_TYPES.forEach((type) => {
             dropdown.addOption(type.value, `${type.icon} ${type.label}`);
           });
@@ -9197,22 +9197,22 @@ var init_PoiModals = __esm({
             }
           });
         });
-        new import_obsidian78.Setting(contentEl).setName("Region").setDesc("Geographic region or area").addText(
+        new import_obsidian81.Setting(contentEl).setName("Region").setDesc("Geographic region or area").addText(
           (text) => text.setPlaceholder("Sword Coast").setValue(this.region).onChange((value) => this.region = value)
         );
-        new import_obsidian78.Setting(contentEl).setName("Discovery Status").setDesc("Has the party discovered this location?").addToggle(
+        new import_obsidian81.Setting(contentEl).setName("Discovery Status").setDesc("Has the party discovered this location?").addToggle(
           (toggle) => toggle.setValue(this.discovered).onChange((value) => this.discovered = value)
         );
-        new import_obsidian78.Setting(contentEl).setName("Visited").setDesc("Has the party visited this location?").addToggle(
+        new import_obsidian81.Setting(contentEl).setName("Visited").setDesc("Has the party visited this location?").addToggle(
           (toggle) => toggle.setValue(this.visited).onChange((value) => this.visited = value)
         );
-        new import_obsidian78.Setting(contentEl).setName("Quest Related").setDesc("Is this location related to an active quest?").addToggle(
+        new import_obsidian81.Setting(contentEl).setName("Quest Related").setDesc("Is this location related to an active quest?").addToggle(
           (toggle) => toggle.setValue(this.questRelated).onChange((value) => this.questRelated = value)
         );
-        new import_obsidian78.Setting(contentEl).setName("Danger Level").setDesc("Threat level or difficulty rating").addText(
+        new import_obsidian81.Setting(contentEl).setName("Danger Level").setDesc("Threat level or difficulty rating").addText(
           (text) => text.setPlaceholder("Low, Medium, High, Deadly").setValue(this.dangerLevel).onChange((value) => this.dangerLevel = value)
         );
-        new import_obsidian78.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags for organization").addText(
+        new import_obsidian81.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags for organization").addText(
           (text) => text.setPlaceholder("city, waterdeep, port").setValue(this.tags).onChange((value) => this.tags = value)
         );
         const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
@@ -9227,13 +9227,13 @@ var init_PoiModals = __esm({
       }
       async savePoi() {
         if (!this.name) {
-          new import_obsidian78.Notice("Please enter a name for the Point of Interest");
+          new import_obsidian81.Notice("Please enter a name for the Point of Interest");
           return;
         }
         try {
           const file = this.app.vault.getAbstractFileByPath(this.filePath);
-          if (!(file instanceof import_obsidian78.TFile)) {
-            new import_obsidian78.Notice("PoI file not found");
+          if (!(file instanceof import_obsidian81.TFile)) {
+            new import_obsidian81.Notice("PoI file not found");
             return;
           }
           let content = await this.app.vault.read(file);
@@ -9271,15 +9271,15 @@ var init_PoiModals = __esm({
             `**Status:** ${statusText}`
           );
           await this.app.vault.modify(file, content);
-          new import_obsidian78.Notice(`Updated Point of Interest: ${this.name}`);
+          new import_obsidian81.Notice(`Updated Point of Interest: ${this.name}`);
           this.close();
         } catch (error2) {
           console.error("Error updating PoI:", error2);
-          new import_obsidian78.Notice("Failed to update Point of Interest");
+          new import_obsidian81.Notice("Failed to update Point of Interest");
         }
       }
     };
-    PoiPickerModal = class extends import_obsidian78.Modal {
+    PoiPickerModal = class extends import_obsidian81.Modal {
       constructor(app, campaignFolder, hexCoords, onSelect) {
         super(app);
         this.campaignFolder = campaignFolder;
@@ -9377,7 +9377,7 @@ var init_PoiModals = __esm({
         return pois;
       }
     };
-    PoiCreationModal = class extends import_obsidian78.Modal {
+    PoiCreationModal = class extends import_obsidian81.Modal {
       constructor(app, campaignFolder, hexCoords, onSelect) {
         super(app);
         this.name = "";
@@ -9394,10 +9394,10 @@ var init_PoiModals = __esm({
         contentEl.empty();
         contentEl.addClass("poi-creation-modal");
         contentEl.createEl("h2", { text: "\u2728 Create Point of Interest" });
-        new import_obsidian78.Setting(contentEl).setName("Name").setDesc("Name of this location").addText(
+        new import_obsidian81.Setting(contentEl).setName("Name").setDesc("Name of this location").addText(
           (text) => text.setPlaceholder("Waterdeep").setValue(this.name).onChange((value) => this.name = value)
         );
-        new import_obsidian78.Setting(contentEl).setName("Type").setDesc("Category of this point of interest (icon will be set automatically)").addDropdown((dropdown) => {
+        new import_obsidian81.Setting(contentEl).setName("Type").setDesc("Category of this point of interest (icon will be set automatically)").addDropdown((dropdown) => {
           POI_TYPES.forEach((type) => {
             dropdown.addOption(type.value, `${type.icon} ${type.label}`);
           });
@@ -9410,10 +9410,10 @@ var init_PoiModals = __esm({
             }
           });
         });
-        new import_obsidian78.Setting(contentEl).setName("Region").setDesc("Geographic region or area").addText(
+        new import_obsidian81.Setting(contentEl).setName("Region").setDesc("Geographic region or area").addText(
           (text) => text.setPlaceholder("Sword Coast").setValue(this.region).onChange((value) => this.region = value)
         );
-        new import_obsidian78.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags for organization").addText(
+        new import_obsidian81.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags for organization").addText(
           (text) => text.setPlaceholder("city, waterdeep, port").setValue(this.tags).onChange((value) => this.tags = value)
         );
         const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
@@ -9428,7 +9428,7 @@ var init_PoiModals = __esm({
       }
       async createPoi() {
         if (!this.name) {
-          new import_obsidian78.Notice("Please enter a name for the Point of Interest");
+          new import_obsidian81.Notice("Please enter a name for the Point of Interest");
           return;
         }
         try {
@@ -9440,7 +9440,7 @@ var init_PoiModals = __esm({
           const sanitizedName = this.name.replace(/[\\/:*?"<>|]/g, "_");
           const filePath = `${locationsFolder}/${sanitizedName}.md`;
           if (await this.app.vault.adapter.exists(filePath)) {
-            new import_obsidian78.Notice(`A Point of Interest named "${this.name}" already exists`);
+            new import_obsidian81.Notice(`A Point of Interest named "${this.name}" already exists`);
             return;
           }
           const campaignName = this.campaignFolder.split("/").pop() || "";
@@ -9479,16 +9479,16 @@ var init_PoiModals = __esm({
             "danger-level": ""
           }));
           const file = await this.app.vault.create(filePath, content);
-          new import_obsidian78.Notice(`Created Point of Interest: ${this.name}`);
+          new import_obsidian81.Notice(`Created Point of Interest: ${this.name}`);
           this.onSelect(file.path);
           this.close();
         } catch (error2) {
           console.error("Error creating PoI:", error2);
-          new import_obsidian78.Notice("Failed to create Point of Interest");
+          new import_obsidian81.Notice("Failed to create Point of Interest");
         }
       }
     };
-    PoiPickerMultiModal = class extends import_obsidian78.Modal {
+    PoiPickerMultiModal = class extends import_obsidian81.Modal {
       constructor(app, editor, campaignName) {
         super(app);
         this.availablePois = [];
@@ -9632,14 +9632,14 @@ var init_PoiModals = __esm({
        */
       insertCodeBlock() {
         if (this.selectedPois.length === 0) {
-          new import_obsidian78.Notice("Please select at least one PoI");
+          new import_obsidian81.Notice("Please select at least one PoI");
           return;
         }
         const sortedPois = [...this.selectedPois].sort((a, b) => a.order - b.order);
         const lines = sortedPois.map((poi) => `- ${poi.name}`);
         const codeBlock = "```dnd-poi\n" + lines.join("\n") + "\n```";
         this.editor.replaceSelection(codeBlock);
-        new import_obsidian78.Notice(`\u2705 Inserted ${sortedPois.length} PoI${sortedPois.length > 1 ? "s" : ""}`);
+        new import_obsidian81.Notice(`\u2705 Inserted ${sortedPois.length} PoI${sortedPois.length > 1 ? "s" : ""}`);
         this.close();
       }
     };
@@ -9653,7 +9653,7 @@ __export(EnvAssetContextMenu_exports, {
 });
 function showEnvAssetContextMenu(app, event, instance, definition, assetLibrary, callbacks) {
   var _a;
-  const menu = new import_obsidian79.Menu();
+  const menu = new import_obsidian82.Menu();
   const label = (_a = definition == null ? void 0 : definition.name) != null ? _a : "Env Asset";
   menu.addItem(
     (item) => item.setTitle(`\u{1F4E6} ${label}`).setDisabled(true)
@@ -9689,7 +9689,7 @@ function showEnvAssetContextMenu(app, event, instance, definition, assetLibrary,
       instance.locked = !instance.locked;
       callbacks.onUpdate(instance);
       callbacks.onRedraw();
-      new import_obsidian79.Notice(instance.locked ? `${label} locked` : `${label} unlocked`);
+      new import_obsidian82.Notice(instance.locked ? `${label} locked` : `${label} unlocked`);
       callbacks.onSave();
     })
   );
@@ -9731,11 +9731,11 @@ function showEnvAssetContextMenu(app, event, instance, definition, assetLibrary,
   );
   menu.showAtMouseEvent(event);
 }
-var import_obsidian79;
+var import_obsidian82;
 var init_EnvAssetContextMenu = __esm({
   "src/envasset/EnvAssetContextMenu.ts"() {
     "use strict";
-    import_obsidian79 = require("obsidian");
+    import_obsidian82 = require("obsidian");
   }
 });
 
@@ -9764,7 +9764,7 @@ function renderEncounterTableBlock(source, el, ctx, app, plugin) {
             filePath.replace(".md", ""),
             ctx.sourcePath
           );
-          if (resolved instanceof import_obsidian83.TFile) {
+          if (resolved instanceof import_obsidian86.TFile) {
             tableFile = resolved;
           }
         }
@@ -9924,11 +9924,11 @@ function parseEncounterTable(content) {
   }
   return rows;
 }
-var import_obsidian83;
+var import_obsidian86;
 var init_EncounterTableBlock = __esm({
   "src/encounter/EncounterTableBlock.ts"() {
     "use strict";
-    import_obsidian83 = require("obsidian");
+    import_obsidian86 = require("obsidian");
   }
 });
 
@@ -9937,12 +9937,12 @@ var InsertEncounterTableModal_exports = {};
 __export(InsertEncounterTableModal_exports, {
   InsertEncounterTableModal: () => InsertEncounterTableModal
 });
-var import_obsidian84, InsertEncounterTableModal;
+var import_obsidian87, InsertEncounterTableModal;
 var init_InsertEncounterTableModal = __esm({
   "src/encounter/InsertEncounterTableModal.ts"() {
     "use strict";
-    import_obsidian84 = require("obsidian");
-    InsertEncounterTableModal = class extends import_obsidian84.Modal {
+    import_obsidian87 = require("obsidian");
+    InsertEncounterTableModal = class extends import_obsidian87.Modal {
       constructor(app, plugin, onSelect) {
         super(app);
         this.availableTables = [];
@@ -10064,7 +10064,7 @@ var init_InsertEncounterTableModal = __esm({
         const linkPath = table.file.path.replace(/\.md$/, "");
         const codeblock = "```dnd-encounter-table\n[[" + linkPath + "]]\n```";
         this.onSelect(codeblock);
-        new import_obsidian84.Notice(`\u2705 Inserted encounter table: ${table.name}`);
+        new import_obsidian87.Notice(`\u2705 Inserted encounter table: ${table.name}`);
         this.close();
       }
     };
@@ -10076,14 +10076,14 @@ var RerollEncounterModal_exports = {};
 __export(RerollEncounterModal_exports, {
   RerollEncounterModal: () => RerollEncounterModal
 });
-var import_obsidian85, RerollEncounterModal;
+var import_obsidian88, RerollEncounterModal;
 var init_RerollEncounterModal = __esm({
   "src/encounter/RerollEncounterModal.ts"() {
     "use strict";
-    import_obsidian85 = require("obsidian");
+    import_obsidian88 = require("obsidian");
     init_SRDApiClient();
     init_EncounterGenerator();
-    RerollEncounterModal = class extends import_obsidian85.Modal {
+    RerollEncounterModal = class extends import_obsidian88.Modal {
       constructor(app, plugin, file) {
         super(app);
         this.rows = [];
@@ -10158,7 +10158,7 @@ var init_RerollEncounterModal = __esm({
           meta.createEl("span", { text: ` \xB7 ${row.xp} XP` });
           const btnContainer = item.createDiv({ cls: "reroll-entry-actions" });
           let rerollBtnComponent = null;
-          new import_obsidian85.ButtonComponent(btnContainer).setButtonText("\u{1F504} Reroll").onClick(async () => {
+          new import_obsidian88.ButtonComponent(btnContainer).setButtonText("\u{1F504} Reroll").onClick(async () => {
             await this.rerollEntry(i, btnContainer);
           }).then((btn) => {
             rerollBtnComponent = btn;
@@ -10187,7 +10187,7 @@ var init_RerollEncounterModal = __esm({
             row.difficulty || "Medium"
           );
           if (!newEntry) {
-            new import_obsidian85.Notice("\u26A0\uFE0F Could not generate a replacement. No monsters available for this environment/level.");
+            new import_obsidian88.Notice("\u26A0\uFE0F Could not generate a replacement. No monsters available for this environment/level.");
             return;
           }
           await this.updateNoteContent(row, newEntry);
@@ -10200,10 +10200,10 @@ var init_RerollEncounterModal = __esm({
             monsterNames: newEntry.monsters.map((m) => m.name)
           };
           this.renderEntryList();
-          new import_obsidian85.Notice(`\u2705 Rerolled entry ${row.roll}: ${newEncounterText}`);
+          new import_obsidian88.Notice(`\u2705 Rerolled entry ${row.roll}: ${newEncounterText}`);
         } catch (error2) {
           console.error("[RerollEncounter] Error:", error2);
-          new import_obsidian85.Notice("\u274C Error rerolling encounter. Check console for details.");
+          new import_obsidian88.Notice("\u274C Error rerolling encounter. Check console for details.");
         } finally {
           if (button) {
             button.disabled = false;
@@ -10313,7 +10313,7 @@ __export(main_exports, {
   default: () => DndCampaignHubPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian86 = require("obsidian");
+var import_obsidian89 = require("obsidian");
 init_templates();
 
 // src/map/MapManager.ts
@@ -10514,6 +10514,13 @@ var _MapController = class _MapController {
   getGridSize() {
     var _a, _b, _c;
     return (_c = (_b = (_a = this.handle) == null ? void 0 : _a.config) == null ? void 0 : _b.gridSize) != null ? _c : null;
+  }
+  /** Scale of the active map (e.g. { value: 5, unit: "feet" }), or null. */
+  getScale() {
+    var _a, _b, _c;
+    const s = (_b = (_a = this.handle) == null ? void 0 : _a.config) == null ? void 0 : _b.scale;
+    if (!s || typeof s.value !== "number") return null;
+    return { value: s.value, unit: (_c = s.unit) != null ? _c : "feet" };
   }
   /** All currently placed marker references on the map. */
   getPlacedMarkers() {
@@ -22343,6 +22350,8 @@ var GM_MAP_VIEW_TYPE = "dnd-gm-map-view";
 var COMBAT_TRACKER_VIEW_TYPE = "dnd-combat-tracker";
 var COMBAT_PLAYER_VIEW_TYPE = "dnd-combat-player-view";
 var IDLE_SCREEN_VIEW_TYPE = "dnd-idle-screen-view";
+var PURSUIT_TRACKER_VIEW_TYPE = "dnd-pursuit-tracker";
+var PURSUIT_PLAYER_VIEW_TYPE = "dnd-pursuit-player-view";
 
 // src/main.ts
 init_YamlFrontmatter();
@@ -22542,7 +22551,8 @@ var EncounterBuilder = class {
           name: m.name,
           level: m.level,
           hp: m.maxHp,
-          ac: m.ac
+          ac: m.ac,
+          cr: m.cr
         });
       }
     } catch (error2) {
@@ -22963,6 +22973,16 @@ var EncounterBuilder = class {
       if (fm.actions && Array.isArray(fm.actions)) {
         for (const action of fm.actions) {
           if (!action.name) continue;
+          const actionName = String(action.name).toLowerCase();
+          if (actionName.includes("multiattack")) continue;
+          let rechargeWeight = 1;
+          const rechargeMatch = actionName.match(/recharge\s+(\d+)(?:\s*[-–]\s*(\d+))?/i);
+          if (rechargeMatch) {
+            const low = parseInt(rechargeMatch[1]);
+            const high = rechargeMatch[2] ? parseInt(rechargeMatch[2]) : 6;
+            const rechargeChance = (high - low + 1) / 6;
+            rechargeWeight = (1 + 3 * rechargeChance) / 4;
+          }
           let actionDPR = 0;
           let actionAttackBonus = 0;
           let usedStructuredData = false;
@@ -22991,21 +23011,32 @@ var EncounterBuilder = class {
             }
             actionDPR = diceDamage + damageBonus;
             if (actionDPR > 0) {
-              totalDPR += actionDPR;
-              attackCount++;
+              if (rechargeMatch) {
+                totalDPR += actionDPR * rechargeWeight;
+              } else {
+                totalDPR += actionDPR;
+                attackCount++;
+              }
               usedStructuredData = true;
             }
           }
-          if (usedStructuredData) {
-            continue;
-          }
+          if (usedStructuredData) continue;
           if (action.desc && typeof action.desc === "string") {
             const desc = action.desc;
+            let descRechargeWeight = rechargeWeight;
+            if (descRechargeWeight === 1) {
+              const descRechargeMatch = desc.match(/recharge\s+(\d+)(?:\s*[-–]\s*(\d+))?/i);
+              if (descRechargeMatch) {
+                const low = parseInt(descRechargeMatch[1]);
+                const high = descRechargeMatch[2] ? parseInt(descRechargeMatch[2]) : 6;
+                descRechargeWeight = (1 + 3 * ((high - low + 1) / 6)) / 4;
+              }
+            }
             const attackMatch = desc.match(/[+\-]\d+\s+to\s+hit/i);
             if (attackMatch) {
               const bonusMatch = attackMatch[0].match(/[+\-]\d+/);
               if (bonusMatch) {
-                attackCount++;
+                if (descRechargeWeight === 1) attackCount++;
                 const bonus = parseInt(bonusMatch[0]);
                 if (bonus > highestAttackBonus) highestAttackBonus = bonus;
               }
@@ -23014,26 +23045,31 @@ var EncounterBuilder = class {
             const avgDamageMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/i);
             if (avgDamageMatch) {
               const avgDamage = parseInt(avgDamageMatch[1]);
-              totalDPR += avgDamage;
+              if (descRechargeWeight < 1) {
+                totalDPR += avgDamage * descRechargeWeight;
+              } else {
+                totalDPR += avgDamage;
+              }
               damageFound = true;
-              if (!attackMatch) attackCount++;
+              if (!attackMatch && descRechargeWeight === 1) attackCount++;
             } else {
               const diceMatch = desc.match(/(\d+)d(\d+)\s*([+\-]?\s*\d+)?/i);
               if (diceMatch) {
-                if (!attackMatch) attackCount++;
+                if (!attackMatch && descRechargeWeight === 1) attackCount++;
                 const numDice = parseInt(diceMatch[1]);
                 const dieSize = parseInt(diceMatch[2]);
                 const modifier = diceMatch[3] ? parseInt(diceMatch[3].replace(/\s/g, "")) : 0;
                 const avgDamage = Math.floor(numDice * (dieSize + 1) / 2) + modifier;
-                totalDPR += avgDamage;
+                if (descRechargeWeight < 1) {
+                  totalDPR += avgDamage * descRechargeWeight;
+                } else {
+                  totalDPR += avgDamage;
+                }
                 damageFound = true;
               }
             }
-            if (!damageFound) {
-            }
           }
         }
-      } else {
       }
       let multiattackMultiplier = 1;
       if (fm.actions && Array.isArray(fm.actions)) {
@@ -23052,17 +23088,129 @@ var EncounterBuilder = class {
       if (totalDPR > 0 && multiattackMultiplier > 1) {
         totalDPR *= multiattackMultiplier;
       }
+      if (fm.legendary_actions && Array.isArray(fm.legendary_actions)) {
+        let legendaryDPR = 0;
+        let legendaryActionsPerRound = 3;
+        const legendaryDesc = fm.legendary_description;
+        if (typeof legendaryDesc === "string") {
+          const budgetMatch = legendaryDesc.match(/(\d+)\s+legendary\s+action/i);
+          if (budgetMatch) {
+            legendaryActionsPerRound = parseInt(budgetMatch[1]);
+          }
+        }
+        const parsedLegActions = [];
+        for (const la of fm.legendary_actions) {
+          const name = la.name ? String(la.name).toLowerCase() : "";
+          const desc = la.desc ? String(la.desc) : "";
+          let cost = 1;
+          const costMatch = (name + " " + desc).match(/costs?\s+(\d+)\s+action/i);
+          if (costMatch) cost = parseInt(costMatch[1]);
+          let laDPR = 0;
+          const avgMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/i);
+          if (avgMatch) {
+            laDPR = parseInt(avgMatch[1]);
+          } else {
+            const diceMatch = desc.match(/(\d+)d(\d+)\s*([+\-]?\s*\d+)?/i);
+            if (diceMatch) {
+              const n = parseInt(diceMatch[1]);
+              const d = parseInt(diceMatch[2]);
+              const m = diceMatch[3] ? parseInt(diceMatch[3].replace(/\s/g, "")) : 0;
+              laDPR = Math.floor(n * (d + 1) / 2) + m;
+            }
+          }
+          if (laDPR > 0) {
+            parsedLegActions.push({ dpr: laDPR, cost });
+          }
+        }
+        if (parsedLegActions.length > 0) {
+          parsedLegActions.sort((a, b) => b.dpr / b.cost - a.dpr / a.cost);
+          let budget = legendaryActionsPerRound;
+          for (const la of parsedLegActions) {
+            while (budget >= la.cost) {
+              legendaryDPR += la.dpr;
+              budget -= la.cost;
+            }
+          }
+          totalDPR += legendaryDPR;
+        }
+      }
+      if (fm.bonus_actions && Array.isArray(fm.bonus_actions)) {
+        let bestBonusDPR = 0;
+        for (const ba of fm.bonus_actions) {
+          const desc = ba.desc ? String(ba.desc) : "";
+          let baDPR = 0;
+          const avgMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/i);
+          if (avgMatch) {
+            baDPR = parseInt(avgMatch[1]);
+          } else {
+            const diceMatch = desc.match(/(\d+)d(\d+)\s*([+\-]?\s*\d+)?/i);
+            if (diceMatch) {
+              const n = parseInt(diceMatch[1]);
+              const d = parseInt(diceMatch[2]);
+              const m = diceMatch[3] ? parseInt(diceMatch[3].replace(/\s/g, "")) : 0;
+              baDPR = Math.floor(n * (d + 1) / 2) + m;
+            }
+          }
+          if (baDPR > bestBonusDPR) bestBonusDPR = baDPR;
+        }
+        totalDPR += bestBonusDPR;
+      }
+      let effectiveHP = hp || 1;
+      const resistanceStr = typeof fm.damage_resistances === "string" ? fm.damage_resistances : "";
+      const immunityStr = typeof fm.damage_immunities === "string" ? fm.damage_immunities : "";
+      const physicalTypes = ["bludgeoning", "piercing", "slashing"];
+      const hasPhysicalResistance = physicalTypes.some((t) => resistanceStr.toLowerCase().includes(t));
+      const hasPhysicalImmunity = physicalTypes.some((t) => immunityStr.toLowerCase().includes(t));
+      const allDamageTypes = ["acid", "cold", "fire", "force", "lightning", "necrotic", "poison", "psychic", "radiant", "thunder"];
+      const elementalResistCount = allDamageTypes.filter((t) => resistanceStr.toLowerCase().includes(t)).length;
+      const elementalImmuneCount = allDamageTypes.filter((t) => immunityStr.toLowerCase().includes(t)).length;
+      let damageReductionFraction = 0;
+      if (hasPhysicalImmunity) {
+        damageReductionFraction += 0.5;
+      } else if (hasPhysicalResistance) {
+        damageReductionFraction += 0.25;
+      }
+      damageReductionFraction += elementalResistCount * 0.025;
+      damageReductionFraction += elementalImmuneCount * 0.05;
+      damageReductionFraction = Math.min(damageReductionFraction, 0.6);
+      if (damageReductionFraction > 0) {
+        effectiveHP = Math.round(effectiveHP / (1 - damageReductionFraction));
+      }
+      let attackBonusAdjustment = 0;
+      let hasPackTactics = false;
+      if (fm.traits && Array.isArray(fm.traits)) {
+        for (const trait of fm.traits) {
+          const name = trait.name ? String(trait.name).toLowerCase() : "";
+          const desc = trait.desc ? String(trait.desc).toLowerCase() : "";
+          const traitText = name + " " + desc;
+          if (traitText.includes("pack tactics")) {
+            hasPackTactics = true;
+          }
+          if (name.includes("reckless")) {
+            attackBonusAdjustment = Math.max(attackBonusAdjustment, 4);
+          }
+          if (traitText.includes("surprise attack") || traitText.includes("ambush")) {
+            const surpriseMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\)/i);
+            if (surpriseMatch) {
+              const surpriseDmg = parseInt(surpriseMatch[1]);
+              totalDPR += Math.round(surpriseDmg * 0.25);
+            }
+          }
+        }
+      }
       if (totalDPR === 0) {
         return null;
       }
       if (highestAttackBonus === 0) {
         highestAttackBonus = Math.max(2, Math.floor(totalDPR / 5));
       }
+      highestAttackBonus += attackBonusAdjustment;
       const result = {
-        hp: hp || 1,
+        hp: effectiveHP,
         ac: ac || 10,
         dpr: totalDPR,
-        attackBonus: highestAttackBonus
+        attackBonus: highestAttackBonus,
+        hasPackTactics
       };
       return result;
     } catch (error2) {
@@ -23163,6 +23311,7 @@ var EncounterBuilder = class {
     let friendlyTotalDPR = 0;
     let friendlyTotalAttackBonus = 0;
     let friendlyCount = 0;
+    const packTacticsCreatures = [];
     for (const creature of this.creatures) {
       const count = creature.count || 1;
       if (creature.isFriendly) {
@@ -23197,21 +23346,25 @@ var EncounterBuilder = class {
       let realStats = null;
       if (creature.path && typeof creature.path === "string") {
         realStats = await this.parseStatblockStats(creature.path);
-      } else {
       }
       const crStats = this.getCRStats(creature.cr);
       const hp = creature.hp || (realStats == null ? void 0 : realStats.hp) || crStats.hp;
       const ac = creature.ac || (realStats == null ? void 0 : realStats.ac) || crStats.ac;
       const dpr = (realStats == null ? void 0 : realStats.dpr) || crStats.dpr;
       const attackBonus = (realStats == null ? void 0 : realStats.attackBonus) || crStats.attackBonus;
-      const dprSource = (realStats == null ? void 0 : realStats.dpr) ? "\u{1F4CA} STATBLOCK" : "\u{1F4D6} CR_TABLE";
-      const hpSource = (realStats == null ? void 0 : realStats.hp) ? "\u{1F4CA} STATBLOCK" : creature.hp ? "\u270F\uFE0F MANUAL" : "\u{1F4D6} CR_TABLE";
-      const acSource = (realStats == null ? void 0 : realStats.ac) ? "\u{1F4CA} STATBLOCK" : creature.ac ? "\u270F\uFE0F MANUAL" : "\u{1F4D6} CR_TABLE";
+      if (realStats == null ? void 0 : realStats.hasPackTactics) {
+        packTacticsCreatures.push({ attackBonus, count });
+      }
       enemyTotalHP += hp * count;
       enemyTotalAC += ac * count;
       enemyTotalDPR += dpr * count;
       enemyTotalAttackBonus += attackBonus * count;
       enemyCount += count;
+    }
+    if (enemyCount > 1) {
+      for (const pt of packTacticsCreatures) {
+        enemyTotalAttackBonus += 4 * pt.count;
+      }
     }
     const avgEnemyAC = enemyCount > 0 ? enemyTotalAC / enemyCount : 13;
     const avgEnemyAttackBonus = enemyCount > 0 ? enemyTotalAttackBonus / enemyCount : 3;
@@ -23928,7 +24081,11 @@ var EncounterBuilderModal = class extends import_obsidian31.Modal {
         nameEl.setText(memberName);
         const statsEl = memberItem.createSpan({ cls: "dnd-creature-stats" });
         const stats = [];
-        stats.push(`Level: ${memberData.level}`);
+        if (memberData.cr) {
+          stats.push(`CR: ${memberData.cr}`);
+        } else {
+          stats.push(`Level: ${memberData.level}`);
+        }
         stats.push(`HP: ${memberData.hp}`);
         stats.push(`AC: ${memberData.ac}`);
         statsEl.setText(` | ${stats.join(" | ")}`);
@@ -24771,160 +24928,24 @@ creature: ${newName}
     }
   }
   /**
-   * Parse statblock YAML to extract real combat stats
-   * Returns hp, ac, dpr (damage per round), and attackBonus
+   * Parse statblock YAML to extract real combat stats.
+   * Delegates to EncounterBuilder to avoid code duplication.
    */
   async parseStatblockStats(filePath) {
-    try {
-      const file = this.app.vault.getAbstractFileByPath(filePath);
-      if (!(file instanceof import_obsidian31.TFile)) {
-        return null;
-      }
-      const cache = this.app.metadataCache.getFileCache(file);
-      if (!(cache == null ? void 0 : cache.frontmatter)) {
-        return null;
-      }
-      const fm = cache.frontmatter;
-      const hp = this.parseHP(fm.hp);
-      const ac = this.parseAC(fm.ac);
-      let totalDPR = 0;
-      let highestAttackBonus = 0;
-      let attackCount = 0;
-      if (fm.actions && Array.isArray(fm.actions)) {
-        for (const action of fm.actions) {
-          if (!action.name) continue;
-          let actionDPR = 0;
-          let actionAttackBonus = 0;
-          let usedStructuredData = false;
-          if (typeof action.attack_bonus === "number") {
-            actionAttackBonus = action.attack_bonus;
-            if (actionAttackBonus > highestAttackBonus) {
-              highestAttackBonus = actionAttackBonus;
-            }
-            usedStructuredData = true;
-          }
-          if (action.damage_dice || action.damage_bonus) {
-            let diceDamage = 0;
-            if (action.damage_dice && typeof action.damage_dice === "string") {
-              const diceMatch = action.damage_dice.match(/(\d+)d(\d+)/i);
-              if (diceMatch) {
-                const numDice = parseInt(diceMatch[1]);
-                const dieSize = parseInt(diceMatch[2]);
-                diceDamage = numDice * ((dieSize + 1) / 2);
-              }
-            }
-            let damageBonus = 0;
-            if (typeof action.damage_bonus === "number") {
-              damageBonus = action.damage_bonus;
-            } else if (typeof action.damage_bonus === "string") {
-              damageBonus = parseInt(action.damage_bonus) || 0;
-            }
-            actionDPR = diceDamage + damageBonus;
-            if (actionDPR > 0) {
-              totalDPR += actionDPR;
-              attackCount++;
-              usedStructuredData = true;
-            }
-          }
-          if (usedStructuredData) {
-            continue;
-          }
-          if (action.desc && typeof action.desc === "string") {
-            const desc = action.desc;
-            const attackMatch = desc.match(/[+\-]\d+\s+to\s+hit/i);
-            if (attackMatch) {
-              const bonusMatch = attackMatch[0].match(/[+\-]\d+/);
-              if (bonusMatch) {
-                attackCount++;
-                const bonus = parseInt(bonusMatch[0]);
-                if (bonus > highestAttackBonus) highestAttackBonus = bonus;
-              }
-            }
-            const damagePatterns = [
-              /(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/gi,
-              // "4 (1d6+1)"
-              /\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/gi,
-              // "(1d6+1)"
-              /(\d+)d(\d+)\s*([+\-]?\s*\d+)?(?!\))/gi
-              // "1d6+1"
-            ];
-            let damageFound = false;
-            const avgDamageMatch = desc.match(/(\d+)\s*\((\d+)d(\d+)\s*([+\-]?\s*\d+)?\)/i);
-            if (avgDamageMatch) {
-              const avgDamage = parseInt(avgDamageMatch[1]);
-              totalDPR += avgDamage;
-              damageFound = true;
-              if (!attackMatch) attackCount++;
-            } else {
-              const diceMatch = desc.match(/(\d+)d(\d+)\s*([+\-]?\s*\d+)?/i);
-              if (diceMatch) {
-                if (!attackMatch) attackCount++;
-                const numDice = parseInt(diceMatch[1]);
-                const dieSize = parseInt(diceMatch[2]);
-                const modifier = diceMatch[3] ? parseInt(diceMatch[3].replace(/\s/g, "")) : 0;
-                const avgDamage = Math.floor(numDice * (dieSize + 1) / 2) + modifier;
-                totalDPR += avgDamage;
-                damageFound = true;
-              }
-            }
-            if (!damageFound) {
-            }
-          }
-        }
-      } else {
-      }
-      let multiattackMultiplier = 1;
-      if (fm.actions && Array.isArray(fm.actions)) {
-        const multiattack = fm.actions.find(
-          (a) => a.name && a.name.toLowerCase().includes("multiattack")
-        );
-        if (multiattack == null ? void 0 : multiattack.desc) {
-          const countMatch = multiattack.desc.match(/makes?\s+(two|three|four|five|\d+)\s+.*?attack/i);
-          if (countMatch) {
-            const countStr = countMatch[1].toLowerCase();
-            const countMap = { "two": 2, "three": 3, "four": 4, "five": 5 };
-            multiattackMultiplier = countMap[countStr] || parseInt(countStr) || 1;
-          }
-        }
-      }
-      if (totalDPR > 0 && multiattackMultiplier > 1) {
-        totalDPR *= multiattackMultiplier;
-      }
-      if (totalDPR === 0) {
-        return null;
-      }
-      if (highestAttackBonus === 0) {
-        highestAttackBonus = Math.max(2, Math.floor(totalDPR / 5));
-      }
-      const result = {
-        hp: hp || 1,
-        ac: ac || 10,
-        dpr: totalDPR,
-        attackBonus: highestAttackBonus
-      };
-      return result;
-    } catch (error2) {
-      console.error("[Parser] Error parsing statblock:", filePath, error2);
-      return null;
-    }
+    this.syncEncounterBuilder();
+    return this.encounterBuilder.parseStatblockStats(filePath);
   }
   /**
    * Parse HP from various formats: "45 (6d10+12)" or just "45"
    */
   parseHP(hpStr) {
-    if (typeof hpStr === "number") return hpStr;
-    if (typeof hpStr !== "string") return 0;
-    const match = hpStr.match(/^(\d+)/);
-    return match && match[1] ? parseInt(match[1]) : 0;
+    return this.encounterBuilder.parseHP(hpStr);
   }
   /**
    * Parse AC from various formats: "13 (natural armor)" or just "13" or number
    */
   parseAC(acStr) {
-    if (typeof acStr === "number") return acStr;
-    if (typeof acStr !== "string") return 10;
-    const match = acStr.match(/^(\d+)/);
-    return match && match[1] ? parseInt(match[1]) : 10;
+    return this.encounterBuilder.parseAC(acStr);
   }
   /**
    * Consolidate trap elements (creatures with [SRD] path and initiative numbers)
@@ -25001,6 +25022,7 @@ creature: ${newName}
     let friendlyTotalDPR = 0;
     let friendlyTotalAttackBonus = 0;
     let friendlyCount = 0;
+    const packTacticsCreatures = [];
     for (const creature of this.creatures) {
       const count = creature.count || 1;
       if (creature.isFriendly) {
@@ -25035,21 +25057,25 @@ creature: ${newName}
       let realStats = null;
       if (creature.path && typeof creature.path === "string") {
         realStats = await this.parseStatblockStats(creature.path);
-      } else {
       }
       const crStats = this.getCRStats(creature.cr);
       const hp = creature.hp || (realStats == null ? void 0 : realStats.hp) || crStats.hp;
       const ac = creature.ac || (realStats == null ? void 0 : realStats.ac) || crStats.ac;
       const dpr = (realStats == null ? void 0 : realStats.dpr) || crStats.dpr;
       const attackBonus = (realStats == null ? void 0 : realStats.attackBonus) || crStats.attackBonus;
-      const dprSource = (realStats == null ? void 0 : realStats.dpr) ? "\u{1F4CA} STATBLOCK" : "\u{1F4D6} CR_TABLE";
-      const hpSource = (realStats == null ? void 0 : realStats.hp) ? "\u{1F4CA} STATBLOCK" : creature.hp ? "\u270F\uFE0F MANUAL" : "\u{1F4D6} CR_TABLE";
-      const acSource = (realStats == null ? void 0 : realStats.ac) ? "\u{1F4CA} STATBLOCK" : creature.ac ? "\u270F\uFE0F MANUAL" : "\u{1F4D6} CR_TABLE";
+      if (realStats == null ? void 0 : realStats.hasPackTactics) {
+        packTacticsCreatures.push({ attackBonus, count });
+      }
       enemyTotalHP += hp * count;
       enemyTotalAC += ac * count;
       enemyTotalDPR += dpr * count;
       enemyTotalAttackBonus += attackBonus * count;
       enemyCount += count;
+    }
+    if (enemyCount > 1) {
+      for (const pt of packTacticsCreatures) {
+        enemyTotalAttackBonus += 4 * pt.count;
+      }
     }
     const avgEnemyAC = enemyCount > 0 ? enemyTotalAC / enemyCount : 13;
     const avgEnemyAttackBonus = enemyCount > 0 ? enemyTotalAttackBonus / enemyCount : 3;
@@ -26184,6 +26210,7 @@ var _CombatTrackerView = class _CombatTrackerView extends import_obsidian33.Item
   constructor(leaf, plugin) {
     super(leaf);
     this.unsubscribe = null;
+    this._projectionUnsub = null;
     this.plugin = plugin;
   }
   getViewType() {
@@ -26196,13 +26223,19 @@ var _CombatTrackerView = class _CombatTrackerView extends import_obsidian33.Item
     return "swords";
   }
   async onOpen() {
+    var _a, _b;
     this.unsubscribe = this.plugin.combatTracker.onChange(() => this.render());
+    this._projectionUnsub = (_b = (_a = this.plugin.projectionManager) == null ? void 0 : _a.onChange(() => this.render())) != null ? _b : null;
     await this.render();
   }
   onClose() {
     if (this.unsubscribe) {
       this.unsubscribe();
       this.unsubscribe = null;
+    }
+    if (this._projectionUnsub) {
+      this._projectionUnsub();
+      this._projectionUnsub = null;
     }
     return Promise.resolve();
   }
@@ -26261,6 +26294,14 @@ var _CombatTrackerView = class _CombatTrackerView extends import_obsidian33.Item
       roundLabel.textContent = `Round ${state.round}`;
       const nextBtn = toolbar.createEl("button", { text: "\u25B6", cls: "dnd-ct-toolbar-btn dnd-ct-toolbar-btn-primary", attr: { title: "Next Turn" } });
       nextBtn.addEventListener("click", () => tracker.nextTurn());
+      const chaseBtn = toolbar.createEl("button", {
+        text: "\u{1F3C3}",
+        cls: "dnd-ct-toolbar-btn",
+        attr: { title: "Start Chase from Combat" }
+      });
+      chaseBtn.addEventListener("click", () => {
+        this.plugin.startPursuitFromCombat();
+      });
     }
     toolbar.createDiv({ cls: "dnd-ct-toolbar-spacer" });
     const pm = this.plugin.projectionManager;
@@ -26274,10 +26315,9 @@ var _CombatTrackerView = class _CombatTrackerView extends import_obsidian33.Item
       if (hasCombatProjection && pm) {
         for (const proj of pm.getLiveProjections()) {
           if (proj.contentType === "combat") {
-            pm.stopProjectionOnScreen(screenKey(proj.screen));
+            void pm.stopProjectionOnScreen(screenKey(proj.screen));
           }
         }
-        this.render();
       } else {
         this.openPlayerView(e);
       }
@@ -26539,14 +26579,12 @@ var _CombatTrackerView = class _CombatTrackerView extends import_obsidian33.Item
         menu2.addItem(
           (item) => item.setTitle(`\u{1F504} Switch ${screen.label} to Combat View`).onClick(async () => {
             await pm.projectCombatView(screen);
-            this.render();
           })
         );
         if (evt) menu2.showAtMouseEvent(evt);
         else menu2.showAtPosition({ x: 100, y: 100 });
       } else {
         await pm.projectCombatView(screen);
-        this.render();
       }
       return;
     }
@@ -26559,14 +26597,12 @@ var _CombatTrackerView = class _CombatTrackerView extends import_obsidian33.Item
         menu.addItem(
           (item) => item.setTitle(`\u{1F504} Switch ${screen.label} to Combat View`).onClick(async () => {
             await pm.projectCombatView(screen);
-            this.render();
           })
         );
       } else {
         menu.addItem(
           (item) => item.setTitle(label).onClick(async () => {
             await pm.projectCombatView(screen);
-            this.render();
           })
         );
       }
@@ -27677,7 +27713,7 @@ var PartyManager = class _PartyManager {
     return {
       name: fm.name || file.basename,
       notePath,
-      level: parseInt(fm.level) || (fm.cr ? 0 : 1),
+      level: parseInt(fm.level) || (fm.cr != null ? this.estimateLevelFromCR(String(fm.cr)) : 1),
       hp: parseInt(fm.hp) || parseInt(fm.hp_max) || 0,
       maxHp: parseInt(fm.hp_max) || parseInt(fm.hp) || 0,
       thp: parseInt(fm.thp) || 0,
@@ -27691,6 +27727,44 @@ var PartyManager = class _PartyManager {
       role: role || "pc",
       cr: fm.cr != null ? String(fm.cr) : void 0
     };
+  }
+  /**
+   * Estimate an effective PC level from a creature's CR.
+   * Used when a companion NPC has CR but no explicit level field.
+   * Based on D&D 5e guidelines: CR roughly maps to the level of a party
+   * that would find the creature a medium challenge (1:1).
+   */
+  estimateLevelFromCR(cr) {
+    const crMap = {
+      "0": 1,
+      "1/8": 1,
+      "1/4": 1,
+      "1/2": 1,
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4,
+      "5": 5,
+      "6": 6,
+      "7": 7,
+      "8": 8,
+      "9": 9,
+      "10": 10,
+      "11": 11,
+      "12": 12,
+      "13": 13,
+      "14": 14,
+      "15": 15,
+      "16": 16,
+      "17": 17,
+      "18": 18,
+      "19": 19,
+      "20": 20
+    };
+    const trimmed = cr.trim();
+    if (crMap[trimmed] !== void 0) return crMap[trimmed];
+    const numeric = parseFloat(trimmed);
+    return isNaN(numeric) ? 1 : Math.max(1, Math.round(numeric));
   }
   /**
    * Get or create a campaign party (convention: "<CampaignName> Party").
@@ -44185,17 +44259,17 @@ var PDFDocument = (
         options = {};
       }
       return __awaiter(this, void 0, void 0, function() {
-        var _a, ignoreEncryption, _b, parseSpeed, _c, throwOnInvalidObject, _d, updateMetadata, _e, capNumbers, bytes, context;
+        var _a, ignoreEncryption, _b, parseSpeed2, _c, throwOnInvalidObject, _d, updateMetadata, _e, capNumbers, bytes, context;
         return __generator(this, function(_f) {
           switch (_f.label) {
             case 0:
-              _a = options.ignoreEncryption, ignoreEncryption = _a === void 0 ? false : _a, _b = options.parseSpeed, parseSpeed = _b === void 0 ? ParseSpeeds.Slow : _b, _c = options.throwOnInvalidObject, throwOnInvalidObject = _c === void 0 ? false : _c, _d = options.updateMetadata, updateMetadata = _d === void 0 ? true : _d, _e = options.capNumbers, capNumbers = _e === void 0 ? false : _e;
+              _a = options.ignoreEncryption, ignoreEncryption = _a === void 0 ? false : _a, _b = options.parseSpeed, parseSpeed2 = _b === void 0 ? ParseSpeeds.Slow : _b, _c = options.throwOnInvalidObject, throwOnInvalidObject = _c === void 0 ? false : _c, _d = options.updateMetadata, updateMetadata = _d === void 0 ? true : _d, _e = options.capNumbers, capNumbers = _e === void 0 ? false : _e;
               assertIs(pdf, "pdf", ["string", Uint8Array, ArrayBuffer]);
               assertIs(ignoreEncryption, "ignoreEncryption", ["boolean"]);
-              assertIs(parseSpeed, "parseSpeed", ["number"]);
+              assertIs(parseSpeed2, "parseSpeed", ["number"]);
               assertIs(throwOnInvalidObject, "throwOnInvalidObject", ["boolean"]);
               bytes = toUint8Array(pdf);
-              return [4, PDFParser_default.forBytesWithOptions(bytes, parseSpeed, throwOnInvalidObject, capNumbers).parseDocument()];
+              return [4, PDFParser_default.forBytesWithOptions(bytes, parseSpeed2, throwOnInvalidObject, capNumbers).parseDocument()];
             case 1:
               context = _f.sent();
               return [2, new PDFDocument2(context, ignoreEncryption, updateMetadata)];
@@ -50708,14 +50782,7 @@ var SessionCreationModal = class extends import_obsidian48.Modal {
           isGM = roleMatch[1].toLowerCase() === "gm";
         }
       }
-      const templatePath = isGM ? "z_Templates/session-gm.md" : "z_Templates/session-player.md";
-      const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
-      let sessionContent;
-      if (templateFile instanceof import_obsidian48.TFile) {
-        sessionContent = await this.app.vault.read(templateFile);
-      } else {
-        sessionContent = isGM ? SESSION_GM_TEMPLATE : SESSION_PLAYER_TEMPLATE;
-      }
+      let sessionContent = isGM ? SESSION_GM_TEMPLATE : SESSION_PLAYER_TEMPLATE;
       const dateStr = this.sessionDate.replace(/-/g, "");
       const fileName = `${nextNumber.toString().padStart(3, "0")}_${dateStr}.md`;
       const filePath = `${campaignPath}/${fileName}`;
@@ -51769,13 +51836,7 @@ var CampaignCreationModal = class extends import_obsidian51.Modal {
       for (const folder of campaignFolders) {
         await this.plugin.ensureFolderExists(folder);
       }
-      const worldTemplate = this.app.vault.getAbstractFileByPath("z_Templates/world.md");
-      let worldContent;
-      if (worldTemplate instanceof import_obsidian51.TFile) {
-        worldContent = await this.app.vault.read(worldTemplate);
-      } else {
-        worldContent = WORLD_TEMPLATE;
-      }
+      let worldContent = WORLD_TEMPLATE;
       const worldTemplateVersion = TEMPLATE_VERSIONS.world || "1.3.0";
       worldContent = updateYamlFrontmatter(worldContent, (fm) => ({
         ...fm,
@@ -52847,14 +52908,7 @@ ${problemText}
   }
   async createMainAdventureNote(filePath, campaignName, worldName, currentDate) {
     const adventureTemplateVersion = TEMPLATE_VERSIONS.adventure || "1.4.0";
-    const templatePath = "z_Templates/Frontmatter - Adventure.md";
-    const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
-    let adventureContent;
-    if (templateFile instanceof import_obsidian54.TFile) {
-      adventureContent = await this.app.vault.read(templateFile);
-    } else {
-      adventureContent = ADVENTURE_TEMPLATE;
-    }
+    let adventureContent = ADVENTURE_TEMPLATE;
     adventureContent = updateYamlFrontmatter(adventureContent, (fm) => ({
       ...fm,
       type: "adventure",
@@ -57377,14 +57431,7 @@ var FactionCreationModal = class extends import_obsidian59.Modal {
           worldName = worldMatch[1].trim();
         }
       }
-      const templatePath = "z_Templates/Frontmatter - Faction.md";
-      const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
-      let factionContent;
-      if (templateFile instanceof import_obsidian59.TFile) {
-        factionContent = await this.app.vault.read(templateFile);
-      } else {
-        factionContent = FACTION_TEMPLATE;
-      }
+      let factionContent = FACTION_TEMPLATE;
       const currentDate = (/* @__PURE__ */ new Date()).toISOString().split("T")[0] || (/* @__PURE__ */ new Date()).toISOString().substring(0, 10);
       const factionTemplateVersion = TEMPLATE_VERSIONS.faction || "1.1.0";
       factionContent = updateYamlFrontmatter(factionContent, (fm) => ({
@@ -63534,7 +63581,12 @@ var ProjectionManager = class {
   constructor(plugin) {
     /** All currently active projections, keyed by screenKey. */
     this.activeProjections = /* @__PURE__ */ new Map();
+    /** Listeners notified whenever projection state changes. */
+    this._changeCallbacks = /* @__PURE__ */ new Set();
+    /** Periodic health-check timer that prunes dead projections. */
+    this._healthCheckInterval = null;
     this.plugin = plugin;
+    this._healthCheckInterval = setInterval(() => this._healthCheck(), 3e3);
   }
   /**
    * Compat getter — returns the first live projection, or null.
@@ -63547,6 +63599,85 @@ var ProjectionManager = class {
     }
     return null;
   }
+  // ── Change notification ─────────────────────────────────────
+  /**
+   * Register a callback invoked whenever projection state changes.
+   * Returns an unsubscribe function.
+   */
+  onChange(cb) {
+    this._changeCallbacks.add(cb);
+    return () => {
+      this._changeCallbacks.delete(cb);
+    };
+  }
+  /** Notify all listeners of a projection state change. */
+  _notifyChange() {
+    for (const cb of this._changeCallbacks) {
+      try {
+        cb();
+      } catch (e) {
+        console.error("ProjectionManager onChange error:", e);
+      }
+    }
+  }
+  /** Periodic health check — prune dead leaves and notify if state changed. */
+  _healthCheck() {
+    const sizeBefore = this.activeProjections.size;
+    this.pruneDeadProjections();
+    if (this.activeProjections.size !== sizeBefore) {
+      this._notifyChange();
+    }
+  }
+  /** Clean up timers and listeners. Call from plugin.onunload(). */
+  destroy() {
+    if (this._healthCheckInterval) {
+      clearInterval(this._healthCheckInterval);
+      this._healthCheckInterval = null;
+    }
+    this._changeCallbacks.clear();
+  }
+  // ── Crossfade Utility ───────────────────────────────────────
+  /**
+   * Smoothly crossfade (fade-to-black-then-fade-in) from the current view
+   * to a new view type on the given leaf. The overlay is attached to
+   * the leaf's containerEl so it survives the view swap.
+   */
+  async crossfadeOnLeaf(leaf, viewType, viewState) {
+    var _a, _b, _c;
+    const container = (_a = leaf.containerEl) != null ? _a : null;
+    if (!(container == null ? void 0 : container.isConnected)) {
+      await leaf.setViewState({ type: viewType, active: true, state: viewState });
+      return;
+    }
+    const doc = (_b = container.ownerDocument) != null ? _b : document;
+    const fade = doc.createElement("div");
+    fade.className = "dnd-projection-crossfade";
+    container.appendChild(fade);
+    void fade.offsetWidth;
+    fade.classList.add("active");
+    await new Promise((r) => setTimeout(r, 450));
+    await leaf.setViewState({ type: viewType, active: true, state: viewState });
+    await new Promise((r) => setTimeout(r, 150));
+    const win = (_c = container.ownerDocument) == null ? void 0 : _c.defaultView;
+    if (win && win !== window) {
+      this.hidePopoutChrome(win);
+    }
+    fade.classList.remove("active");
+    setTimeout(() => {
+      try {
+        fade.remove();
+      } catch (e) {
+      }
+    }, 600);
+  }
+  /** Find the first projection matching a given content type. */
+  getProjectionByContentType(type) {
+    this.pruneDeadProjections();
+    for (const [sKey, proj] of this.activeProjections) {
+      if (proj.contentType === type) return { screenKey: sKey, state: proj };
+    }
+    return null;
+  }
   // ── Public API ────────────────────────────────────────────────────
   /**
    * Project a map to a specific screen.
@@ -63556,11 +63687,11 @@ var ProjectionManager = class {
    */
   async project(mapId, mapConfig, imageResourcePath, screen, mode = "battle") {
     const sKey = screenKey(screen);
+    const spm = this.plugin.sessionProjectionManager;
+    const isManaged = !!((spm == null ? void 0 : spm.isActive()) && spm.isManagedScreen(sKey));
     const existing = this.activeProjections.get(sKey);
     if (existing && this.isProjectionAliveOnScreen(sKey)) {
-      if (existing.contentType === "combat") {
-        this.stopProjectionOnScreen(sKey);
-      } else {
+      if (existing.contentType === "map") {
         const pv = existing.leaf.view;
         if (pv && typeof pv.swapMap === "function") {
           existing.mapId = mapId;
@@ -63577,25 +63708,36 @@ var ProjectionManager = class {
           } else {
             pv.swapMap(mapId, mapConfig, imageResourcePath);
           }
+          this._notifyChange();
           new import_obsidian67.Notice(`Projection updated \u2014 ${mapConfig.name || mapId}`);
           return;
         }
       }
+      this.activeProjections.delete(sKey);
+      if (!isManaged) {
+        try {
+          existing.leaf.detach();
+        } catch (e) {
+        }
+      }
     }
-    const spm = this.plugin.sessionProjectionManager;
-    const managedLeaf = (spm == null ? void 0 : spm.isActive()) ? spm.getManagedLeaf(sKey) : null;
+    const managedLeaf = isManaged ? spm.getManagedLeaf(sKey) : null;
     const popoutLeaf = managedLeaf != null ? managedLeaf : this.plugin.app.workspace.openPopoutLeaf({
       size: { width: screen.width, height: screen.height }
     });
-    await popoutLeaf.setViewState({
-      type: PLAYER_MAP_VIEW_TYPE,
-      active: true,
-      state: {
+    if (isManaged) {
+      await this.crossfadeOnLeaf(popoutLeaf, PLAYER_MAP_VIEW_TYPE, {
         mapId,
         mapConfig,
         imageResourcePath
-      }
-    });
+      });
+    } else {
+      await popoutLeaf.setViewState({
+        type: PLAYER_MAP_VIEW_TYPE,
+        active: true,
+        state: { mapId, mapConfig, imageResourcePath }
+      });
+    }
     this.activeProjections.set(sKey, { leaf: popoutLeaf, screen, mapId, mode, contentType: "map" });
     if (spm == null ? void 0 : spm.isActive()) spm.setScreenStatus(sKey, "map");
     this.plugin.settings.lastProjectionScreenKey = sKey;
@@ -63621,26 +63763,36 @@ var ProjectionManager = class {
         }
       }
     }, 300);
+    this._notifyChange();
     new import_obsidian67.Notice(`Projecting to ${screen.label} (${mode === "battle" ? "Battle" : "Free"})`);
   }
   /**
    * Project the Combat Tracker player view to a specific screen.
-   * Stops any existing projection on that screen first.
+   * Uses crossfade on managed screens for smooth transitions.
    */
   async projectCombatView(screen) {
     const sKey = screenKey(screen);
-    if (this.isProjectionAliveOnScreen(sKey)) {
-      this.stopProjectionOnScreen(sKey);
-    }
     const spm = this.plugin.sessionProjectionManager;
-    const managedLeaf = (spm == null ? void 0 : spm.isActive()) ? spm.getManagedLeaf(sKey) : null;
+    const isManaged = !!((spm == null ? void 0 : spm.isActive()) && spm.isManagedScreen(sKey));
+    const managedLeaf = isManaged ? spm.getManagedLeaf(sKey) : null;
+    const existing = this.activeProjections.get(sKey);
+    if (existing) {
+      this.activeProjections.delete(sKey);
+      if (!isManaged) {
+        try {
+          existing.leaf.detach();
+        } catch (e) {
+        }
+      }
+    }
     const popoutLeaf = managedLeaf != null ? managedLeaf : this.plugin.app.workspace.openPopoutLeaf({
       size: { width: screen.width, height: screen.height }
     });
-    await popoutLeaf.setViewState({
-      type: COMBAT_PLAYER_VIEW_TYPE,
-      active: true
-    });
+    if (isManaged) {
+      await this.crossfadeOnLeaf(popoutLeaf, COMBAT_PLAYER_VIEW_TYPE);
+    } else {
+      await popoutLeaf.setViewState({ type: COMBAT_PLAYER_VIEW_TYPE, active: true });
+    }
     this.activeProjections.set(sKey, {
       leaf: popoutLeaf,
       screen,
@@ -63654,7 +63806,51 @@ var ProjectionManager = class {
         await this.positionAndFullscreen(popoutLeaf, screen);
       }, 300);
     }
+    this._notifyChange();
     new import_obsidian67.Notice(`\u2694\uFE0F Combat view projected to ${screen.label}`);
+  }
+  /**
+   * Project the Pursuit / Chase player view to a specific screen.
+   * Uses crossfade on managed screens for smooth transitions.
+   */
+  async projectPursuitView(screen) {
+    const sKey = screenKey(screen);
+    const spm = this.plugin.sessionProjectionManager;
+    const isManaged = !!((spm == null ? void 0 : spm.isActive()) && spm.isManagedScreen(sKey));
+    const managedLeaf = isManaged ? spm.getManagedLeaf(sKey) : null;
+    const existing = this.activeProjections.get(sKey);
+    if (existing) {
+      this.activeProjections.delete(sKey);
+      if (!isManaged) {
+        try {
+          existing.leaf.detach();
+        } catch (e) {
+        }
+      }
+    }
+    const popoutLeaf = managedLeaf != null ? managedLeaf : this.plugin.app.workspace.openPopoutLeaf({
+      size: { width: screen.width, height: screen.height }
+    });
+    if (isManaged) {
+      await this.crossfadeOnLeaf(popoutLeaf, PURSUIT_PLAYER_VIEW_TYPE);
+    } else {
+      await popoutLeaf.setViewState({ type: PURSUIT_PLAYER_VIEW_TYPE, active: true });
+    }
+    this.activeProjections.set(sKey, {
+      leaf: popoutLeaf,
+      screen,
+      mapId: "",
+      mode: "free",
+      contentType: "pursuit"
+    });
+    if (spm == null ? void 0 : spm.isActive()) spm.setScreenStatus(sKey, "pursuit");
+    if (!managedLeaf) {
+      setTimeout(async () => {
+        await this.positionAndFullscreen(popoutLeaf, screen);
+      }, 300);
+    }
+    this._notifyChange();
+    new import_obsidian67.Notice(`\u{1F3C3} Pursuit view projected to ${screen.label}`);
   }
   /**
    * Swap the map on a specific projection identified by its screenKey.
@@ -63689,17 +63885,19 @@ var ProjectionManager = class {
     const first = this.activeProjections.keys().next().value;
     if (first) await this.swapMapOnScreen(first, mapId, mapConfig, imageResourcePath);
   }
-  /** Stop a specific projection by screenKey.
-   *  If a session is active and this screen is managed, transitions to idle
-   *  instead of closing the popout window.
+  /**
+   * Stop a specific projection by screenKey.
+   * Managed screens get a smooth crossfade back to idle;
+   * non-managed screens are detached.
    */
-  stopProjectionOnScreen(sKey) {
+  async stopProjectionOnScreen(sKey) {
     const proj = this.activeProjections.get(sKey);
     if (!proj) return;
     const spm = this.plugin.sessionProjectionManager;
     if ((spm == null ? void 0 : spm.isActive()) && spm.isManagedScreen(sKey)) {
       this.activeProjections.delete(sKey);
-      spm.transitionToIdle(sKey);
+      this._notifyChange();
+      await spm.transitionToIdle(sKey);
       new import_obsidian67.Notice(`Returned to idle \u2014 ${proj.screen.label}`);
       return;
     }
@@ -63708,16 +63906,18 @@ var ProjectionManager = class {
     } catch (e) {
     }
     this.activeProjections.delete(sKey);
+    this._notifyChange();
     new import_obsidian67.Notice(`Projection stopped \u2014 ${proj.screen.label}`);
   }
   /** Stop all active projections.
    *  Managed screens transition to idle; non-managed screens are detached.
    */
-  stopAllProjections() {
+  async stopAllProjections() {
     const spm = this.plugin.sessionProjectionManager;
+    const transitions = [];
     for (const [sKey, proj] of this.activeProjections) {
       if ((spm == null ? void 0 : spm.isActive()) && spm.isManagedScreen(sKey)) {
-        spm.transitionToIdle(sKey);
+        transitions.push(spm.transitionToIdle(sKey));
       } else {
         try {
           proj.leaf.detach();
@@ -63726,11 +63926,13 @@ var ProjectionManager = class {
       }
     }
     this.activeProjections.clear();
+    this._notifyChange();
+    await Promise.all(transitions);
     new import_obsidian67.Notice("All projections stopped");
   }
   /** @deprecated compat — stops all projections. */
-  stopProjection() {
-    this.stopAllProjections();
+  async stopProjection() {
+    await this.stopAllProjections();
   }
   /** Whether ANY projection is alive. */
   isProjectionAlive() {
@@ -63773,13 +63975,22 @@ var ProjectionManager = class {
     return enumerateScreens();
   }
   // ── Housekeeping ────────────────────────────────────────────────
-  /** Remove projections whose leaves are no longer connected. */
+  /**
+   * Remove projections whose leaves are no longer connected.
+   * Also checks that the host window is still alive (covers Electron
+   * popout crashes and force-closed windows).
+   */
   pruneDeadProjections() {
-    var _a;
+    var _a, _b, _c;
     for (const [sKey, proj] of this.activeProjections) {
       try {
         const view = proj.leaf.view;
         if (!view || !((_a = view.containerEl) == null ? void 0 : _a.isConnected)) {
+          this.activeProjections.delete(sKey);
+          continue;
+        }
+        const win = (_c = (_b = view.containerEl) == null ? void 0 : _b.ownerDocument) == null ? void 0 : _c.defaultView;
+        if (win && win !== window && win.closed) {
           this.activeProjections.delete(sKey);
         }
       } catch (e) {
@@ -64197,7 +64408,29 @@ var SessionProjectionManager = class {
     this.screenStates = /* @__PURE__ */ new Map();
     /** Popout leaves opened by this manager, keyed by screenKey. */
     this.managedLeaves = /* @__PURE__ */ new Map();
+    /** Listeners notified whenever session state changes. */
+    this._changeCallbacks = /* @__PURE__ */ new Set();
     this.plugin = plugin;
+  }
+  // ── Change Notification ─────────────────────────────────────
+  /**
+   * Register a callback invoked whenever session state changes.
+   * Returns an unsubscribe function.
+   */
+  onChange(cb) {
+    this._changeCallbacks.add(cb);
+    return () => {
+      this._changeCallbacks.delete(cb);
+    };
+  }
+  _notifyChange() {
+    for (const cb of this._changeCallbacks) {
+      try {
+        cb();
+      } catch (e) {
+        console.error("SessionProjectionManager onChange error:", e);
+      }
+    }
   }
   // ── Public Query API ────────────────────────────────────────────
   /** Whether a projection session is currently running. */
@@ -64222,7 +64455,11 @@ var SessionProjectionManager = class {
     const leaf = this.managedLeaves.get(sKey);
     if (!leaf) return null;
     try {
-      if ((_b = (_a = leaf.view) == null ? void 0 : _a.containerEl) == null ? void 0 : _b.isConnected) return leaf;
+      const el = (_a = leaf.view) == null ? void 0 : _a.containerEl;
+      if (!(el == null ? void 0 : el.isConnected)) throw new Error("disconnected");
+      const win = (_b = el.ownerDocument) == null ? void 0 : _b.defaultView;
+      if (win && win !== window && win.closed) throw new Error("window closed");
+      return leaf;
     } catch (e) {
     }
     this.managedLeaves.delete(sKey);
@@ -64277,12 +64514,13 @@ var SessionProjectionManager = class {
       return;
     }
     this._active = true;
+    this._notifyChange();
     new import_obsidian68.Notice(`\u{1F3AC} Session started \u2014 ${opened} screen${opened > 1 ? "s" : ""} active`);
   }
   /** Stop the active session — close all managed popouts. */
   stopSession() {
     if (!this._active) return;
-    for (const [sKey, leaf] of this.managedLeaves) {
+    for (const [, leaf] of this.managedLeaves) {
       try {
         leaf.detach();
       } catch (e) {
@@ -64291,27 +64529,25 @@ var SessionProjectionManager = class {
     this.managedLeaves.clear();
     this.screenStates.clear();
     this._active = false;
+    this._notifyChange();
     new import_obsidian68.Notice("\u{1F3AC} Session ended \u2014 all screens closed");
   }
   // ── Screen Transitions ──────────────────────────────────────────
   /**
-   * Transition a managed screen back to its idle state.
-   *
-   * Swaps the leaf's view state to IdleScreenView with the configured idle content.
+   * Transition a managed screen back to its idle state with a smooth crossfade.
    */
   async transitionToIdle(sKey) {
     const leaf = this.getManagedLeaf(sKey);
     const state = this.screenStates.get(sKey);
     if (!leaf || !state) return;
-    await leaf.setViewState({
-      type: IDLE_SCREEN_VIEW_TYPE,
-      active: true,
-      state: {
-        idleContent: state.config.idleContent
-      }
-    });
+    await this.plugin.projectionManager.crossfadeOnLeaf(
+      leaf,
+      IDLE_SCREEN_VIEW_TYPE,
+      { idleContent: state.config.idleContent }
+    );
     state.status = "idle";
     state.mediaPath = void 0;
+    this._notifyChange();
   }
   /**
    * Update the tracked status for a managed screen.
@@ -65193,8 +65429,5457 @@ var SessionProjectionHubModal = class extends import_obsidian71.Modal {
   }
 };
 
+// src/pursuit/types.ts
+var SIZE_ORDER = {
+  tiny: 0,
+  small: 1,
+  medium: 2,
+  large: 3,
+  huge: 4,
+  gargantuan: 5
+};
+function sizeDifference(a, b) {
+  return SIZE_ORDER[a] - SIZE_ORDER[b];
+}
+function computeStealthCondition(env, hasRangerPursuer) {
+  let adv = 0;
+  if (env.hasCover) adv++;
+  if (env.crowdedOrNoisy) adv++;
+  if (env.hasObscurement) adv++;
+  let disadv = 0;
+  if (env.wideOpen) disadv++;
+  if (hasRangerPursuer) disadv++;
+  if (adv > disadv) return "advantage";
+  if (disadv > adv) return "disadvantage";
+  return "normal";
+}
+var SIZE_WEIGHT_ESTIMATE = {
+  tiny: 10,
+  small: 40,
+  medium: 150,
+  large: 500,
+  huge: 2e3,
+  gargantuan: 8e3
+};
+function carryCapacity(strScore) {
+  return strScore * 15;
+}
+function pushDragLiftLimit(strScore) {
+  return strScore * 30;
+}
+function computeCarryPenalty(strScore, weightLbs) {
+  if (weightLbs <= 0) return { status: "ok" };
+  if (weightLbs <= carryCapacity(strScore)) return { status: "ok" };
+  if (weightLbs <= pushDragLiftLimit(strScore)) return { status: "drag", speedFeet: 5 };
+  return { status: "impossible" };
+}
+function totalBurdenWeight(carrier, allParticipants) {
+  let total = 0;
+  for (const id of carrier.carrying) {
+    const p = allParticipants.find((x) => x.id === id);
+    if (p) total += p.estimatedWeight;
+  }
+  for (const id of carrier.grappling) {
+    const p = allParticipants.find((x) => x.id === id);
+    if (p) total += p.estimatedWeight;
+  }
+  return total;
+}
+var STANDARD_CONDITIONS = [
+  "Blinded",
+  "Charmed",
+  "Deafened",
+  "Frightened",
+  "Grappled",
+  "Incapacitated",
+  "Invisible",
+  "Paralyzed",
+  "Petrified",
+  "Poisoned",
+  "Prone",
+  "Restrained",
+  "Stunned",
+  "Unconscious",
+  "Exhaustion"
+];
+function parseSpeed(raw) {
+  var _a;
+  if (raw === void 0 || raw === null || raw === "") return [{ mode: "walk", feet: 30 }];
+  if (typeof raw === "number") return [{ mode: "walk", feet: raw }];
+  const entries = [];
+  const parts = String(raw).split(",").map((s) => s.trim()).filter(Boolean);
+  for (const part of parts) {
+    const clean = part.replace(/\(.*?\)/g, "").trim();
+    const m = clean.match(/^(?:(\w+)\s+)?(\d+)\s*(?:ft\.?)?$/i);
+    if (m) {
+      const mode = m[1] ? m[1].toLowerCase() : "walk";
+      const feet = parseInt((_a = m[2]) != null ? _a : "0", 10);
+      if (!isNaN(feet)) entries.push({ mode, feet });
+    }
+  }
+  return entries.length > 0 ? entries : [{ mode: "walk", feet: 30 }];
+}
+
+// src/pursuit/complications.ts
+var URBAN_TABLE = {
+  id: "urban",
+  name: "Urban",
+  icon: "\u{1F3D9}\uFE0F",
+  entries: [
+    {
+      roll: 1,
+      title: "Blocked Path",
+      type: "check",
+      description: "A large obstacle blocks the way ahead.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 15", abilityKey: "Acrobatics", dc: 15 }],
+      onFail: { description: "Obstacle slows you. 10 ft. of movement lost.", movementReduction: 10 }
+    },
+    {
+      roll: 2,
+      title: "Dense Crowd",
+      type: "check",
+      description: "A crowd blocks the path.",
+      checkOptions: [
+        { label: "STR (Athletics) DC 10", abilityKey: "Athletics", dc: 10 },
+        { label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 }
+      ],
+      onFail: { description: "Crowd impedes movement. 10 ft. lost.", movementReduction: 10 }
+    },
+    {
+      roll: 3,
+      title: "Barrier",
+      type: "check",
+      description: "A barrier blocks the path \u2014 smash through or go around.",
+      checkOptions: [{ label: "STR Save DC 10", abilityKey: "STR", dc: 10 }],
+      onFail: { description: "Bounce off the barrier and fall prone!", condition: "prone" }
+    },
+    {
+      roll: 4,
+      title: "Debris Maze",
+      type: "check",
+      description: "A maze of crates, barrels, or rubble fills the area.",
+      checkOptions: [
+        { label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 },
+        { label: "INT DC 10", abilityKey: "INT", dc: 10 }
+      ],
+      onFail: { description: "Takes time to navigate. 10 ft. lost.", movementReduction: 10 }
+    },
+    {
+      roll: 5,
+      title: "Slippery Ground",
+      type: "check",
+      description: "The ground is slick with rain, oil, or some other liquid.",
+      checkOptions: [{ label: "DEX Save DC 10", abilityKey: "DEX", dc: 10 }],
+      onFail: { description: "You fall prone!", condition: "prone" }
+    },
+    {
+      roll: 6,
+      title: "Hostile Animals",
+      type: "check",
+      description: "Aggressive animals block the path.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 }],
+      onFail: { description: "Bitten! 1d4 piercing damage, 5 ft. lost.", damage: "1d4", damageType: "piercing", movementReduction: 5 }
+    },
+    {
+      roll: 7,
+      title: "Violent Disturbance",
+      type: "check",
+      description: "A fight or disturbance erupts nearby.",
+      checkOptions: [
+        { label: "STR (Athletics) DC 15", abilityKey: "Athletics", dc: 15 },
+        { label: "DEX (Acrobatics) DC 15", abilityKey: "Acrobatics", dc: 15 },
+        { label: "CHA (Intimidation) DC 15", abilityKey: "CHA", dc: 15 }
+      ],
+      onFail: { description: "Caught in the brawl! 2d4 bludgeoning damage, 10 ft. lost.", damage: "2d4", damageType: "bludgeoning", movementReduction: 10 }
+    },
+    {
+      roll: 8,
+      title: "Bystander",
+      type: "check",
+      description: "Someone gets in the way.",
+      checkOptions: [
+        { label: "STR (Athletics) DC 10", abilityKey: "Athletics", dc: 10 },
+        { label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 },
+        { label: "CHA (Intimidation) DC 10", abilityKey: "CHA", dc: 10 }
+      ],
+      onFail: { description: "Can't get past! 5 ft. of movement lost.", movementReduction: 5 }
+    },
+    {
+      roll: 9,
+      title: "Hostile Bystander",
+      type: "gm-adjudicate",
+      description: "An aggressive local intervenes and makes an opportunity attack (+3 to hit, 1d6+1 piercing).",
+      autoEffect: { description: "GM: resolve the opportunity attack, then apply damage if it hits." }
+    },
+    {
+      roll: 10,
+      title: "Sharp Turn",
+      type: "check",
+      description: "A sudden turn or narrow passage ahead.",
+      checkOptions: [{ label: "DEX Save DC 10", abilityKey: "DEX", dc: 10 }],
+      onFail: { description: "Collide with something hard! 1d4 bludgeoning damage.", damage: "1d4", damageType: "bludgeoning" }
+    }
+  ],
+  obstacleTemplates: [
+    {
+      roll: 0,
+      title: "Topple Furniture",
+      type: "check",
+      description: "Knock over tables, carts, or barrels to block the path.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 12", abilityKey: "Acrobatics", dc: 12 }],
+      onFail: { description: "Blocked! 10 ft. of movement lost, may fall prone.", movementReduction: 10, condition: "prone" }
+    },
+    {
+      roll: 0,
+      title: "Slam Door",
+      type: "check",
+      description: "Slam a door, gate, or shutter shut behind you.",
+      checkOptions: [{ label: "STR (Athletics) DC 15", abilityKey: "Athletics", dc: 15 }],
+      onFail: { description: "Door holds! Lose all movement breaking through.", speedPenalty: "zero" }
+    },
+    {
+      roll: 0,
+      title: "Scatter Goods",
+      type: "check",
+      description: "Toss goods, debris, or refuse across the path.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 }],
+      onFail: { description: "Stumbles through scattered debris. 10 ft. lost.", movementReduction: 10 }
+    }
+  ],
+  narrationPrompts: [
+    "The street narrows between tall, overhanging buildings...",
+    "Ahead: a busy intersection with shouting vendors...",
+    "A side alley branches off into shadow...",
+    "The path leads through a dimly lit archway...",
+    "Stone steps descend towards the lower quarter...",
+    "An open square with a central fountain lies ahead...",
+    "Laundry lines criss-cross the alley above...",
+    "A bridge spans a muddy canal to the next district..."
+  ]
+};
+var WILDERNESS_TABLE = {
+  id: "wilderness",
+  name: "Wilderness",
+  icon: "\u{1F332}",
+  entries: [
+    {
+      roll: 1,
+      title: "Dense Vegetation",
+      type: "check",
+      description: "Thick brush or roots block the path.",
+      checkOptions: [
+        { label: "STR (Athletics) DC 10", abilityKey: "Athletics", dc: 10 },
+        { label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 }
+      ],
+      onFail: { description: "Tangled in vegetation. 5 ft. of movement lost.", movementReduction: 5 }
+    },
+    {
+      roll: 2,
+      title: "Uneven Ground",
+      type: "check",
+      description: "Rocky, muddy, or sloped terrain threatens to slow you.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 }],
+      onFail: { description: "Stumble on uneven ground. 10 ft. lost.", movementReduction: 10 }
+    },
+    {
+      roll: 3,
+      title: "Swarming Vermin",
+      type: "gm-adjudicate",
+      description: "A swarm of insects or small creatures attacks (+3 to hit, 4d4 piercing).",
+      autoEffect: { description: "GM: resolve the swarm's opportunity attack, then apply damage." }
+    },
+    {
+      roll: 4,
+      title: "Natural Obstacle",
+      type: "check",
+      description: "A stream, ravine, or fallen tree blocks the path.",
+      checkOptions: [
+        { label: "STR (Athletics) DC 10", abilityKey: "Athletics", dc: 10 },
+        { label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 }
+      ],
+      onFail: { description: "Obstacle slows progress. 10 ft. lost.", movementReduction: 10 }
+    },
+    {
+      roll: 5,
+      title: "Blinding Debris",
+      type: "check",
+      description: "Wind kicks up sand, dirt, ash, or pollen.",
+      checkOptions: [{ label: "CON Save DC 10", abilityKey: "CON", dc: 10 }],
+      onFail: { description: "Blinded! Speed halved until end of turn.", speedPenalty: "halved", condition: "blinded" }
+    },
+    {
+      roll: 6,
+      title: "Sudden Drop",
+      type: "check",
+      description: "The ground drops away unexpectedly.",
+      checkOptions: [{ label: "DEX Save DC 10", abilityKey: "DEX", dc: 10 }],
+      onFail: { description: "Fall! 1d6 bludgeoning damage, land prone.", damage: "1d6", damageType: "bludgeoning", condition: "prone" }
+    },
+    {
+      roll: 7,
+      title: "Trap or Snare",
+      type: "check",
+      description: "A hidden trap catches you off guard.",
+      checkOptions: [{ label: "DEX Save DC 15", abilityKey: "DEX", dc: 15 }],
+      onFail: { description: "Caught! Restrained (escape DC 10 STR check).", condition: "restrained", speedPenalty: "zero" }
+    },
+    {
+      roll: 8,
+      title: "Stampede",
+      type: "check",
+      description: "Large spooked animals charge through the area.",
+      checkOptions: [{ label: "DEX Save DC 10", abilityKey: "DEX", dc: 10 }],
+      onFail: { description: "Knocked about! 2d4 bludgeoning damage.", damage: "2d4", damageType: "bludgeoning" }
+    },
+    {
+      roll: 9,
+      title: "Hazardous Flora",
+      type: "check",
+      description: "Thorns, razorvine, or poisonous plants in the path.",
+      checkOptions: [{ label: "DEX Save DC 15", abilityKey: "DEX", dc: 15 }],
+      onFail: { description: "Slashed! 1d10 slashing damage.", damage: "1d10", damageType: "slashing" }
+    },
+    {
+      roll: 10,
+      title: "Territorial Creature",
+      type: "gm-adjudicate",
+      description: "A creature indigenous to the area attacks! GM decides the creature and resolves.",
+      autoEffect: { description: "GM: choose a creature and resolve the encounter." },
+      isEncounter: true
+    }
+  ],
+  obstacleTemplates: [
+    {
+      roll: 0,
+      title: "Disturb Nest",
+      type: "check",
+      description: "Disturb a wasp nest, ant hill, or animal den on your way past.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 12", abilityKey: "Acrobatics", dc: 12 }],
+      onFail: { description: "Stung! 1d4 piercing damage, 5 ft. lost.", damage: "1d4", damageType: "piercing", movementReduction: 5 }
+    },
+    {
+      roll: 0,
+      title: "Break Branch",
+      type: "check",
+      description: "Snap a branch or push a log across the trail.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 }],
+      onFail: { description: "Trip on the obstacle! 10 ft. lost, fall prone.", movementReduction: 10, condition: "prone" }
+    },
+    {
+      roll: 0,
+      title: "Push Rocks",
+      type: "check",
+      description: "Send loose rocks tumbling down the slope.",
+      checkOptions: [{ label: "DEX Save DC 12", abilityKey: "DEX", dc: 12 }],
+      onFail: { description: "Hit by falling rocks! 1d6 bludgeoning damage.", damage: "1d6", damageType: "bludgeoning" }
+    }
+  ],
+  narrationPrompts: [
+    "The path winds through dense forest canopy...",
+    "A clearing opens ahead, tall grass swaying in the wind...",
+    "The trail follows a rocky ridge with a steep drop...",
+    "You crash through undergrowth into a shallow stream bed...",
+    "Ancient trees form a natural corridor ahead...",
+    "The ground slopes steeply downhill toward a valley...",
+    "A fallen tree forces a quick detour to the left...",
+    "Moonlight filters through the canopy onto a narrow game trail..."
+  ]
+};
+var UNDERGROUND_TABLE = {
+  id: "underground",
+  name: "Underground",
+  icon: "\u26CF\uFE0F",
+  entries: [
+    {
+      roll: 1,
+      title: "Low Ceiling",
+      type: "check",
+      description: "Stalactites, beams, or pipes hang low overhead.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 }],
+      onFail: { description: "Head strike! 1d4 bludgeoning damage.", damage: "1d4", damageType: "bludgeoning" }
+    },
+    {
+      roll: 2,
+      title: "Unstable Floor",
+      type: "check",
+      description: "Loose rubble or rotting boards underfoot.",
+      checkOptions: [{ label: "DEX Save DC 10", abilityKey: "DEX", dc: 10 }],
+      onFail: { description: "Floor gives way \u2014 you fall prone!", condition: "prone" }
+    },
+    {
+      roll: 3,
+      title: "Narrow Passage",
+      type: "check",
+      description: "The tunnel narrows to a tight squeeze.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 12", abilityKey: "Acrobatics", dc: 12 }],
+      onFail: { description: "Stuck briefly! 5 ft. of movement lost.", movementReduction: 5 }
+    },
+    {
+      roll: 4,
+      title: "Flooded Section",
+      type: "check",
+      description: "Water pools on the floor, knee-deep or worse.",
+      checkOptions: [{ label: "STR (Athletics) DC 10", abilityKey: "Athletics", dc: 10 }],
+      onFail: { description: "Slowed by water. 10 ft. of movement lost.", movementReduction: 10 }
+    },
+    {
+      roll: 5,
+      title: "Sudden Darkness",
+      type: "check",
+      description: "A gust extinguishes lights, or a dark cloud of spores blooms.",
+      checkOptions: [{ label: "CON Save DC 10", abilityKey: "CON", dc: 10 }],
+      onFail: { description: "Blinded! Speed halved until end of turn.", speedPenalty: "halved", condition: "blinded" }
+    },
+    {
+      roll: 6,
+      title: "Collapsing Section",
+      type: "check",
+      description: "The ceiling or wall partially collapses!",
+      checkOptions: [{ label: "DEX Save DC 12", abilityKey: "DEX", dc: 12 }],
+      onFail: { description: "Crushed! 2d6 bludgeoning damage.", damage: "2d6", damageType: "bludgeoning" }
+    },
+    {
+      roll: 7,
+      title: "Webs or Slime",
+      type: "check",
+      description: "Sticky webs or slippery slime coat the passage.",
+      checkOptions: [{ label: "STR Save DC 12", abilityKey: "STR", dc: 12 }],
+      onFail: { description: "Speed halved this turn, struggling through.", speedPenalty: "halved" }
+    },
+    {
+      roll: 8,
+      title: "Foul Air",
+      type: "check",
+      description: "Noxious fumes or toxic gas fills the area.",
+      checkOptions: [{ label: "CON Save DC 12", abilityKey: "CON", dc: 12 }],
+      onFail: { description: "Poisoned until end of turn! Disadvantage on checks.", condition: "poisoned" }
+    },
+    {
+      roll: 9,
+      title: "Hidden Pit",
+      type: "check",
+      description: "A concealed hole or shaft in the ground.",
+      checkOptions: [{ label: "DEX Save DC 13", abilityKey: "DEX", dc: 13 }],
+      onFail: { description: "Fall in! 1d6 bludgeoning damage, land prone.", damage: "1d6", damageType: "bludgeoning", condition: "prone" }
+    },
+    {
+      roll: 10,
+      title: "Denizen",
+      type: "gm-adjudicate",
+      description: "A creature inhabiting the area strikes from the shadows!",
+      autoEffect: { description: "GM: choose a creature (ooze, rat swarm, etc.) and resolve." },
+      isEncounter: true
+    }
+  ],
+  obstacleTemplates: [
+    {
+      roll: 0,
+      title: "Collapse Support",
+      type: "check",
+      description: "Smash a support beam or kick a loose pillar as you pass.",
+      checkOptions: [{ label: "DEX Save DC 13", abilityKey: "DEX", dc: 13 }],
+      onFail: { description: "Falling debris! 2d4 bludgeoning damage, 10 ft. lost.", damage: "2d4", damageType: "bludgeoning", movementReduction: 10 }
+    },
+    {
+      roll: 0,
+      title: "Spill Oil or Slime",
+      type: "check",
+      description: "Kick over a lantern or burst a slime pod to coat the floor.",
+      checkOptions: [{ label: "DEX Save DC 12", abilityKey: "DEX", dc: 12 }],
+      onFail: { description: "Slip! Fall prone.", condition: "prone" }
+    },
+    {
+      roll: 0,
+      title: "Lock Gate",
+      type: "check",
+      description: "Slam and lock a gate or portcullis behind you.",
+      checkOptions: [{ label: "STR (Athletics) DC 15", abilityKey: "Athletics", dc: 15 }],
+      onFail: { description: "Stuck! Lose all movement breaking through.", speedPenalty: "zero" }
+    }
+  ],
+  narrationPrompts: [
+    "The tunnel widens into a damp cavern...",
+    "Ahead, a junction splits into three dark passages...",
+    "Water drips from the ceiling onto slick stone...",
+    "The passage slopes downward, the air growing colder...",
+    "Glowing fungi dimly light a chamber ahead...",
+    "Old mining rails cross the floor, rusted and broken...",
+    "The stench of stagnant water fills the narrow tunnel...",
+    "A side chamber opens up, cluttered with old debris..."
+  ]
+};
+var WATERFRONT_TABLE = {
+  id: "waterfront",
+  name: "Waterfront",
+  icon: "\u2693",
+  entries: [
+    {
+      roll: 1,
+      title: "Slippery Dock",
+      type: "check",
+      description: "Wet, algae-covered planks underfoot.",
+      checkOptions: [{ label: "DEX Save DC 10", abilityKey: "DEX", dc: 10 }],
+      onFail: { description: "You slip and fall prone!", condition: "prone" }
+    },
+    {
+      roll: 2,
+      title: "Cargo",
+      type: "check",
+      description: "Stacked crates, barrels, and cargo block the dock.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 }],
+      onFail: { description: "Navigating cargo costs time. 10 ft. lost.", movementReduction: 10 }
+    },
+    {
+      roll: 3,
+      title: "Swinging Load",
+      type: "check",
+      description: "A crane swings a heavy load across the path.",
+      checkOptions: [{ label: "DEX Save DC 12", abilityKey: "DEX", dc: 12 }],
+      onFail: { description: "Struck by the load! 2d4 bludgeoning damage.", damage: "2d4", damageType: "bludgeoning" }
+    },
+    {
+      roll: 4,
+      title: "Gangplank",
+      type: "check",
+      description: "A narrow, bouncing gangplank is the only way forward.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 }],
+      onFail: { description: "Wobble and fall prone! Risk falling into water.", condition: "prone" }
+    },
+    {
+      roll: 5,
+      title: "Tangled Nets",
+      type: "check",
+      description: "Fishing nets strewn across the ground.",
+      checkOptions: [{ label: "DEX Save DC 12", abilityKey: "DEX", dc: 12 }],
+      onFail: { description: "Tangled! Speed halved this turn.", speedPenalty: "halved" }
+    },
+    {
+      roll: 6,
+      title: "Dock Workers",
+      type: "check",
+      description: "Busy workers haul cargo, blocking your path.",
+      checkOptions: [
+        { label: "STR (Athletics) DC 10", abilityKey: "Athletics", dc: 10 },
+        { label: "CHA (Intimidation) DC 10", abilityKey: "CHA", dc: 10 }
+      ],
+      onFail: { description: "Workers slow you down. 5 ft. lost.", movementReduction: 5 }
+    },
+    {
+      roll: 7,
+      title: "Vessel Crossing",
+      type: "check",
+      description: "Jump across to a moored boat or barge.",
+      checkOptions: [{ label: "STR (Athletics) DC 12", abilityKey: "Athletics", dc: 12 }],
+      onFail: { description: "Short landing! 10 ft. of movement lost.", movementReduction: 10 }
+    },
+    {
+      roll: 8,
+      title: "Rope Crossing",
+      type: "check",
+      description: "A swaying rope or chain is the only way across.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 12", abilityKey: "Acrobatics", dc: 12 }],
+      onFail: { description: "Lose grip! 1d4 bludgeoning damage, fall prone.", damage: "1d4", damageType: "bludgeoning", condition: "prone" }
+    },
+    {
+      roll: 9,
+      title: "Harbour Creature",
+      type: "check",
+      description: "Something in the water snaps at you!",
+      checkOptions: [{ label: "DEX Save DC 10", abilityKey: "DEX", dc: 10 }],
+      onFail: { description: "Bitten! 1d6 piercing damage.", damage: "1d6", damageType: "piercing" }
+    },
+    {
+      roll: 10,
+      title: "Collapsing Pier",
+      type: "check",
+      description: "Rotten wood gives way beneath you!",
+      checkOptions: [{ label: "DEX Save DC 13", abilityKey: "DEX", dc: 13 }],
+      onFail: { description: "Fall through! 1d4 damage, 10 ft. lost.", damage: "1d4", damageType: "bludgeoning", movementReduction: 10 }
+    }
+  ],
+  obstacleTemplates: [
+    {
+      roll: 0,
+      title: "Cut the Rope",
+      type: "check",
+      description: "Sever a mooring line or crane rope, sending cargo swinging.",
+      checkOptions: [{ label: "DEX Save DC 12", abilityKey: "DEX", dc: 12 }],
+      onFail: { description: "Struck by swinging cargo! 1d6 bludgeoning, 5 ft. lost.", damage: "1d6", damageType: "bludgeoning", movementReduction: 5 }
+    },
+    {
+      roll: 0,
+      title: "Push Cargo",
+      type: "check",
+      description: "Shove crates or barrels off the dock into the path.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 }],
+      onFail: { description: "Blocked! 10 ft. of movement lost.", movementReduction: 10 }
+    },
+    {
+      roll: 0,
+      title: "Release Boat",
+      type: "check",
+      description: "Untie a small boat, sending it drifting across the path.",
+      checkOptions: [{ label: "STR (Athletics) DC 13", abilityKey: "Athletics", dc: 13 }],
+      onFail: { description: "Boat blocks the dock! Lose all movement.", speedPenalty: "zero" }
+    }
+  ],
+  narrationPrompts: [
+    "Wooden docks stretch out over dark water...",
+    "Crates and barrels line the wharf, stacked high...",
+    "The stench of fish and salt fills the air...",
+    "A narrow pier leads toward a moored vessel...",
+    "Ropes and chains hang from pulleys overhead...",
+    "The dock creaks ominously underfoot...",
+    "Sailors shout as cargo swings from a crane above...",
+    "A low bridge crosses to the next section of docks..."
+  ]
+};
+var ROOFTOP_TABLE = {
+  id: "rooftop",
+  name: "Rooftop",
+  icon: "\u{1F3E0}",
+  entries: [
+    {
+      roll: 1,
+      title: "Gap Between Buildings",
+      type: "check",
+      description: "A gap between rooftops \u2014 jump or fall!",
+      checkOptions: [{ label: "STR (Athletics) DC 12", abilityKey: "Athletics", dc: 12 }],
+      onFail: { description: "Short jump! 1d6 bludgeoning damage (fall).", damage: "1d6", damageType: "bludgeoning" }
+    },
+    {
+      roll: 2,
+      title: "Loose Tiles",
+      type: "check",
+      description: "Unstable roofing shifts underfoot.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 10", abilityKey: "Acrobatics", dc: 10 }],
+      onFail: { description: "Tiles slide \u2014 you fall prone!", condition: "prone" }
+    },
+    {
+      roll: 3,
+      title: "Laundry Line",
+      type: "check",
+      description: "Lines of rope and fabric at neck height.",
+      checkOptions: [{ label: "DEX Save DC 10", abilityKey: "DEX", dc: 10 }],
+      onFail: { description: "Clotheslined! You fall prone.", condition: "prone" }
+    },
+    {
+      roll: 4,
+      title: "Steep Slope",
+      type: "check",
+      description: "A sharply angled roof section.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 12", abilityKey: "Acrobatics", dc: 12 }],
+      onFail: { description: "Slide down the slope. 10 ft. of movement lost.", movementReduction: 10 }
+    },
+    {
+      roll: 5,
+      title: "Chimney Smoke",
+      type: "check",
+      description: "A blast of smoke from a chimney below.",
+      checkOptions: [{ label: "CON Save DC 10", abilityKey: "CON", dc: 10 }],
+      onFail: { description: "Blinded by smoke! Speed halved until end of turn.", speedPenalty: "halved", condition: "blinded" }
+    },
+    {
+      roll: 6,
+      title: "Weak Section",
+      type: "check",
+      description: "The roof won't hold your weight!",
+      checkOptions: [{ label: "DEX Save DC 12", abilityKey: "DEX", dc: 12 }],
+      onFail: { description: "Fall through! 2d6 bludgeoning damage, prone.", damage: "2d6", damageType: "bludgeoning", condition: "prone" }
+    },
+    {
+      roll: 7,
+      title: "Obstruction",
+      type: "check",
+      description: "A weather vane, antenna, or chimney at full speed.",
+      checkOptions: [{ label: "DEX Save DC 10", abilityKey: "DEX", dc: 10 }],
+      onFail: { description: "Smack! 1d4 bludgeoning damage.", damage: "1d4", damageType: "bludgeoning" }
+    },
+    {
+      roll: 8,
+      title: "Startled Flock",
+      type: "check",
+      description: "Birds or bats scatter in a blinding cloud.",
+      checkOptions: [{ label: "CON Save DC 10", abilityKey: "CON", dc: 10 }],
+      onFail: { description: "Disoriented! 5 ft. of movement lost.", movementReduction: 5 }
+    },
+    {
+      roll: 9,
+      title: "Guard Below",
+      type: "gm-adjudicate",
+      description: "A guard spots you from the street and hurls a javelin (+3 to hit, 1d6+1 piercing).",
+      autoEffect: { description: "GM: resolve the guard's ranged attack, then apply damage." }
+    },
+    {
+      roll: 10,
+      title: "Dead End",
+      type: "check",
+      description: "The rooftop ends \u2014 nowhere to go but back or down.",
+      checkOptions: [{ label: "STR (Athletics) DC 15", abilityKey: "Athletics", dc: 15 }],
+      onFail: { description: "Dead end! Lose all remaining movement.", speedPenalty: "zero" }
+    }
+  ],
+  obstacleTemplates: [
+    {
+      roll: 0,
+      title: "Kick Tiles",
+      type: "check",
+      description: "Send loose tiles cascading down behind you.",
+      checkOptions: [{ label: "DEX (Acrobatics) DC 12", abilityKey: "Acrobatics", dc: 12 }],
+      onFail: { description: "Sliding tiles! 1d4 damage, fall prone.", damage: "1d4", damageType: "bludgeoning", condition: "prone" }
+    },
+    {
+      roll: 0,
+      title: "Drop Plank",
+      type: "check",
+      description: "Remove a board or bridge connecting two roofs.",
+      checkOptions: [{ label: "STR (Athletics) DC 13", abilityKey: "Athletics", dc: 13 }],
+      onFail: { description: "No bridge! Must jump (lose 10 ft.) or risk a fall.", movementReduction: 10 }
+    },
+    {
+      roll: 0,
+      title: "Cut Clothesline",
+      type: "check",
+      description: "Slash a clothesline to tangle the pursuer.",
+      checkOptions: [{ label: "DEX Save DC 10", abilityKey: "DEX", dc: 10 }],
+      onFail: { description: "Tangled! Speed halved this turn.", speedPenalty: "halved" }
+    }
+  ],
+  narrationPrompts: [
+    "Rooftops stretch out in every direction under open sky...",
+    "A narrow ledge runs along the building's edge...",
+    "Smoke rises from chimneys all around...",
+    "The gap between buildings is wider here \u2014 three feet at least...",
+    "A sloped tile roof leads up to a flat terrace...",
+    "Window shutters bang open on the floor below...",
+    "A dovecote sits on the next roof, pigeons cooing...",
+    "The city spreads below as the rooftops climb higher..."
+  ]
+};
+var COMPLICATION_TABLES = [
+  URBAN_TABLE,
+  WILDERNESS_TABLE,
+  UNDERGROUND_TABLE,
+  WATERFRONT_TABLE,
+  ROOFTOP_TABLE
+];
+function getComplicationTable(id) {
+  var _a;
+  return (_a = COMPLICATION_TABLES.find((t) => t.id === id)) != null ? _a : URBAN_TABLE;
+}
+
+// src/pursuit/PursuitTracker.ts
+var UNDO_STACK_LIMIT = 50;
+var PursuitTracker = class {
+  constructor(app, plugin) {
+    this.state = null;
+    this.listeners = /* @__PURE__ */ new Set();
+    this.undoStack = [];
+    this.app = app;
+    this.plugin = plugin;
+  }
+  // ── Subscriptions ──────────────────────────────────────────
+  /** Subscribe to state changes. Returns an unsubscribe function. */
+  onChange(listener) {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+  emit() {
+    const snapshot = this.getState();
+    for (const fn of this.listeners) fn(snapshot);
+  }
+  // ── State Access ───────────────────────────────────────────
+  /** Returns a deep-copy snapshot of the current state, or null. */
+  getState() {
+    if (!this.state) return null;
+    return JSON.parse(JSON.stringify(this.state));
+  }
+  // ── Undo ────────────────────────────────────────────────────
+  /** Push a snapshot of the current state onto the undo stack. */
+  pushUndo() {
+    if (!this.state) return;
+    this.undoStack.push(JSON.parse(JSON.stringify(this.state)));
+    if (this.undoStack.length > UNDO_STACK_LIMIT) {
+      this.undoStack.shift();
+    }
+  }
+  /** Restore the most recent undo snapshot. */
+  undo() {
+    const prev = this.undoStack.pop();
+    if (!prev) return;
+    this.state = prev;
+    this.emit();
+  }
+  /** Whether there are undo snapshots available. */
+  canUndo() {
+    return this.undoStack.length > 0;
+  }
+  /** Get a participant by ID (live reference — internal use). */
+  getParticipant(id) {
+    var _a;
+    return (_a = this.state) == null ? void 0 : _a.participants.find((p) => p.id === id);
+  }
+  /** Get the currently active participant (live reference). */
+  getActive() {
+    if (!this.state || !this.state.started || this.state.ended) return void 0;
+    return this.state.participants[this.state.turnIndex];
+  }
+  // ── Query helpers ───────────────────────────────────────────
+  /** Maximum movement feet for this participant this turn (accounting for dash + complication). */
+  getMaxMovement(p) {
+    var _a;
+    if (p.movementPenalty === "zero") return 0;
+    let speed = this.getEffectiveSpeed(p);
+    const dashed = p.turnAction === "dash" || p.bonusAction === "dash";
+    if (dashed) speed *= 2;
+    if (p.movementPenalty === "halved") speed = Math.floor(speed / 2);
+    speed -= (_a = p.movementReductionFeet) != null ? _a : 0;
+    return Math.max(0, speed);
+  }
+  /** Whether Line of Sight is auto-broken for a quarry based on distance + environment + complication. */
+  isLoSBroken(quarry) {
+    if (!this.state) return false;
+    if (quarry.complicationLoSBreak) return true;
+    const env = this.state.environment;
+    if (!env.hasCover && !env.hasObscurement && !env.crowdedOrNoisy) return false;
+    const pursuers = this.state.participants.filter(
+      (p) => p.role === "pursuer" && !p.droppedOut && !p.incapacitated
+    );
+    if (pursuers.length === 0) return true;
+    const nearest = Math.min(...pursuers.map((p) => p.position));
+    return quarry.position - nearest >= 30;
+  }
+  /** Auto-roll a d20 + modifier. Returns { natural, total }. */
+  autoRoll(modifier) {
+    const natural = Math.floor(Math.random() * 20) + 1;
+    return { natural, total: natural + modifier };
+  }
+  /** Roll a dice formula like "1d6", "2d8+3". */
+  rollDice(formula) {
+    const match = formula.match(/(\d+)d(\d+)([+-]\d+)?/);
+    if (!match) return 0;
+    const count = parseInt(match[1], 10);
+    const sides = parseInt(match[2], 10);
+    const mod = parseInt(match[3] || "0", 10);
+    let total = mod;
+    for (let i = 0; i < count; i++) {
+      total += Math.floor(Math.random() * sides) + 1;
+    }
+    return Math.max(0, total);
+  }
+  /** Get the ability modifier for a complication check. */
+  getAbilityModifier(p, ability) {
+    switch (ability) {
+      case "DEX":
+        return p.initiativeModifier;
+      case "STR":
+        return Math.floor((p.strScore - 10) / 2);
+      case "CON":
+        return p.conModifier;
+      case "WIS":
+        return p.wisModifier;
+      case "INT":
+        return p.intModifier;
+      case "CHA":
+        return p.chaModifier;
+      case "Stealth":
+        return p.stealthModifier;
+      case "Perception":
+        return p.perceptionModifier;
+      case "Athletics":
+        return Math.floor((p.strScore - 10) / 2);
+      case "Acrobatics":
+        return p.initiativeModifier;
+      default:
+        return 0;
+    }
+  }
+  // ── Setup ──────────────────────────────────────────────────
+  /**
+   * Initialize a new chase from prepared participant data.
+   * Called by PursuitSetupModal after the GM assigns roles and stats.
+   */
+  setup(name, participants, environment, hasRangerPursuer, maxDistance = 0, maxRounds = 0) {
+    var _a;
+    const stealthCondition = computeStealthCondition(environment, hasRangerPursuer);
+    this.state = {
+      name,
+      participants,
+      round: 1,
+      turnIndex: 0,
+      started: false,
+      ended: false,
+      turnPhase: "complication",
+      complicationTableId: (_a = environment.complicationTableId) != null ? _a : "urban",
+      environment,
+      stealthCondition,
+      hasRangerPursuer,
+      maxDistance,
+      maxRounds,
+      placedObstacles: [],
+      log: [{ round: 0, text: `Chase "${name}" initialized with ${participants.length} participants.` }]
+    };
+    this.emit();
+  }
+  // ── Initiative ─────────────────────────────────────────────
+  /** Roll initiative for all participants (d20 + modifier). */
+  rollAllInitiative() {
+    if (!this.state) return;
+    for (const p of this.state.participants) {
+      const roll = Math.floor(Math.random() * 20) + 1;
+      p.initiative = roll + p.initiativeModifier;
+    }
+    this.sortByInitiative();
+    this.emit();
+  }
+  /** Set a specific participant's initiative (manual entry for PCs). */
+  setInitiative(id, value) {
+    const p = this.getParticipant(id);
+    if (!p) return;
+    p.initiative = value;
+    this.sortByInitiative();
+    this.emit();
+  }
+  /** Keep initiative from combat (pre-sorted). */
+  keepInitiativeFromCombat() {
+    if (!this.state) return;
+    this.sortByInitiative();
+    this.emit();
+  }
+  sortByInitiative() {
+    if (!this.state) return;
+    this.state.participants.sort((a, b) => {
+      if (b.initiative !== a.initiative) return b.initiative - a.initiative;
+      return b.initiativeModifier - a.initiativeModifier;
+    });
+  }
+  /** Start the chase (initiative has been set). */
+  startChase(activeName) {
+    if (!this.state) return;
+    this.pushUndo();
+    this.sortByInitiative();
+    this.state.started = true;
+    this.state.round = 1;
+    let startIdx = 0;
+    if (activeName) {
+      const idx = this.state.participants.findIndex((p) => p.name === activeName);
+      if (idx >= 0) startIdx = idx;
+    }
+    this.state.turnIndex = startIdx;
+    this.skipInactiveForward();
+    this.addLog(`Chase begins! Round 1.`);
+    this.beginTurn();
+  }
+  // ── Turn Management ────────────────────────────────────────
+  /** Reset per-turn flags for a participant at the start of their turn. */
+  resetTurnFlags(p) {
+    p.turnAction = void 0;
+    p.bonusAction = void 0;
+    p.hasMoved = false;
+    p.feetMovedThisTurn = 0;
+    p.pendingDashSave = false;
+    p.activePerceptionRoll = void 0;
+    p.stealthRoll = void 0;
+    p.movementPenalty = "none";
+    p.movementReductionFeet = 0;
+    p.complicationLoSBreak = false;
+  }
+  /** Advance to the next participant's turn. */
+  nextTurn() {
+    if (!this.state || !this.state.started || this.state.ended) return;
+    this.pushUndo();
+    const active = this.getActive();
+    if (active) active.hasActed = true;
+    const len = this.state.participants.length;
+    let next = this.state.turnIndex + 1;
+    if (next >= len) {
+      this.runEndOfRound();
+      if (this.state.ended) return;
+      if (this.state.escapeCheckQueue && this.state.escapeCheckQueue.length > 0) return;
+      this.state.round++;
+      next = 0;
+      for (const p of this.state.participants) {
+        p.hasActed = false;
+        this.resetTurnFlags(p);
+      }
+      this.addLog(`Round ${this.state.round} begins.`);
+    }
+    this.state.turnIndex = next;
+    this.skipInactiveForward();
+    this.beginTurn();
+  }
+  /** Skip forward past inactive participants. Safety-capped to prevent infinite loop. */
+  skipInactiveForward() {
+    if (!this.state) return;
+    const len = this.state.participants.length;
+    let checks = 0;
+    while (checks < len) {
+      const p = this.state.participants[this.state.turnIndex];
+      if (!p || !p.droppedOut && !p.escaped && !p.incapacitated) break;
+      this.state.turnIndex++;
+      if (this.state.turnIndex >= len) {
+        this.state.turnIndex = 0;
+      }
+      checks++;
+    }
+  }
+  // ── Phase Machine ───────────────────────────────────────────
+  //
+  // Turn flow: COMPLICATION → COMPLICATION_CHECK → ACTION → ACTION_RESOLVE
+  //            → BONUS → BONUS_RESOLVE → MOVEMENT → TURN_END
+  //
+  // NPCs auto-roll all checks. PCs set pendingInput for GM entry.
+  /** Begin the current participant's turn: reset flags, resolve any pending complication, or go to action. */
+  beginTurn() {
+    if (!this.state || this.state.ended) return;
+    const p = this.getActive();
+    if (!p) return;
+    this.resetTurnFlags(p);
+    if (p.role === "quarry") {
+      p.lineOfSightBroken = this.isLoSBroken(p);
+    }
+    this.state.currentComplication = void 0;
+    this.state.pendingInput = void 0;
+    this.state.endOfTurnD20 = void 0;
+    if (!p.startPenaltyApplied && p.startPenalty !== "none") {
+      p.movementPenalty = p.startPenalty;
+      p.startPenaltyApplied = true;
+      this.addLog(`${p.display} starts with movement ${p.startPenalty === "zero" ? "halted" : "halved"} (start penalty).`);
+    }
+    if (p.role === "pursuer" && !p.activeTargetId) {
+      this.autoAssignTarget(p);
+    }
+    const pending = this.state.pendingComplicationForNext;
+    if (pending) {
+      this.state.pendingComplicationForNext = void 0;
+      this.resolvePendingComplication(p, pending);
+    } else {
+      this.state.turnPhase = "action";
+      this.emit();
+    }
+  }
+  /** Auto-assign the closest visible quarry as a pursuer's target. */
+  autoAssignTarget(pursuer) {
+    if (!this.state) return;
+    const quarries = this.state.participants.filter(
+      (q) => q.role === "quarry" && !q.escaped && !q.droppedOut && !q.incapacitated && this.canPerceive(pursuer, q)
+    );
+    if (quarries.length === 0) return;
+    quarries.sort((a, b) => Math.abs(a.position - pursuer.position) - Math.abs(b.position - pursuer.position));
+    pursuer.activeTargetId = quarries[0].id;
+  }
+  /** Whether a pursuer can perceive a quarry (accounts for movement plane + hidden + tremorsense). */
+  canPerceive(pursuer, quarry) {
+    if (quarry.isHidden) return false;
+    if (quarry.movementPlane === "underground" && pursuer.movementPlane !== "underground" && !pursuer.hasTremorsense) return false;
+    return true;
+  }
+  /** Whether a pursuer can physically catch a quarry (same movement plane required for melee). */
+  canCatch(pursuer, quarry) {
+    if (!this.canPerceive(pursuer, quarry)) return false;
+    if (quarry.movementPlane === "air" && pursuer.movementPlane !== "air") return false;
+    if (quarry.movementPlane === "underground" && pursuer.movementPlane !== "underground") return false;
+    return true;
+  }
+  /** Set the active chase target for a pursuer (GM action). */
+  setActiveTarget(pursuerId, quarryId) {
+    const p = this.getParticipant(pursuerId);
+    if (!p || p.role !== "pursuer") return;
+    p.activeTargetId = quarryId;
+    const q = this.getParticipant(quarryId);
+    if (q) this.addLog(`${p.display} targets ${q.display}.`);
+    this.emit();
+  }
+  /** Resolve a complication that was rolled by the previous participant (or quarry obstacle). */
+  resolvePendingComplication(p, pending) {
+    var _a, _b;
+    if (!this.state) return;
+    const comp = {
+      entry: pending.entry,
+      d20Roll: pending.d20Roll,
+      rolledByName: pending.rolledByName,
+      resolved: false
+    };
+    this.state.currentComplication = comp;
+    const src = pending.isQuarryObstacle ? `obstacle from ${pending.rolledByName}` : `complication from ${pending.rolledByName}`;
+    this.addLog(`\u26A0\uFE0F ${p.display} faces ${src}: ${pending.entry.title} (d20=${pending.d20Roll}).`);
+    if (pending.entry.type === "gm-adjudicate") {
+      comp.resolved = true;
+      comp.effectDescription = (_b = (_a = pending.entry.autoEffect) == null ? void 0 : _a.description) != null ? _b : pending.entry.description;
+      this.state.turnPhase = "complication";
+      this.emit();
+      return;
+    }
+    const checkOptions = pending.entry.checkOptions;
+    if (!checkOptions || checkOptions.length === 0) {
+      comp.resolved = true;
+      this.state.turnPhase = "complication";
+      this.emit();
+      return;
+    }
+    if (!p.player) {
+      const best = this.pickBestCheck(p, checkOptions);
+      comp.selectedCheck = best;
+      const mod = this.getAbilityModifier(p, best.abilityKey);
+      if (checkOptions.length === 1) {
+        this.state.pendingInput = {
+          type: "complication-check",
+          participantId: p.id,
+          label: best.label,
+          modifier: mod,
+          dc: best.dc,
+          description: pending.entry.description
+        };
+      } else {
+        this.state.pendingInput = {
+          type: "complication-check",
+          participantId: p.id,
+          label: checkOptions.map((o) => o.label).join(" or "),
+          modifier: mod,
+          dc: best.dc,
+          description: pending.entry.description,
+          checkOptions
+        };
+      }
+      this.state.turnPhase = "complication-check";
+      this.emit();
+    } else {
+      if (checkOptions.length === 1) {
+        const opt = checkOptions[0];
+        comp.selectedCheck = opt;
+        const mod = this.getAbilityModifier(p, opt.abilityKey);
+        this.state.pendingInput = {
+          type: "complication-check",
+          participantId: p.id,
+          label: opt.label,
+          modifier: mod,
+          dc: opt.dc,
+          description: pending.entry.description
+        };
+      } else {
+        const mod = this.getAbilityModifier(p, checkOptions[0].abilityKey);
+        this.state.pendingInput = {
+          type: "complication-check",
+          participantId: p.id,
+          label: checkOptions.map((o) => o.label).join(" or "),
+          modifier: mod,
+          dc: checkOptions[0].dc,
+          description: pending.entry.description,
+          checkOptions
+        };
+      }
+      this.state.turnPhase = "complication-check";
+      this.emit();
+    }
+  }
+  /** Pick the check option where the NPC has the highest modifier. */
+  pickBestCheck(p, options) {
+    let best = options[0];
+    let bestMod = this.getAbilityModifier(p, best.abilityKey);
+    for (const opt of options) {
+      const mod = this.getAbilityModifier(p, opt.abilityKey);
+      if (mod > bestMod) {
+        best = opt;
+        bestMod = mod;
+      }
+    }
+    return best;
+  }
+  /** Roll d20 at end of turn — d20 ≤ 10 stores a complication for the next participant. */
+  rollComplicationD20() {
+    var _a;
+    if (!this.state) return;
+    const p = this.getActive();
+    if (!p) return;
+    const d20 = Math.floor(Math.random() * 20) + 1;
+    this.state.endOfTurnD20 = d20;
+    const table = getComplicationTable(this.state.complicationTableId);
+    if (d20 <= 10) {
+      const entry = table.entries[d20 - 1];
+      if (entry) {
+        const nextP = this.getNextActiveParticipant();
+        const nextName = (_a = nextP == null ? void 0 : nextP.display) != null ? _a : "the next participant";
+        this.state.pendingComplicationForNext = {
+          entry,
+          d20Roll: d20,
+          rolledByName: p.display,
+          rolledById: p.id
+        };
+        this.state.currentComplication = {
+          entry,
+          d20Roll: d20,
+          rolledByName: p.display,
+          resolved: true,
+          effectDescription: `Complication for ${nextName}: ${entry.title}`
+        };
+        this.addLog(`\u{1F3B2} ${p.display} rolls d20=${d20}: Complication "${entry.title}" for ${nextName}!`);
+      }
+    } else {
+      this.state.currentComplication = void 0;
+      this.addLog(`\u{1F3B2} ${p.display} rolls d20=${d20}: No complication.`);
+    }
+    this.state.turnPhase = "complication-roll";
+    this.emit();
+  }
+  /** Get the next active participant in initiative after the current one. */
+  getNextActiveParticipant() {
+    if (!this.state) return void 0;
+    const len = this.state.participants.length;
+    for (let i = 1; i < len; i++) {
+      const idx = (this.state.turnIndex + i) % len;
+      const p = this.state.participants[idx];
+      if (p && !p.droppedOut && !p.escaped && !p.incapacitated) return p;
+    }
+    return void 0;
+  }
+  /** Advance from complication-roll phase to turn-end. */
+  advanceFromComplicationRoll() {
+    if (!this.state) return;
+    this.pushUndo();
+    this.state.turnPhase = "turn-end";
+    this.emit();
+  }
+  /** Submit a complication check result (PC roll from GM). */
+  submitComplicationCheck(total, selectedCheck) {
+    var _a, _b;
+    if (!this.state) return;
+    const comp = this.state.currentComplication;
+    const p = this.getActive();
+    if (!comp || !p || comp.resolved) return;
+    this.pushUndo();
+    if (selectedCheck) comp.selectedCheck = selectedCheck;
+    const dc = (_b = (_a = comp.selectedCheck) == null ? void 0 : _a.dc) != null ? _b : 10;
+    comp.checkResult = total;
+    comp.resolved = true;
+    comp.passed = total >= dc;
+    this.applyComplicationResult(p, comp);
+    this.state.pendingInput = void 0;
+    this.state.turnPhase = "complication";
+    this.emit();
+  }
+  /** Apply complication effects after the check is resolved. */
+  applyComplicationResult(p, comp) {
+    const effect = comp.passed ? comp.entry.onSuccess : comp.entry.onFail;
+    if (!effect) {
+      comp.effectDescription = comp.passed ? "Passed \u2014 no effect." : "No penalty on failure.";
+      return;
+    }
+    comp.effectDescription = effect.description;
+    if (effect.grantsLoS) {
+      p.complicationLoSBreak = true;
+      p.lineOfSightBroken = true;
+      this.addLog(`${p.display}: ${effect.description}`);
+    }
+    if (effect.speedPenalty === "halved") {
+      p.movementPenalty = "halved";
+      this.addLog(`${p.display}: speed halved this turn.`);
+    } else if (effect.speedPenalty === "zero") {
+      p.movementPenalty = "zero";
+      this.addLog(`${p.display}: loses all movement this turn.`);
+    }
+    if (effect.movementReduction && effect.movementReduction > 0) {
+      p.movementReductionFeet += effect.movementReduction;
+      this.addLog(`${p.display}: ${effect.movementReduction}ft of difficult terrain.`);
+    }
+    if (effect.condition) {
+      const cond = effect.condition.charAt(0).toUpperCase() + effect.condition.slice(1).toLowerCase();
+      if (!p.conditions.includes(cond)) {
+        p.conditions.push(cond);
+        this.addLog(`${p.display} gains condition: ${cond}.`);
+      }
+    }
+    if (effect.damage) {
+      const dmg = this.rollDice(effect.damage);
+      const dtype = effect.damageType ? ` ${effect.damageType}` : "";
+      this.applyDamageInternal(p, dmg, dtype);
+    }
+  }
+  /** Advance from complication to action phase (called by view "Continue" button). */
+  advanceToAction() {
+    if (!this.state) return;
+    this.pushUndo();
+    this.state.pendingInput = void 0;
+    if (this.state.__obstacleComplication) {
+      delete this.state.__obstacleComplication;
+      const p = this.getActive();
+      if (p) {
+        this.checkMaxDistanceEscape();
+        if (p.role === "quarry") {
+          p.lineOfSightBroken = this.isLoSBroken(p);
+          if (p.lineOfSightBroken) p.wasOutOfSightThisRound = true;
+        }
+      }
+      this.rollComplicationD20();
+      return;
+    }
+    this.state.turnPhase = "action";
+    this.emit();
+  }
+  /** Select the action for the active participant. */
+  selectAction(action) {
+    if (!this.state) return;
+    const p = this.getActive();
+    if (!p || p.turnAction !== void 0) return;
+    this.pushUndo();
+    p.turnAction = action;
+    if (action === "dash") {
+      this.handleDash(p, false);
+    } else if (action === "hide") {
+      this.handleHide(p, false);
+    } else if (action === "search") {
+      this.handleSearch(p, false);
+    } else if (action === "attack") {
+      this.addLog(`${p.display} takes the Attack action. (GM: resolve attacks manually.)`);
+      this.advanceAfterAction(p);
+    } else if (action === "create-obstacle") {
+      this.addLog(`${p.display} creates an obstacle. (GM: select obstacle template or adjudicate.)`);
+      this.advanceAfterAction(p);
+    } else if (action === "grapple") {
+      this.handleGrapple(p);
+    } else if (action === "escape-grapple") {
+      this.handleEscapeGrapple(p);
+    } else {
+      this.addLog(`${p.display} takes the ${action} action.`);
+      this.advanceAfterAction(p);
+    }
+  }
+  /** Create a quarry obstacle (placed at the quarry's current position). */
+  createObstacle(entry) {
+    if (!this.state) return;
+    const p = this.getActive();
+    if (!p) return;
+    const obstacle = {
+      id: `obs_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      entry,
+      position: p.position,
+      createdByName: p.display,
+      createdById: p.id
+    };
+    this.state.placedObstacles.push(obstacle);
+    this.addLog(`${p.display} creates obstacle: ${entry.title} at ${p.position}ft.`);
+    this.emit();
+  }
+  /** Handle a Dash action (or bonus dash). */
+  handleDash(p, isBonus) {
+    p.dashesUsed++;
+    const needsSave = p.dashesUsed > p.freeDashes;
+    const label = isBonus ? "bonus-dashes" : "dashes";
+    if (needsSave) {
+      p.pendingDashSave = true;
+      this.addLog(`${p.display} ${label} (${p.dashesUsed}/${p.freeDashes} free). DC 10 CON save required!`);
+      this.state.pendingInput = {
+        type: "con-save",
+        participantId: p.id,
+        label: "CON Save DC 10",
+        modifier: p.conModifier,
+        dc: 10,
+        description: `DC 10 Constitution save to avoid exhaustion (dash ${p.dashesUsed}, ${p.freeDashes} free).`
+      };
+      this.state.turnPhase = isBonus ? "bonus-resolve" : "action-resolve";
+      this.emit();
+    } else {
+      this.addLog(`${p.display} ${label} (${p.dashesUsed}/${p.freeDashes} free).`);
+      this.advanceAfterAction(p, isBonus);
+    }
+  }
+  /** Handle a Hide action (or bonus hide via Cunning Action). */
+  handleHide(p, isBonus) {
+    if (p.role === "quarry") {
+      p.lineOfSightBroken = this.isLoSBroken(p);
+    }
+    if (!p.lineOfSightBroken && p.role === "quarry") {
+      this.addLog(`${p.display} tries to hide but line of sight is not broken!`);
+      this.advanceAfterAction(p, isBonus);
+      return;
+    }
+    this.state.pendingInput = {
+      type: "stealth",
+      participantId: p.id,
+      label: "Stealth Check",
+      modifier: p.stealthModifier,
+      description: "Roll Stealth to hide from pursuers."
+    };
+    this.state.turnPhase = isBonus ? "bonus-resolve" : "action-resolve";
+    this.emit();
+  }
+  /** Resolve a Hide attempt: compare stealth to all pursuers' passive perception. */
+  resolveHide(p, total, natural, isBonus) {
+    if (!this.state) return;
+    p.stealthRoll = total;
+    const pursuers = this.state.participants.filter(
+      (q) => q.role === "pursuer" && !q.droppedOut && !q.incapacitated
+    );
+    let allHidden = true;
+    const spotted = [];
+    for (const pur of pursuers) {
+      if (total < pur.passivePerception) {
+        allHidden = false;
+        spotted.push(pur.display);
+      }
+    }
+    if (allHidden && pursuers.length > 0) {
+      p.isHidden = true;
+      p.hiddenStealthRoll = total;
+      this.addLog(`${p.display} hides! Stealth ${total}${natural != null ? ` (d20=${natural})` : ""} \u2014 hidden from all pursuers.`);
+    } else {
+      p.isHidden = false;
+      p.hiddenStealthRoll = void 0;
+      this.addLog(`${p.display} fails to hide (Stealth ${total}${natural != null ? `, d20=${natural}` : ""}) \u2014 spotted by ${spotted.join(", ")}.`);
+    }
+    this.advanceAfterAction(p, isBonus);
+  }
+  /** Handle a Search action (pursuers only, to find hidden quarry). */
+  handleSearch(p, isBonus) {
+    this.state.pendingInput = {
+      type: "perception",
+      participantId: p.id,
+      label: "Perception Check",
+      modifier: p.perceptionModifier,
+      description: "Roll Perception to find hidden quarry."
+    };
+    this.state.turnPhase = isBonus ? "bonus-resolve" : "action-resolve";
+    this.emit();
+  }
+  /** Resolve a Search: compare perception to all hidden quarry's stealth rolls. */
+  resolveSearch(p, total, natural, isBonus) {
+    var _a;
+    if (!this.state) return;
+    p.activePerceptionRoll = total;
+    const hidden = this.state.participants.filter(
+      (q) => q.role === "quarry" && q.isHidden && !q.escaped && !q.droppedOut
+    );
+    for (const quarry of hidden) {
+      const stealth = (_a = quarry.hiddenStealthRoll) != null ? _a : 0;
+      if (total >= stealth) {
+        quarry.isHidden = false;
+        quarry.hiddenStealthRoll = void 0;
+        this.addLog(`${p.display} searches (Perception ${total}${natural != null ? `, d20=${natural}` : ""}) \u2014 finds ${quarry.display}! (Stealth was ${stealth})`);
+      } else {
+        this.addLog(`${p.display} searches (Perception ${total}${natural != null ? `, d20=${natural}` : ""}) \u2014 ${quarry.display} remains hidden (Stealth ${stealth}).`);
+      }
+    }
+    if (hidden.length === 0) {
+      this.addLog(`${p.display} searches but no quarry is hidden.`);
+    }
+    this.advanceAfterAction(p, isBonus);
+  }
+  /** Submit the resolution of an action roll (PC input from GM). */
+  submitActionInput(total) {
+    if (!this.state) return;
+    const p = this.getActive();
+    const pending = this.state.pendingInput;
+    if (!p || !pending) return;
+    this.pushUndo();
+    this.state.pendingInput = void 0;
+    if (pending.type === "con-save") {
+      p.pendingDashSave = false;
+      const passed = total >= 10;
+      if (!passed) {
+        p.exhaustionLevel++;
+        this.addLog(`${p.display} CON save ${total} \u2014 FAIL! Exhaustion \u2192 ${p.exhaustionLevel}.`);
+        if (p.exhaustionLevel >= 5) {
+          p.incapacitated = true;
+          p.droppedOut = true;
+          this.addLog(`${p.display} collapses from exhaustion!`);
+          this.checkChaseEnd();
+        }
+      } else {
+        this.addLog(`${p.display} CON save ${total} \u2014 passed.`);
+      }
+      const isBonus = this.state.turnPhase === "bonus-resolve";
+      this.advanceAfterAction(p, isBonus);
+    } else if (pending.type === "stealth") {
+      const isBonus = this.state.turnPhase === "bonus-resolve";
+      this.resolveHide(p, total, void 0, isBonus);
+    } else if (pending.type === "perception") {
+      const isBonus = this.state.turnPhase === "bonus-resolve";
+      this.resolveSearch(p, total, void 0, isBonus);
+    } else if (pending.type === "escape-stealth") {
+      this.submitEscapeCheck(total);
+    } else if (pending.type === "grapple-check") {
+      this.resolveGrappleCheck(p, total);
+    } else if (pending.type === "grapple-defense") {
+      this.resolveGrappleDefense(total);
+    } else if (pending.type === "escape-grapple-check") {
+      this.resolveEscapeGrappleCheck(p, total);
+    } else if (pending.type === "escape-grapple-defense") {
+      this.resolveEscapeGrappleDefense(total);
+    }
+  }
+  /** Advance to the next phase after an action (or bonus action) resolves. */
+  advanceAfterAction(p, isBonus = false) {
+    if (!this.state) return;
+    this.state.pendingInput = void 0;
+    if (!isBonus && p.hasCunningAction && p.bonusAction === void 0) {
+      this.state.turnPhase = "bonus";
+    } else {
+      this.state.turnPhase = "movement";
+    }
+    this.emit();
+  }
+  /** Select a bonus action (Cunning Action). */
+  selectBonusAction(action) {
+    if (!this.state) return;
+    const p = this.getActive();
+    if (!p || !p.hasCunningAction || p.bonusAction !== void 0) return;
+    this.pushUndo();
+    p.bonusAction = action;
+    if (action === "dash") {
+      this.handleDash(p, true);
+    } else if (action === "hide") {
+      this.handleHide(p, true);
+    } else {
+      this.addLog(`${p.display} uses Cunning Action: ${action}.`);
+      this.state.turnPhase = "movement";
+      this.emit();
+    }
+  }
+  /** Skip the bonus action phase. */
+  skipBonusAction() {
+    if (!this.state) return;
+    this.pushUndo();
+    this.state.turnPhase = "movement";
+    this.emit();
+  }
+  // ── Movement ───────────────────────────────────────────────
+  /** How many feet the active participant can still move this turn. */
+  getRemainingMovement(p) {
+    return Math.max(0, this.getMaxMovement(p) - p.feetMovedThisTurn);
+  }
+  /**
+   * Move the active participant a number of feet (supports multi-step movement).
+   * When not dashing, the participant can move partially, perform a free
+   * interaction (e.g. pick up an ally), then continue moving with the remaining
+   * feet. When dashing or when no movement remains, the movement finalises
+   * automatically.
+   */
+  confirmMovement(feet) {
+    if (!this.state) return;
+    const p = this.getActive();
+    if (!p || p.hasMoved) return;
+    this.pushUndo();
+    const remaining = this.getRemainingMovement(p);
+    const clamped = Math.min(Math.max(feet, 0), remaining);
+    const oldPos = p.position;
+    if (clamped > 0) {
+      p.position += clamped;
+      p.feetMovedThisTurn += clamped;
+      this.addLog(`${p.display} moves ${clamped}ft \u2192 position ${p.position}ft.`);
+      for (const id of [...p.carrying, ...p.grappling]) {
+        const dep = this.getParticipant(id);
+        if (dep) dep.position = p.position;
+      }
+      if (p.role === "pursuer") {
+        const hit = this.findCrossedObstacle(oldPos, p.position);
+        if (hit) {
+          const pending = {
+            entry: hit.entry,
+            d20Roll: 0,
+            rolledByName: hit.createdByName,
+            rolledById: hit.createdById,
+            isQuarryObstacle: true
+          };
+          this.state.placedObstacles = this.state.placedObstacles.filter((o) => o.id !== hit.id);
+          this.addLog(`\u26A0\uFE0F ${p.display} encounters obstacle at ${hit.position}ft: ${hit.entry.title}!`);
+          this.state.__obstacleComplication = true;
+          this.resolvePendingComplication(p, pending);
+          return;
+        }
+      }
+      const newRemaining = this.getRemainingMovement(p);
+      if (newRemaining > 0) {
+        this.emit();
+        return;
+      }
+    } else if (p.feetMovedThisTurn === 0) {
+      this.addLog(`${p.display} stays in place (position ${p.position}ft).`);
+    }
+    this.finalizeMovement(p);
+  }
+  /** End the movement phase early (when the participant has remaining feet but chooses to stop). */
+  endMovement() {
+    if (!this.state) return;
+    const p = this.getActive();
+    if (!p || p.hasMoved) return;
+    this.pushUndo();
+    if (p.feetMovedThisTurn === 0) {
+      this.addLog(`${p.display} stays in place (position ${p.position}ft).`);
+    }
+    this.finalizeMovement(p);
+  }
+  /** Complete the movement phase: mark done, check max-distance escape/LoS, roll complication. */
+  finalizeMovement(p) {
+    p.hasMoved = true;
+    this.checkMaxDistanceEscape();
+    if (p.role === "quarry") {
+      p.lineOfSightBroken = this.isLoSBroken(p);
+      if (p.lineOfSightBroken) p.wasOutOfSightThisRound = true;
+    }
+    this.rollComplicationD20();
+  }
+  /** Set a participant's position directly (GM override). */
+  setPosition(id, position) {
+    if (!this.state) return;
+    const p = this.getParticipant(id);
+    if (!p) return;
+    p.position = position;
+    for (const id2 of [...p.carrying, ...p.grappling]) {
+      const carried = this.getParticipant(id2);
+      if (carried) carried.position = p.position;
+    }
+    this.checkMaxDistanceEscape();
+    this.emit();
+  }
+  /** Set a participant's active speed mode. */
+  setActiveSpeed(id, mode) {
+    if (!this.state) return;
+    const p = this.getParticipant(id);
+    if (!p) return;
+    p.activeSpeed = mode;
+    this.emit();
+  }
+  /** Find the first placed obstacle crossed during movement from oldPos to newPos. */
+  findCrossedObstacle(oldPos, newPos) {
+    if (!this.state) return void 0;
+    const crossed = this.state.placedObstacles.filter(
+      (o) => o.position > oldPos && o.position <= newPos
+    );
+    if (crossed.length === 0) return void 0;
+    crossed.sort((a, b) => a.position - b.position);
+    return crossed[0];
+  }
+  /** Get effective speed in feet, accounting for carry weight, grapple, and exhaustion (D&D 5e RAW). */
+  getEffectiveSpeed(p) {
+    var _a, _b, _c, _d;
+    const entry = (_a = p.speeds.find((s) => s.mode === p.activeSpeed)) != null ? _a : p.speeds[0];
+    let speed = (_b = entry == null ? void 0 : entry.feet) != null ? _b : 30;
+    const allParticipants = (_d = (_c = this.state) == null ? void 0 : _c.participants) != null ? _d : [];
+    const burdenWeight = totalBurdenWeight(p, allParticipants);
+    if (burdenWeight > 0) {
+      const result = computeCarryPenalty(p.strScore, burdenWeight);
+      if (result.status === "impossible") return 0;
+      if (result.status === "drag") return result.speedFeet;
+    }
+    if (p.grappling.length > 0) {
+      const halvesSpeed = p.grappling.some((id) => {
+        const target = allParticipants.find((x) => x.id === id);
+        if (!target) return false;
+        return sizeDifference(p.size, target.size) < 2;
+      });
+      if (halvesSpeed) speed = Math.floor(speed / 2);
+    }
+    if (p.exhaustionLevel >= 2) speed = Math.floor(speed / 2);
+    if (p.exhaustionLevel >= 5) speed = 0;
+    return speed;
+  }
+  // ── Carry ──────────────────────────────────────────────────
+  /**
+   * One participant picks up another (voluntary carry — same role only).
+   * Cross-role carries require a grapple action instead.
+   * Both must be at the same position (0 ft apart).
+   */
+  pickUp(carrierId, targetId) {
+    if (!this.state) return false;
+    const carrier = this.getParticipant(carrierId);
+    const target = this.getParticipant(targetId);
+    if (!carrier || !target) return false;
+    this.pushUndo();
+    if (carrier.role !== target.role) {
+      this.addLog(`${carrier.display} cannot pick up ${target.display} (hostile \u2014 use Grapple instead).`);
+      this.emit();
+      return false;
+    }
+    if (carrier.position !== target.position) {
+      this.addLog(`${carrier.display} cannot pick up ${target.display} (not at the same position).`);
+      this.emit();
+      return false;
+    }
+    const currentWeight = totalBurdenWeight(carrier, this.state.participants);
+    const newWeight = currentWeight + target.estimatedWeight;
+    const result = computeCarryPenalty(carrier.strScore, newWeight);
+    if (result.status === "impossible") {
+      this.addLog(`${carrier.display} cannot carry ${target.display} (too heavy \u2014 total ${newWeight} lbs).`);
+      this.emit();
+      return false;
+    }
+    carrier.carrying.push(targetId);
+    target.carriedBy = carrierId;
+    target.position = carrier.position;
+    const penalty = result.status === "drag" ? "speed 5ft (dragging)" : "no speed penalty";
+    this.addLog(`${carrier.display} picks up ${target.display} (${penalty}).`);
+    this.emit();
+    return true;
+  }
+  /** Drop a specific carried participant. */
+  putDown(carrierId, targetId) {
+    if (!this.state) return;
+    const carrier = this.getParticipant(carrierId);
+    if (!carrier || carrier.carrying.length === 0) return;
+    this.pushUndo();
+    if (targetId) {
+      const idx = carrier.carrying.indexOf(targetId);
+      if (idx >= 0) {
+        carrier.carrying.splice(idx, 1);
+        const target = this.getParticipant(targetId);
+        if (target) {
+          target.carriedBy = void 0;
+          this.addLog(`${carrier.display} puts down ${target.display}.`);
+        }
+      }
+    } else {
+      for (const id of carrier.carrying) {
+        const target = this.getParticipant(id);
+        if (target) target.carriedBy = void 0;
+      }
+      this.addLog(`${carrier.display} puts down everyone.`);
+      carrier.carrying = [];
+    }
+    this.emit();
+  }
+  // ── Grapple ────────────────────────────────────────────────
+  /** Handle a grapple action — participant attempts to grapple an opponent at the same position. */
+  handleGrapple(pursuer) {
+    if (!this.state) return;
+    const target = this.getGrappleTarget(pursuer);
+    if (!target) {
+      this.addLog(`${pursuer.display} tries to grapple but no opponent at the same position!`);
+      this.advanceAfterAction(pursuer);
+      return;
+    }
+    this.state.pendingInput = {
+      type: "grapple-check",
+      participantId: pursuer.id,
+      label: `Athletics (Grapple vs ${target.display})`,
+      modifier: this.getAbilityModifier(pursuer, "Athletics"),
+      description: `Grapple check: ${pursuer.display}'s Athletics vs ${target.display}'s Athletics or Acrobatics.`
+    };
+    this.state.turnPhase = "action-resolve";
+    this.state.__grappleTargetId = target.id;
+    this.emit();
+  }
+  /** Find a grappable opponent at the same position (0 ft apart). */
+  getGrappleTarget(p) {
+    if (!this.state) return void 0;
+    const opponents = this.state.participants.filter(
+      (q) => q.role !== p.role && !q.droppedOut && !q.escaped && !q.incapacitated && !q.grappledBy && this.canCatch(p, q) && q.position === p.position
+    );
+    if (opponents.length === 0) return void 0;
+    return opponents[0];
+  }
+  /** Apply grapple: target is now grappled by the grappler. */
+  applyGrapple(grappler, target) {
+    grappler.grappling.push(target.id);
+    target.grappledBy = grappler.id;
+    target.position = grappler.position;
+    if (!target.conditions.includes("Grappled")) target.conditions.push("Grappled");
+  }
+  /** Break a grapple (target breaks free on their turn, or GM override). */
+  breakGrapple(targetId) {
+    if (!this.state) return;
+    this.pushUndo();
+    const target = this.getParticipant(targetId);
+    if (!target || !target.grappledBy) return;
+    const grappler = this.getParticipant(target.grappledBy);
+    if (grappler) {
+      const idx = grappler.grappling.indexOf(targetId);
+      if (idx >= 0) grappler.grappling.splice(idx, 1);
+    }
+    target.grappledBy = void 0;
+    const condIdx = target.conditions.indexOf("Grappled");
+    if (condIdx >= 0) target.conditions.splice(condIdx, 1);
+    this.addLog(`${target.display} breaks free from grapple!`);
+    this.emit();
+  }
+  /** Handle an escape-grapple action — grappled participant tries to break free via contested Athletics/Acrobatics check. */
+  handleEscapeGrapple(p) {
+    if (!this.state || !p.grappledBy) return;
+    const grappler = this.getParticipant(p.grappledBy);
+    if (!grappler) {
+      this.breakGrapple(p.id);
+      this.advanceAfterAction(p);
+      return;
+    }
+    const mod = Math.max(
+      this.getAbilityModifier(p, "Athletics"),
+      this.getAbilityModifier(p, "Acrobatics")
+    );
+    this.state.pendingInput = {
+      type: "escape-grapple-check",
+      participantId: p.id,
+      label: `Athletics or Acrobatics (Escape Grapple)`,
+      modifier: mod,
+      description: `${p.display} attempts to escape ${grappler.display}'s grapple: Athletics or Acrobatics vs ${grappler.display}'s Athletics.`
+    };
+    this.state.turnPhase = "action-resolve";
+    this.state.__escapeGrappleGrapplerId = grappler.id;
+    this.emit();
+  }
+  /** Resolve the escape-grapple attacker roll — now prompt for the grappler's defense. */
+  resolveEscapeGrappleCheck(escapee, total) {
+    if (!this.state) return;
+    const grapplerId = this.state.__escapeGrappleGrapplerId;
+    const grappler = grapplerId ? this.getParticipant(grapplerId) : void 0;
+    if (!grappler) {
+      delete this.state.__escapeGrappleGrapplerId;
+      this.breakGrapple(escapee.id);
+      this.advanceAfterAction(escapee);
+      return;
+    }
+    this.state.__escapeGrappleTotal = total;
+    const defMod = this.getAbilityModifier(grappler, "Athletics");
+    this.state.pendingInput = {
+      type: "escape-grapple-defense",
+      participantId: grappler.id,
+      label: `Athletics (Resist Escape)`,
+      modifier: defMod,
+      description: `${grappler.display} contests the escape: Athletics vs ${escapee.display}'s ${total}.`
+    };
+    this.state.turnPhase = "action-resolve";
+    this.emit();
+  }
+  /** Resolve the grappler's defense roll for escape-grapple. */
+  resolveEscapeGrappleDefense(defenseTotal) {
+    var _a;
+    if (!this.state) return;
+    const grapplerId = this.state.__escapeGrappleGrapplerId;
+    const escapeTotal = (_a = this.state.__escapeGrappleTotal) != null ? _a : 0;
+    delete this.state.__escapeGrappleGrapplerId;
+    delete this.state.__escapeGrappleTotal;
+    const escapee = this.getActive();
+    const grappler = grapplerId ? this.getParticipant(grapplerId) : void 0;
+    if (!escapee) return;
+    if (!grappler) {
+      this.breakGrapple(escapee.id);
+      this.advanceAfterAction(escapee);
+      return;
+    }
+    if (escapeTotal >= defenseTotal) {
+      this.breakGrapple(escapee.id);
+      this.addLog(`${escapee.display} breaks free from ${grappler.display}'s grapple! (${escapeTotal} vs ${defenseTotal})`);
+    } else {
+      this.addLog(`${escapee.display} fails to escape ${grappler.display}'s grapple (${escapeTotal} vs ${defenseTotal}).`);
+    }
+    this.advanceAfterAction(escapee);
+  }
+  /** Resolve a grapple check (attacker's roll submitted). Now prompt for defender's roll. */
+  resolveGrappleCheck(attacker, total) {
+    if (!this.state) return;
+    const targetId = this.state.__grappleTargetId;
+    const target = targetId ? this.getParticipant(targetId) : void 0;
+    if (!target) {
+      delete this.state.__grappleTargetId;
+      this.advanceAfterAction(attacker);
+      return;
+    }
+    this.state.__grappleAttackTotal = total;
+    const defMod = Math.max(
+      this.getAbilityModifier(target, "Athletics"),
+      this.getAbilityModifier(target, "Acrobatics")
+    );
+    this.state.pendingInput = {
+      type: "grapple-defense",
+      participantId: target.id,
+      label: `Athletics or Acrobatics (Resist Grapple)`,
+      modifier: defMod,
+      description: `${target.display} resists grapple: Athletics or Acrobatics vs ${attacker.display}'s ${total}.`
+    };
+    this.state.turnPhase = "action-resolve";
+    this.emit();
+  }
+  /** Resolve the grapple defense roll (opposed check). */
+  resolveGrappleDefense(defenseTotal) {
+    var _a;
+    if (!this.state) return;
+    const targetId = this.state.__grappleTargetId;
+    const attackTotal = (_a = this.state.__grappleAttackTotal) != null ? _a : 0;
+    delete this.state.__grappleTargetId;
+    delete this.state.__grappleAttackTotal;
+    const attacker = this.getActive();
+    const target = targetId ? this.getParticipant(targetId) : void 0;
+    if (!attacker || !target) {
+      if (attacker) this.advanceAfterAction(attacker);
+      return;
+    }
+    if (attackTotal >= defenseTotal) {
+      this.applyGrapple(attacker, target);
+      this.addLog(`${attacker.display} grapples ${target.display}! (Athletics ${attackTotal} vs ${defenseTotal})`);
+    } else {
+      this.addLog(`${attacker.display} fails to grapple ${target.display} (Athletics ${attackTotal} vs ${defenseTotal}).`);
+    }
+    this.advanceAfterAction(attacker);
+  }
+  // ── Drop out / state changes ───────────────────────────────
+  /** Participant voluntarily drops out of the chase. */
+  dropOut(id) {
+    var _a;
+    if (!this.state) return;
+    this.pushUndo();
+    const p = this.getParticipant(id);
+    if (!p) return;
+    const wasActive = this.state.started && !this.state.ended && ((_a = this.state.participants[this.state.turnIndex]) == null ? void 0 : _a.id) === id;
+    p.droppedOut = true;
+    this.addLog(`${p.display} drops out of the chase.`);
+    for (const gId of [...p.grappling]) {
+      this.breakGrapple(gId);
+    }
+    this.checkChaseEnd();
+    if (wasActive && !this.state.ended) {
+      this.skipInactiveForward();
+      this.beginTurn();
+    } else {
+      this.emit();
+    }
+  }
+  // ── HP & Conditions (combat-like, accessible any time) ─────
+  /** Apply damage to a participant. TempHP absorbs first. */
+  applyDamage(id, amount) {
+    if (!this.state || amount <= 0) return;
+    this.pushUndo();
+    const p = this.getParticipant(id);
+    if (!p) return;
+    this.applyDamageInternal(p, amount, "");
+    this.emit();
+  }
+  /** Internal damage application (tempHP absorbs first). */
+  applyDamageInternal(p, dmg, damageLabel) {
+    let remaining = dmg;
+    if (p.tempHP > 0) {
+      const absorbed = Math.min(p.tempHP, remaining);
+      p.tempHP -= absorbed;
+      remaining -= absorbed;
+    }
+    p.currentHP -= remaining;
+    if (p.currentHP <= 0) {
+      p.currentHP = 0;
+      p.incapacitated = true;
+      p.droppedOut = true;
+      this.addLog(`${p.display} takes ${dmg}${damageLabel} damage and is incapacitated!`);
+      this.checkChaseEnd();
+    } else {
+      this.addLog(`${p.display} takes ${dmg}${damageLabel} damage (HP: ${p.currentHP}/${p.maxHP}${p.tempHP > 0 ? ` +${p.tempHP} temp` : ""}).`);
+    }
+  }
+  /** Heal a participant. */
+  applyHealing(id, amount) {
+    if (!this.state || amount <= 0) return;
+    this.pushUndo();
+    const p = this.getParticipant(id);
+    if (!p) return;
+    const before = p.currentHP;
+    p.currentHP = Math.min(p.maxHP, p.currentHP + amount);
+    const healed = p.currentHP - before;
+    if (healed > 0) {
+      this.addLog(`${p.display} heals ${healed} HP (now ${p.currentHP}/${p.maxHP}).`);
+    }
+    if (p.currentHP > 0 && p.incapacitated) {
+      p.incapacitated = false;
+      p.droppedOut = false;
+      this.addLog(`${p.display} regains consciousness and rejoins the chase!`);
+    }
+    this.emit();
+  }
+  /** Set temporary hit points (does not stack — takes highest). */
+  setTempHP(id, amount) {
+    if (!this.state || amount < 0) return;
+    this.pushUndo();
+    const p = this.getParticipant(id);
+    if (!p) return;
+    p.tempHP = Math.max(p.tempHP, amount);
+    this.addLog(`${p.display} gains ${amount} temp HP (total: ${p.tempHP}).`);
+    this.emit();
+  }
+  /** Add a condition to a participant. */
+  addCondition(id, condition) {
+    if (!this.state) return;
+    this.pushUndo();
+    const p = this.getParticipant(id);
+    if (!p) return;
+    if (!p.conditions.includes(condition)) {
+      p.conditions.push(condition);
+      this.addLog(`${p.display} gains condition: ${condition}.`);
+      this.emit();
+    }
+  }
+  /** Remove a condition from a participant. */
+  removeCondition(id, condition) {
+    if (!this.state) return;
+    this.pushUndo();
+    const p = this.getParticipant(id);
+    if (!p) return;
+    const idx = p.conditions.indexOf(condition);
+    if (idx >= 0) {
+      p.conditions.splice(idx, 1);
+      this.addLog(`${p.display} loses condition: ${condition}.`);
+      this.emit();
+    }
+  }
+  /** End the chase with a specific outcome. */
+  endChase(outcome) {
+    if (!this.state) return;
+    this.pushUndo();
+    this.state.ended = true;
+    this.state.outcome = outcome;
+    this.addLog(`Chase ended: ${outcome}.`);
+    this.emit();
+  }
+  /** Add a new participant mid-chase (inserted at end of initiative order). */
+  addParticipant(p) {
+    if (!this.state) return;
+    this.state.participants.push(p);
+    this.addLog(`${p.display} joins the chase at position ${p.position}ft as ${p.role}!`);
+    this.emit();
+  }
+  /** Set a participant's movement plane (ground/air/underground). */
+  setMovementPlane(id, plane) {
+    var _a;
+    if (!this.state) return;
+    const p = this.getParticipant(id);
+    if (!p) return;
+    const modeMap = { ground: "walk", air: "fly", underground: "burrow" };
+    const desiredMode = (_a = modeMap[plane]) != null ? _a : "walk";
+    const hasMode = p.speeds.some((s) => s.mode === desiredMode);
+    if (!hasMode && plane !== "ground") {
+      this.addLog(`${p.display} cannot move to ${plane} \u2014 no ${desiredMode} speed!`);
+      this.emit();
+      return;
+    }
+    p.movementPlane = plane;
+    if (hasMode) p.activeSpeed = desiredMode;
+    this.addLog(`${p.display} is now ${plane === "air" ? "flying" : plane === "underground" ? "burrowing" : "on the ground"}.`);
+    this.emit();
+  }
+  /** Clear the chase state entirely. */
+  clear() {
+    this.state = null;
+    this.emit();
+  }
+  // ── Environment ────────────────────────────────────────────
+  /** Update the chase environment (mid-chase environment change). */
+  updateEnvironment(env) {
+    var _a;
+    if (!this.state) return;
+    this.state.environment = env;
+    this.state.complicationTableId = (_a = env.complicationTableId) != null ? _a : this.state.complicationTableId;
+    this.state.stealthCondition = computeStealthCondition(env, this.state.hasRangerPursuer);
+    this.addLog(`Environment changed: ${env.name} (stealth: ${this.state.stealthCondition}).`);
+    this.emit();
+  }
+  /** Toggle ranger/Survival pursuer flag. */
+  setRangerPursuer(has) {
+    if (!this.state) return;
+    this.state.hasRangerPursuer = has;
+    this.state.stealthCondition = computeStealthCondition(this.state.environment, has);
+    this.emit();
+  }
+  // ── Internal helpers ───────────────────────────────────────
+  /** Run end-of-round logic: DMG escape check for quarry that were out of sight. */
+  runEndOfRound() {
+    if (!this.state) return;
+    if (this.state.maxRounds > 0 && this.state.round >= this.state.maxRounds) {
+      this.addLog(`\u23F1\uFE0F Maximum rounds (${this.state.maxRounds}) reached \u2014 chase ends!`);
+      this.endChase("gm-ended");
+      return;
+    }
+    const hidden = this.state.participants.filter(
+      (p) => p.role === "quarry" && p.isHidden && !p.droppedOut && !p.escaped && !p.incapacitated
+    );
+    for (const quarry of hidden) {
+      quarry.escaped = true;
+      this.escapeCarried(quarry);
+      this.addLog(`\u{1F3C3} ${quarry.display} escapes! Hidden quarry was not found by end of round ${this.state.round}.`);
+    }
+    if (hidden.length > 0) this.checkChaseEnd();
+    if (this.state.ended) return;
+    const escapeEligible = this.state.participants.filter(
+      (p) => p.role === "quarry" && p.wasOutOfSightThisRound && !p.isHidden && !p.escaped && !p.droppedOut && !p.incapacitated
+    );
+    if (escapeEligible.length > 0) {
+      this.state.escapeCheckQueue = escapeEligible.map((p) => p.id);
+      this.processNextEscapeCheck();
+      return;
+    }
+    this.finishEndOfRound();
+  }
+  /** Finish end-of-round cleanup (after escape checks are done). */
+  finishEndOfRound() {
+    if (!this.state) return;
+    for (const q of this.state.participants.filter((p) => p.role === "quarry")) {
+      q.lineOfSightBroken = false;
+      q.complicationLoSBreak = false;
+      q.wasOutOfSightThisRound = false;
+    }
+    this.state.escapeCheckQueue = void 0;
+  }
+  /** Process the next quarry in the escape check queue. */
+  processNextEscapeCheck() {
+    if (!this.state) return;
+    const queue = this.state.escapeCheckQueue;
+    if (!queue || queue.length === 0) {
+      this.finishEndOfRound();
+      this.checkChaseEnd();
+      return;
+    }
+    const quarryId = queue[0];
+    const quarry = this.getParticipant(quarryId);
+    if (!quarry || quarry.escaped || quarry.droppedOut || quarry.incapacitated) {
+      queue.shift();
+      this.processNextEscapeCheck();
+      return;
+    }
+    this.state.turnPhase = "escape-check";
+    this.state.pendingInput = {
+      type: "escape-stealth",
+      participantId: quarry.id,
+      label: `Stealth (${this.state.stealthCondition})`,
+      modifier: quarry.stealthModifier,
+      description: `End-of-round escape check: ${quarry.display} was out of sight \u2014 Stealth vs pursuers' passive Perception.`
+    };
+    this.emit();
+  }
+  /** Submit a PC's escape Stealth check result. */
+  submitEscapeCheck(total) {
+    if (!this.state) return;
+    this.pushUndo();
+    const queue = this.state.escapeCheckQueue;
+    if (!queue || queue.length === 0) return;
+    const quarryId = queue[0];
+    const quarry = this.getParticipant(quarryId);
+    if (!quarry) return;
+    this.state.pendingInput = void 0;
+    this.resolveEscapeCheck(quarry, total, void 0);
+  }
+  /** Resolve an escape check: compare Stealth to highest pursuer passive Perception. */
+  resolveEscapeCheck(quarry, total, natural) {
+    if (!this.state) return;
+    const queue = this.state.escapeCheckQueue;
+    const pursuers = this.state.participants.filter(
+      (p) => p.role === "pursuer" && !p.droppedOut && !p.incapacitated
+    );
+    let highestPerception = 0;
+    for (const pur of pursuers) {
+      if (pur.passivePerception > highestPerception) highestPerception = pur.passivePerception;
+    }
+    const rollStr = natural != null ? ` (d20=${natural})` : "";
+    if (total > highestPerception) {
+      quarry.escaped = true;
+      this.escapeCarried(quarry);
+      this.addLog(`\u{1F3C3} ${quarry.display} escape check: Stealth ${total}${rollStr} > ${highestPerception} \u2014 ESCAPED!`);
+    } else {
+      this.addLog(`${quarry.display} escape check: Stealth ${total}${rollStr} \u2264 ${highestPerception} \u2014 still being pursued.`);
+    }
+    queue == null ? void 0 : queue.shift();
+    if (queue && queue.length > 0) {
+      this.processNextEscapeCheck();
+    } else {
+      this.finishEndOfRound();
+      this.checkChaseEnd();
+      if (!this.state.ended) {
+        this.state.round++;
+        for (const pp of this.state.participants) {
+          pp.hasActed = false;
+          this.resetTurnFlags(pp);
+        }
+        this.addLog(`Round ${this.state.round} begins.`);
+        this.state.turnIndex = 0;
+        this.skipInactiveForward();
+        this.beginTurn();
+      } else {
+        this.emit();
+      }
+    }
+  }
+  /** Auto-roll with advantage or disadvantage. */
+  autoRollWithAdvantage(modifier, condition) {
+    const r1 = Math.floor(Math.random() * 20) + 1;
+    const r2 = Math.floor(Math.random() * 20) + 1;
+    let natural;
+    if (condition === "advantage") {
+      natural = Math.max(r1, r2);
+    } else if (condition === "disadvantage") {
+      natural = Math.min(r1, r2);
+    } else {
+      natural = r1;
+    }
+    return { natural, total: natural + modifier };
+  }
+  /** Check if any quarry has reached the max escape distance and auto-escapes. */
+  checkMaxDistanceEscape() {
+    if (!this.state || this.state.maxDistance <= 0) return;
+    const quarries = this.state.participants.filter(
+      (p) => p.role === "quarry" && !p.droppedOut && !p.escaped && !p.incapacitated
+    );
+    for (const q of quarries) {
+      if (q.position >= this.state.maxDistance) {
+        q.escaped = true;
+        this.addLog(`\u{1F3C3} ${q.display} reaches ${q.position}ft \u2014 auto-escaped! (max distance: ${this.state.maxDistance}ft)`);
+        this.escapeCarried(q);
+      }
+    }
+    this.checkChaseEnd();
+  }
+  /** Escape all carried/grappled participants along with the escapee. */
+  escapeCarried(p) {
+    for (const id of [...p.carrying, ...p.grappling]) {
+      const dep = this.getParticipant(id);
+      if (dep) dep.escaped = true;
+    }
+  }
+  /** Check if the chase should end (all quarry escaped/caught or all pursuers dropped out). */
+  checkChaseEnd() {
+    if (!this.state) return;
+    const quarries = this.state.participants.filter((p) => p.role === "quarry");
+    const pursuers = this.state.participants.filter((p) => p.role === "pursuer");
+    const allQuarryGone = quarries.every((q) => q.escaped || q.droppedOut || q.incapacitated);
+    const allPursuerGone = pursuers.every((p) => p.droppedOut || p.incapacitated);
+    if (allQuarryGone) {
+      const allEscaped = quarries.every((q) => q.escaped);
+      this.endChase(allEscaped ? "escaped" : "caught");
+    } else if (allPursuerGone) {
+      this.endChase("escaped");
+    }
+  }
+  /** Add a log entry for the current round. */
+  addLog(text) {
+    if (!this.state) return;
+    this.state.log.push({ round: this.state.round, text });
+  }
+};
+
+// src/pursuit/PursuitTrackerView.ts
+var import_obsidian72 = require("obsidian");
+init_ScreenEnumeration();
+var PursuitTrackerView = class extends import_obsidian72.ItemView {
+  constructor(leaf, plugin) {
+    super(leaf);
+    this.unsubscribe = null;
+    this._projectionUnsub = null;
+    this.plugin = plugin;
+  }
+  getViewType() {
+    return PURSUIT_TRACKER_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "Pursuit Tracker";
+  }
+  getIcon() {
+    return "footprints";
+  }
+  async onOpen() {
+    var _a, _b;
+    this.unsubscribe = this.plugin.pursuitTracker.onChange(() => this.render());
+    this._projectionUnsub = (_b = (_a = this.plugin.projectionManager) == null ? void 0 : _a.onChange(() => this.render())) != null ? _b : null;
+    this.render();
+  }
+  onClose() {
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
+    }
+    if (this._projectionUnsub) {
+      this._projectionUnsub();
+      this._projectionUnsub = null;
+    }
+    return Promise.resolve();
+  }
+  // ── Main Render ────────────────────────────────────────────
+  render() {
+    const container = this.containerEl.children[1];
+    if (!container) return;
+    container.empty();
+    container.addClass("dnd-pursuit-tracker");
+    const tracker = this.plugin.pursuitTracker;
+    const state = tracker.getState();
+    if (!state) {
+      this.renderNoChase(container);
+      return;
+    }
+    this.renderToolbar(container, tracker, state);
+    this.renderHeader(container, state);
+    if (!state.started) {
+      this.renderPreChase(container, tracker, state);
+    } else if (state.ended) {
+      this.renderEnded(container, state);
+    } else {
+      this.renderActiveTurns(container, tracker, state);
+      this.renderEnvironmentSummary(container, state);
+      this.renderLog(container, state);
+    }
+  }
+  // ── No Chase ───────────────────────────────────────────────
+  renderNoChase(container) {
+    const div = container.createDiv({ cls: "dnd-pursuit-empty" });
+    div.createEl("h3", { text: "\u{1F3C3} Pursuit Tracker" });
+    div.createEl("p", { text: "No active chase. Start one from the Combat Tracker or the command palette." });
+    const btn = div.createEl("button", { text: "\u{1F3C3} Start New Chase", cls: "dnd-pursuit-btn dnd-pursuit-btn-primary" });
+    btn.addEventListener("click", () => {
+      this.plugin.startPursuitSetup();
+    });
+  }
+  // ── Toolbar ────────────────────────────────────────────────
+  renderToolbar(container, tracker, state) {
+    const toolbar = container.createDiv({ cls: "dnd-pursuit-toolbar" });
+    if (!state.started) {
+      const rollBtn = toolbar.createEl("button", {
+        text: "\u{1F3B2} Roll Initiative",
+        cls: "dnd-pursuit-btn dnd-pursuit-btn-primary"
+      });
+      rollBtn.addEventListener("click", () => {
+        tracker.rollAllInitiative();
+        tracker.startChase();
+      });
+    } else if (!state.ended) {
+      const undoBtn = toolbar.createEl("button", { text: "\u21A9", cls: "dnd-pursuit-toolbar-btn", attr: { title: "Undo" } });
+      if (!tracker.canUndo()) {
+        undoBtn.disabled = true;
+        undoBtn.addClass("dnd-pursuit-btn-disabled");
+      }
+      undoBtn.addEventListener("click", () => tracker.undo());
+      const roundLabel = toolbar.createEl("span", { cls: "dnd-pursuit-toolbar-round" });
+      roundLabel.textContent = `Round ${state.round}`;
+      const nextBtn = toolbar.createEl("button", {
+        text: "\u25B6 Next Turn",
+        cls: "dnd-pursuit-toolbar-btn dnd-pursuit-toolbar-btn-primary",
+        attr: { title: "Next Turn" }
+      });
+      const active = state.participants[state.turnIndex];
+      if (state.turnPhase !== "turn-end") {
+        nextBtn.disabled = true;
+        nextBtn.addClass("dnd-pursuit-btn-disabled");
+        nextBtn.title = "Complete the current turn first";
+      }
+      nextBtn.addEventListener("click", () => tracker.nextTurn());
+    }
+    toolbar.createDiv({ cls: "dnd-pursuit-toolbar-spacer" });
+    const pm = this.plugin.projectionManager;
+    const hasPursuitProjection = pm ? pm.getLiveProjections().some((p) => p.contentType === "pursuit") : false;
+    const pvBtn = toolbar.createEl("button", {
+      text: hasPursuitProjection ? "\u23F9" : "\u{1F4FA}",
+      cls: `dnd-pursuit-toolbar-btn ${hasPursuitProjection ? "dnd-pursuit-toolbar-btn-stop" : ""}`,
+      attr: { title: hasPursuitProjection ? "Stop Player View" : "Project Player View" }
+    });
+    pvBtn.addEventListener("click", (e) => {
+      if (hasPursuitProjection && pm) {
+        for (const proj of pm.getLiveProjections()) {
+          if (proj.contentType === "pursuit") {
+            void pm.stopProjectionOnScreen(screenKey(proj.screen));
+          }
+        }
+      } else {
+        this.openPlayerView(e);
+      }
+    });
+    if (state.started && !state.ended) {
+      const addBtn = toolbar.createEl("button", {
+        text: "\u2795",
+        cls: "dnd-pursuit-toolbar-btn",
+        attr: { title: "Add Participant" }
+      });
+      addBtn.addEventListener("click", () => this.showAddParticipantMenu());
+      const endBtn = toolbar.createEl("button", {
+        text: "\u{1F3C1}",
+        cls: "dnd-pursuit-toolbar-btn dnd-pursuit-toolbar-btn-stop",
+        attr: { title: "End Chase" }
+      });
+      endBtn.addEventListener("click", () => {
+        tracker.endChase("surrendered");
+      });
+    }
+  }
+  // ── Header ─────────────────────────────────────────────────
+  renderHeader(container, state) {
+    const header = container.createDiv({ cls: "dnd-pursuit-header" });
+    header.createEl("h3", { text: `\u{1F3C3} ${state.name}` });
+    const condBadge = header.createEl("span", { cls: `dnd-pursuit-condition dnd-pursuit-condition-${state.stealthCondition}` });
+    const condText = state.stealthCondition === "advantage" ? "Stealth: Advantage" : state.stealthCondition === "disadvantage" ? "Stealth: Disadvantage" : "Stealth: Normal";
+    condBadge.textContent = condText;
+    const infoItems = [];
+    if (state.maxDistance > 0) infoItems.push(`Max dist: ${state.maxDistance}ft`);
+    if (state.maxRounds > 0) infoItems.push(`Max rounds: ${state.round}/${state.maxRounds}`);
+    if (infoItems.length > 0) {
+      header.createEl("span", { text: infoItems.join(" \xB7 "), cls: "dnd-pursuit-limits-badge" });
+    }
+  }
+  // ── Pre-chase (initiative setup) ───────────────────────────
+  renderPreChase(container, tracker, state) {
+    container.createEl("p", { text: "Set initiative for each participant, or roll for all.", cls: "setting-item-description" });
+    const list = container.createDiv({ cls: "dnd-pursuit-init-list" });
+    for (const p of state.participants) {
+      const row = list.createDiv({ cls: "dnd-pursuit-init-row" });
+      const roleIcon = p.role === "quarry" ? "\u{1F3C3}" : "\u{1F50D}";
+      row.createEl("span", { text: `${roleIcon} ${p.display}`, cls: "dnd-pursuit-init-name" });
+      const input = row.createEl("input", {
+        type: "number",
+        cls: "dnd-pursuit-init-input",
+        attr: { value: String(p.initiative), min: "1", max: "30" }
+      });
+      input.addEventListener("change", () => {
+        tracker.setInitiative(p.id, parseInt(input.value, 10) || 0);
+      });
+    }
+  }
+  // ── Active Turns ───────────────────────────────────────────
+  renderActiveTurns(container, tracker, state) {
+    const list = container.createDiv({ cls: "dnd-pursuit-turn-list" });
+    for (let i = 0; i < state.participants.length; i++) {
+      const p = state.participants[i];
+      if (!p) continue;
+      const isActive = state.started && i === state.turnIndex;
+      this.renderParticipantRow(list, tracker, p, isActive, state);
+    }
+  }
+  renderParticipantRow(container, tracker, p, isActive, state) {
+    var _a, _b, _c;
+    const row = container.createDiv({
+      cls: `dnd-pursuit-row ${isActive ? "dnd-pursuit-row-active" : ""} ${p.escaped ? "dnd-pursuit-row-escaped" : ""} ${p.droppedOut ? "dnd-pursuit-row-dropped" : ""} ${p.incapacitated ? "dnd-pursuit-row-incap" : ""}`
+    });
+    const headerLine = row.createDiv({ cls: "dnd-pursuit-row-header" });
+    const roleIcon = p.role === "quarry" ? "\u{1F3C3}" : "\u{1F50D}";
+    headerLine.createEl("span", { text: `${roleIcon} ${p.display}`, cls: "dnd-pursuit-row-name" });
+    if (isActive) {
+      headerLine.createEl("span", { text: "\u25B6 TURN", cls: "dnd-pursuit-turn-badge" });
+    }
+    if (p.escaped) {
+      headerLine.createEl("span", { text: "ESCAPED", cls: "dnd-pursuit-escaped-badge" });
+    }
+    if (p.droppedOut) {
+      headerLine.createEl("span", { text: "OUT", cls: "dnd-pursuit-out-badge" });
+    }
+    headerLine.createEl("span", { text: `Init ${p.initiative}`, cls: "dnd-pursuit-row-init" });
+    headerLine.createEl("span", { text: `${p.position}ft`, cls: "dnd-pursuit-row-pos" });
+    if (p.movementPlane !== "ground") {
+      const planeIcon = p.movementPlane === "air" ? "\u{1F985}" : "\u26CF\uFE0F";
+      headerLine.createEl("span", { text: `${planeIcon} ${p.movementPlane}`, cls: "dnd-pursuit-plane-badge" });
+    }
+    if (p.role === "pursuer" && p.activeTargetId) {
+      const target = state.participants.find((q) => q.id === p.activeTargetId);
+      if (target) {
+        headerLine.createEl("span", { text: `\u{1F3AF} ${target.display}`, cls: "dnd-pursuit-target-badge" });
+      }
+    }
+    if (p.grappledBy) {
+      const grappler = state.participants.find((q) => q.id === p.grappledBy);
+      headerLine.createEl("span", { text: `\u{1F93C} by ${(_a = grappler == null ? void 0 : grappler.display) != null ? _a : "?"}`, cls: "dnd-pursuit-grappled-badge" });
+    }
+    if (p.escaped || p.droppedOut) return;
+    const statsLine = row.createDiv({ cls: "dnd-pursuit-row-stats" });
+    if (p.speeds.length > 1) {
+      const speedSelect = statsLine.createEl("select", { cls: "dnd-pursuit-speed-select" });
+      for (const s of p.speeds) {
+        const opt = speedSelect.createEl("option", {
+          text: `${s.mode} ${s.feet}ft`,
+          attr: { value: s.mode }
+        });
+        if (s.mode === p.activeSpeed) opt.selected = true;
+      }
+      speedSelect.addEventListener("change", () => tracker.setActiveSpeed(p.id, speedSelect.value));
+    } else {
+      const entry = p.speeds[0];
+      statsLine.createEl("span", { text: `${(_b = entry == null ? void 0 : entry.feet) != null ? _b : 30}ft`, cls: "dnd-pursuit-speed-label" });
+    }
+    const effectiveSpeed = tracker.getEffectiveSpeed(p);
+    if (p.carrying.length > 0 || p.grappling.length > 0) {
+      const reason = p.grappling.length > 0 ? "grappling" : "carrying";
+      statsLine.createEl("span", { text: `\u2192 ${effectiveSpeed}ft (${reason})`, cls: "dnd-pursuit-effective-speed dnd-pursuit-carry-warning" });
+    }
+    const hpText = p.tempHP > 0 ? `HP ${p.currentHP}/${p.maxHP} +${p.tempHP}` : `HP ${p.currentHP}/${p.maxHP}`;
+    statsLine.createEl("span", { text: hpText, cls: "dnd-pursuit-row-hp" });
+    statsLine.createEl("span", {
+      text: `Dash ${p.dashesUsed}/${p.freeDashes}`,
+      cls: `dnd-pursuit-dash-counter ${p.dashesUsed > p.freeDashes ? "dnd-pursuit-dash-over" : ""}`
+    });
+    const exDiv = statsLine.createDiv({ cls: "dnd-pursuit-exhaustion" });
+    for (let e = 0; e < 5; e++) {
+      exDiv.createEl("span", {
+        text: e < p.exhaustionLevel ? "\u25CF" : "\u25CB",
+        cls: `dnd-pursuit-exhaustion-pip ${e < p.exhaustionLevel ? "dnd-pursuit-exhaustion-filled" : ""}`
+      });
+    }
+    this.renderConditionBadges(row, tracker, p);
+    this.renderHPControls(row, tracker, p);
+    if (isActive && !p.incapacitated) {
+      if (p.role === "pursuer") {
+        this.renderTargetSelection(row, tracker, p, state);
+      }
+      this.renderActivePhase(row, tracker, p, state);
+      this.renderCarryControls(row, p, tracker, state);
+      if (p.grappledBy) {
+        const grappleLine = row.createDiv({ cls: "dnd-pursuit-carry-line" });
+        const grappler = state.participants.find((q) => q.id === p.grappledBy);
+        grappleLine.createEl("span", { text: `\u{1F93C} Grappled by ${(_c = grappler == null ? void 0 : grappler.display) != null ? _c : "?"}` });
+        const breakBtn = grappleLine.createEl("button", { text: "Break Free", cls: "dnd-pursuit-btn dnd-pursuit-btn-danger" });
+        breakBtn.addEventListener("click", () => tracker.breakGrapple(p.id));
+      }
+      const dropLine = row.createDiv({ cls: "dnd-pursuit-drop-line" });
+      const dropBtn = dropLine.createEl("button", { text: "\u{1F3F3}\uFE0F Drop Out", cls: "dnd-pursuit-btn dnd-pursuit-btn-danger" });
+      dropBtn.addEventListener("click", () => tracker.dropOut(p.id));
+    }
+  }
+  // ── Active Phase Dispatcher ────────────────────────────────
+  renderActivePhase(row, tracker, p, state) {
+    const phase = state.turnPhase;
+    const comp = state.currentComplication;
+    const pending = state.pendingInput;
+    switch (phase) {
+      case "complication":
+        this.renderComplicationResult(row, tracker, p, comp);
+        break;
+      case "complication-check":
+        this.renderRollPrompt(row, tracker, pending, "Submit");
+        break;
+      case "action":
+        this.renderActionSelection(row, tracker, p, state);
+        break;
+      case "action-resolve":
+        this.renderRollPrompt(row, tracker, pending, "Submit");
+        break;
+      case "bonus":
+        this.renderBonusSelection(row, tracker, p);
+        break;
+      case "bonus-resolve":
+        this.renderRollPrompt(row, tracker, pending, "Submit");
+        break;
+      case "movement":
+        this.renderMovementPhase(row, tracker, p, state);
+        break;
+      case "complication-roll":
+        this.renderComplicationRoll(row, tracker, state);
+        break;
+      case "escape-check":
+        this.renderEscapeCheck(row, tracker, state);
+        break;
+      case "turn-end":
+        this.renderTurnEnd(row, tracker, p, state);
+        break;
+    }
+  }
+  // ── Complication Phase ─────────────────────────────────────
+  renderComplicationResult(row, tracker, p, comp) {
+    const div = row.createDiv({ cls: "dnd-pursuit-phase dnd-pursuit-complication" });
+    if (!comp) {
+      div.createEl("span", { text: "No complication this turn." });
+      this.addContinueButton(div, () => tracker.advanceToAction());
+      return;
+    }
+    const header = div.createDiv({ cls: "dnd-pursuit-complication-header" });
+    header.createEl("span", { text: `\u26A0\uFE0F d20 = ${comp.d20Roll}: `, cls: "dnd-pursuit-phase-label" });
+    header.createEl("span", { text: comp.entry.title, cls: "dnd-pursuit-complication-title" });
+    if (comp.rolledByName) {
+      header.createEl("span", { text: ` (from ${comp.rolledByName})`, cls: "dnd-pursuit-phase-detail" });
+    }
+    div.createEl("p", { text: comp.entry.description, cls: "dnd-pursuit-complication-desc" });
+    if (comp.resolved) {
+      if (comp.entry.type === "check" && comp.selectedCheck) {
+        const resultDiv = div.createDiv({ cls: "dnd-pursuit-complication-result" });
+        const passText = comp.passed ? "\u2705 Passed" : "\u274C Failed";
+        resultDiv.createEl("span", { text: `${comp.selectedCheck.label}: ${comp.checkResult}` });
+        if (comp.checkNatural != null) {
+          resultDiv.createEl("span", { text: ` (d20=${comp.checkNatural})`, cls: "dnd-pursuit-phase-detail" });
+        }
+        resultDiv.createEl("span", { text: ` \u2014 ${passText}`, cls: comp.passed ? "dnd-pursuit-success" : "dnd-pursuit-fail" });
+      }
+      if (comp.effectDescription) {
+        div.createEl("p", { text: comp.effectDescription, cls: comp.passed ? "dnd-pursuit-success" : "dnd-pursuit-warning" });
+      }
+      if (comp.entry.isEncounter) {
+        const encounterBtn = div.createEl("button", {
+          text: "\u{1F432} Add Creature",
+          cls: "dnd-pursuit-btn dnd-pursuit-btn-encounter"
+        });
+        encounterBtn.addEventListener("click", () => {
+          this.showEncounterCreatureSearch(p.position, p.display);
+        });
+      }
+      this.addContinueButton(div, () => tracker.advanceToAction());
+    }
+  }
+  // ── Roll Prompt (generic — complication check, stealth, CON save, perception) ──
+  renderRollPrompt(row, tracker, pending, submitText = "Submit") {
+    if (!pending) return;
+    const div = row.createDiv({ cls: "dnd-pursuit-phase dnd-pursuit-roll-prompt" });
+    div.createEl("p", { text: pending.description, cls: "dnd-pursuit-roll-desc" });
+    div.createEl("span", {
+      text: `Modifier: ${pending.modifier >= 0 ? "+" : ""}${pending.modifier}`,
+      cls: "dnd-pursuit-phase-detail"
+    });
+    if (pending.dc) {
+      div.createEl("span", { text: ` \xB7 DC ${pending.dc}`, cls: "dnd-pursuit-phase-detail" });
+    }
+    let selectedOption;
+    if (pending.checkOptions && pending.checkOptions.length > 1) {
+      const optRow = div.createDiv({ cls: "dnd-pursuit-check-options" });
+      optRow.createEl("span", { text: "Choose check: ", cls: "dnd-pursuit-phase-detail" });
+      const optSel = optRow.createEl("select", { cls: "dnd-pursuit-speed-select" });
+      for (const opt of pending.checkOptions) {
+        optSel.createEl("option", { text: opt.label, attr: { value: opt.abilityKey } });
+      }
+      selectedOption = pending.checkOptions[0];
+      optSel.addEventListener("change", () => {
+        selectedOption = pending.checkOptions.find((o) => o.abilityKey === optSel.value);
+      });
+    }
+    const inputRow = div.createDiv({ cls: "dnd-pursuit-save-row" });
+    const input = inputRow.createEl("input", {
+      type: "number",
+      cls: "dnd-pursuit-save-input",
+      attr: { placeholder: "Roll total (d20 + mod)" }
+    });
+    const btn = inputRow.createEl("button", { text: submitText, cls: "dnd-pursuit-btn dnd-pursuit-btn-primary" });
+    btn.addEventListener("click", () => {
+      const val2 = parseInt(input.value, 10);
+      if (isNaN(val2)) {
+        new import_obsidian72.Notice("Enter a roll result.");
+        return;
+      }
+      if (pending.type === "complication-check") {
+        tracker.submitComplicationCheck(val2, selectedOption);
+      } else if (pending.type === "grapple-check") {
+        tracker.submitActionInput(val2);
+      } else {
+        tracker.submitActionInput(val2);
+      }
+    });
+    input.focus();
+  }
+  // ── Action Selection ───────────────────────────────────────
+  renderActionSelection(row, tracker, p, state) {
+    var _a;
+    const div = row.createDiv({ cls: "dnd-pursuit-phase" });
+    div.createEl("span", { text: "Choose Action:", cls: "dnd-pursuit-phase-label" });
+    const btnGroup = div.createDiv({ cls: "dnd-pursuit-btn-group" });
+    const actions = [
+      { label: "\u{1F3C3} Dash", action: "dash", tip: `Double movement (${p.dashesUsed}/${p.freeDashes} free dashes used)` }
+    ];
+    if (p.role === "quarry") {
+      const losOk = tracker.isLoSBroken(p);
+      actions.push({
+        label: losOk ? "\u{1FAE5} Hide \u2728" : "\u{1FAE5} Hide",
+        action: "hide",
+        tip: losOk ? "LoS is broken \u2014 stealth check available!" : "LoS not broken \u2014 cannot hide",
+        highlight: losOk
+      });
+    }
+    if (p.role === "pursuer") {
+      const hasHidden = state.participants.some((q) => q.role === "quarry" && q.isHidden && !q.escaped);
+      actions.push({
+        label: hasHidden ? "\u{1F50E} Search !" : "\u{1F50E} Search",
+        action: "search",
+        tip: hasHidden ? "Hidden quarry detected \u2014 Perception check!" : "No hidden quarry",
+        highlight: hasHidden
+      });
+    }
+    actions.push(
+      { label: "\u2694\uFE0F Attack", action: "attack", tip: "Attack, cast a spell, multiattack" }
+    );
+    if (p.role === "quarry") {
+      actions.push({
+        label: "\u{1FAB5} Obstacle",
+        action: "create-obstacle",
+        tip: "Create obstacle for next pursuer"
+      });
+    }
+    {
+      const opponents = state.participants.filter(
+        (q) => q.role !== p.role && !q.escaped && !q.droppedOut && !q.incapacitated && !q.grappledBy && q.position === p.position
+      );
+      if (opponents.length > 0) {
+        actions.push({
+          label: "\u{1F93C} Grapple",
+          action: "grapple",
+          tip: `Grapple opponent at same position (${opponents.map((o) => o.display).join(", ")})`,
+          highlight: true
+        });
+      }
+    }
+    if (p.grappledBy) {
+      const grappler = state.participants.find((q) => q.id === p.grappledBy);
+      actions.push({
+        label: "\u{1F4AA} Break Free",
+        action: "escape-grapple",
+        tip: `Contested Athletics/Acrobatics vs ${(_a = grappler == null ? void 0 : grappler.display) != null ? _a : "grappler"}'s Athletics`,
+        highlight: true
+      });
+    }
+    for (const a of actions) {
+      const btn = btnGroup.createEl("button", {
+        text: a.label,
+        cls: `dnd-pursuit-action-btn ${a.highlight ? "dnd-pursuit-action-highlight" : ""}`,
+        attr: { title: a.tip }
+      });
+      btn.addEventListener("click", () => tracker.selectAction(a.action));
+    }
+    if (p.role === "quarry") {
+      const losInfo = div.createDiv({ cls: "dnd-pursuit-los-info" });
+      if (p.lineOfSightBroken) {
+        losInfo.createEl("span", { text: "\u2705 Line of Sight broken", cls: "dnd-pursuit-success" });
+      } else {
+        losInfo.createEl("span", { text: "\u{1F441}\uFE0F Pursuers have line of sight", cls: "dnd-pursuit-phase-detail" });
+      }
+    }
+    if (p.isHidden) {
+      div.createEl("div", { text: "\u{1FAE5} Currently hidden from all pursuers", cls: "dnd-pursuit-success" });
+    }
+  }
+  // ── Bonus Action Selection ─────────────────────────────────
+  renderBonusSelection(row, tracker, p) {
+    const div = row.createDiv({ cls: "dnd-pursuit-phase" });
+    div.createEl("span", { text: "Bonus Action (Cunning Action):", cls: "dnd-pursuit-phase-label" });
+    const btnGroup = div.createDiv({ cls: "dnd-pursuit-btn-group" });
+    for (const ba of [
+      { label: "\u{1F3C3} Dash", action: "dash", tip: "Bonus Dash" },
+      { label: "\u{1FAE5} Hide", action: "hide", tip: "Bonus Hide (needs LoS broken)" }
+    ]) {
+      const btn = btnGroup.createEl("button", {
+        text: ba.label,
+        cls: "dnd-pursuit-bonus-btn",
+        attr: { title: ba.tip }
+      });
+      btn.addEventListener("click", () => tracker.selectBonusAction(ba.action));
+    }
+    const skipBtn = btnGroup.createEl("button", {
+      text: "Skip",
+      cls: "dnd-pursuit-bonus-btn dnd-pursuit-btn-skip",
+      attr: { title: "Skip bonus action" }
+    });
+    skipBtn.addEventListener("click", () => tracker.skipBonusAction());
+  }
+  // ── Movement Phase ─────────────────────────────────────────
+  renderMovementPhase(row, tracker, p, state) {
+    const div = row.createDiv({ cls: "dnd-pursuit-phase" });
+    const remaining = tracker.getRemainingMovement(p);
+    const maxMove = tracker.getMaxMovement(p);
+    const dashed = p.turnAction === "dash" || p.bonusAction === "dash";
+    const baseSpeed = tracker.getEffectiveSpeed(p);
+    const alreadyMoved = p.feetMovedThisTurn > 0;
+    const speedInfo = div.createDiv({ cls: "dnd-pursuit-speed-info" });
+    if (alreadyMoved) {
+      speedInfo.createEl("span", { text: "Remaining: ", cls: "dnd-pursuit-phase-label" });
+      speedInfo.createEl("span", { text: `${remaining}ft`, cls: "dnd-pursuit-phase-value" });
+      speedInfo.createEl("span", {
+        text: ` (moved ${p.feetMovedThisTurn}ft of ${maxMove}ft)`,
+        cls: "dnd-pursuit-phase-detail"
+      });
+    } else {
+      speedInfo.createEl("span", { text: "Movement: ", cls: "dnd-pursuit-phase-label" });
+      if (p.movementPenalty === "zero") {
+        speedInfo.createEl("span", { text: "0ft (lost to complication)", cls: "dnd-pursuit-warning" });
+      } else if (dashed) {
+        speedInfo.createEl("span", { text: `${baseSpeed}ft \xD7 2 = `, cls: "dnd-pursuit-phase-detail" });
+        speedInfo.createEl("span", { text: `${maxMove}ft`, cls: "dnd-pursuit-dash-speed" });
+      } else {
+        speedInfo.createEl("span", { text: `${remaining}ft`, cls: "dnd-pursuit-phase-value" });
+      }
+      if (p.movementPenalty === "halved") {
+        speedInfo.createEl("span", { text: " (halved by complication)", cls: "dnd-pursuit-warning" });
+      }
+    }
+    if (p.carrying.length > 0 || p.grappling.length > 0) {
+      const burden = totalBurdenWeight(p, state.participants);
+      if (burden > 0) {
+        const result = computeCarryPenalty(p.strScore, burden);
+        if (result.status === "drag") {
+          speedInfo.createEl("span", { text: " \u26A0\uFE0F Dragging (5ft max)", cls: "dnd-pursuit-warning" });
+        }
+      }
+      if (p.grappling.length > 0) {
+        const halvesSpeed = p.grappling.some((id) => {
+          const target = state.participants.find((x) => x.id === id);
+          if (!target) return false;
+          return sizeDifference(p.size, target.size) < 2;
+        });
+        if (halvesSpeed) {
+          speedInfo.createEl("span", { text: " \u{1F93C} \xBD speed (grapple)", cls: "dnd-pursuit-warning" });
+        }
+      }
+    }
+    if (remaining === 0) {
+      this.addContinueButton(div, () => tracker.endMovement());
+      return;
+    }
+    const moveLine = div.createDiv({ cls: "dnd-pursuit-move-line" });
+    const quickBtns = moveLine.createDiv({ cls: "dnd-pursuit-btn-group" });
+    const fullBtn = quickBtns.createEl("button", {
+      text: `Full (${remaining}ft)`,
+      cls: "dnd-pursuit-btn dnd-pursuit-btn-primary"
+    });
+    fullBtn.addEventListener("click", () => tracker.confirmMovement(remaining));
+    if (remaining >= 10) {
+      const halfBtn = quickBtns.createEl("button", {
+        text: `Half (${Math.floor(remaining / 2)}ft)`,
+        cls: "dnd-pursuit-btn"
+      });
+      halfBtn.addEventListener("click", () => tracker.confirmMovement(Math.floor(remaining / 2)));
+    }
+    const endBtn = quickBtns.createEl("button", {
+      text: alreadyMoved ? "\u23F9 End Movement" : "Stay (0ft)",
+      cls: "dnd-pursuit-btn"
+    });
+    endBtn.addEventListener("click", () => {
+      if (alreadyMoved) tracker.endMovement();
+      else tracker.confirmMovement(0);
+    });
+    const customDiv = moveLine.createDiv({ cls: "dnd-pursuit-move-custom" });
+    const moveInput = customDiv.createEl("input", {
+      type: "number",
+      cls: "dnd-pursuit-move-input",
+      attr: { min: "0", max: String(remaining), placeholder: `0-${remaining}` }
+    });
+    const moveBtn = customDiv.createEl("button", { text: "Move", cls: "dnd-pursuit-btn" });
+    moveBtn.addEventListener("click", () => {
+      const val2 = parseInt(moveInput.value, 10);
+      if (isNaN(val2) || val2 < 0) {
+        new import_obsidian72.Notice("Enter a valid number of feet.");
+        return;
+      }
+      if (val2 > remaining) {
+        new import_obsidian72.Notice(`Max remaining movement is ${remaining}ft.`);
+        return;
+      }
+      tracker.confirmMovement(val2);
+    });
+  }
+  // ── Turn End ───────────────────────────────────────────────
+  renderTurnEnd(row, tracker, p, state) {
+    const div = row.createDiv({ cls: "dnd-pursuit-phase dnd-pursuit-turn-summary" });
+    div.createEl("span", { text: "Turn Summary", cls: "dnd-pursuit-phase-label" });
+    const summary = div.createDiv({ cls: "dnd-pursuit-summary-items" });
+    if (p.turnAction) {
+      summary.createEl("div", { text: `Action: ${this.actionLabel(p.turnAction)}` });
+    }
+    if (p.bonusAction) {
+      summary.createEl("div", { text: `Bonus: ${this.actionLabel(p.bonusAction)}` });
+    }
+    summary.createEl("div", { text: `Moved: ${p.feetMovedThisTurn}ft \u2192 Position ${p.position}ft` });
+    if (p.isHidden) {
+      summary.createEl("div", { text: "\u{1FAE5} Hidden from pursuers", cls: "dnd-pursuit-success" });
+    }
+    if (p.lineOfSightBroken && p.role === "quarry") {
+      summary.createEl("div", { text: "\u2705 Line of Sight broken", cls: "dnd-pursuit-success" });
+    }
+    const others = state.participants.filter((q) => q.role !== p.role && !q.droppedOut && !q.escaped && !q.incapacitated);
+    if (others.length > 0) {
+      const nearest = p.role === "quarry" ? Math.max(...others.map((q) => q.position)) : Math.min(...others.map((q) => q.position));
+      const gap = Math.abs(p.position - nearest);
+      const gapLabel = p.role === "quarry" ? `Nearest pursuer: ${gap}ft behind` : `Nearest quarry: ${gap}ft ahead`;
+      summary.createEl("div", { text: gapLabel, cls: "dnd-pursuit-phase-detail" });
+    }
+    const nextBtn = div.createEl("button", {
+      text: "\u25B6 Next Turn",
+      cls: "dnd-pursuit-btn dnd-pursuit-btn-primary"
+    });
+    nextBtn.addEventListener("click", () => tracker.nextTurn());
+  }
+  // ── Complication Roll Phase (end-of-turn d20) ──────────────
+  renderComplicationRoll(row, tracker, state) {
+    var _a, _b;
+    const div = row.createDiv({ cls: "dnd-pursuit-phase dnd-pursuit-complication" });
+    const d20 = (_a = state.endOfTurnD20) != null ? _a : 0;
+    const comp = state.currentComplication;
+    div.createEl("span", { text: "End-of-Turn Complication Roll", cls: "dnd-pursuit-phase-label" });
+    const rollLine = div.createDiv({ cls: "dnd-pursuit-complication-header" });
+    rollLine.createEl("span", { text: `\u{1F3B2} d20 = ${d20}`, cls: "dnd-pursuit-phase-value" });
+    if (d20 > 10 || !comp) {
+      rollLine.createEl("span", { text: " \u2014 No complication", cls: "dnd-pursuit-success" });
+    } else {
+      const nextName = (_b = comp.effectDescription) != null ? _b : comp.entry.title;
+      div.createEl("p", {
+        text: `\u26A0\uFE0F ${nextName}`,
+        cls: "dnd-pursuit-warning"
+      });
+    }
+    this.addContinueButton(div, () => tracker.advanceFromComplicationRoll());
+  }
+  // ── Escape Check Phase (end-of-round) ─────────────────────
+  renderEscapeCheck(row, tracker, state) {
+    const div = row.createDiv({ cls: "dnd-pursuit-phase dnd-pursuit-complication" });
+    div.createEl("span", { text: "End-of-Round: Escape Check", cls: "dnd-pursuit-phase-label" });
+    const pending = state.pendingInput;
+    if (pending && pending.type === "escape-stealth") {
+      div.createEl("p", { text: pending.description, cls: "dnd-pursuit-roll-desc" });
+      div.createEl("span", {
+        text: `Stealth modifier: ${pending.modifier >= 0 ? "+" : ""}${pending.modifier} (${state.stealthCondition})`,
+        cls: "dnd-pursuit-phase-detail"
+      });
+      const inputRow = div.createDiv({ cls: "dnd-pursuit-save-row" });
+      const input = inputRow.createEl("input", {
+        type: "number",
+        cls: "dnd-pursuit-save-input",
+        attr: { placeholder: "Stealth total" }
+      });
+      const btn = inputRow.createEl("button", { text: "Submit", cls: "dnd-pursuit-btn dnd-pursuit-btn-primary" });
+      btn.addEventListener("click", () => {
+        const val2 = parseInt(input.value, 10);
+        if (isNaN(val2)) {
+          new import_obsidian72.Notice("Enter a roll result.");
+          return;
+        }
+        tracker.submitEscapeCheck(val2);
+      });
+      input.focus();
+    } else {
+      div.createEl("p", { text: "Processing escape checks...", cls: "dnd-pursuit-phase-detail" });
+    }
+  }
+  // ── Inline HP & Condition Controls ─────────────────────────
+  renderHPControls(container, tracker, p) {
+    const div = container.createDiv({ cls: "dnd-pursuit-hp-controls" });
+    const dmgInput = div.createEl("input", {
+      type: "number",
+      cls: "dnd-pursuit-hp-input",
+      attr: { placeholder: "Dmg", min: "1" }
+    });
+    const dmgBtn = div.createEl("button", { text: "\u{1F4A5}", cls: "dnd-pursuit-hp-btn dnd-pursuit-btn-danger", attr: { title: "Apply damage" } });
+    dmgBtn.addEventListener("click", () => {
+      const val2 = parseInt(dmgInput.value, 10);
+      if (val2 > 0) {
+        tracker.applyDamage(p.id, val2);
+        dmgInput.value = "";
+      }
+    });
+    const healInput = div.createEl("input", {
+      type: "number",
+      cls: "dnd-pursuit-hp-input",
+      attr: { placeholder: "Heal", min: "1" }
+    });
+    const healBtn = div.createEl("button", { text: "\u{1F49A}", cls: "dnd-pursuit-hp-btn dnd-pursuit-btn-heal", attr: { title: "Heal" } });
+    healBtn.addEventListener("click", () => {
+      const val2 = parseInt(healInput.value, 10);
+      if (val2 > 0) {
+        tracker.applyHealing(p.id, val2);
+        healInput.value = "";
+      }
+    });
+    const tempInput = div.createEl("input", {
+      type: "number",
+      cls: "dnd-pursuit-hp-input",
+      attr: { placeholder: "Tmp", min: "0" }
+    });
+    const tempBtn = div.createEl("button", { text: "\u{1F6E1}\uFE0F", cls: "dnd-pursuit-hp-btn", attr: { title: "Set temp HP" } });
+    tempBtn.addEventListener("click", () => {
+      const val2 = parseInt(tempInput.value, 10);
+      if (val2 >= 0) {
+        tracker.setTempHP(p.id, val2);
+        tempInput.value = "";
+      }
+    });
+  }
+  renderConditionBadges(container, tracker, p) {
+    if (p.conditions.length === 0 && p.escaped) return;
+    const div = container.createDiv({ cls: "dnd-pursuit-conditions" });
+    for (const cond of p.conditions) {
+      const badge = div.createEl("span", { text: cond, cls: "dnd-pursuit-condition-badge" });
+      const removeBtn = badge.createEl("span", { text: " \xD7", cls: "dnd-pursuit-condition-remove" });
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        tracker.removeCondition(p.id, cond);
+      });
+    }
+    if (!p.escaped && !p.droppedOut) {
+      const addBtn = div.createEl("button", { text: "+", cls: "dnd-pursuit-condition-add", attr: { title: "Add condition" } });
+      addBtn.addEventListener("click", (e) => {
+        const menu = new import_obsidian72.Menu();
+        for (const c of STANDARD_CONDITIONS) {
+          if (!p.conditions.includes(c)) {
+            menu.addItem((item) => item.setTitle(c).onClick(() => tracker.addCondition(p.id, c)));
+          }
+        }
+        menu.showAtMouseEvent(e);
+      });
+    }
+  }
+  // ── Continue Button Helper ─────────────────────────────────
+  addContinueButton(container, onClick) {
+    const btn = container.createEl("button", {
+      text: "Continue \u2192",
+      cls: "dnd-pursuit-btn dnd-pursuit-btn-continue"
+    });
+    btn.addEventListener("click", onClick);
+  }
+  // ── Carry Controls ─────────────────────────────────────────
+  renderCarryControls(row, p, tracker, state) {
+    const candidates = state.participants.filter(
+      (q) => q.role === p.role && q.id !== p.id && !q.carriedBy && !q.droppedOut && !q.escaped && q.position === p.position
+    );
+    if (candidates.length > 0) {
+      const carryLine = row.createDiv({ cls: "dnd-pursuit-carry-line" });
+      carryLine.createEl("span", { text: "\u{1F91D} Pick up: " });
+      for (const cand of candidates) {
+        const currentBurden = totalBurdenWeight(p, state.participants);
+        const newBurden = currentBurden + cand.estimatedWeight;
+        const result = computeCarryPenalty(p.strScore, newBurden);
+        const tag = cand.incapacitated ? " \u{1F480}" : "";
+        const label = result.status === "impossible" ? `${cand.display}${tag} (too heavy)` : result.status === "drag" ? `${cand.display}${tag} (drag, 5ft)` : `${cand.display}${tag}`;
+        const btn = carryLine.createEl("button", {
+          text: label,
+          cls: "dnd-pursuit-carry-btn"
+        });
+        btn.disabled = result.status === "impossible";
+        btn.addEventListener("click", () => tracker.pickUp(p.id, cand.id));
+      }
+    }
+    if (p.carrying.length > 0) {
+      const carryLine = row.createDiv({ cls: "dnd-pursuit-carry-line" });
+      for (const carriedId of p.carrying) {
+        const carried = state.participants.find((q) => q.id === carriedId);
+        if (!carried) continue;
+        const span = carryLine.createEl("span", { text: `\u{1F4E6} Carrying: ${carried.display} ` });
+        const dropBtn = span.createEl("button", { text: "Put Down", cls: "dnd-pursuit-carry-btn" });
+        dropBtn.addEventListener("click", () => tracker.putDown(p.id, carriedId));
+      }
+    }
+    if (p.grappling.length > 0) {
+      const grpLine = row.createDiv({ cls: "dnd-pursuit-carry-line" });
+      for (const grappledId of p.grappling) {
+        const grappled = state.participants.find((q) => q.id === grappledId);
+        if (!grappled) continue;
+        const span = grpLine.createEl("span", { text: `\u{1F93C} Grappling: ${grappled.display} ` });
+        const releaseBtn = span.createEl("button", { text: "Release", cls: "dnd-pursuit-carry-btn" });
+        releaseBtn.addEventListener("click", () => tracker.breakGrapple(grappledId));
+      }
+    }
+  }
+  // ── Target Selection for Pursuers ────────────────────────
+  renderTargetSelection(row, tracker, p, state) {
+    const visibleQuarries = state.participants.filter(
+      (q) => q.role === "quarry" && !q.escaped && !q.droppedOut && !q.incapacitated && tracker.canPerceive(p, q)
+    );
+    if (visibleQuarries.length <= 1) return;
+    const div = row.createDiv({ cls: "dnd-pursuit-target-select" });
+    div.createEl("span", { text: "\u{1F3AF} Target: ", cls: "dnd-pursuit-phase-label" });
+    const sel = div.createEl("select", { cls: "dnd-pursuit-speed-select" });
+    for (const q of visibleQuarries) {
+      const dist = Math.abs(q.position - p.position);
+      const opt = sel.createEl("option", {
+        text: `${q.display} (${dist}ft)`,
+        attr: { value: q.id }
+      });
+      if (q.id === p.activeTargetId) opt.selected = true;
+    }
+    sel.addEventListener("change", () => tracker.setActiveTarget(p.id, sel.value));
+  }
+  // ── Environment Summary ────────────────────────────────────
+  renderEnvironmentSummary(container, state) {
+    const div = container.createDiv({ cls: "dnd-pursuit-env-summary" });
+    div.createEl("h4", { text: `\u{1F4CD} ${state.environment.name}` });
+    const tags = [];
+    if (state.environment.hasCover) tags.push("Cover");
+    if (state.environment.hasObscurement) tags.push("Obscured");
+    if (state.environment.crowdedOrNoisy) tags.push("Crowded");
+    if (state.environment.hasElevation) tags.push("Elevation");
+    if (state.environment.wideOpen) tags.push("Wide Open");
+    if (state.hasRangerPursuer) tags.push("Ranger Pursuer");
+    if (tags.length > 0) {
+      div.createEl("span", { text: tags.join(" \xB7 "), cls: "dnd-pursuit-env-tags" });
+    }
+  }
+  // ── Chase Ended ────────────────────────────────────────────
+  renderEnded(container, state) {
+    var _a;
+    const div = container.createDiv({ cls: "dnd-pursuit-ended" });
+    const outcomeText = {
+      escaped: "\u{1F3C3} The quarry escaped!",
+      caught: "\u2694\uFE0F The quarry was caught!",
+      surrendered: "\u{1F3F3}\uFE0F The chase was called off.",
+      "gm-ended": "\u{1F3C1} The chase ended."
+    };
+    div.createEl("h3", { text: outcomeText[(_a = state.outcome) != null ? _a : "surrendered"] });
+    for (const p of state.participants) {
+      const icon = p.escaped ? "\u2705" : p.droppedOut ? "\u274C" : p.incapacitated ? "\u{1F480}" : "\u2014";
+      div.createEl("div", { text: `${icon} ${p.display} (${p.role}) \u2014 exhaustion ${p.exhaustionLevel}` });
+    }
+    const clearBtn = div.createEl("button", { text: "Clear", cls: "dnd-pursuit-btn" });
+    clearBtn.addEventListener("click", () => this.plugin.pursuitTracker.clear());
+    this.renderLog(container, state);
+  }
+  // ── Log ────────────────────────────────────────────────────
+  renderLog(container, state) {
+    const logDiv = container.createDiv({ cls: "dnd-pursuit-log" });
+    logDiv.createEl("h4", { text: "\u{1F4DC} Chase Log" });
+    const logList = logDiv.createDiv({ cls: "dnd-pursuit-log-list" });
+    for (const entry of [...state.log].reverse()) {
+      const line = logList.createDiv({ cls: "dnd-pursuit-log-entry" });
+      line.createEl("span", { text: `R${entry.round}`, cls: "dnd-pursuit-log-round" });
+      line.createEl("span", { text: entry.text });
+    }
+  }
+  // ── Add Participant (mid-chase) ──────────────────────────
+  showAddParticipantMenu() {
+    var _a, _b, _c;
+    const tracker = this.plugin.pursuitTracker;
+    const state = tracker.getState();
+    if (!state) return;
+    const extractSkillBonus2 = (skillsaves, skillName) => {
+      if (!Array.isArray(skillsaves)) return null;
+      const lower = skillName.toLowerCase();
+      for (const entry of skillsaves) {
+        if (typeof entry !== "object" || entry === null) continue;
+        for (const [key, val2] of Object.entries(entry)) {
+          if (key.toLowerCase() === lower && typeof val2 === "number") return val2;
+        }
+      }
+      return null;
+    };
+    const extractPassivePerc = (senses) => {
+      if (typeof senses !== "string") return null;
+      const m = senses.match(/passive perception\s+(\d+)/i);
+      return m ? parseInt(m[1], 10) : null;
+    };
+    const vaultEntries = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache == null ? void 0 : cache.frontmatter;
+      if (!fm) continue;
+      const type = fm.type;
+      const isPlayer = type === "player" || type === "pc";
+      const isNPC = type === "npc";
+      const isCreature = !isPlayer && !isNPC && fm.statblock === true;
+      if (!isPlayer && !isNPC && !isCreature) continue;
+      const speeds = parseSpeed(fm.speed);
+      const hasStats = Array.isArray(fm.stats) && fm.stats.length >= 6;
+      const str = hasStats && typeof fm.stats[0] === "number" ? fm.stats[0] : 10;
+      const dex = hasStats && typeof fm.stats[1] === "number" ? fm.stats[1] : 10;
+      const con = hasStats && typeof fm.stats[2] === "number" ? fm.stats[2] : 10;
+      const wis = hasStats && typeof fm.stats[4] === "number" ? fm.stats[4] : 10;
+      const int = hasStats && typeof fm.stats[3] === "number" ? fm.stats[3] : 10;
+      const cha = hasStats && typeof fm.stats[5] === "number" ? fm.stats[5] : 10;
+      const dexMod = Math.floor((dex - 10) / 2);
+      const conMod = Math.floor((con - 10) / 2);
+      const wisMod = Math.floor((wis - 10) / 2);
+      const intMod = Math.floor((int - 10) / 2);
+      const chaMod = Math.floor((cha - 10) / 2);
+      const initBonus = isPlayer && typeof fm.init_bonus === "number" ? fm.init_bonus : dexMod;
+      const stealthMod = (_a = extractSkillBonus2(fm.skillsaves, "stealth")) != null ? _a : dexMod;
+      const percMod = (_b = extractSkillBonus2(fm.skillsaves, "perception")) != null ? _b : wisMod;
+      const passivePerc = (_c = extractPassivePerc(fm.senses)) != null ? _c : 10 + percMod;
+      let size = "medium";
+      if (typeof fm.size === "string") size = fm.size.toLowerCase();
+      const hp = typeof fm.hp === "number" ? fm.hp : typeof fm.hp_max === "number" ? fm.hp_max : 10;
+      const maxHP = typeof fm.hp_max === "number" ? fm.hp_max : hp;
+      vaultEntries.push({
+        name: fm.name || file.basename,
+        type: isPlayer ? "player" : isNPC ? "npc" : "creature",
+        speeds,
+        strScore: str,
+        conModifier: conMod,
+        stealthModifier: stealthMod,
+        passivePerception: passivePerc,
+        perceptionModifier: percMod,
+        initBonus,
+        currentHP: hp,
+        maxHP,
+        size,
+        notePath: file.path,
+        tokenId: fm.token_id,
+        wisModifier: wisMod,
+        intModifier: intMod,
+        chaModifier: chaMod
+      });
+    }
+    vaultEntries.sort((a, b) => a.name.localeCompare(b.name));
+    const overlay = document.createElement("div");
+    overlay.className = "dnd-pursuit-add-overlay";
+    const panel = overlay.appendChild(document.createElement("div"));
+    panel.className = "dnd-pursuit-add-panel";
+    panel.createEl("h3", { text: "\u2795 Add Participant" });
+    let selected = null;
+    let role = "pursuer";
+    let position = 0;
+    let manualName = "";
+    let manualSpeed = 30;
+    let manualStr = 10;
+    const searchRow = panel.createDiv({ cls: "dnd-pursuit-add-row" });
+    searchRow.createEl("label", { text: "Search" });
+    const searchInput = searchRow.createEl("input", {
+      type: "text",
+      attr: { placeholder: "Search PCs, NPCs, creatures\u2026" },
+      cls: "dnd-creature-search-input"
+    });
+    const resultsDiv = panel.createDiv({ cls: "dnd-creature-search-results" });
+    resultsDiv.style.display = "none";
+    const statsArea = panel.createDiv({ cls: "dnd-pursuit-add-stats-area" });
+    statsArea.style.display = "none";
+    const showResults = (query) => {
+      if (!query || query.length < 1) {
+        resultsDiv.style.display = "none";
+        return;
+      }
+      const q = query.toLowerCase().trim();
+      const filtered = vaultEntries.filter((e) => e.name.toLowerCase().includes(q)).slice(0, 10);
+      resultsDiv.empty();
+      if (filtered.length === 0) {
+        resultsDiv.createEl("div", { text: "No matches found", cls: "dnd-creature-search-no-results" });
+        resultsDiv.style.display = "block";
+        return;
+      }
+      for (const entry of filtered) {
+        const row = resultsDiv.createDiv({ cls: "dnd-creature-search-result" });
+        const typeIcon = entry.type === "player" ? "\u{1F464}" : entry.type === "npc" ? "\u{1F3AD}" : "\u{1F409}";
+        row.createDiv({ text: `${typeIcon} ${entry.name}`, cls: "dnd-creature-search-result-name" });
+        const speed = entry.speeds.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
+        row.createDiv({ text: `${speed} | HP ${entry.currentHP}/${entry.maxHP} | STR ${entry.strScore}`, cls: "dnd-creature-search-result-stats" });
+        row.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          selected = entry;
+          searchInput.value = entry.name;
+          resultsDiv.style.display = "none";
+          statsArea.empty();
+          statsArea.style.display = "block";
+          const statParts = [
+            speed,
+            `STR ${entry.strScore}`,
+            `Stealth ${entry.stealthModifier >= 0 ? "+" : ""}${entry.stealthModifier}`,
+            `PPerc ${entry.passivePerception}`,
+            `HP ${entry.currentHP}/${entry.maxHP}`
+          ];
+          statsArea.createEl("div", { text: statParts.join(" | "), cls: "setting-item-description" });
+        });
+      }
+      resultsDiv.style.display = "block";
+    };
+    searchInput.addEventListener("input", () => {
+      selected = null;
+      statsArea.style.display = "none";
+      showResults(searchInput.value);
+    });
+    searchInput.addEventListener("focus", () => {
+      if (searchInput.value.length >= 1) showResults(searchInput.value);
+    });
+    searchInput.addEventListener("blur", () => {
+      setTimeout(() => {
+        resultsDiv.style.display = "none";
+      }, 250);
+    });
+    const roleRow = panel.createDiv({ cls: "dnd-pursuit-add-row" });
+    roleRow.createEl("label", { text: "Role" });
+    const roleSel = roleRow.createEl("select");
+    roleSel.createEl("option", { text: "\u{1F50D} Pursuer", attr: { value: "pursuer" } });
+    roleSel.createEl("option", { text: "\u{1F3C3} Quarry", attr: { value: "quarry" } });
+    roleSel.addEventListener("change", () => {
+      role = roleSel.value;
+    });
+    const posRow = panel.createDiv({ cls: "dnd-pursuit-add-row" });
+    posRow.createEl("label", { text: "Position (ft)" });
+    const posInput = posRow.createEl("input", { type: "number", attr: { value: "0" } });
+    posInput.addEventListener("input", () => {
+      position = parseInt(posInput.value) || 0;
+    });
+    const manualToggle = panel.createEl("div", {
+      text: "\u25B8 Manual entry (no vault note)",
+      cls: "dnd-pursuit-add-manual-toggle setting-item-description"
+    });
+    manualToggle.style.cursor = "pointer";
+    manualToggle.style.marginTop = "8px";
+    const manualSection = panel.createDiv({ cls: "dnd-pursuit-add-manual-section" });
+    manualSection.style.display = "none";
+    manualToggle.addEventListener("click", () => {
+      const isVisible = manualSection.style.display !== "none";
+      manualSection.style.display = isVisible ? "none" : "block";
+      manualToggle.textContent = isVisible ? "\u25B8 Manual entry (no vault note)" : "\u25BE Manual entry (no vault note)";
+    });
+    const nameRow = manualSection.createDiv({ cls: "dnd-pursuit-add-row" });
+    nameRow.createEl("label", { text: "Name" });
+    const nameInput = nameRow.createEl("input", { type: "text", attr: { placeholder: "Name" } });
+    nameInput.addEventListener("input", () => {
+      manualName = nameInput.value;
+    });
+    const speedRow = manualSection.createDiv({ cls: "dnd-pursuit-add-row" });
+    speedRow.createEl("label", { text: "Speed (ft)" });
+    const speedInput = speedRow.createEl("input", { type: "number", attr: { value: "30" } });
+    speedInput.addEventListener("input", () => {
+      manualSpeed = parseInt(speedInput.value) || 30;
+    });
+    const strRow = manualSection.createDiv({ cls: "dnd-pursuit-add-row" });
+    strRow.createEl("label", { text: "STR Score" });
+    const strInput = strRow.createEl("input", { type: "number", attr: { value: "10" } });
+    strInput.addEventListener("input", () => {
+      manualStr = parseInt(strInput.value) || 10;
+    });
+    const btnRow = panel.createDiv({ cls: "dnd-pursuit-add-row dnd-pursuit-add-btns" });
+    const addBtn = btnRow.createEl("button", { text: "Add", cls: "dnd-pursuit-btn dnd-pursuit-btn-primary" });
+    const cancelBtn = btnRow.createEl("button", { text: "Cancel", cls: "dnd-pursuit-btn" });
+    addBtn.addEventListener("click", () => {
+      var _a2, _b2, _c2, _d, _e;
+      const now = Date.now();
+      if (selected) {
+        const weight = (_b2 = (_a2 = SIZE_WEIGHT_ESTIMATE[selected.size]) != null ? _a2 : SIZE_WEIGHT_ESTIMATE.medium) != null ? _b2 : 150;
+        tracker.addParticipant({
+          id: `pursuit_${now}_add`,
+          name: selected.name,
+          display: selected.name,
+          role,
+          initiative: 0,
+          initiativeModifier: selected.initBonus,
+          speeds: selected.speeds,
+          activeSpeed: (_d = (_c2 = selected.speeds[0]) == null ? void 0 : _c2.mode) != null ? _d : "walk",
+          position,
+          dashesUsed: 0,
+          freeDashes: Math.max(3 + selected.conModifier, 0),
+          conModifier: selected.conModifier,
+          exhaustionLevel: 0,
+          hasActed: false,
+          hasCunningAction: false,
+          hasMoved: false,
+          feetMovedThisTurn: 0,
+          pendingDashSave: false,
+          strScore: selected.strScore,
+          estimatedWeight: weight,
+          size: selected.size || "medium",
+          stealthModifier: selected.stealthModifier,
+          passivePerception: selected.passivePerception,
+          perceptionModifier: selected.perceptionModifier,
+          lineOfSightBroken: false,
+          targetIds: [],
+          currentHP: selected.currentHP,
+          maxHP: selected.maxHP,
+          incapacitated: false,
+          conditions: [],
+          escaped: false,
+          droppedOut: false,
+          player: selected.type === "player",
+          hidden: false,
+          isHidden: false,
+          hiddenStealthRoll: void 0,
+          movementPenalty: "none",
+          complicationLoSBreak: false,
+          notePath: selected.notePath,
+          tokenId: selected.tokenId,
+          wisModifier: selected.wisModifier,
+          intModifier: selected.intModifier,
+          chaModifier: selected.chaModifier,
+          wasOutOfSightThisRound: false,
+          movementReductionFeet: 0,
+          tempHP: 0,
+          carrying: [],
+          grappling: [],
+          movementPlane: "ground",
+          hasTremorsense: false,
+          startPenalty: "none",
+          startPenaltyApplied: false
+        });
+        overlay.remove();
+        new import_obsidian72.Notice(`Added ${selected.name} to the chase!`);
+      } else if (manualName.trim()) {
+        tracker.addParticipant({
+          id: `pursuit_${now}_add`,
+          name: manualName.trim(),
+          display: manualName.trim(),
+          role,
+          initiative: 0,
+          initiativeModifier: 0,
+          speeds: [{ mode: "walk", feet: manualSpeed }],
+          activeSpeed: "walk",
+          position,
+          dashesUsed: 0,
+          freeDashes: 3,
+          conModifier: 0,
+          exhaustionLevel: 0,
+          hasActed: false,
+          hasCunningAction: false,
+          hasMoved: false,
+          feetMovedThisTurn: 0,
+          pendingDashSave: false,
+          strScore: manualStr,
+          estimatedWeight: (_e = SIZE_WEIGHT_ESTIMATE.medium) != null ? _e : 150,
+          size: "medium",
+          stealthModifier: 0,
+          passivePerception: 10,
+          perceptionModifier: 0,
+          lineOfSightBroken: false,
+          targetIds: [],
+          currentHP: 10,
+          maxHP: 10,
+          incapacitated: false,
+          conditions: [],
+          escaped: false,
+          droppedOut: false,
+          player: false,
+          hidden: false,
+          isHidden: false,
+          hiddenStealthRoll: void 0,
+          movementPenalty: "none",
+          complicationLoSBreak: false,
+          wisModifier: 0,
+          intModifier: 0,
+          chaModifier: 0,
+          wasOutOfSightThisRound: false,
+          movementReductionFeet: 0,
+          tempHP: 0,
+          carrying: [],
+          grappling: [],
+          movementPlane: "ground",
+          hasTremorsense: false,
+          startPenalty: "none",
+          startPenaltyApplied: false
+        });
+        overlay.remove();
+        new import_obsidian72.Notice(`Added ${manualName.trim()} to the chase!`);
+      } else {
+        new import_obsidian72.Notice("Search and select an entity, or enter a name manually.");
+      }
+    });
+    cancelBtn.addEventListener("click", () => overlay.remove());
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+    document.body.appendChild(overlay);
+    searchInput.focus();
+  }
+  // ── Player View Projection ─────────────────────────────────
+  async openPlayerView(e) {
+    const pm = this.plugin.projectionManager;
+    if (!pm) {
+      new import_obsidian72.Notice("Projection system not available.");
+      return;
+    }
+    const screens = await enumerateScreens();
+    if (screens.length === 0) {
+      new import_obsidian72.Notice("No external screens detected.");
+      return;
+    }
+    for (const proj of pm.getLiveProjections()) {
+      if (proj.contentType === "pursuit") {
+        new import_obsidian72.Notice("Pursuit player view already projected.");
+        return;
+      }
+    }
+    const occupied = pm.getOccupiedScreenKeys();
+    if (screens.length <= 1) {
+      const screen = screens[0];
+      const sKey = screenKey(screen);
+      if (occupied.has(sKey)) {
+        const menu2 = new import_obsidian72.Menu();
+        menu2.addItem(
+          (item) => item.setTitle(`\u{1F504} Switch ${screen.label} to Pursuit View`).onClick(async () => {
+            await pm.projectPursuitView(screen);
+          })
+        );
+        menu2.showAtMouseEvent(e);
+      } else {
+        await pm.projectPursuitView(screen);
+      }
+      return;
+    }
+    const menu = new import_obsidian72.Menu();
+    for (const screen of screens) {
+      const sKey = screenKey(screen);
+      const isOccupied = occupied.has(sKey);
+      const label = `${screen.isPrimary ? "\u{1F5A5}\uFE0F" : "\u{1F5B5}"} ${screen.label} (${screen.width}\xD7${screen.height})`;
+      if (isOccupied) {
+        menu.addItem(
+          (item) => item.setTitle(`\u{1F504} Switch ${screen.label} to Pursuit View`).onClick(async () => {
+            await pm.projectPursuitView(screen);
+          })
+        );
+      } else {
+        menu.addItem(
+          (item) => item.setTitle(label).onClick(async () => {
+            await pm.projectPursuitView(screen);
+          })
+        );
+      }
+    }
+    menu.showAtMouseEvent(e);
+  }
+  // ── Encounter Creature Search ──────────────────────────────
+  showEncounterCreatureSearch(position, encounterSource) {
+    var _a, _b, _c;
+    const tracker = this.plugin.pursuitTracker;
+    const state = tracker.getState();
+    if (!state) return;
+    const extractSkillBonus2 = (skillsaves, skillName) => {
+      if (!Array.isArray(skillsaves)) return null;
+      const lower = skillName.toLowerCase();
+      for (const entry of skillsaves) {
+        if (typeof entry !== "object" || entry === null) continue;
+        for (const [key, val2] of Object.entries(entry)) {
+          if (key.toLowerCase() === lower && typeof val2 === "number") return val2;
+        }
+      }
+      return null;
+    };
+    const extractPassivePerception2 = (senses) => {
+      if (typeof senses !== "string") return null;
+      const m = senses.match(/passive perception\s+(\d+)/i);
+      return m ? parseInt(m[1], 10) : null;
+    };
+    const creatures = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache == null ? void 0 : cache.frontmatter;
+      if (!fm) continue;
+      const type = fm.type;
+      const isNPC = type === "npc";
+      const isCreature = type !== "player" && type !== "pc" && !isNPC && fm.statblock === true;
+      if (!isNPC && !isCreature) continue;
+      const speeds = parseSpeed(fm.speed);
+      const hasStats = Array.isArray(fm.stats) && fm.stats.length >= 6;
+      const str = hasStats && typeof fm.stats[0] === "number" ? fm.stats[0] : 10;
+      const dex = hasStats && typeof fm.stats[1] === "number" ? fm.stats[1] : 10;
+      const con = hasStats && typeof fm.stats[2] === "number" ? fm.stats[2] : 10;
+      const wis = hasStats && typeof fm.stats[4] === "number" ? fm.stats[4] : 10;
+      const int = hasStats && typeof fm.stats[3] === "number" ? fm.stats[3] : 10;
+      const cha = hasStats && typeof fm.stats[5] === "number" ? fm.stats[5] : 10;
+      const dexMod = Math.floor((dex - 10) / 2);
+      const conMod = Math.floor((con - 10) / 2);
+      const wisMod = Math.floor((wis - 10) / 2);
+      const intMod = Math.floor((int - 10) / 2);
+      const chaMod = Math.floor((cha - 10) / 2);
+      const stealthMod = (_a = extractSkillBonus2(fm.skillsaves, "stealth")) != null ? _a : dexMod;
+      const percMod = (_b = extractSkillBonus2(fm.skillsaves, "perception")) != null ? _b : wisMod;
+      const passivePerc = (_c = extractPassivePerception2(fm.senses)) != null ? _c : 10 + percMod;
+      const hp = typeof fm.hp === "number" ? fm.hp : typeof fm.hp_max === "number" ? fm.hp_max : 10;
+      const maxHP = typeof fm.hp_max === "number" ? fm.hp_max : hp;
+      let size = "medium";
+      if (typeof fm.size === "string") size = fm.size.toLowerCase();
+      creatures.push({
+        name: fm.name || file.basename,
+        speeds,
+        strScore: str,
+        conModifier: conMod,
+        stealthModifier: stealthMod,
+        passivePerception: passivePerc,
+        perceptionModifier: percMod,
+        initBonus: dexMod,
+        currentHP: hp,
+        maxHP,
+        size,
+        wisModifier: wisMod,
+        intModifier: intMod,
+        chaModifier: chaMod
+      });
+    }
+    creatures.sort((a, b) => a.name.localeCompare(b.name));
+    const overlay = document.createElement("div");
+    overlay.className = "dnd-pursuit-add-overlay";
+    const panel = overlay.appendChild(document.createElement("div"));
+    panel.className = "dnd-pursuit-add-panel";
+    panel.createEl("h3", { text: `\u{1F432} Add Encounter Creature` });
+    panel.createEl("p", { text: `Near ${encounterSource} at ${position}ft`, cls: "setting-item-description" });
+    let selected = null;
+    let role = "pursuer";
+    const searchRow = panel.createDiv({ cls: "dnd-pursuit-add-row" });
+    searchRow.createEl("label", { text: "Search" });
+    const searchInput = searchRow.createEl("input", {
+      type: "text",
+      attr: { placeholder: "Search creatures\u2026" },
+      cls: "dnd-creature-search-input"
+    });
+    const resultsDiv = panel.createDiv({ cls: "dnd-creature-search-results" });
+    resultsDiv.style.display = "none";
+    const showResults = (query) => {
+      if (!query || query.length < 1) {
+        resultsDiv.style.display = "none";
+        return;
+      }
+      const q = query.toLowerCase().trim();
+      const filtered = creatures.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 10);
+      resultsDiv.empty();
+      if (filtered.length === 0) {
+        resultsDiv.createEl("div", { text: "No creatures found", cls: "dnd-creature-search-no-results" });
+        resultsDiv.style.display = "block";
+        return;
+      }
+      for (const c of filtered) {
+        const row = resultsDiv.createDiv({ cls: "dnd-creature-search-result" });
+        row.createDiv({ text: `\u{1F409} ${c.name}`, cls: "dnd-creature-search-result-name" });
+        const speed = c.speeds.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
+        row.createDiv({ text: `${speed} | HP ${c.currentHP} | STR ${c.strScore}`, cls: "dnd-creature-search-result-stats" });
+        row.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          selected = c;
+          searchInput.value = c.name;
+          resultsDiv.style.display = "none";
+        });
+      }
+      resultsDiv.style.display = "block";
+    };
+    searchInput.addEventListener("input", () => showResults(searchInput.value));
+    const roleRow = panel.createDiv({ cls: "dnd-pursuit-add-row" });
+    roleRow.createEl("label", { text: "Role" });
+    const roleSel = roleRow.createEl("select");
+    roleSel.createEl("option", { text: "\u{1F50D} Pursuer", attr: { value: "pursuer" } });
+    roleSel.createEl("option", { text: "\u{1F3C3} Quarry", attr: { value: "quarry" } });
+    roleSel.addEventListener("change", () => {
+      role = roleSel.value;
+    });
+    const btnRow = panel.createDiv({ cls: "dnd-pursuit-add-row dnd-pursuit-add-btns" });
+    const addBtn = btnRow.createEl("button", { text: "Add", cls: "dnd-pursuit-btn dnd-pursuit-btn-primary" });
+    const cancelBtn = btnRow.createEl("button", { text: "Cancel", cls: "dnd-pursuit-btn" });
+    addBtn.addEventListener("click", () => {
+      var _a2, _b2, _c2, _d;
+      if (!selected) {
+        new import_obsidian72.Notice("Search and select a creature first.");
+        return;
+      }
+      const now = Date.now();
+      const weight = (_b2 = (_a2 = SIZE_WEIGHT_ESTIMATE[selected.size]) != null ? _a2 : SIZE_WEIGHT_ESTIMATE.medium) != null ? _b2 : 150;
+      tracker.addParticipant({
+        id: `pursuit_${now}_enc`,
+        name: selected.name,
+        display: selected.name,
+        role,
+        initiative: 0,
+        initiativeModifier: selected.initBonus,
+        speeds: selected.speeds,
+        activeSpeed: (_d = (_c2 = selected.speeds[0]) == null ? void 0 : _c2.mode) != null ? _d : "walk",
+        position,
+        dashesUsed: 0,
+        freeDashes: Math.max(3 + selected.conModifier, 0),
+        conModifier: selected.conModifier,
+        exhaustionLevel: 0,
+        hasActed: false,
+        hasCunningAction: false,
+        hasMoved: false,
+        feetMovedThisTurn: 0,
+        pendingDashSave: false,
+        strScore: selected.strScore,
+        estimatedWeight: weight,
+        size: selected.size || "medium",
+        stealthModifier: selected.stealthModifier,
+        passivePerception: selected.passivePerception,
+        perceptionModifier: selected.perceptionModifier,
+        lineOfSightBroken: false,
+        targetIds: [],
+        currentHP: selected.currentHP,
+        maxHP: selected.maxHP,
+        incapacitated: false,
+        conditions: [],
+        escaped: false,
+        droppedOut: false,
+        player: false,
+        hidden: false,
+        isHidden: false,
+        hiddenStealthRoll: void 0,
+        movementPenalty: "none",
+        complicationLoSBreak: false,
+        wisModifier: selected.wisModifier,
+        intModifier: selected.intModifier,
+        chaModifier: selected.chaModifier,
+        wasOutOfSightThisRound: false,
+        movementReductionFeet: 0,
+        tempHP: 0,
+        carrying: [],
+        grappling: [],
+        movementPlane: "ground",
+        hasTremorsense: false,
+        startPenalty: "none",
+        startPenaltyApplied: false
+      });
+      overlay.remove();
+      new import_obsidian72.Notice(`\u{1F432} Added ${selected.name} at ${position}ft!`);
+    });
+    cancelBtn.addEventListener("click", () => overlay.remove());
+    overlay.addEventListener("click", (ev) => {
+      if (ev.target === overlay) overlay.remove();
+    });
+    document.body.appendChild(overlay);
+    searchInput.focus();
+  }
+  // ── Helpers ────────────────────────────────────────────────
+  actionLabel(action) {
+    switch (action) {
+      case "dash":
+        return "\u{1F3C3} Dash";
+      case "hide":
+        return "\u{1FAE5} Hide";
+      case "search":
+        return "\u{1F50E} Search";
+      case "attack":
+        return "\u2694\uFE0F Attack";
+      case "create-obstacle":
+        return "\u{1FAB5} Obstacle";
+      case "grapple":
+        return "\u{1F93C} Grapple";
+      case "escape-grapple":
+        return "\u{1F4AA} Break Free";
+    }
+  }
+};
+
+// src/pursuit/PursuitPlayerView.ts
+var import_obsidian73 = require("obsidian");
+var PursuitPlayerView = class extends import_obsidian73.ItemView {
+  constructor(leaf, plugin) {
+    super(leaf);
+    this.unsubscribe = null;
+    this.prev = {
+      positions: /* @__PURE__ */ new Map(),
+      exhaustion: /* @__PURE__ */ new Map(),
+      escaped: /* @__PURE__ */ new Set(),
+      droppedOut: /* @__PURE__ */ new Set()
+    };
+    this.plugin = plugin;
+  }
+  getViewType() {
+    return PURSUIT_PLAYER_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "Pursuit Player View";
+  }
+  getIcon() {
+    return "footprints";
+  }
+  async onOpen() {
+    this.unsubscribe = this.plugin.pursuitTracker.onChange(() => this.render());
+    this.render();
+  }
+  onClose() {
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
+    }
+    return Promise.resolve();
+  }
+  // ── Main Render ────────────────────────────────────────────
+  render() {
+    const container = this.containerEl.children[1];
+    if (!container) return;
+    const state = this.plugin.pursuitTracker.getState();
+    if (!state) {
+      container.empty();
+      container.addClass("dnd-pursuit-pv");
+      container.createDiv({ cls: "dnd-pursuit-pv-empty", text: "No active chase." });
+      return;
+    }
+    const newPrev = {
+      positions: /* @__PURE__ */ new Map(),
+      exhaustion: /* @__PURE__ */ new Map(),
+      escaped: /* @__PURE__ */ new Set(),
+      droppedOut: /* @__PURE__ */ new Set()
+    };
+    container.empty();
+    container.addClass("dnd-pursuit-pv");
+    const participantCount = state.participants.filter((p) => !p.hidden).length;
+    const fontSize = Math.min(4.5, Math.max(2, 80 / Math.max(participantCount * 6, 1)));
+    container.style.fontSize = `${fontSize}vh`;
+    this.renderPVHeader(container, state);
+    if (state.ended) {
+      this.renderEndedOverlay(container, state);
+      return;
+    }
+    if (state.started) {
+      this.renderChaseLane(container, state);
+      this.renderInfoBar(container, state);
+    }
+    for (const p of state.participants) {
+      newPrev.positions.set(p.id, p.position);
+      newPrev.exhaustion.set(p.id, p.exhaustionLevel);
+      if (p.escaped) newPrev.escaped.add(p.id);
+      if (p.droppedOut) newPrev.droppedOut.add(p.id);
+    }
+    this.prev = newPrev;
+  }
+  // ── Header ─────────────────────────────────────────────────
+  renderPVHeader(container, state) {
+    const header = container.createDiv({ cls: "dnd-pursuit-pv-header" });
+    const left = header.createDiv({ cls: "dnd-pursuit-pv-header-left" });
+    left.createEl("span", { text: `Round ${state.round}`, cls: "dnd-pursuit-pv-round" });
+    const center = header.createDiv({ cls: "dnd-pursuit-pv-header-center" });
+    center.createEl("span", { text: state.name, cls: "dnd-pursuit-pv-name" });
+    const right = header.createDiv({ cls: "dnd-pursuit-pv-header-right" });
+    if (state.started && !state.ended) {
+      const active = state.participants[state.turnIndex];
+      if (active) {
+        right.createEl("span", { text: `\u25B6 ${active.display}'s Turn`, cls: "dnd-pursuit-pv-active-turn" });
+      }
+    }
+    const envBar = container.createDiv({ cls: "dnd-pursuit-pv-env-bar" });
+    envBar.createEl("span", { text: `\u{1F4CD} ${state.environment.name}`, cls: "dnd-pursuit-pv-env-name" });
+    const condCls = state.stealthCondition === "advantage" ? "dnd-pursuit-pv-cond-adv" : state.stealthCondition === "disadvantage" ? "dnd-pursuit-pv-cond-disadv" : "dnd-pursuit-pv-cond-normal";
+    const condLabel = state.stealthCondition === "advantage" ? "Stealth: Advantage" : state.stealthCondition === "disadvantage" ? "Stealth: Disadvantage" : "Stealth: Normal";
+    envBar.createEl("span", { text: condLabel, cls: `dnd-pursuit-pv-condition ${condCls}` });
+    const hints = [];
+    if (state.environment.hasCover) hints.push("Cover available");
+    if (state.environment.hasObscurement) hints.push("Obscured areas");
+    if (state.environment.hasElevation) hints.push("Elevation changes");
+    if (state.environment.crowdedOrNoisy) hints.push("Crowded/Noisy");
+    if (hints.length > 0) {
+      envBar.createEl("span", { text: `Break LoS: ${hints.join(" \xB7 ")}`, cls: "dnd-pursuit-pv-los-hints" });
+    }
+  }
+  // ── Chase Lane (2D scatter layout) ──────────────────────
+  renderChaseLane(container, state) {
+    var _a, _b;
+    const visible = state.participants.filter((p) => !p.hidden && !p.carriedBy && !p.grappledBy);
+    if (visible.length === 0) return;
+    const allPos = state.participants.filter((p) => !p.hidden).map((p) => p.position);
+    const minPos = Math.min(...allPos);
+    const maxPos = Math.max(...allPos);
+    const range2 = Math.max(maxPos - minPos, 60);
+    const pad = 30;
+    const rangeStart = minPos - pad;
+    const rangeSize = range2 + pad * 2;
+    const lane = container.createDiv({ cls: "dnd-pursuit-pv-lane dnd-pursuit-pv-lane-2d" });
+    const dirBar = lane.createDiv({ cls: "dnd-pursuit-pv-dir-bar" });
+    dirBar.createEl("span", { text: "\u2190 CAUGHT", cls: "dnd-pursuit-pv-dir-caught" });
+    dirBar.createEl("span", { text: "ESCAPED \u2192", cls: "dnd-pursuit-pv-dir-escaped" });
+    const scene = lane.createDiv({ cls: "dnd-pursuit-pv-scene dnd-pursuit-pv-scene-2d" });
+    this.renderEnvironmentZones(scene, state);
+    const mStart = Math.floor(rangeStart / 30) * 30;
+    const mEnd = Math.ceil((rangeStart + rangeSize) / 30) * 30;
+    for (let ft = mStart; ft <= mEnd; ft += 30) {
+      const pct = this.posToPercent(ft, rangeStart, rangeSize);
+      const m = scene.createDiv({ cls: "dnd-pursuit-pv-dist-marker" });
+      m.style.left = `${pct}%`;
+      m.createEl("span", { text: `${ft}ft`, cls: "dnd-pursuit-pv-dist-label" });
+    }
+    const quarries = visible.filter((p) => p.role === "quarry" && !p.escaped && !p.droppedOut);
+    const pursuers = visible.filter((p) => p.role === "pursuer" && !p.droppedOut);
+    const escapedList = state.participants.filter((p) => !p.hidden && p.escaped);
+    this.renderRangeLines(scene, quarries, pursuers, rangeStart, rangeSize);
+    const pursuerYSlots = this.assignYSlots(pursuers, 12, 40);
+    const quarryYSlots = this.assignYSlots(quarries, 60, 88);
+    for (const p of pursuers) {
+      const xPct = this.posToPercent(p.position, rangeStart, rangeSize);
+      const yPct = (_a = pursuerYSlots.get(p.id)) != null ? _a : 25;
+      this.renderScatterToken(scene, p, state, xPct, yPct);
+    }
+    for (const p of quarries) {
+      const xPct = this.posToPercent(p.position, rangeStart, rangeSize);
+      const yPct = (_b = quarryYSlots.get(p.id)) != null ? _b : 75;
+      this.renderScatterToken(scene, p, state, xPct, yPct);
+    }
+    const pursuerLabel = scene.createDiv({ cls: "dnd-pursuit-pv-role-label dnd-pursuit-pv-role-pursuers" });
+    pursuerLabel.textContent = "\u{1F50D} Pursuers";
+    const quarryLabel = scene.createDiv({ cls: "dnd-pursuit-pv-role-label dnd-pursuit-pv-role-quarry" });
+    quarryLabel.textContent = "\u{1F3C3} Quarry";
+    const quarryGroups = this.groupByPosition(quarries);
+    const pursuerGroups = this.groupByPosition(pursuers);
+    const distBar = scene.createDiv({ cls: "dnd-pursuit-pv-distance-bar" });
+    if (quarryGroups.size > 0 && pursuerGroups.size > 0) {
+      const nearestQuarryPos = Math.min(...quarryGroups.keys());
+      for (const [pos] of pursuerGroups) {
+        const dist = Math.abs(nearestQuarryPos - pos);
+        const midPct = this.posToPercent((nearestQuarryPos + pos) / 2, rangeStart, rangeSize);
+        const label = distBar.createDiv({ cls: "dnd-pursuit-pv-dist-inline" });
+        label.style.left = `${midPct}%`;
+        label.textContent = dist <= 5 ? `${dist}ft \u2694\uFE0F` : `${dist}ft`;
+      }
+    }
+    if (state.placedObstacles && state.placedObstacles.length > 0) {
+      for (const obs of state.placedObstacles) {
+        const xPct = this.posToPercent(obs.position, rangeStart, rangeSize);
+        const marker = scene.createDiv({ cls: "dnd-pursuit-pv-obstacle-marker" });
+        marker.style.left = `${xPct}%`;
+        marker.createEl("span", { text: "\u26A0\uFE0F", cls: "dnd-pursuit-pv-obstacle-icon" });
+        marker.createEl("span", { text: obs.entry.title, cls: "dnd-pursuit-pv-obstacle-label" });
+      }
+    }
+    if (escapedList.length > 0) {
+      const escRow = scene.createDiv({ cls: "dnd-pursuit-pv-escaped-row" });
+      for (const p of escapedList) {
+        const token = escRow.createDiv({ cls: "dnd-pursuit-pv-token dnd-pursuit-pv-token-escaped" });
+        token.createEl("span", { text: this.getTokenIcon(p), cls: "dnd-pursuit-pv-token-icon" });
+        token.createEl("span", { text: p.display, cls: "dnd-pursuit-pv-token-name" });
+        token.createEl("span", { text: "ESCAPED!", cls: "dnd-pursuit-pv-escaped-label" });
+      }
+    }
+  }
+  // ── Environment Zones ──────────────────────────────────────
+  /** Render subtle background zone indicators based on environment flags. */
+  renderEnvironmentZones(scene, state) {
+    const env = state.environment;
+    const tags = [];
+    if (env.hasCover) tags.push({ label: "\u{1F6E1}\uFE0F Cover", cls: "dnd-pursuit-pv-zone-cover" });
+    if (env.hasObscurement) tags.push({ label: "\u{1F32B}\uFE0F Obscured", cls: "dnd-pursuit-pv-zone-obscured" });
+    if (env.crowdedOrNoisy) tags.push({ label: "\u{1F465} Crowded", cls: "dnd-pursuit-pv-zone-crowd" });
+    if (env.hasElevation) tags.push({ label: "\u2B06\uFE0F Elevation", cls: "dnd-pursuit-pv-zone-elevation" });
+    if (env.wideOpen) tags.push({ label: "\u{1F3DC}\uFE0F Wide Open", cls: "dnd-pursuit-pv-zone-open" });
+    if (tags.length === 0) return;
+    const zoneBar = scene.createDiv({ cls: "dnd-pursuit-pv-env-zones" });
+    for (const tag of tags) {
+      zoneBar.createEl("span", { text: tag.label, cls: `dnd-pursuit-pv-env-zone-tag ${tag.cls}` });
+    }
+  }
+  // ── Range Lines (SVG) ──────────────────────────────────────
+  /** Draw SVG lines connecting each pursuer to their nearest quarry. */
+  renderRangeLines(scene, quarries, pursuers, rangeStart, rangeSize) {
+    var _a, _b;
+    if (quarries.length === 0 || pursuers.length === 0) return;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "dnd-pursuit-pv-range-svg");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+    svg.style.position = "absolute";
+    svg.style.top = "0";
+    svg.style.left = "0";
+    svg.style.pointerEvents = "none";
+    svg.style.overflow = "visible";
+    const pursuerYSlots = this.assignYSlots(pursuers, 12, 40);
+    const quarryYSlots = this.assignYSlots(quarries, 60, 88);
+    for (const pur of pursuers) {
+      let nearest = null;
+      let nearestDist = Infinity;
+      for (const q of quarries) {
+        const d = Math.abs(q.position - pur.position);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearest = q;
+        }
+      }
+      if (!nearest) continue;
+      const x1Pct = this.posToPercent(pur.position, rangeStart, rangeSize);
+      const y1Pct = (_a = pursuerYSlots.get(pur.id)) != null ? _a : 25;
+      const x2Pct = this.posToPercent(nearest.position, rangeStart, rangeSize);
+      const y2Pct = (_b = quarryYSlots.get(nearest.id)) != null ? _b : 75;
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", `${x1Pct}%`);
+      line.setAttribute("y1", `${y1Pct}%`);
+      line.setAttribute("x2", `${x2Pct}%`);
+      line.setAttribute("y2", `${y2Pct}%`);
+      const dist = Math.abs(nearest.position - pur.position);
+      const strokeColor = dist <= 5 ? "rgba(220, 38, 38, 0.6)" : dist <= 30 ? "rgba(234, 179, 8, 0.4)" : "rgba(100, 116, 139, 0.2)";
+      line.setAttribute("stroke", strokeColor);
+      line.setAttribute("stroke-width", dist <= 5 ? "3" : "2");
+      line.setAttribute("stroke-dasharray", dist <= 5 ? "none" : "6 4");
+      svg.appendChild(line);
+      if (dist <= 60) {
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", `${(x1Pct + x2Pct) / 2}%`);
+        text.setAttribute("y", `${(y1Pct + y2Pct) / 2}%`);
+        text.setAttribute("text-anchor", "middle");
+        text.setAttribute("dominant-baseline", "middle");
+        text.setAttribute("class", "dnd-pursuit-pv-range-label");
+        text.textContent = `${dist}ft`;
+        svg.appendChild(text);
+      }
+    }
+    scene.appendChild(svg);
+  }
+  // ── Y-Slot Assignment ──────────────────────────────────────
+  /**
+   * Assign vertical Y% positions for a group of tokens within a band.
+   * Tokens at the same X position get staggered vertically within the band.
+   */
+  assignYSlots(tokens, bandMin, bandMax) {
+    var _a;
+    const slots = /* @__PURE__ */ new Map();
+    if (tokens.length === 0) return slots;
+    const byPos = this.groupByPosition(tokens);
+    const bandMid = (bandMin + bandMax) / 2;
+    const bandHalf = (bandMax - bandMin) / 2;
+    for (const [, group] of byPos) {
+      if (group.length === 1) {
+        slots.set(group[0].id, bandMid);
+      } else {
+        const step = (bandMax - bandMin) / (group.length + 1);
+        for (let i = 0; i < group.length; i++) {
+          slots.set(group[i].id, bandMin + step * (i + 1));
+        }
+      }
+    }
+    if (byPos.size > 1) {
+      const positions = [...byPos.keys()].sort((a, b) => a - b);
+      for (let gi = 0; gi < positions.length; gi++) {
+        const group = byPos.get(positions[gi]);
+        const jitter = (gi % 3 - 1) * bandHalf * 0.15;
+        for (const p of group) {
+          const base = (_a = slots.get(p.id)) != null ? _a : bandMid;
+          slots.set(p.id, Math.max(bandMin, Math.min(bandMax, base + jitter)));
+        }
+      }
+    }
+    return slots;
+  }
+  // ── 2D Scatter Token Rendering ─────────────────────────────
+  /** Render a single token at an absolute (x%, y%) position within the scene. */
+  renderScatterToken(scene, p, state, xPct, yPct) {
+    var _a;
+    const isActive = state.started && ((_a = state.participants[state.turnIndex]) == null ? void 0 : _a.id) === p.id;
+    const wrapper = scene.createDiv({ cls: "dnd-pursuit-pv-scatter-token" });
+    wrapper.style.left = `${xPct}%`;
+    wrapper.style.top = `${yPct}%`;
+    const token = wrapper.createDiv({
+      cls: `dnd-pursuit-pv-token dnd-pursuit-pv-token-2d ${p.role === "quarry" ? "dnd-pursuit-pv-token-quarry" : "dnd-pursuit-pv-token-pursuer"} ${isActive ? "dnd-pursuit-pv-token-active" : ""}`
+    });
+    const prevPos = this.prev.positions.get(p.id);
+    if (prevPos !== void 0 && prevPos !== p.position) {
+      token.addClass("dnd-pursuit-pv-token-moving");
+    }
+    if (p.escaped && !this.prev.escaped.has(p.id)) {
+      token.addClass("dnd-pursuit-pv-token-just-escaped");
+    }
+    if (p.movementPlane === "air") {
+      token.addClass("dnd-pursuit-pv-token-flying");
+    } else if (p.movementPlane === "underground") {
+      token.addClass("dnd-pursuit-pv-token-burrowing");
+    }
+    const iconEl = token.createDiv({ cls: "dnd-pursuit-pv-token-circle" });
+    const resolved = this.resolveTokenImage(p);
+    if (resolved.imageFile) {
+      const img = iconEl.createEl("img", { cls: "dnd-pursuit-pv-token-img" });
+      img.src = this.app.vault.adapter.getResourcePath(resolved.imageFile);
+    } else if (resolved.marker) {
+      iconEl.createEl("span", { text: resolved.marker.icon || "\u2B24", cls: "dnd-pursuit-pv-token-icon-text" });
+      if (resolved.marker.backgroundColor) iconEl.style.backgroundColor = resolved.marker.backgroundColor;
+    } else {
+      iconEl.createEl("span", { text: this.getTokenIcon(p), cls: "dnd-pursuit-pv-token-icon-text" });
+    }
+    if (p.movementPlane === "air") {
+      token.createEl("div", { text: "\u{1F985}", cls: "dnd-pursuit-pv-plane-icon" });
+    } else if (p.movementPlane === "underground") {
+      token.createEl("div", { text: "\u26CF\uFE0F", cls: "dnd-pursuit-pv-plane-icon" });
+    }
+    token.createEl("div", { text: p.display, cls: "dnd-pursuit-pv-token-label" });
+    if (isActive) {
+      token.createEl("div", { text: "YOUR TURN", cls: "dnd-pursuit-pv-your-turn" });
+    }
+    if (p.turnAction) {
+      const actionText = p.turnAction === "dash" ? "Dashing!" : p.turnAction === "hide" ? "Hiding..." : p.turnAction === "search" ? "Searching..." : p.turnAction === "attack" ? "Attacking!" : p.turnAction === "grapple" ? "Grappling!" : p.turnAction === "escape-grapple" ? "Breaking free!" : p.turnAction === "create-obstacle" ? "Creating obstacle!" : "";
+      if (actionText) {
+        token.createEl("div", { text: actionText, cls: "dnd-pursuit-pv-action-badge" });
+      }
+    }
+    if (p.feetMovedThisTurn > 0) {
+      token.createEl("div", { text: `+${p.feetMovedThisTurn}ft`, cls: "dnd-pursuit-pv-moved-badge" });
+    }
+    if (p.carrying.length > 0) {
+      const carryCluster = token.createDiv({ cls: "dnd-pursuit-pv-carried-cluster" });
+      for (const carriedId of p.carrying) {
+        const c = state.participants.find((q) => q.id === carriedId);
+        if (!c) continue;
+        const sub = carryCluster.createDiv({ cls: "dnd-pursuit-pv-sub-token dnd-pursuit-pv-sub-carried" });
+        this.renderSubTokenIcon(sub, c);
+        sub.createEl("span", { text: c.display, cls: "dnd-pursuit-pv-sub-label" });
+      }
+    }
+    if (p.grappling.length > 0) {
+      const grpCluster = token.createDiv({ cls: "dnd-pursuit-pv-carried-cluster dnd-pursuit-pv-grapple-cluster" });
+      for (const grappledId of p.grappling) {
+        const g = state.participants.find((q) => q.id === grappledId);
+        if (!g) continue;
+        const sub = grpCluster.createDiv({ cls: "dnd-pursuit-pv-sub-token dnd-pursuit-pv-sub-grappled" });
+        sub.createEl("span", { text: "\u{1F517}", cls: "dnd-pursuit-pv-chain-icon" });
+        this.renderSubTokenIcon(sub, g);
+        sub.createEl("span", { text: g.display, cls: "dnd-pursuit-pv-sub-label" });
+      }
+    }
+    if (p.isHidden && p.role === "quarry") {
+      token.addClass("dnd-pursuit-pv-token-hidden");
+      token.createEl("div", { text: "\u{1F441}\uFE0F\u200D\u{1F5E8}\uFE0F Hidden", cls: "dnd-pursuit-pv-hidden-badge" });
+    }
+    if (p.conditions.length > 0) {
+      const condRow = token.createDiv({ cls: "dnd-pursuit-pv-token-conditions" });
+      for (const c of p.conditions) {
+        condRow.createEl("span", { text: c, cls: "dnd-pursuit-pv-cond-badge" });
+      }
+    }
+    if (p.incapacitated) {
+      token.addClass("dnd-pursuit-pv-token-incapacitated");
+      token.createEl("div", { text: "\u{1F480} Down", cls: "dnd-pursuit-pv-down-badge" });
+    }
+    if (p.escaped && p.isHidden) {
+      token.createEl("div", { text: "Vanished! \u2705", cls: "dnd-pursuit-pv-stealth-result dnd-pursuit-pv-stealth-pass" });
+    }
+  }
+  /** Render a small token icon for carried/grappled sub-tokens. */
+  renderSubTokenIcon(el, p) {
+    const resolved = this.resolveTokenImage(p);
+    if (resolved.imageFile) {
+      const img = el.createEl("img", { cls: "dnd-pursuit-pv-sub-img" });
+      img.src = this.app.vault.adapter.getResourcePath(resolved.imageFile);
+      return;
+    }
+    el.createEl("span", { text: this.getTokenIcon(p), cls: "dnd-pursuit-pv-sub-icon" });
+  }
+  /**
+   * Resolve the token image for a participant using 3-level fallback:
+   * 1. Direct tokenId lookup
+   * 2. Vault note frontmatter token_id
+   * 3. Name match in marker library
+   */
+  resolveTokenImage(p) {
+    var _a;
+    if (p.tokenId) {
+      const marker = this.plugin.markerLibrary.getMarker(p.tokenId);
+      if (marker == null ? void 0 : marker.imageFile) return { imageFile: marker.imageFile, marker };
+      if (marker) return { marker };
+    }
+    if (p.notePath) {
+      const file = this.app.vault.getAbstractFileByPath(p.notePath);
+      if (file instanceof import_obsidian73.TFile) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        const noteTokenId = (_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.token_id;
+        if (noteTokenId) {
+          const marker = this.plugin.markerLibrary.getMarker(noteTokenId);
+          if (marker == null ? void 0 : marker.imageFile) return { imageFile: marker.imageFile, marker };
+          if (marker) return { marker };
+        }
+      }
+    }
+    const matches = this.plugin.markerLibrary.findMarkersByName(p.display);
+    const withImage = matches.find((m) => m.imageFile);
+    if (withImage) return { imageFile: withImage.imageFile, marker: withImage };
+    if (matches.length > 0) return { marker: matches[0] };
+    return {};
+  }
+  // ── Info Bar (bottom) ──────────────────────────────────────
+  renderInfoBar(container, state) {
+    var _a;
+    const bar = container.createDiv({ cls: "dnd-pursuit-pv-info-bar" });
+    const playerVisible = state.participants.filter((p) => !p.hidden && !p.escaped && !p.droppedOut && p.player);
+    if (playerVisible.length === 0) return;
+    const dashDiv = bar.createDiv({ cls: "dnd-pursuit-pv-dash-section" });
+    dashDiv.createEl("span", { text: "Dashes: ", cls: "dnd-pursuit-pv-info-label" });
+    for (const p of playerVisible) {
+      const span = dashDiv.createEl("span", { cls: "dnd-pursuit-pv-dash-entry" });
+      span.textContent = `${p.display} ${p.dashesUsed}/${p.freeDashes}`;
+      if (p.dashesUsed > p.freeDashes) span.addClass("dnd-pursuit-pv-dash-over");
+    }
+    const exDiv = bar.createDiv({ cls: "dnd-pursuit-pv-exhaustion-section" });
+    exDiv.createEl("span", { text: "Exhaustion: ", cls: "dnd-pursuit-pv-info-label" });
+    for (const p of playerVisible) {
+      const entry = exDiv.createDiv({ cls: "dnd-pursuit-pv-ex-entry" });
+      entry.createEl("span", { text: `${p.display} `, cls: "dnd-pursuit-pv-ex-name" });
+      for (let i = 0; i < 5; i++) {
+        const prevEx = (_a = this.prev.exhaustion.get(p.id)) != null ? _a : 0;
+        const pip = entry.createEl("span", {
+          text: i < p.exhaustionLevel ? "\u25CF" : "\u25CB",
+          cls: `dnd-pursuit-pv-ex-pip ${i < p.exhaustionLevel ? "dnd-pursuit-pv-ex-filled" : ""}`
+        });
+        if (i < p.exhaustionLevel && i >= prevEx) {
+          pip.addClass("dnd-pursuit-pv-ex-new");
+        }
+      }
+    }
+  }
+  // ── Ended Overlay ──────────────────────────────────────────
+  renderEndedOverlay(container, state) {
+    const overlay = container.createDiv({ cls: "dnd-pursuit-pv-ended-overlay" });
+    const outcomeClass = state.outcome === "escaped" ? "dnd-pursuit-pv-outcome-escaped" : state.outcome === "caught" ? "dnd-pursuit-pv-outcome-caught" : "dnd-pursuit-pv-outcome-other";
+    const outcomeText = state.outcome === "escaped" ? "\u{1F3C3} ESCAPED!" : state.outcome === "caught" ? "\u2694\uFE0F CAUGHT!" : "\u{1F3C1} CHASE OVER";
+    overlay.createEl("h1", { text: outcomeText, cls: `dnd-pursuit-pv-outcome ${outcomeClass}` });
+    for (const p of state.participants.filter((q) => q.role === "quarry")) {
+      const icon = p.escaped ? "\u2705" : p.droppedOut ? "\u274C" : p.incapacitated ? "\u{1F480}" : "\u2694\uFE0F";
+      overlay.createEl("div", {
+        text: `${icon} ${p.display}`,
+        cls: `dnd-pursuit-pv-outcome-member ${p.escaped ? "dnd-pursuit-pv-outcome-esc" : "dnd-pursuit-pv-outcome-caught-member"}`
+      });
+    }
+  }
+  // ── Helpers ────────────────────────────────────────────────
+  posToPercent(pos, rangeStart, rangeSize) {
+    if (rangeSize === 0) return 50;
+    return (pos - rangeStart) / rangeSize * 100;
+  }
+  /** Group participants by their position (for stacking detection). */
+  groupByPosition(participants) {
+    const map = /* @__PURE__ */ new Map();
+    for (const p of participants) {
+      const group = map.get(p.position);
+      if (group) group.push(p);
+      else map.set(p.position, [p]);
+    }
+    return map;
+  }
+  getTokenIcon(p) {
+    if (p.role === "quarry") return p.player ? "\u{1F3C3}" : "\u{1F3C3}\u200D\u2642\uFE0F";
+    return "\u{1F50D}";
+  }
+};
+
+// src/pursuit/PursuitSetupModal.ts
+var import_obsidian74 = require("obsidian");
+
+// src/pursuit/CombatPursuitSync.ts
+var CombatPursuitSync = class {
+  constructor(combat, pursuit) {
+    this.combat = combat;
+    this.pursuit = pursuit;
+    this.unsubCombat = null;
+    this.unsubPursuit = null;
+    this.syncing = false;
+    this.active = false;
+    /** Last-known state per combatant ID (keyed by combatantId). */
+    this.lastCombat = /* @__PURE__ */ new Map();
+    this.lastPursuit = /* @__PURE__ */ new Map();
+  }
+  // ── Lifecycle ──────────────────────────────────────────────
+  /** Start synchronising. Call once after the chase is set up. */
+  activate() {
+    if (this.active) return;
+    this.active = true;
+    this.seedFromCombat();
+    this.seedFromPursuit();
+    this.unsubCombat = this.combat.onChange((state) => this.onCombatChange(state));
+    this.unsubPursuit = this.pursuit.onChange((state) => this.onPursuitChange(state));
+  }
+  /** Stop synchronising and release listeners. */
+  teardown() {
+    var _a, _b;
+    this.active = false;
+    (_a = this.unsubCombat) == null ? void 0 : _a.call(this);
+    (_b = this.unsubPursuit) == null ? void 0 : _b.call(this);
+    this.unsubCombat = null;
+    this.unsubPursuit = null;
+    this.lastCombat.clear();
+    this.lastPursuit.clear();
+  }
+  isActive() {
+    return this.active;
+  }
+  // ── Seed Snapshots ─────────────────────────────────────────
+  seedFromCombat() {
+    const state = this.combat.getState();
+    if (!state) return;
+    for (const c of state.combatants) {
+      this.lastCombat.set(c.id, this.combatantSnapshot(c));
+    }
+  }
+  seedFromPursuit() {
+    const state = this.pursuit.getState();
+    if (!state) return;
+    for (const p of state.participants) {
+      if (p.combatantId) {
+        this.lastPursuit.set(p.combatantId, this.participantSnapshot(p));
+      }
+    }
+  }
+  // ── Change Handlers ────────────────────────────────────────
+  onCombatChange(state) {
+    if (this.syncing || !this.active) return;
+    if (!state) {
+      this.teardown();
+      return;
+    }
+    this.syncing = true;
+    try {
+      for (const c of state.combatants) {
+        const prev = this.lastCombat.get(c.id);
+        const curr = this.combatantSnapshot(c);
+        this.lastCombat.set(c.id, curr);
+        if (!prev) continue;
+        if (this.snapshotsEqual(prev, curr)) continue;
+        const pursuitState = this.pursuit.getState();
+        if (!pursuitState) continue;
+        const participant = pursuitState.participants.find((p) => p.combatantId === c.id);
+        if (!participant) continue;
+        this.applyCombatDiffToPursuit(participant.id, prev, curr);
+        this.lastPursuit.set(c.id, curr);
+      }
+    } finally {
+      this.syncing = false;
+    }
+  }
+  onPursuitChange(state) {
+    if (this.syncing || !this.active) return;
+    if (!state || state.ended) {
+      this.teardown();
+      return;
+    }
+    this.syncing = true;
+    try {
+      for (const p of state.participants) {
+        if (!p.combatantId) continue;
+        const prev = this.lastPursuit.get(p.combatantId);
+        const curr = this.participantSnapshot(p);
+        this.lastPursuit.set(p.combatantId, curr);
+        if (!prev) continue;
+        if (this.snapshotsEqual(prev, curr)) continue;
+        const combatState = this.combat.getState();
+        if (!combatState) continue;
+        const combatant = combatState.combatants.find((co) => co.id === p.combatantId);
+        if (!combatant) continue;
+        this.applyPursuitDiffToCombat(p.combatantId, prev, curr);
+        this.lastCombat.set(p.combatantId, curr);
+      }
+    } finally {
+      this.syncing = false;
+    }
+  }
+  // ── Diff Application ───────────────────────────────────────
+  applyCombatDiffToPursuit(participantId, prev, curr) {
+    if (curr.hp !== prev.hp) {
+      const delta = curr.hp - prev.hp;
+      if (delta < 0) {
+        this.pursuit.applyDamage(participantId, -delta);
+      } else {
+        this.pursuit.applyHealing(participantId, delta);
+      }
+    }
+    if (curr.tempHP !== prev.tempHP) {
+      this.pursuit.setTempHP(participantId, curr.tempHP);
+    }
+    for (const cond of curr.conditions) {
+      if (!prev.conditions.includes(cond)) {
+        this.pursuit.addCondition(participantId, cond);
+      }
+    }
+    for (const cond of prev.conditions) {
+      if (!curr.conditions.includes(cond)) {
+        this.pursuit.removeCondition(participantId, cond);
+      }
+    }
+  }
+  applyPursuitDiffToCombat(combatantId, prev, curr) {
+    if (curr.hp !== prev.hp) {
+      const delta = curr.hp - prev.hp;
+      if (delta < 0) {
+        this.combat.applyDamage(combatantId, -delta);
+      } else {
+        this.combat.applyHealing(combatantId, delta);
+      }
+    }
+    if (curr.tempHP !== prev.tempHP) {
+      this.combat.setTempHP(combatantId, curr.tempHP);
+    }
+    const combatState = this.combat.getState();
+    if (!combatState) return;
+    const combatant = combatState.combatants.find((c) => c.id === combatantId);
+    if (!combatant) return;
+    const existingNames = combatant.statuses.map((s) => s.name);
+    for (const cond of curr.conditions) {
+      if (!prev.conditions.includes(cond) && !existingNames.includes(cond)) {
+        this.combat.addStatus(combatantId, { name: cond });
+      }
+    }
+    for (const cond of prev.conditions) {
+      if (!curr.conditions.includes(cond)) {
+        const idx = combatant.statuses.findIndex((s) => s.name === cond);
+        if (idx >= 0) {
+          this.combat.removeStatus(combatantId, idx);
+        }
+      }
+    }
+  }
+  // ── Snapshot Helpers ───────────────────────────────────────
+  combatantSnapshot(c) {
+    return {
+      hp: c.currentHP,
+      maxHP: c.maxHP,
+      tempHP: c.tempHP,
+      conditions: c.statuses.map((s) => s.name).sort(),
+      incapacitated: c.currentHP <= 0,
+      dead: c.dead === true
+    };
+  }
+  participantSnapshot(p) {
+    return {
+      hp: p.currentHP,
+      maxHP: p.maxHP,
+      tempHP: p.tempHP,
+      conditions: [...p.conditions].sort(),
+      incapacitated: p.incapacitated,
+      dead: false
+      // Pursuit doesn't have a "dead" concept, just incapacitated
+    };
+  }
+  snapshotsEqual(a, b) {
+    return a.hp === b.hp && a.maxHP === b.maxHP && a.tempHP === b.tempHP && a.incapacitated === b.incapacitated && a.dead === b.dead && a.conditions.length === b.conditions.length && a.conditions.every((c, i) => c === b.conditions[i]);
+  }
+};
+
+// src/pursuit/PursuitSetupModal.ts
+var CREATURE_COLORS = [
+  "Red",
+  "Blue",
+  "Green",
+  "Yellow",
+  "Purple",
+  "Orange",
+  "Pink",
+  "Brown",
+  "Black",
+  "White",
+  "Gray",
+  "Cyan",
+  "Magenta",
+  "Lime",
+  "Teal",
+  "Indigo",
+  "Violet",
+  "Gold",
+  "Silver",
+  "Bronze"
+];
+function extractSkillBonus(skillsaves, skillName) {
+  if (!Array.isArray(skillsaves)) return null;
+  const lower = skillName.toLowerCase();
+  for (const entry of skillsaves) {
+    if (typeof entry !== "object" || entry === null) continue;
+    for (const [key, val2] of Object.entries(entry)) {
+      if (key.toLowerCase() === lower && typeof val2 === "number") return val2;
+    }
+  }
+  return null;
+}
+function extractPassivePerception(senses) {
+  if (typeof senses !== "string") return null;
+  const m = senses.match(/Passive Perception\s+(\d+)/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+var PursuitSetupModal = class extends import_obsidian74.Modal {
+  constructor(app, plugin, combatState) {
+    super(app);
+    // ── Chase config ──
+    this.chaseName = "Chase";
+    this.environment = {
+      name: "Default",
+      hasCover: false,
+      hasObscurement: false,
+      wideOpen: false,
+      hasElevation: false,
+      crowdedOrNoisy: false,
+      complicationTableId: "urban",
+      notes: ""
+    };
+    this.hasRangerPursuer = false;
+    this.maxDistance = 0;
+    this.maxRounds = 0;
+    this.quarryHeadStart = 60;
+    this.pursuerStart = 0;
+    // ── Party (PCs) ──
+    this.includeParty = true;
+    this.selectedPartyId = "";
+    this.selectedPartyName = "";
+    this.selectedPartyMembers = [];
+    this.partySelector = null;
+    // ── Creature / NPC entries (with count) ──
+    this.creatures = [];
+    // ── Vault entities cache (NPCs + creatures only, for search) ──
+    this.searchableEntities = [];
+    // ── All vault entities (including PCs, for combat-state import) ──
+    this.allVaultEntities = [];
+    // ── Per-party-member starting positions (memberName → feet) ──
+    this.partyMemberStartPositions = /* @__PURE__ */ new Map();
+    // ── Flee direction for map import (compass direction the quarry is running) ──
+    this.fleeDirection = "S";
+    // ── Pre-populated from combat? ──
+    this.fromCombat = null;
+    // ── UI containers ──
+    this.partySelectionContainer = null;
+    this.partyMemberListContainer = null;
+    this.creatureListContainer = null;
+    this.plugin = plugin;
+    if (combatState) this.fromCombat = combatState;
+  }
+  async onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    this.modalEl.addClass("dnd-pursuit-setup-modal");
+    this.allVaultEntities = await this.loadVaultEntities();
+    this.searchableEntities = this.allVaultEntities.filter((e) => e.type !== "player");
+    if (this.fromCombat) {
+      this.chaseName = `Chase \u2014 ${this.fromCombat.encounterName}`;
+      this.includeParty = false;
+      await this.loadFromCombatState(this.fromCombat);
+    }
+    await this.renderContent();
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+  // ── Render ─────────────────────────────────────────────────
+  async renderContent() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "\u{1F3C3} Setup Chase" });
+    new import_obsidian74.Setting(contentEl).setName("Chase Name").addText(
+      (text) => text.setPlaceholder("e.g. Market Chase").setValue(this.chaseName).onChange((v) => {
+        this.chaseName = v;
+      })
+    );
+    new import_obsidian74.Setting(contentEl).setName("Include Party Members").setDesc("Select party members to include as quarry in the chase").addToggle(
+      (toggle) => toggle.setValue(this.includeParty).onChange(async (value) => {
+        this.includeParty = value;
+        await this.renderPartySelection();
+        await this.renderPartyMemberList();
+        this.updateFooter();
+      })
+    );
+    this.partySelectionContainer = contentEl.createDiv();
+    this.partySelectionContainer.style.marginBottom = "15px";
+    await this.renderPartySelection();
+    this.partyMemberListContainer = contentEl.createDiv({ cls: "dnd-party-member-list" });
+    this.partyMemberListContainer.style.marginBottom = "15px";
+    await this.renderPartyMemberList();
+    contentEl.createEl("h3", { text: "Environment" });
+    contentEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "These affect the stealth condition for quarry members at end of round."
+    });
+    new import_obsidian74.Setting(contentEl).setName("Environment Name").addText(
+      (text) => text.setPlaceholder("Crowded Market").setValue(this.environment.name).onChange((v) => {
+        this.environment.name = v;
+      })
+    );
+    new import_obsidian74.Setting(contentEl).setName("Cover available").setDesc("Stalls, carts, buildings, columns \u2014 things to hide behind").addToggle(
+      (t) => t.setValue(this.environment.hasCover).onChange((v) => {
+        this.environment.hasCover = v;
+      })
+    );
+    new import_obsidian74.Setting(contentEl).setName("Heavily obscured areas").setDesc("Fog, darkness, smoke, heavy rain").addToggle(
+      (t) => t.setValue(this.environment.hasObscurement).onChange((v) => {
+        this.environment.hasObscurement = v;
+      })
+    );
+    new import_obsidian74.Setting(contentEl).setName("Crowded or noisy").setDesc("Lots of bystanders, loud market hawkers").addToggle(
+      (t) => t.setValue(this.environment.crowdedOrNoisy).onChange((v) => {
+        this.environment.crowdedOrNoisy = v;
+      })
+    );
+    new import_obsidian74.Setting(contentEl).setName("Wide open (few hiding spots)").setDesc("Open field, long corridor \u2014 gives disadvantage on stealth").addToggle(
+      (t) => t.setValue(this.environment.wideOpen).onChange((v) => {
+        this.environment.wideOpen = v;
+      })
+    );
+    new import_obsidian74.Setting(contentEl).setName("Elevation changes").setDesc("Rooftops, balconies, sewer gratings").addToggle(
+      (t) => t.setValue(this.environment.hasElevation).onChange((v) => {
+        this.environment.hasElevation = v;
+      })
+    );
+    new import_obsidian74.Setting(contentEl).setName("Complication Table").setDesc("Environment-specific d20 complication table used each turn").addDropdown((dd) => {
+      for (const table of COMPLICATION_TABLES) {
+        dd.addOption(table.id, `${table.icon} ${table.name}`);
+      }
+      dd.setValue(this.environment.complicationTableId);
+      dd.onChange((v) => {
+        this.environment.complicationTableId = v;
+      });
+    });
+    new import_obsidian74.Setting(contentEl).setName("Ranger / Survival pursuer").setDesc("At least one pursuer is a ranger or has proficiency in Survival (disadvantage)").addToggle(
+      (t) => t.setValue(this.hasRangerPursuer).onChange((v) => {
+        this.hasRangerPursuer = v;
+      })
+    );
+    contentEl.createEl("h3", { text: "Chase Rules" });
+    new import_obsidian74.Setting(contentEl).setName("Default quarry head start (ft)").setDesc("Default starting position for quarry members (can be overridden per participant)").addText((text) => {
+      text.setPlaceholder("60").setValue(String(this.quarryHeadStart)).onChange((v) => {
+        this.quarryHeadStart = parseInt(v) || 60;
+      });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "70px";
+    });
+    new import_obsidian74.Setting(contentEl).setName("Default pursuer start position (ft)").setDesc("Default starting position for pursuers (can be overridden per participant)").addText((text) => {
+      text.setPlaceholder("0").setValue(String(this.pursuerStart)).onChange((v) => {
+        this.pursuerStart = parseInt(v) || 0;
+      });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "70px";
+    });
+    new import_obsidian74.Setting(contentEl).setName("Max escape distance (ft)").setDesc("Quarry that reaches this distance auto-escapes. 0 = no limit.").addText((text) => {
+      text.setPlaceholder("0").setValue(String(this.maxDistance)).onChange((v) => {
+        this.maxDistance = parseInt(v) || 0;
+      });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "70px";
+    });
+    new import_obsidian74.Setting(contentEl).setName("Max rounds").setDesc("Chase auto-ends after this many rounds. 0 = no limit.").addText((text) => {
+      text.setPlaceholder("0").setValue(String(this.maxRounds)).onChange((v) => {
+        this.maxRounds = parseInt(v) || 0;
+      });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "70px";
+    });
+    if (this.fromCombat && this.plugin.mapController.isMapActive()) {
+      const importSetting = new import_obsidian74.Setting(contentEl).setName("Import distances from map").setDesc("Set the direction the quarry is fleeing, then import token positions.");
+      importSetting.addDropdown(
+        (dd) => dd.addOption("N", "\u2B06 North").addOption("NE", "\u2197 North-East").addOption("E", "\u27A1 East").addOption("SE", "\u2198 South-East").addOption("S", "\u2B07 South").addOption("SW", "\u2199 South-West").addOption("W", "\u2B05 West").addOption("NW", "\u2196 North-West").setValue(this.fleeDirection).onChange((v) => {
+          this.fleeDirection = v;
+        })
+      );
+      importSetting.addButton(
+        (btn) => btn.setButtonText("\u{1F4CD} Import from Map").setCta().onClick(() => {
+          this.importDistancesFromMap();
+        })
+      );
+    }
+    contentEl.createEl("h3", { text: "Creatures & NPCs" });
+    this.creatureListContainer = contentEl.createDiv({ cls: "dnd-creature-list" });
+    this.renderCreatureList();
+    await this.showCreatureInputFields(contentEl);
+    contentEl.createEl("hr");
+    const footer = contentEl.createDiv({ cls: "dnd-pursuit-footer" });
+    const { quarryCount, pursuerCount } = this.countRoles();
+    footer.createEl("span", {
+      text: `${quarryCount} quarry \xB7 ${pursuerCount} pursuers`,
+      cls: "dnd-pursuit-summary"
+    });
+    const startBtn = footer.createEl("button", {
+      text: "\u{1F3C3} Start Chase",
+      cls: "dnd-pursuit-btn dnd-pursuit-btn-primary"
+    });
+    startBtn.disabled = quarryCount === 0 || pursuerCount === 0;
+    startBtn.addEventListener("click", () => this.startChase());
+  }
+  // ── Party Selection (PartySelector widget) ──────────────────
+  async renderPartySelection() {
+    if (!this.partySelectionContainer) return;
+    this.partySelectionContainer.empty();
+    if (!this.includeParty) return;
+    this.partySelector = new PartySelector({
+      partyManager: this.plugin.partyManager,
+      container: this.partySelectionContainer,
+      initialPartyId: this.selectedPartyId,
+      initialMembers: this.selectedPartyMembers,
+      onChange: (partyId, partyName, members) => {
+        this.selectedPartyId = partyId;
+        this.selectedPartyName = partyName;
+        this.selectedPartyMembers = members;
+        this.renderPartyMemberList();
+        this.updateFooter();
+      }
+    });
+    await this.partySelector.render();
+  }
+  async renderPartyMemberList() {
+    if (!this.partyMemberListContainer) return;
+    this.partyMemberListContainer.empty();
+    if (!this.includeParty || this.selectedPartyMembers.length === 0) return;
+    const memberByName = new Map(
+      this.allVaultEntities.filter((e) => e.type === "player").map((e) => [e.name, e])
+    );
+    const headerDiv = this.partyMemberListContainer.createDiv({ cls: "dnd-party-member-header" });
+    headerDiv.style.marginBottom = "10px";
+    headerDiv.style.fontWeight = "600";
+    headerDiv.setText(`Selected Party Members \u2014 Quarry (${this.selectedPartyMembers.length})`);
+    for (const memberName of this.selectedPartyMembers) {
+      const data = memberByName.get(memberName);
+      const memberItem = this.partyMemberListContainer.createDiv({ cls: "dnd-creature-item" });
+      const nameEl = memberItem.createSpan({ cls: "dnd-creature-name" });
+      nameEl.setText(`\u{1F464} ${memberName}`);
+      const statsEl = memberItem.createSpan({ cls: "dnd-creature-stats" });
+      if (data) {
+        const speed = data.speed.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
+        const parts = [];
+        parts.push(speed);
+        parts.push(`STR ${data.strScore}`);
+        parts.push(`Stealth ${data.stealthModifier >= 0 ? "+" : ""}${data.stealthModifier}`);
+        parts.push(`PPerc ${data.passivePerception}`);
+        parts.push(`HP ${data.currentHP}/${data.maxHP}`);
+        statsEl.setText(` | ${parts.join(" | ")}`);
+      }
+      const posContainer = memberItem.createSpan({ cls: "dnd-pursuit-start-pos" });
+      posContainer.createSpan({ text: "Start: " });
+      const posInput = posContainer.createEl("input", {
+        type: "number",
+        cls: "dnd-pursuit-start-pos-input",
+        attr: { title: "Starting position (ft)" }
+      });
+      posInput.style.width = "60px";
+      const savedPos = this.partyMemberStartPositions.get(memberName);
+      posInput.placeholder = String(this.quarryHeadStart);
+      posInput.value = savedPos !== void 0 ? String(savedPos) : "";
+      posInput.addEventListener("change", () => {
+        const v = posInput.value.trim();
+        if (v === "") {
+          this.partyMemberStartPositions.delete(memberName);
+        } else {
+          this.partyMemberStartPositions.set(memberName, parseInt(v) || this.quarryHeadStart);
+        }
+      });
+      const removeBtn = memberItem.createEl("button", {
+        text: "Remove",
+        cls: "dnd-creature-remove"
+      });
+      removeBtn.addEventListener("click", () => {
+        this.selectedPartyMembers = this.selectedPartyMembers.filter((n) => n !== memberName);
+        this.partyMemberStartPositions.delete(memberName);
+        this.renderPartySelection();
+        this.renderPartyMemberList();
+        this.updateFooter();
+      });
+    }
+  }
+  // ── Creature Input Fields (vault search + manual) ──────────
+  async showCreatureInputFields(container) {
+    const vaultSection = container.createDiv({ cls: "dnd-add-creature-vault" });
+    let selectedEntity = null;
+    let creatureCount = "1";
+    let creatureRole = "pursuer";
+    let searchResults = null;
+    if (this.searchableEntities.length > 0) {
+      const vaultSetting = new import_obsidian74.Setting(vaultSection).setName("Add from Vault").setDesc(`Search NPCs and creatures (${this.searchableEntities.length} available)`);
+      const searchContainer = vaultSetting.controlEl.createDiv({ cls: "dnd-creature-search-container" });
+      const searchInput = searchContainer.createEl("input", {
+        type: "text",
+        placeholder: "Search creatures\u2026",
+        cls: "dnd-creature-search-input"
+      });
+      searchResults = searchContainer.createDiv({ cls: "dnd-creature-search-results" });
+      searchResults.style.display = "none";
+      const showSearchResults = (query) => {
+        if (!searchResults) return;
+        if (!query || query.length < 1) {
+          searchResults.style.display = "none";
+          return;
+        }
+        const q = query.toLowerCase().trim();
+        const filtered = this.searchableEntities.filter((e) => e.name.toLowerCase().includes(q)).slice(0, 10);
+        searchResults.empty();
+        if (filtered.length === 0) {
+          searchResults.createEl("div", {
+            text: "No creatures found",
+            cls: "dnd-creature-search-no-results"
+          });
+          searchResults.style.display = "block";
+          return;
+        }
+        for (const entity of filtered) {
+          const resultEl = searchResults.createDiv({ cls: "dnd-creature-search-result" });
+          const typeIcon = entity.type === "npc" ? "\u{1F3AD}" : "\u{1F409}";
+          resultEl.createDiv({
+            text: `${typeIcon} ${entity.name}`,
+            cls: "dnd-creature-search-result-name"
+          });
+          const speed = entity.speed.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
+          const parts = [speed];
+          parts.push(`STR ${entity.strScore}`);
+          parts.push(`Stealth ${entity.stealthModifier >= 0 ? "+" : ""}${entity.stealthModifier}`);
+          parts.push(`PPerc ${entity.passivePerception}`);
+          resultEl.createDiv({ text: parts.join(" | "), cls: "dnd-creature-search-result-stats" });
+          resultEl.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            selectedEntity = entity;
+            searchInput.value = entity.name;
+            searchResults.style.display = "none";
+          });
+        }
+        searchResults.style.display = "block";
+      };
+      searchInput.addEventListener("input", (e) => {
+        selectedEntity = null;
+        showSearchResults(e.target.value);
+      });
+      searchInput.addEventListener("focus", (e) => {
+        const v = e.target.value;
+        if (v.length >= 1) showSearchResults(v);
+      });
+      searchInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && selectedEntity) {
+          e.preventDefault();
+          addVaultCreature();
+        }
+      });
+      searchInput.addEventListener("blur", () => {
+        setTimeout(() => {
+          if (searchResults) searchResults.style.display = "none";
+        }, 250);
+      });
+      vaultSetting.addText((text) => {
+        text.setPlaceholder("Count").setValue("1").onChange((v) => {
+          creatureCount = v;
+        });
+        text.inputEl.type = "number";
+        text.inputEl.style.width = "60px";
+      });
+      const roleContainer = vaultSetting.controlEl.createDiv({ cls: "dnd-inline-checkbox" });
+      roleContainer.style.display = "inline-flex";
+      roleContainer.style.alignItems = "center";
+      roleContainer.style.marginLeft = "8px";
+      const roleSelect = roleContainer.createEl("select", { cls: "dropdown" });
+      roleSelect.createEl("option", { text: "\u{1F50D} Pursuer", attr: { value: "pursuer" } });
+      roleSelect.createEl("option", { text: "\u{1F3C3} Quarry", attr: { value: "quarry" } });
+      roleSelect.addEventListener("change", () => {
+        creatureRole = roleSelect.value;
+      });
+      const addVaultCreature = () => {
+        if (!selectedEntity) {
+          new import_obsidian74.Notice("Please search and select a creature first!");
+          return;
+        }
+        const count = parseInt(creatureCount) || 1;
+        this.creatures.push({
+          name: selectedEntity.name,
+          count,
+          role: creatureRole,
+          speed: selectedEntity.speed,
+          strScore: selectedEntity.strScore,
+          conModifier: selectedEntity.conModifier,
+          stealthModifier: selectedEntity.stealthModifier,
+          passivePerception: selectedEntity.passivePerception,
+          perceptionModifier: selectedEntity.perceptionModifier,
+          initBonus: selectedEntity.initBonus,
+          currentHP: selectedEntity.currentHP,
+          maxHP: selectedEntity.maxHP,
+          size: selectedEntity.size,
+          notePath: selectedEntity.notePath,
+          entityType: selectedEntity.type === "npc" ? "npc" : "creature",
+          tokenId: selectedEntity.tokenId,
+          isCustom: false,
+          hasCunningAction: false,
+          wisModifier: selectedEntity.wisModifier,
+          intModifier: selectedEntity.intModifier,
+          chaModifier: selectedEntity.chaModifier,
+          startPenalty: "none",
+          hasTremorsense: false
+        });
+        this.renderCreatureList();
+        this.updateFooter();
+        new import_obsidian74.Notice(`Added ${count}x ${selectedEntity.name} as ${creatureRole}`);
+        searchInput.value = "";
+        selectedEntity = null;
+      };
+      vaultSetting.addButton(
+        (btn) => btn.setButtonText("Add").setCta().onClick(addVaultCreature)
+      );
+    } else {
+      vaultSection.createEl("p", {
+        text: "\u26A0\uFE0F No creatures or NPCs found in your vault. Use manual entry below.",
+        cls: "setting-item-description mod-warning"
+      });
+    }
+    const manualSection = container.createDiv({ cls: "dnd-add-creature-manual" });
+    let manualName = "";
+    let manualCount = "1";
+    let manualSpeed = "30";
+    let manualStr = "10";
+    let manualCon = "10";
+    let manualStealth = "0";
+    let manualPPerc = "10";
+    let manualRole = "pursuer";
+    const manualSetting = new import_obsidian74.Setting(manualSection).setName("Add Custom Creature").setDesc("Manually enter pursuit-relevant stats");
+    manualSetting.addText((text) => {
+      text.setPlaceholder("Name").onChange((v) => {
+        manualName = v;
+      });
+      text.inputEl.style.width = "120px";
+    });
+    manualSetting.addText((text) => {
+      text.setPlaceholder("Count").setValue("1").onChange((v) => {
+        manualCount = v;
+      });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "55px";
+    });
+    manualSetting.addText((text) => {
+      text.setPlaceholder("Speed").setValue("30").onChange((v) => {
+        manualSpeed = v;
+      });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "55px";
+    });
+    manualSetting.addText((text) => {
+      text.setPlaceholder("STR").setValue("10").onChange((v) => {
+        manualStr = v;
+      });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "50px";
+    });
+    manualSetting.addText((text) => {
+      text.setPlaceholder("CON").setValue("10").onChange((v) => {
+        manualCon = v;
+      });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "50px";
+    });
+    manualSetting.addText((text) => {
+      text.setPlaceholder("Stealth").setValue("0").onChange((v) => {
+        manualStealth = v;
+      });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "55px";
+    });
+    manualSetting.addText((text) => {
+      text.setPlaceholder("PPerc").setValue("10").onChange((v) => {
+        manualPPerc = v;
+      });
+      text.inputEl.type = "number";
+      text.inputEl.style.width = "55px";
+    });
+    const manualRoleContainer = manualSetting.controlEl.createDiv({ cls: "dnd-inline-checkbox" });
+    manualRoleContainer.style.display = "inline-flex";
+    manualRoleContainer.style.alignItems = "center";
+    manualRoleContainer.style.marginLeft = "8px";
+    const manualRoleSelect = manualRoleContainer.createEl("select", { cls: "dropdown" });
+    manualRoleSelect.createEl("option", { text: "\u{1F50D} Pursuer", attr: { value: "pursuer" } });
+    manualRoleSelect.createEl("option", { text: "\u{1F3C3} Quarry", attr: { value: "quarry" } });
+    manualRoleSelect.addEventListener("change", () => {
+      manualRole = manualRoleSelect.value;
+    });
+    manualSetting.addButton(
+      (btn) => btn.setButtonText("Add").setCta().onClick(() => {
+        if (!manualName.trim()) {
+          new import_obsidian74.Notice("Please enter a creature name!");
+          return;
+        }
+        const count = parseInt(manualCount) || 1;
+        const conScore = parseInt(manualCon) || 10;
+        this.creatures.push({
+          name: manualName.trim(),
+          count,
+          role: manualRole,
+          speed: [{ mode: "walk", feet: parseInt(manualSpeed) || 30 }],
+          strScore: parseInt(manualStr) || 10,
+          conModifier: Math.floor((conScore - 10) / 2),
+          stealthModifier: parseInt(manualStealth) || 0,
+          passivePerception: parseInt(manualPPerc) || 10,
+          perceptionModifier: (parseInt(manualPPerc) || 10) - 10,
+          initBonus: 0,
+          currentHP: 10,
+          maxHP: 10,
+          size: "medium",
+          entityType: "creature",
+          isCustom: true,
+          hasCunningAction: false,
+          wisModifier: 0,
+          intModifier: 0,
+          chaModifier: 0,
+          startPenalty: "none",
+          hasTremorsense: false
+        });
+        this.renderCreatureList();
+        this.updateFooter();
+        new import_obsidian74.Notice(`Added ${count}x ${manualName.trim()} as ${manualRole}`);
+      })
+    );
+    container.createEl("p", {
+      text: "\u{1F4A1} Tip: Creatures with count > 1 get color-coded names (e.g., Goblin Red, Goblin Blue).",
+      cls: "setting-item-description"
+    });
+  }
+  // ── Creature List ──────────────────────────────────────────
+  renderCreatureList() {
+    if (!this.creatureListContainer) return;
+    this.creatureListContainer.empty();
+    if (this.creatures.length === 0) {
+      this.creatureListContainer.createEl("p", {
+        text: "No creatures added yet. Add creatures below.",
+        cls: "setting-item-description"
+      });
+      return;
+    }
+    for (let i = 0; i < this.creatures.length; i++) {
+      const creature = this.creatures[i];
+      const creatureItem = this.creatureListContainer.createDiv({
+        cls: `dnd-creature-item ${creature.role === "quarry" ? "dnd-pursuit-quarry-row" : "dnd-pursuit-pursuer-row"}`
+      });
+      const nameEl = creatureItem.createSpan({ cls: "dnd-creature-name" });
+      const typeIcon = creature.entityType === "npc" ? "\u{1F3AD}" : "\u{1F409}";
+      if (creature.count > 1) {
+        const colorNames = CREATURE_COLORS.slice(0, creature.count).join(", ");
+        nameEl.setText(`${typeIcon} ${creature.name} x${creature.count} (${colorNames})`);
+      } else {
+        nameEl.setText(`${typeIcon} ${creature.name}`);
+      }
+      const statsEl = creatureItem.createSpan({ cls: "dnd-creature-stats" });
+      const speed = creature.speed.map((s) => `${s.feet}ft ${s.mode}`).join(", ");
+      const parts = [speed];
+      parts.push(`STR ${creature.strScore}`);
+      parts.push(`Stealth ${creature.stealthModifier >= 0 ? "+" : ""}${creature.stealthModifier}`);
+      parts.push(`PPerc ${creature.passivePerception}`);
+      const conLabel = creature.conModifier >= 0 ? `+${creature.conModifier}` : `${creature.conModifier}`;
+      parts.push(`CON ${conLabel}`);
+      statsEl.setText(` | ${parts.join(" | ")}`);
+      const roleBtn = creatureItem.createEl("button", {
+        text: creature.role === "quarry" ? "\u{1F3C3} Quarry" : "\u{1F50D} Pursuer",
+        cls: "dnd-pursuit-role-btn"
+      });
+      roleBtn.addEventListener("click", () => {
+        creature.role = creature.role === "quarry" ? "pursuer" : "quarry";
+        this.renderCreatureList();
+        this.updateFooter();
+      });
+      const caBtn = creatureItem.createEl("button", {
+        text: "\u{1F5E1}\uFE0F Cunning",
+        cls: `dnd-creature-friendly-toggle${creature.hasCunningAction ? " active" : ""}`,
+        attr: { title: "Cunning Action (rogue bonus dash)" }
+      });
+      caBtn.addEventListener("click", () => {
+        creature.hasCunningAction = !creature.hasCunningAction;
+        this.renderCreatureList();
+      });
+      const posContainer = creatureItem.createSpan({ cls: "dnd-pursuit-start-pos" });
+      posContainer.createSpan({ text: "Start: " });
+      const posInput = posContainer.createEl("input", {
+        type: "number",
+        cls: "dnd-pursuit-start-pos-input",
+        attr: { title: "Starting position (ft) \u2014 blank uses default" }
+      });
+      posInput.style.width = "60px";
+      const defaultPos = creature.role === "quarry" ? this.quarryHeadStart : this.pursuerStart;
+      posInput.placeholder = String(defaultPos);
+      posInput.value = creature.startPosition !== void 0 ? String(creature.startPosition) : "";
+      posInput.addEventListener("change", () => {
+        const v = posInput.value.trim();
+        if (v === "") {
+          creature.startPosition = void 0;
+        } else {
+          creature.startPosition = parseInt(v) || defaultPos;
+        }
+      });
+      const penaltySelect = creatureItem.createEl("select", {
+        cls: "dropdown dnd-pursuit-penalty-select",
+        attr: { title: "Start penalty (first turn only)" }
+      });
+      penaltySelect.createEl("option", { text: "No penalty", attr: { value: "none" } });
+      penaltySelect.createEl("option", { text: "\xBD speed", attr: { value: "halved" } });
+      penaltySelect.createEl("option", { text: "0 speed", attr: { value: "zero" } });
+      penaltySelect.value = creature.startPenalty;
+      penaltySelect.addEventListener("change", () => {
+        creature.startPenalty = penaltySelect.value;
+      });
+      if (creature.role === "pursuer") {
+        const tsBtn = creatureItem.createEl("button", {
+          text: "\u{1F4E1} Tremor",
+          cls: `dnd-creature-friendly-toggle${creature.hasTremorsense ? " active" : ""}`,
+          attr: { title: "Tremorsense (can detect burrowing quarry)" }
+        });
+        tsBtn.addEventListener("click", () => {
+          creature.hasTremorsense = !creature.hasTremorsense;
+          this.renderCreatureList();
+        });
+      }
+      const removeBtn = creatureItem.createEl("button", {
+        text: "Remove",
+        cls: "dnd-creature-remove"
+      });
+      removeBtn.addEventListener("click", () => {
+        this.creatures.splice(i, 1);
+        this.renderCreatureList();
+        this.updateFooter();
+      });
+    }
+  }
+  // ── Footer update ──────────────────────────────────────────
+  countRoles() {
+    const partyQuarry = this.includeParty ? this.selectedPartyMembers.length : 0;
+    let creatureQuarry = 0;
+    let creaturePursuer = 0;
+    for (const c of this.creatures) {
+      if (c.role === "quarry") creatureQuarry += c.count;
+      else creaturePursuer += c.count;
+    }
+    return {
+      quarryCount: partyQuarry + creatureQuarry,
+      pursuerCount: creaturePursuer
+    };
+  }
+  updateFooter() {
+    const footerEl = this.contentEl.querySelector(".dnd-pursuit-summary");
+    const startBtn = this.contentEl.querySelector(".dnd-pursuit-btn-primary");
+    const { quarryCount, pursuerCount } = this.countRoles();
+    if (footerEl) footerEl.textContent = `${quarryCount} quarry \xB7 ${pursuerCount} pursuers`;
+    if (startBtn) startBtn.disabled = quarryCount === 0 || pursuerCount === 0;
+  }
+  // ── Load Vault Entities ────────────────────────────────────
+  async loadVaultEntities() {
+    var _a, _b, _c;
+    const entities = [];
+    const files = this.app.vault.getMarkdownFiles();
+    for (const file of files) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache == null ? void 0 : cache.frontmatter;
+      if (!fm) continue;
+      const type = fm.type;
+      const isPlayer = type === "player" || type === "pc";
+      const isNPC = type === "npc";
+      const isCreature = !isPlayer && !isNPC && fm.statblock === true;
+      if (!isPlayer && !isNPC && !isCreature) continue;
+      const rawSpeed = fm.speed;
+      const speeds = parseSpeed(rawSpeed);
+      const hasStats = Array.isArray(fm.stats) && fm.stats.length >= 6;
+      const str = hasStats && typeof fm.stats[0] === "number" ? fm.stats[0] : 10;
+      const dex = hasStats && typeof fm.stats[1] === "number" ? fm.stats[1] : 10;
+      const con = hasStats && typeof fm.stats[2] === "number" ? fm.stats[2] : 10;
+      const wis = hasStats && typeof fm.stats[4] === "number" ? fm.stats[4] : 10;
+      const dexMod = Math.floor((dex - 10) / 2);
+      const conMod = Math.floor((con - 10) / 2);
+      const wisMod = Math.floor((wis - 10) / 2);
+      const initBonus = isPlayer && typeof fm.init_bonus === "number" ? fm.init_bonus : dexMod;
+      const stealthMod = (_a = extractSkillBonus(fm.skillsaves, "stealth")) != null ? _a : dexMod;
+      const percMod = (_b = extractSkillBonus(fm.skillsaves, "perception")) != null ? _b : wisMod;
+      const passivePerc = (_c = extractPassivePerception(fm.senses)) != null ? _c : 10 + percMod;
+      let size = "medium";
+      if (typeof fm.size === "string") size = fm.size.toLowerCase();
+      const hp = typeof fm.hp === "number" ? fm.hp : typeof fm.hp_max === "number" ? fm.hp_max : 10;
+      const maxHP = typeof fm.hp_max === "number" ? fm.hp_max : hp;
+      const int = hasStats && typeof fm.stats[3] === "number" ? fm.stats[3] : 10;
+      const cha = hasStats && typeof fm.stats[5] === "number" ? fm.stats[5] : 10;
+      const intMod = Math.floor((int - 10) / 2);
+      const chaMod = Math.floor((cha - 10) / 2);
+      entities.push({
+        name: fm.name || file.basename,
+        notePath: file.path,
+        type: isPlayer ? "player" : isCreature ? "creature" : "npc",
+        speed: speeds,
+        strScore: str,
+        conModifier: conMod,
+        stealthModifier: stealthMod,
+        passivePerception: passivePerc,
+        perceptionModifier: percMod,
+        initBonus,
+        currentHP: hp,
+        maxHP,
+        size,
+        tokenId: fm.token_id,
+        wisModifier: wisMod,
+        intModifier: intMod,
+        chaModifier: chaMod
+      });
+    }
+    return entities.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  // ── Load from Combat ───────────────────────────────────────
+  async loadFromCombatState(state) {
+    var _a, _b, _c, _d;
+    for (const c of state.combatants) {
+      if (c.dead) continue;
+      let speeds = [{ mode: "walk", feet: 30 }];
+      let strScore = 10;
+      let conMod = 0;
+      let dexMod = c.modifier;
+      let stealthMod = dexMod;
+      let percMod = 0;
+      let passivePerc = 10;
+      let size = "medium";
+      let tokenId = c.tokenId;
+      let wisMod = 0;
+      let intMod = 0;
+      let chaMod = 0;
+      if (c.notePath) {
+        const file = this.app.vault.getAbstractFileByPath(c.notePath);
+        if (file instanceof import_obsidian74.TFile) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          const fm = cache == null ? void 0 : cache.frontmatter;
+          if (fm) {
+            speeds = parseSpeed(fm.speed);
+            const hasStats = Array.isArray(fm.stats) && fm.stats.length >= 6;
+            if (hasStats) {
+              strScore = typeof fm.stats[0] === "number" ? fm.stats[0] : 10;
+              const dex = typeof fm.stats[1] === "number" ? fm.stats[1] : 10;
+              const con = typeof fm.stats[2] === "number" ? fm.stats[2] : 10;
+              const int = typeof fm.stats[3] === "number" ? fm.stats[3] : 10;
+              const wis = typeof fm.stats[4] === "number" ? fm.stats[4] : 10;
+              const cha = typeof fm.stats[5] === "number" ? fm.stats[5] : 10;
+              dexMod = Math.floor((dex - 10) / 2);
+              conMod = Math.floor((con - 10) / 2);
+              wisMod = Math.floor((wis - 10) / 2);
+              intMod = Math.floor((int - 10) / 2);
+              chaMod = Math.floor((cha - 10) / 2);
+              stealthMod = (_a = extractSkillBonus(fm.skillsaves, "stealth")) != null ? _a : dexMod;
+              percMod = (_b = extractSkillBonus(fm.skillsaves, "perception")) != null ? _b : wisMod;
+              passivePerc = (_c = extractPassivePerception(fm.senses)) != null ? _c : 10 + percMod;
+            }
+            if (typeof fm.init_bonus === "number") dexMod = fm.init_bonus;
+            if (typeof fm.size === "string") size = fm.size.toLowerCase();
+            if (!tokenId && fm.token_id) tokenId = fm.token_id;
+          }
+        }
+      }
+      this.creatures.push({
+        name: c.name,
+        count: 1,
+        role: c.player || c.friendly ? "quarry" : "pursuer",
+        speed: speeds,
+        strScore,
+        conModifier: conMod,
+        stealthModifier: stealthMod,
+        passivePerception: passivePerc,
+        perceptionModifier: percMod,
+        initBonus: dexMod,
+        currentHP: c.currentHP,
+        maxHP: c.maxHP,
+        size,
+        notePath: (_d = c.notePath) != null ? _d : void 0,
+        entityType: c.player ? "npc" : "creature",
+        // PCs from combat go into creature list
+        tokenId,
+        isCustom: false,
+        hasCunningAction: false,
+        wisModifier: wisMod,
+        intModifier: intMod,
+        chaModifier: chaMod,
+        startPenalty: "none",
+        hasTremorsense: false,
+        combatInitiative: c.initiative,
+        isPlayer: c.player === true,
+        combatantId: c.id
+      });
+    }
+  }
+  // ── Import Distances from Map ──────────────────────────────
+  /**
+   * Calculate starting distances from token positions on the linked battle map.
+   * Uses the pursuer closest to map origin as zero-reference, then computes
+   * each participant's distance from that reference point.
+   */
+  importDistancesFromMap() {
+    var _a, _b, _c, _d, _e;
+    const mc = this.plugin.mapController;
+    if (!mc.isMapActive()) {
+      new import_obsidian74.Notice("No active battle map to import from.");
+      return;
+    }
+    const gridSize = mc.getGridSize();
+    const scale2 = mc.getScale();
+    if (!gridSize || !scale2) {
+      new import_obsidian74.Notice("Could not read map grid size or scale.");
+      return;
+    }
+    const markers = mc.getPlacedMarkers();
+    if (markers.length === 0) {
+      new import_obsidian74.Notice("No tokens placed on the map.");
+      return;
+    }
+    const library = this.plugin.markerLibrary;
+    const DIRECTION_VECTORS = {
+      N: { x: 0, y: -1 },
+      NE: { x: 1, y: -1 },
+      E: { x: 1, y: 0 },
+      SE: { x: 1, y: 1 },
+      S: { x: 0, y: 1 },
+      SW: { x: -1, y: 1 },
+      W: { x: -1, y: 0 },
+      NW: { x: -1, y: -1 }
+    };
+    const raw = (_a = DIRECTION_VECTORS[this.fleeDirection]) != null ? _a : { x: 0, y: 1 };
+    const len = Math.sqrt(raw.x * raw.x + raw.y * raw.y);
+    const axis = { x: raw.x / len, y: raw.y / len };
+    const matched = [];
+    const consumedMarkerIds = /* @__PURE__ */ new Set();
+    let unmatched = 0;
+    const findMarker = (tokenId, name) => {
+      for (const m of markers) {
+        if (consumedMarkerIds.has(m.id)) continue;
+        if (tokenId && m.markerId === tokenId) {
+          consumedMarkerIds.add(m.id);
+          return { ref: m, def: library.getMarker(m.markerId) };
+        }
+        const def = library.getMarker(m.markerId);
+        if (def && def.name.toLowerCase() === name.toLowerCase()) {
+          consumedMarkerIds.add(m.id);
+          return { ref: m, def };
+        }
+      }
+      return null;
+    };
+    if (this.includeParty) {
+      const memberByName = new Map(
+        this.allVaultEntities.filter((e) => e.type === "player").map((e) => [e.name, e])
+      );
+      for (const memberName of this.selectedPartyMembers) {
+        const data = memberByName.get(memberName);
+        const hit = findMarker(data == null ? void 0 : data.tokenId, memberName);
+        if (hit) {
+          const sq = (data == null ? void 0 : data.size) ? (_b = CREATURE_SIZE_SQUARES[data.size]) != null ? _b : 1 : 1;
+          matched.push({
+            x: hit.ref.position.x,
+            y: hit.ref.position.y,
+            sizeSquares: sq,
+            applyPosition: (feet) => this.partyMemberStartPositions.set(memberName, feet)
+          });
+        } else {
+          unmatched++;
+        }
+      }
+    }
+    for (const c of this.creatures) {
+      const hit = findMarker(c.tokenId, c.name);
+      if (hit) {
+        const sq = ((_c = hit.def) == null ? void 0 : _c.creatureSize) ? (_d = CREATURE_SIZE_SQUARES[hit.def.creatureSize]) != null ? _d : 1 : (_e = CREATURE_SIZE_SQUARES[c.size]) != null ? _e : 1;
+        matched.push({
+          x: hit.ref.position.x,
+          y: hit.ref.position.y,
+          sizeSquares: sq,
+          applyPosition: (feet) => {
+            c.startPosition = feet;
+          }
+        });
+      } else {
+        unmatched++;
+      }
+    }
+    if (matched.length === 0) {
+      new import_obsidian74.Notice("Could not match any participants to map tokens.");
+      return;
+    }
+    const sv = scale2.value;
+    const dnd5eDistance = (ax, ay, aSq, bx, by, bSq) => {
+      const aHalf = aSq * gridSize / 2;
+      const bHalf = bSq * gridSize / 2;
+      const edgeDx = Math.max(0, Math.abs(bx - ax) - aHalf - bHalf);
+      const edgeDy = Math.max(0, Math.abs(by - ay) - aHalf - bHalf);
+      const pixelDist = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
+      const feet = pixelDist / gridSize * sv;
+      return Math.max(sv, Math.round((feet + sv) / sv) * sv);
+    };
+    const projections = matched.map((m) => m.x * axis.x + m.y * axis.y);
+    let refIdx = 0;
+    for (let i = 1; i < projections.length; i++) {
+      if (projections[i] < projections[refIdx]) refIdx = i;
+    }
+    const ref = matched[refIdx];
+    for (let i = 0; i < matched.length; i++) {
+      if (i === refIdx) {
+        matched[i].applyPosition(0);
+      } else {
+        matched[i].applyPosition(
+          dnd5eDistance(ref.x, ref.y, ref.sizeSquares, matched[i].x, matched[i].y, matched[i].sizeSquares)
+        );
+      }
+    }
+    this.renderCreatureList();
+    if (this.partyMemberListContainer) this.renderPartyMemberList();
+    this.updateFooter();
+    const msg = unmatched > 0 ? `\u{1F4CD} Imported distances for ${matched.length} participants (${unmatched} unmatched).` : `\u{1F4CD} Imported distances for ${matched.length} participants from map!`;
+    new import_obsidian74.Notice(msg);
+  }
+  // ── Start Chase ────────────────────────────────────────────
+  startChase() {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y;
+    const { quarryCount, pursuerCount } = this.countRoles();
+    if (quarryCount === 0 || pursuerCount === 0) {
+      new import_obsidian74.Notice("Need at least one quarry and one pursuer.");
+      return;
+    }
+    const participants = [];
+    let idCounter = 0;
+    const now = Date.now();
+    if (this.includeParty) {
+      const memberByName = new Map(
+        this.allVaultEntities.filter((e) => e.type === "player").map((e) => [e.name, e])
+      );
+      for (const memberName of this.selectedPartyMembers) {
+        const data = memberByName.get(memberName);
+        const speed = (_a = data == null ? void 0 : data.speed) != null ? _a : [{ mode: "walk", feet: 30 }];
+        participants.push({
+          id: `pursuit_${now}_${idCounter++}`,
+          name: memberName,
+          display: memberName,
+          role: "quarry",
+          initiative: 0,
+          initiativeModifier: (_b = data == null ? void 0 : data.initBonus) != null ? _b : 0,
+          speeds: speed,
+          activeSpeed: (_d = (_c = speed[0]) == null ? void 0 : _c.mode) != null ? _d : "walk",
+          position: (_e = this.partyMemberStartPositions.get(memberName)) != null ? _e : this.quarryHeadStart,
+          dashesUsed: 0,
+          freeDashes: 3 + Math.max(0, (_f = data == null ? void 0 : data.conModifier) != null ? _f : 0),
+          conModifier: (_g = data == null ? void 0 : data.conModifier) != null ? _g : 0,
+          exhaustionLevel: 0,
+          hasActed: false,
+          hasCunningAction: false,
+          hasMoved: false,
+          feetMovedThisTurn: 0,
+          pendingDashSave: false,
+          strScore: (_h = data == null ? void 0 : data.strScore) != null ? _h : 10,
+          estimatedWeight: (_j = SIZE_WEIGHT_ESTIMATE[(_i = data == null ? void 0 : data.size) != null ? _i : "medium"]) != null ? _j : 150,
+          size: (_k = data == null ? void 0 : data.size) != null ? _k : "medium",
+          stealthModifier: (_l = data == null ? void 0 : data.stealthModifier) != null ? _l : 0,
+          passivePerception: (_m = data == null ? void 0 : data.passivePerception) != null ? _m : 10,
+          perceptionModifier: (_n = data == null ? void 0 : data.perceptionModifier) != null ? _n : 0,
+          lineOfSightBroken: false,
+          targetIds: [],
+          currentHP: (_o = data == null ? void 0 : data.currentHP) != null ? _o : 10,
+          maxHP: (_p = data == null ? void 0 : data.maxHP) != null ? _p : 10,
+          incapacitated: ((_q = data == null ? void 0 : data.currentHP) != null ? _q : 10) <= 0,
+          conditions: [],
+          escaped: false,
+          droppedOut: false,
+          player: true,
+          hidden: false,
+          isHidden: false,
+          hiddenStealthRoll: void 0,
+          movementPenalty: "none",
+          complicationLoSBreak: false,
+          notePath: data == null ? void 0 : data.notePath,
+          tokenId: data == null ? void 0 : data.tokenId,
+          wisModifier: (_r = data == null ? void 0 : data.wisModifier) != null ? _r : 0,
+          intModifier: (_s = data == null ? void 0 : data.intModifier) != null ? _s : 0,
+          chaModifier: (_t = data == null ? void 0 : data.chaModifier) != null ? _t : 0,
+          wasOutOfSightThisRound: false,
+          movementReductionFeet: 0,
+          tempHP: 0,
+          carrying: [],
+          grappling: [],
+          movementPlane: "ground",
+          hasTremorsense: false,
+          startPenalty: "none",
+          startPenaltyApplied: false
+        });
+      }
+    }
+    for (const c of this.creatures) {
+      for (let i = 0; i < c.count; i++) {
+        const name = c.count > 1 ? `${c.name} (${CREATURE_COLORS[i % CREATURE_COLORS.length]})` : c.name;
+        participants.push({
+          id: `pursuit_${now}_${idCounter++}`,
+          name,
+          display: name,
+          role: c.role,
+          initiative: (_u = c.combatInitiative) != null ? _u : 0,
+          initiativeModifier: c.initBonus,
+          speeds: c.speed,
+          activeSpeed: (_w = (_v = c.speed[0]) == null ? void 0 : _v.mode) != null ? _w : "walk",
+          position: (_x = c.startPosition) != null ? _x : c.role === "quarry" ? this.quarryHeadStart : this.pursuerStart,
+          dashesUsed: 0,
+          freeDashes: 3 + Math.max(0, c.conModifier),
+          conModifier: c.conModifier,
+          exhaustionLevel: 0,
+          hasActed: false,
+          hasCunningAction: c.hasCunningAction,
+          hasMoved: false,
+          feetMovedThisTurn: 0,
+          pendingDashSave: false,
+          strScore: c.strScore,
+          estimatedWeight: (_y = SIZE_WEIGHT_ESTIMATE[c.size]) != null ? _y : 150,
+          size: c.size || "medium",
+          stealthModifier: c.stealthModifier,
+          passivePerception: c.passivePerception,
+          perceptionModifier: c.perceptionModifier,
+          lineOfSightBroken: false,
+          targetIds: [],
+          currentHP: c.currentHP,
+          maxHP: c.maxHP,
+          incapacitated: c.currentHP <= 0,
+          conditions: [],
+          escaped: false,
+          droppedOut: false,
+          player: c.isPlayer === true,
+          hidden: false,
+          isHidden: false,
+          hiddenStealthRoll: void 0,
+          movementPenalty: "none",
+          complicationLoSBreak: false,
+          notePath: c.notePath,
+          tokenId: c.tokenId,
+          combatantId: c.combatantId,
+          wisModifier: c.wisModifier,
+          intModifier: c.intModifier,
+          chaModifier: c.chaModifier,
+          wasOutOfSightThisRound: false,
+          movementReductionFeet: 0,
+          tempHP: 0,
+          carrying: [],
+          grappling: [],
+          movementPlane: "ground",
+          hasTremorsense: c.hasTremorsense,
+          startPenalty: c.startPenalty,
+          startPenaltyApplied: false
+        });
+      }
+    }
+    this.plugin.pursuitTracker.setup(
+      this.chaseName,
+      participants,
+      this.environment,
+      this.hasRangerPursuer,
+      this.maxDistance,
+      this.maxRounds
+    );
+    if (this.fromCombat) {
+      this.plugin.pursuitTracker.keepInitiativeFromCombat();
+      const activeCombatant = this.fromCombat.combatants[this.fromCombat.turnIndex];
+      this.plugin.pursuitTracker.startChase(activeCombatant == null ? void 0 : activeCombatant.name);
+      if (this.plugin.combatPursuitSync) this.plugin.combatPursuitSync.teardown();
+      this.plugin.combatPursuitSync = new CombatPursuitSync(
+        this.plugin.combatTracker,
+        this.plugin.pursuitTracker
+      );
+      this.plugin.combatPursuitSync.activate();
+    }
+    this.close();
+    this.plugin.openPursuitTracker();
+    new import_obsidian74.Notice(`\u{1F3C3} Chase "${this.chaseName}" started with ${participants.length} participants!`);
+  }
+};
+
 // src/map-views/renderMapView.ts
-var import_obsidian80 = require("obsidian");
+var import_obsidian83 = require("obsidian");
 
 // src/map/MagicWandWallModal.ts
 function floodFillMask(imageData, startX, startY, threshold, tolerance, invert) {
@@ -65349,8 +71034,8 @@ function magicWandDetect(imageData, clickX, clickY, threshold, tolerance, simpli
 }
 
 // src/utils/GridCalibrationModal.ts
-var import_obsidian72 = require("obsidian");
-var GridCalibrationModal = class extends import_obsidian72.Modal {
+var import_obsidian75 = require("obsidian");
+var GridCalibrationModal = class extends import_obsidian75.Modal {
   constructor(app, config, onApply, measuredDistance) {
     super(app);
     this.config = config;
@@ -65496,8 +71181,8 @@ var GridCalibrationModal = class extends import_obsidian72.Modal {
 };
 
 // src/map-views/DeleteMapConfirmModal.ts
-var import_obsidian73 = require("obsidian");
-var DeleteMapConfirmModal = class extends import_obsidian73.Modal {
+var import_obsidian76 = require("obsidian");
+var DeleteMapConfirmModal = class extends import_obsidian76.Modal {
   constructor(app, plugin, mapId, mapName, sourcePath, onDeleted) {
     super(app);
     this.plugin = plugin;
@@ -65564,17 +71249,17 @@ var DeleteMapConfirmModal = class extends import_obsidian73.Modal {
       if (removeCodeBlock && this.sourcePath) {
         await this.removeCodeBlockFromNote();
       }
-      new import_obsidian73.Notice(`\u2705 Map "${this.mapName}" deleted`);
+      new import_obsidian76.Notice(`\u2705 Map "${this.mapName}" deleted`);
       this.onDeleted();
     } catch (err) {
       console.error("[DeleteMap] Error deleting map:", err);
-      new import_obsidian73.Notice("\u274C Failed to delete map");
+      new import_obsidian76.Notice("\u274C Failed to delete map");
     }
   }
   async removeCodeBlockFromNote() {
     try {
       const file = this.app.vault.getAbstractFileByPath(this.sourcePath);
-      if (!(file instanceof import_obsidian73.TFile)) return;
+      if (!(file instanceof import_obsidian76.TFile)) return;
       const content = await this.app.vault.read(file);
       const escapedId = this.mapId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const codeBlockRegex = new RegExp(
@@ -65596,8 +71281,8 @@ var DeleteMapConfirmModal = class extends import_obsidian73.Modal {
 };
 
 // src/map-views/TabletopCalibrationModal.ts
-var import_obsidian74 = require("obsidian");
-var TabletopCalibrationModal = class extends import_obsidian74.Modal {
+var import_obsidian77 = require("obsidian");
+var TabletopCalibrationModal = class extends import_obsidian77.Modal {
   constructor(app, plugin, popoutWin, onDone) {
     super(app);
     this.plugin = plugin;
@@ -65693,7 +71378,7 @@ var TabletopCalibrationModal = class extends import_obsidian74.Modal {
     saveBtn.addEventListener("click", async () => {
       const diag = parseFloat(diagonalInput.value);
       if (!diag || diag <= 0) {
-        new import_obsidian74.Notice("Please enter your monitor diagonal size.");
+        new import_obsidian77.Notice("Please enter your monitor diagonal size.");
         return;
       }
       const baseMm = parseFloat(baseInput.value) || 25;
@@ -65710,7 +71395,7 @@ var TabletopCalibrationModal = class extends import_obsidian74.Modal {
       await this.plugin.saveSettings();
       this.onDone(calibration);
       this.close();
-      new import_obsidian74.Notice(`Tabletop calibrated: ${ppmm.toFixed(2)} px/mm, grid = ${baseMm}mm`);
+      new import_obsidian77.Notice(`Tabletop calibrated: ${ppmm.toFixed(2)} px/mm, grid = ${baseMm}mm`);
     });
   }
   onClose() {
@@ -65778,7 +71463,7 @@ async function renderMapView(plugin, source, el, ctx) {
       return;
     }
     const imageFile = plugin.app.vault.getAbstractFileByPath(config.imageFile);
-    if (!imageFile || !(imageFile instanceof import_obsidian80.TFile)) {
+    if (!imageFile || !(imageFile instanceof import_obsidian83.TFile)) {
       el.createEl("div", {
         text: `\u26A0\uFE0F Image file not found: ${config.imageFile}`,
         cls: "dnd-map-error"
@@ -66072,7 +71757,7 @@ async function renderMapView(plugin, source, el, ctx) {
       redrawAnnotations();
       plugin.saveMapAnnotations(config, el);
       if (viewport._syncPlayerView) viewport._syncPlayerView();
-      new import_obsidian80.Notice(`${wallDef.name} placed`);
+      new import_obsidian83.Notice(`${wallDef.name} placed`);
     };
     const findConnectedWalls = (startIdx, walls) => {
       const EPSILON = getWallSnapThreshold() * 0.25;
@@ -66179,11 +71864,11 @@ async function renderMapView(plugin, source, el, ctx) {
           indices.forEach((wi) => {
             if (config.walls[wi]) config.walls[wi].height = val2;
           });
-          new import_obsidian80.Notice(`Set ${indices.length} wall${indices.length > 1 ? "s" : ""} to ${val2} ft`);
+          new import_obsidian83.Notice(`Set ${indices.length} wall${indices.length > 1 ? "s" : ""} to ${val2} ft`);
           plugin.saveMapAnnotations(config, el);
           if (viewport._syncPlayerView) viewport._syncPlayerView();
         } else {
-          new import_obsidian80.Notice("Enter a valid height in feet");
+          new import_obsidian83.Notice("Enter a valid height in feet");
           return;
         }
         closePopup();
@@ -66193,7 +71878,7 @@ async function renderMapView(plugin, source, el, ctx) {
         indices.forEach((wi) => {
           if (config.walls[wi]) delete config.walls[wi].height;
         });
-        new import_obsidian80.Notice(`Set ${indices.length} wall${indices.length > 1 ? "s" : ""} to infinite height`);
+        new import_obsidian83.Notice(`Set ${indices.length} wall${indices.length > 1 ? "s" : ""} to infinite height`);
         plugin.saveMapAnnotations(config, el);
         if (viewport._syncPlayerView) viewport._syncPlayerView();
         closePopup();
@@ -66327,7 +72012,7 @@ async function renderMapView(plugin, source, el, ctx) {
     };
     const undo = () => {
       if (undoStack.length === 0) {
-        new import_obsidian80.Notice("Nothing to undo");
+        new import_obsidian83.Notice("Nothing to undo");
         return;
       }
       redoStack.push(_snapshotState());
@@ -66336,11 +72021,11 @@ async function renderMapView(plugin, source, el, ctx) {
       plugin.saveMapAnnotations(config, el);
       if (viewport._syncPlayerView) viewport._syncPlayerView();
       updateUndoRedoButtons();
-      new import_obsidian80.Notice("Undo");
+      new import_obsidian83.Notice("Undo");
     };
     const redo = () => {
       if (redoStack.length === 0) {
-        new import_obsidian80.Notice("Nothing to redo");
+        new import_obsidian83.Notice("Nothing to redo");
         return;
       }
       undoStack.push(_snapshotState());
@@ -66349,7 +72034,7 @@ async function renderMapView(plugin, source, el, ctx) {
       plugin.saveMapAnnotations(config, el);
       if (viewport._syncPlayerView) viewport._syncPlayerView();
       updateUndoRedoButtons();
-      new import_obsidian80.Notice("Redo");
+      new import_obsidian83.Notice("Redo");
     };
     const viewport = mapContainer.createDiv({ cls: "dnd-map-viewport" });
     viewport.setAttribute("tabindex", "0");
@@ -66553,7 +72238,7 @@ async function renderMapView(plugin, source, el, ctx) {
       redrawTerrainLayer();
       redrawAnnotations();
       plugin.saveMapAnnotations(config, el);
-      new import_obsidian80.Notice(hLoc(hcLang, "allTerrainCleared"));
+      new import_obsidian83.Notice(hLoc(hcLang, "allTerrainCleared"));
       plugin.refreshHexcrawlView();
     });
     terrainPicker.createDiv({ cls: "dnd-fog-picker-sep" });
@@ -66571,7 +72256,7 @@ async function renderMapView(plugin, source, el, ctx) {
         (updated) => {
           config.customTerrainDescriptions = updated;
           plugin.saveMapAnnotations(config, el);
-          new import_obsidian80.Notice(hLoc(hcLang, "customDescsSaved"));
+          new import_obsidian83.Notice(hLoc(hcLang, "customDescsSaved"));
         },
         hcLang
       ).open();
@@ -66607,7 +72292,7 @@ async function renderMapView(plugin, source, el, ctx) {
       redrawTerrainLayer();
       redrawAnnotations();
       plugin.saveMapAnnotations(config, el);
-      new import_obsidian80.Notice(hLoc(hcLang, "allClimateCleared"));
+      new import_obsidian83.Notice(hLoc(hcLang, "allClimateCleared"));
       plugin.refreshHexcrawlView();
     });
     const openHexcrawlBtn = createToolBtn(hexcrawlContent, "\u{1F4CB}", hLoc(hcLang, "toolOpenPanel"));
@@ -66713,7 +72398,7 @@ async function renderMapView(plugin, source, el, ctx) {
         visionMenu.removeClass("open");
         refreshVisionSelector();
         if (viewport._syncPlayerView) viewport._syncPlayerView();
-        new import_obsidian80.Notice(selectedVisionTokenId ? `Vision: ${icon} ${name}` : "Vision: All Players");
+        new import_obsidian83.Notice(selectedVisionTokenId ? `Vision: ${icon} ${name}` : "Vision: All Players");
       });
       return item;
     };
@@ -66797,7 +72482,7 @@ async function renderMapView(plugin, source, el, ctx) {
           }
           if (!matchedMarker && combatant.notePath) {
             const noteFile = plugin.app.vault.getAbstractFileByPath(combatant.notePath);
-            if (noteFile instanceof import_obsidian80.TFile) {
+            if (noteFile instanceof import_obsidian83.TFile) {
               const noteCache = plugin.app.metadataCache.getFileCache(noteFile);
               const noteTokenId = (_a2 = noteCache == null ? void 0 : noteCache.frontmatter) == null ? void 0 : _a2.token_id;
               if (noteTokenId) {
@@ -66822,12 +72507,12 @@ async function renderMapView(plugin, source, el, ctx) {
           if (viewport._syncPlayerView) viewport._syncPlayerView();
           const markerDef = plugin.markerLibrary.getMarker(matchedMarker.markerId);
           const icon = (markerDef == null ? void 0 : markerDef.type) === "player" ? "\u{1F464}" : (markerDef == null ? void 0 : markerDef.type) === "creature" ? "\u{1F479}" : "\u{1F9D1}";
-          new import_obsidian80.Notice(`Vision synced: ${icon} ${(markerDef == null ? void 0 : markerDef.name) || matchedMarker.id}`);
+          new import_obsidian83.Notice(`Vision synced: ${icon} ${(markerDef == null ? void 0 : markerDef.name) || matchedMarker.id}`);
         } else if (!matchedMarker && selectedVisionTokenId !== null) {
           selectedVisionTokenId = null;
           refreshVisionSelector();
           if (viewport._syncPlayerView) viewport._syncPlayerView();
-          new import_obsidian80.Notice("Vision synced: \u{1F465} All Players");
+          new import_obsidian83.Notice("Vision synced: \u{1F465} All Players");
         }
       });
       const ctVisionObserver = new MutationObserver(() => {
@@ -66910,7 +72595,7 @@ async function renderMapView(plugin, source, el, ctx) {
       plugin.saveMapAnnotations(config, el);
       const viewport2 = el.querySelector(".dnd-map-viewport");
       if (viewport2 && viewport2._syncPlayerView) viewport2._syncPlayerView();
-      new import_obsidian80.Notice("Fog cleared \u2014 entire map revealed");
+      new import_obsidian83.Notice("Fog cleared \u2014 entire map revealed");
     });
     const fogHideAllBtn = fogPicker.createEl("button", {
       cls: "dnd-map-aoe-shape-btn dnd-fog-action-btn",
@@ -66926,7 +72611,7 @@ async function renderMapView(plugin, source, el, ctx) {
       plugin.saveMapAnnotations(config, el);
       const viewport2 = el.querySelector(".dnd-map-viewport");
       if (viewport2 && viewport2._syncPlayerView) viewport2._syncPlayerView();
-      new import_obsidian80.Notice("Entire map hidden by fog");
+      new import_obsidian83.Notice("Entire map hidden by fog");
     });
     fogBtn.toggleClass("hidden", config.activeLayer !== "Background");
     wallsBtn.toggleClass("hidden", config.activeLayer !== "Background");
@@ -67057,9 +72742,9 @@ async function renderMapView(plugin, source, el, ctx) {
         plugin.saveMapAnnotations(config, el);
         const viewport2 = el.querySelector(".dnd-map-viewport");
         if (viewport2 && viewport2._syncPlayerView) viewport2._syncPlayerView();
-        new import_obsidian80.Notice("All walls deleted");
+        new import_obsidian83.Notice("All walls deleted");
       } else {
-        new import_obsidian80.Notice("No walls to delete");
+        new import_obsidian83.Notice("No walls to delete");
       }
     });
     const lightsPicker = lightsBtn.createDiv({ cls: "dnd-map-aoe-picker hidden" });
@@ -67104,7 +72789,7 @@ async function renderMapView(plugin, source, el, ctx) {
       config.lightSources = [];
       redrawAnnotations();
       plugin.saveMapAnnotations(config, el);
-      new import_obsidian80.Notice("All light sources removed");
+      new import_obsidian83.Notice("All light sources removed");
     });
     const elevationPicker = elevationPaintBtn.createDiv({ cls: "dnd-map-aoe-picker hidden" });
     const elevationInputRow = elevationPicker.createDiv({ cls: "dnd-map-aoe-row" });
@@ -67133,7 +72818,7 @@ async function renderMapView(plugin, source, el, ctx) {
       e.stopPropagation();
       elevationPaintValue = 0;
       elevationInput.value = "0";
-      new import_obsidian80.Notice("Elevation eraser active (0 ft)");
+      new import_obsidian83.Notice("Elevation eraser active (0 ft)");
     });
     const difficultTerrainPicker = difficultTerrainBtn.createDiv({ cls: "dnd-map-aoe-picker hidden" });
     const dtPaintBtn = difficultTerrainPicker.createEl("button", {
@@ -67151,14 +72836,14 @@ async function renderMapView(plugin, source, el, ctx) {
       isDifficultTerrainEraser = false;
       dtPaintBtn.addClass("active");
       dtEraseBtn.removeClass("active");
-      new import_obsidian80.Notice("Difficult terrain brush active");
+      new import_obsidian83.Notice("Difficult terrain brush active");
     });
     dtEraseBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       isDifficultTerrainEraser = true;
       dtEraseBtn.addClass("active");
       dtPaintBtn.removeClass("active");
-      new import_obsidian80.Notice("Difficult terrain eraser active");
+      new import_obsidian83.Notice("Difficult terrain eraser active");
     });
     const aoePicker = aoeBtn.createDiv({ cls: "dnd-map-aoe-picker hidden" });
     const aoeShapes = [
@@ -67185,7 +72870,7 @@ async function renderMapView(plugin, source, el, ctx) {
             redrawAnnotations();
             plugin.saveMapAnnotations(config, el);
             updateGridToolsVisibility();
-            new import_obsidian80.Notice("AoE effect removed");
+            new import_obsidian83.Notice("AoE effect removed");
           }
           lastPlacedAoeId = null;
         }
@@ -67239,7 +72924,7 @@ async function renderMapView(plugin, source, el, ctx) {
           redrawGridOverlays();
           redrawAnnotations();
           await plugin.saveMapAnnotations(config, el);
-          new import_obsidian80.Notice("Grid calibration applied");
+          new import_obsidian83.Notice("Grid calibration applied");
         }
       ).open();
     });
@@ -67251,7 +72936,7 @@ async function renderMapView(plugin, source, el, ctx) {
         measureBtn.removeClass("active");
         setActiveTool("pan");
         redrawAnnotations();
-        new import_obsidian80.Notice("Measurement cancelled");
+        new import_obsidian83.Notice("Measurement cancelled");
       } else {
         setActiveTool("pan");
         isCalibrating = true;
@@ -67259,12 +72944,12 @@ async function renderMapView(plugin, source, el, ctx) {
         calibrationPoint2 = null;
         measureBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian80.Notice("Click two points on the map to measure distance");
+        new import_obsidian83.Notice("Click two points on the map to measure distance");
       }
     });
     clearTunnelsBtn.addEventListener("click", () => {
       if (!config.tunnels || config.tunnels.length === 0) {
-        new import_obsidian80.Notice("No tunnels to clear");
+        new import_obsidian83.Notice("No tunnels to clear");
         return;
       }
       const tunnelCount = config.tunnels.length;
@@ -67276,7 +72961,7 @@ async function renderMapView(plugin, source, el, ctx) {
       redrawAnnotations();
       if (viewport._syncPlayerView) viewport._syncPlayerView();
       const msg = `Cleared ${tunnelCount} tunnel${tunnelCount === 1 ? "" : "s"}`;
-      new import_obsidian80.Notice(ejected > 0 ? `${msg} (${ejected} token${ejected === 1 ? "" : "s"} ejected)` : msg);
+      new import_obsidian83.Notice(ejected > 0 ? `${msg} (${ejected} token${ejected === 1 ? "" : "s"} ejected)` : msg);
     });
     const hasGrid = config.gridType && config.gridType !== "none";
     const gridSliderFlyout = moveGridBtn.createDiv({ cls: "dnd-map-grid-slider-flyout" });
@@ -67610,7 +73295,7 @@ async function renderMapView(plugin, source, el, ctx) {
       pvDropdown.addClass("hidden");
       const pm = plugin.projectionManager;
       if (!pm) {
-        new import_obsidian80.Notice("Projection manager not available");
+        new import_obsidian83.Notice("Projection manager not available");
         return;
       }
       const screens = await pm.getScreens();
@@ -67623,7 +73308,7 @@ async function renderMapView(plugin, source, el, ctx) {
         return (proj == null ? void 0 : proj.contentType) === "combat";
       });
       if (available.length === 0 && switchable.length === 0 && screens.length > 0) {
-        new import_obsidian80.Notice("All screens are already in use");
+        new import_obsidian83.Notice("All screens are already in use");
         return;
       }
       const mapId = config.mapId || resourcePath;
@@ -67636,7 +73321,7 @@ async function renderMapView(plugin, source, el, ctx) {
         await pm.project(mapId, payload, resourcePath, switchable[0], mode);
         return;
       }
-      const menu = new import_obsidian80.Menu();
+      const menu = new import_obsidian83.Menu();
       for (const screen of available) {
         const cal = pm.getCalibrationForScreen(screen);
         const label = `${screen.isPrimary ? "\u{1F5A5}\uFE0F" : "\u{1F5B5}"} ${screen.label} (${screen.width}\xD7${screen.height})${cal ? " \u2713" : ""}`;
@@ -67661,7 +73346,7 @@ async function renderMapView(plugin, source, el, ctx) {
           item.setTitle("\u2699\uFE0F Manage Calibrations...");
           item.onClick(() => {
             new TabletopCalibrationModal(plugin.app, plugin, window, () => {
-              new import_obsidian80.Notice("Calibration saved");
+              new import_obsidian83.Notice("Calibration saved");
             }).open();
           });
         });
@@ -67711,7 +73396,7 @@ async function renderMapView(plugin, source, el, ctx) {
         btn.innerHTML = `\u23F9 Stop ${typeTag} \u2014 ${proj.screen.label}`;
         btn.addEventListener("click", () => {
           pvDropdown.addClass("hidden");
-          pm.stopProjectionOnScreen(sKey);
+          void pm.stopProjectionOnScreen(sKey);
         });
       }
       if (projections.length > 1) {
@@ -67719,7 +73404,7 @@ async function renderMapView(plugin, source, el, ctx) {
         btn.innerHTML = "\u23F9 Stop All Projections";
         btn.addEventListener("click", () => {
           pvDropdown.addClass("hidden");
-          pm.stopAllProjections();
+          void pm.stopAllProjections();
         });
       }
     };
@@ -67960,7 +73645,7 @@ async function renderMapView(plugin, source, el, ctx) {
           viewport._syncPlayerView();
         }
       }, 200);
-      new import_obsidian80.Notice("Player view opened");
+      new import_obsidian83.Notice("Player view opened");
     });
     const sidePanelBtn = viewport.createEl("button", {
       cls: "dnd-map-side-panel-btn",
@@ -67977,7 +73662,7 @@ async function renderMapView(plugin, source, el, ctx) {
       });
       if (existingGmLeaf) {
         plugin.app.workspace.setActiveLeaf(existingGmLeaf);
-        new import_obsidian80.Notice("Map already open in another window");
+        new import_obsidian83.Notice("Map already open in another window");
         return;
       }
       const popoutLeaf = plugin.app.workspace.openPopoutLeaf({
@@ -68024,7 +73709,7 @@ async function renderMapView(plugin, source, el, ctx) {
           originalChildren.forEach((n) => viewer.appendChild(n));
         });
       }
-      new import_obsidian80.Notice("Map opened in new window");
+      new import_obsidian83.Notice("Map opened in new window");
     });
     let scale2 = 1;
     let translateX = 0;
@@ -70407,7 +76092,7 @@ async function renderMapView(plugin, source, el, ctx) {
         const input = document.createElement("textarea");
         input.value = ta.text === "Text" ? "" : ta.text;
         input.style.cssText = "width:300px;height:80px;resize:both;";
-        const modal = new class extends import_obsidian80.Modal {
+        const modal = new class extends import_obsidian83.Modal {
           onOpen() {
             this.contentEl.createEl("h3", { text: "Edit Text Annotation" });
             this.contentEl.appendChild(input);
@@ -70428,14 +76113,14 @@ async function renderMapView(plugin, source, el, ctx) {
         modal.open();
         return;
       }
-      const menu = new import_obsidian80.Menu();
+      const menu = new import_obsidian83.Menu();
       menu.addItem((item) => {
         item.setTitle("\u270F\uFE0F Edit Text");
         item.onClick(() => {
           const input = document.createElement("textarea");
           input.value = ta.text;
           input.style.cssText = "width:300px;height:80px;resize:both;";
-          const modal = new class extends import_obsidian80.Modal {
+          const modal = new class extends import_obsidian83.Modal {
             onOpen() {
               this.contentEl.createEl("h3", { text: "Edit Text Annotation" });
               this.contentEl.appendChild(input);
@@ -71632,7 +77317,7 @@ async function renderMapView(plugin, source, el, ctx) {
       } else if (tool === "target-distance") {
         targetDistBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian80.Notice("Token Distance: Click origin token, then target token", 3e3);
+        new import_obsidian83.Notice("Token Distance: Click origin token, then target token", 3e3);
       } else if (tool === "move-grid") {
         moveGridBtn.addClass("active");
         viewport.style.cursor = "move";
@@ -71643,17 +77328,17 @@ async function renderMapView(plugin, source, el, ctx) {
         const _pvMapId = config.mapId || resourcePath;
         const _pvProj = (_a2 = plugin.projectionManager) == null ? void 0 : _a2.getProjectionForMap(_pvMapId);
         if (_pvProj && _pvProj.state.mode === "battle") {
-          new import_obsidian80.Notice("View Mode is disabled during Battle Mode projection");
+          new import_obsidian83.Notice("View Mode is disabled during Battle Mode projection");
           return;
         }
         viewport.style.cursor = "crosshair";
         viewport.focus();
-        new import_obsidian80.Notice("Player View Mode: Drag to position, Q/E or [/] to rotate 90\xB0", 4e3);
+        new import_obsidian83.Notice("Player View Mode: Drag to position, Q/E or [/] to rotate 90\xB0", 4e3);
       } else if (tool === "eraser") {
         eraserBtn.addClass("active");
         viewport.style.cursor = "crosshair";
         eraserCursorPos = null;
-        new import_obsidian80.Notice("Eraser: Click or drag to erase annotations", 3e3);
+        new import_obsidian83.Notice("Eraser: Click or drag to erase annotations", 3e3);
       } else if (tool === "fog") {
         fogBtn.addClass("active");
         viewport.style.cursor = "crosshair";
@@ -71661,31 +77346,31 @@ async function renderMapView(plugin, source, el, ctx) {
         wallsBtn.addClass("active");
         viewport.style.cursor = "crosshair";
         viewport.focus();
-        new import_obsidian80.Notice("Walls Mode: Click to add points, Double-click to finish, Escape to cancel", 4e3);
+        new import_obsidian83.Notice("Walls Mode: Click to add points, Double-click to finish, Escape to cancel", 4e3);
       } else if (tool === "magic-wand") {
         wallsBtn.addClass("active");
         magicWandBtn.addClass("active");
         viewport.style.cursor = "crosshair";
         viewport.focus();
-        new import_obsidian80.Notice("Magic Wand: Click on dark areas to auto-detect and create walls. Adjust threshold/tolerance in the picker.", 5e3);
+        new import_obsidian83.Notice("Magic Wand: Click on dark areas to auto-detect and create walls. Adjust threshold/tolerance in the picker.", 5e3);
       } else if (tool === "lights") {
         lightsBtn.addClass("active");
         viewport.style.cursor = "crosshair";
         viewport.focus();
-        new import_obsidian80.Notice("Lights Mode: Click to place light source, use picker to select type", 4e3);
+        new import_obsidian83.Notice("Lights Mode: Click to place light source, use picker to select type", 4e3);
       } else if (tool === "walllight-draw") {
         lightsBtn.addClass("active");
         viewport.style.cursor = "crosshair";
         viewport.focus();
-        new import_obsidian80.Notice("Wall Light: Click start point, then click end point to place light strip", 4e3);
+        new import_obsidian83.Notice("Wall Light: Click start point, then click end point to place light strip", 4e3);
       } else if (tool === "elevation-paint") {
         elevationPaintBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian80.Notice("Elevation Paint: Click or drag to set tile elevation", 3e3);
+        new import_obsidian83.Notice("Elevation Paint: Click or drag to set tile elevation", 3e3);
       } else if (tool === "difficult-terrain") {
         difficultTerrainBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian80.Notice("Difficult Terrain: Click or drag to mark tiles. Movement costs double.", 3e3);
+        new import_obsidian83.Notice("Difficult Terrain: Click or drag to mark tiles. Movement costs double.", 3e3);
       } else if (tool === "poi") {
         poiBtn.addClass("active");
         viewport.style.cursor = "crosshair";
@@ -71700,19 +77385,19 @@ async function renderMapView(plugin, source, el, ctx) {
         hexcrawlMoveHoverHex = null;
         redrawAnnotations();
         if (viewport._syncPlayerView) viewport._syncPlayerView();
-        new import_obsidian80.Notice(hLoc(hcLang, "clickHexTravel"), 3e3);
+        new import_obsidian83.Notice(hLoc(hcLang, "clickHexTravel"), 3e3);
       } else if (tool === "set-start-hex") {
         setStartHexBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian80.Notice(hLoc(hcLang, "clickHexSetStart"), 3e3);
+        new import_obsidian83.Notice(hLoc(hcLang, "clickHexSetStart"), 3e3);
       } else if (tool === "hex-desc") {
         hexDescBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian80.Notice(hLoc(hcLang, "clickHexEditDesc"), 3e3);
+        new import_obsidian83.Notice(hLoc(hcLang, "clickHexEditDesc"), 3e3);
       } else if (tool === "env-asset") {
         envAssetBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian80.Notice("Environment Assets: Click to place, click to select, right-click for options", 4e3);
+        new import_obsidian83.Notice("Environment Assets: Click to place, click to select, right-click for options", 4e3);
       }
       if (tool !== "env-asset" && tool !== "select") {
         selectedEnvAssetInstanceId = null;
@@ -71941,7 +77626,7 @@ async function renderMapView(plugin, source, el, ctx) {
       if (isCalibrating) {
         if (!calibrationPoint1) {
           calibrationPoint1 = { x: mapPos.x, y: mapPos.y };
-          new import_obsidian80.Notice("Click second point to complete measurement");
+          new import_obsidian83.Notice("Click second point to complete measurement");
           redrawAnnotations();
         } else {
           calibrationPoint2 = { x: mapPos.x, y: mapPos.y };
@@ -71972,7 +77657,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawGridOverlays();
               redrawAnnotations();
               await plugin.saveMapAnnotations(config, el);
-              new import_obsidian80.Notice("Grid calibration applied");
+              new import_obsidian83.Notice("Grid calibration applied");
             },
             pixelDistance
           ).open();
@@ -72206,7 +77891,7 @@ async function renderMapView(plugin, source, el, ctx) {
           }
         }
         if (!campaignFolder) {
-          new import_obsidian80.Notice("\u26A0\uFE0F Unable to determine campaign folder. Note or map must be in ttrpgs/[campaign-name]/ structure.");
+          new import_obsidian83.Notice("\u26A0\uFE0F Unable to determine campaign folder. Note or map must be in ttrpgs/[campaign-name]/ structure.");
           return;
         }
         Promise.resolve().then(() => (init_PoiModals(), PoiModals_exports)).then(({ PoiPickerModal: PoiPickerModal2 }) => {
@@ -72236,7 +77921,7 @@ async function renderMapView(plugin, source, el, ctx) {
               }
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
-              new import_obsidian80.Notice(hLoc(hcLang, "poiAssigned"));
+              new import_obsidian83.Notice(hLoc(hcLang, "poiAssigned"));
             }
           ).open();
         });
@@ -72336,10 +78021,10 @@ async function renderMapView(plugin, source, el, ctx) {
           if (foundIdx >= 0) {
             targetDistOriginIdx = foundIdx;
             targetDistState = "selecting-target";
-            new import_obsidian80.Notice("Now click the target token", 2e3);
+            new import_obsidian83.Notice("Now click the target token", 2e3);
             redrawAnnotations();
           } else {
-            new import_obsidian80.Notice("Click on a token to set as origin", 2e3);
+            new import_obsidian83.Notice("Click on a token to set as origin", 2e3);
           }
         } else if (targetDistState === "selecting-target") {
           let foundIdx = -1;
@@ -72375,7 +78060,7 @@ async function renderMapView(plugin, source, el, ctx) {
         }
       } else if (activeTool === "marker") {
         if (!selectedMarkerId) {
-          new import_obsidian80.Notice("Please select a marker first");
+          new import_obsidian83.Notice("Please select a marker first");
           return;
         }
         let placeX = mapPos.x;
@@ -72407,7 +78092,7 @@ async function renderMapView(plugin, source, el, ctx) {
         plugin.saveMapAnnotations(config, el);
         updateGridToolsVisibility();
         refreshVisionSelector();
-        new import_obsidian80.Notice("Marker placed");
+        new import_obsidian83.Notice("Marker placed");
       } else if (activeTool === "env-asset") {
         if (selectedEnvAssetInstanceId) {
           const selInst = (config.envAssets || []).find((a) => a.id === selectedEnvAssetInstanceId);
@@ -72469,7 +78154,7 @@ async function renderMapView(plugin, source, el, ctx) {
             redrawAnnotations();
             if (viewport._syncPlayerView) viewport._syncPlayerView();
             plugin.saveMapAnnotations(config, el);
-            new import_obsidian80.Notice(`Placed: ${assetDef.name}`);
+            new import_obsidian83.Notice(`Placed: ${assetDef.name}`);
           }
         } else {
           selectedEnvAssetInstanceId = null;
@@ -72485,7 +78170,7 @@ async function renderMapView(plugin, source, el, ctx) {
             plugin.saveMapAnnotations(config, el);
             updateGridToolsVisibility();
             if (viewport._syncPlayerView) viewport._syncPlayerView();
-            new import_obsidian80.Notice("AoE effect removed");
+            new import_obsidian83.Notice("AoE effect removed");
           }
           lastPlacedAoeId = null;
         } else if (!aoeOrigin) {
@@ -72512,7 +78197,7 @@ async function renderMapView(plugin, source, el, ctx) {
           redrawAnnotations();
           plugin.saveMapAnnotations(config, el);
           updateGridToolsVisibility();
-          new import_obsidian80.Notice("AoE effect placed (click again to remove)");
+          new import_obsidian83.Notice("AoE effect placed (click again to remove)");
         }
       } else if (activeTool === "eraser") {
         isErasing = true;
@@ -72646,14 +78331,14 @@ async function renderMapView(plugin, source, el, ctx) {
             config.walls.push(...result.walls);
             plugin.saveMapAnnotations(config, el);
             if (viewport._syncPlayerView) viewport._syncPlayerView();
-            new import_obsidian80.Notice(`\u{1FA84} ${result.walls.length} wall segments created`);
+            new import_obsidian83.Notice(`\u{1FA84} ${result.walls.length} wall segments created`);
           } else {
-            new import_obsidian80.Notice("No walls detected \u2014 try clicking a dark area or adjusting threshold");
+            new import_obsidian83.Notice("No walls detected \u2014 try clicking a dark area or adjusting threshold");
           }
           redrawAnnotations();
         } catch (err) {
           console.error("[MagicWand] Detection failed:", err);
-          new import_obsidian80.Notice("Magic wand detection failed \u2014 see console for details");
+          new import_obsidian83.Notice("Magic wand detection failed \u2014 see console for details");
         }
       } else if (activeTool === "lights") {
         if (selectedLightSource) {
@@ -72671,9 +78356,9 @@ async function renderMapView(plugin, source, el, ctx) {
           if (viewport._syncPlayerView) {
             viewport._syncPlayerView();
           }
-          new import_obsidian80.Notice(`${light.name} placed`);
+          new import_obsidian83.Notice(`${light.name} placed`);
         } else {
-          new import_obsidian80.Notice("Please select a light source type first");
+          new import_obsidian83.Notice("Please select a light source type first");
         }
       } else if (activeTool === "walllight-draw") {
         wallLightPoints.push({ x: mapPos.x, y: mapPos.y });
@@ -72700,7 +78385,7 @@ async function renderMapView(plugin, source, el, ctx) {
           redrawAnnotations();
           plugin.saveMapAnnotations(config, el);
           if (viewport._syncPlayerView) viewport._syncPlayerView();
-          new import_obsidian80.Notice("Wall light placed");
+          new import_obsidian83.Notice("Wall light placed");
         } else {
           wallLightPreviewPos = { x: mapPos.x, y: mapPos.y };
           redrawAnnotations();
@@ -72753,7 +78438,7 @@ async function renderMapView(plugin, source, el, ctx) {
         const terrain = getTerrainDefinition(
           new HexcrawlTracker(config.hexcrawlState, config.hexTerrains || [], config.hexClimates || []).getTerrainAt(hex.col, hex.row)
         );
-        new import_obsidian80.Notice(hLoc(hcLang, "startPositionSet", { col: hex.col, row: hex.row, icon: terrain.icon, name: hLoc(hcLang, `terrain.${terrain.id}`) }));
+        new import_obsidian83.Notice(hLoc(hcLang, "startPositionSet", { col: hex.col, row: hex.row, icon: terrain.icon, name: hLoc(hcLang, `terrain.${terrain.id}`) }));
         setActiveTool("pan");
       } else if (activeTool === "hex-desc") {
         const hex = pixelToHex(mapPos.x, mapPos.y);
@@ -72781,7 +78466,7 @@ async function renderMapView(plugin, source, el, ctx) {
             }
             plugin.saveMapAnnotations(config, el);
             redrawTerrainLayer();
-            new import_obsidian80.Notice(newDesc ? hLoc(hcLang, "descSaved", { col: hex.col, row: hex.row }) : hLoc(hcLang, "descCleared", { col: hex.col, row: hex.row }));
+            new import_obsidian83.Notice(newDesc ? hLoc(hcLang, "descSaved", { col: hex.col, row: hex.row }) : hLoc(hcLang, "descCleared", { col: hex.col, row: hex.row }));
           },
           hcLang
         ).open();
@@ -72823,20 +78508,20 @@ async function renderMapView(plugin, source, el, ctx) {
         const hex = pixelToHex(mapPos.x, mapPos.y);
         const hcState = config.hexcrawlState;
         if (!hcState || !hcState.enabled) {
-          new import_obsidian80.Notice(hLoc(hcLang, "enableHexcrawlFirst"));
+          new import_obsidian83.Notice(hLoc(hcLang, "enableHexcrawlFirst"));
           return;
         }
         if (hcState.partyPosition) {
           const dist = hexDistance(hcState.partyPosition.col, hcState.partyPosition.row, hex.col, hex.row);
           if (dist !== 1) {
-            new import_obsidian80.Notice(hLoc(hcLang, "mustMoveAdjacent"));
+            new import_obsidian83.Notice(hLoc(hcLang, "mustMoveAdjacent"));
             return;
           }
         }
         const prevPartyPos = hcState.partyPosition ? { col: hcState.partyPosition.col, row: hcState.partyPosition.row } : null;
         const tracker = new HexcrawlTracker(hcState, config.hexTerrains || [], config.hexClimates || []);
         if (!tracker.canMoveToday()) {
-          new import_obsidian80.Notice(hLoc(hcLang, "noMovementBudget"));
+          new import_obsidian83.Notice(hLoc(hcLang, "noMovementBudget"));
           return;
         }
         openHexProcedureModal(plugin.app, plugin, tracker, hex.col, hex.row, config.customTerrainDescriptions).then((result) => {
@@ -72854,7 +78539,7 @@ async function renderMapView(plugin, source, el, ctx) {
           plugin.refreshHexcrawlView();
           redrawAnnotations();
           viewport._syncPlayerView();
-          new import_obsidian80.Notice(hLoc(hcLang, "traveledToHex", { col: hex.col, row: hex.row }));
+          new import_obsidian83.Notice(hLoc(hcLang, "traveledToHex", { col: hex.col, row: hex.row }));
         });
       } else if (activeTool === "player-view") {
         const existingRect = plugin._gmViewRect || viewport._gmViewRect;
@@ -73483,7 +79168,7 @@ async function renderMapView(plugin, source, el, ctx) {
         fogPolygonPoints = [];
         redrawAnnotations();
         plugin.saveMapAnnotations(config, el);
-        new import_obsidian80.Notice(`Fog polygon ${fogMode === "reveal" ? "revealed" : fogMode === "magic-darkness" ? "shrouded in magic darkness" : "hidden"}`);
+        new import_obsidian83.Notice(`Fog polygon ${fogMode === "reveal" ? "revealed" : fogMode === "magic-darkness" ? "shrouded in magic darkness" : "hidden"}`);
         e.preventDefault();
         e.stopPropagation();
       } else if (activeTool === "walls" && wallPoints.length >= 2) {
@@ -73505,7 +79190,7 @@ async function renderMapView(plugin, source, el, ctx) {
         wallPreviewPos = null;
         redrawAnnotations();
         plugin.saveMapAnnotations(config, el);
-        new import_obsidian80.Notice(`${wallDef.name} chain saved (${config.walls.length} total segments)`);
+        new import_obsidian83.Notice(`${wallDef.name} chain saved (${config.walls.length} total segments)`);
         e.preventDefault();
         e.stopPropagation();
       }
@@ -73585,7 +79270,7 @@ async function renderMapView(plugin, source, el, ctx) {
             config.fogOfWar.regions.push(region);
             redrawAnnotations();
             plugin.saveMapAnnotations(config, el);
-            new import_obsidian80.Notice(`Fog region ${fogMode === "reveal" ? "revealed" : fogMode === "magic-darkness" ? "shrouded in magic darkness" : "hidden"}`);
+            new import_obsidian83.Notice(`Fog region ${fogMode === "reveal" ? "revealed" : fogMode === "magic-darkness" ? "shrouded in magic darkness" : "hidden"}`);
           }
         }
         fogDragStart = null;
@@ -73796,7 +79481,7 @@ async function renderMapView(plugin, source, el, ctx) {
         if (annotEraserHadRemoval) {
           plugin.saveMapAnnotations(config, el);
           updateGridToolsVisibility();
-          new import_obsidian80.Notice("Annotations erased");
+          new import_obsidian83.Notice("Annotations erased");
           if (viewport._syncPlayerView) viewport._syncPlayerView();
         }
         annotEraserHadRemoval = false;
@@ -73805,7 +79490,7 @@ async function renderMapView(plugin, source, el, ctx) {
         if (eraserHadRemoval) {
           plugin.saveMapAnnotations(config, el);
           updateGridToolsVisibility();
-          new import_obsidian80.Notice("Annotations erased");
+          new import_obsidian83.Notice("Annotations erased");
         }
         eraserHadRemoval = false;
       }
@@ -74030,13 +79715,13 @@ async function renderMapView(plugin, source, el, ctx) {
                   marker.elevation.depth = newPos.elevation;
                 }
                 const progress = Math.round(newIndex / (tunnel.path.length - 1) * 100);
-                new import_obsidian80.Notice(`Tunnel progress: ${progress}%`, 1e3);
+                new import_obsidian83.Notice(`Tunnel progress: ${progress}%`, 1e3);
                 redrawAnnotations();
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
               } else if (newIndex === tunnel.path.length - 1 && e.key === "ArrowUp") {
-                new import_obsidian80.Notice("Reached tunnel exit - right-click to exit tunnel");
+                new import_obsidian83.Notice("Reached tunnel exit - right-click to exit tunnel");
               } else if (newIndex === 0 && e.key === "ArrowDown") {
-                new import_obsidian80.Notice("Reached tunnel entrance - right-click to exit tunnel");
+                new import_obsidian83.Notice("Reached tunnel entrance - right-click to exit tunnel");
               }
             } else if (e.key === "ArrowRight") {
               let dist = 0;
@@ -74062,11 +79747,11 @@ async function renderMapView(plugin, source, el, ctx) {
                   marker.elevation.depth = newPos.elevation;
                 }
                 const progress = Math.round(newIndex / (tunnel.path.length - 1) * 100);
-                new import_obsidian80.Notice(`Tunnel progress: ${progress}%`, 1e3);
+                new import_obsidian83.Notice(`Tunnel progress: ${progress}%`, 1e3);
                 redrawAnnotations();
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
               } else {
-                new import_obsidian80.Notice("Reached tunnel exit - right-click to exit tunnel");
+                new import_obsidian83.Notice("Reached tunnel exit - right-click to exit tunnel");
               }
             } else if (e.key === "ArrowLeft") {
               let dist = 0;
@@ -74092,11 +79777,11 @@ async function renderMapView(plugin, source, el, ctx) {
                   marker.elevation.depth = newPos.elevation;
                 }
                 const progress = Math.round(newIndex / (tunnel.path.length - 1) * 100);
-                new import_obsidian80.Notice(`Tunnel progress: ${progress}%`, 1e3);
+                new import_obsidian83.Notice(`Tunnel progress: ${progress}%`, 1e3);
                 redrawAnnotations();
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
               } else {
-                new import_obsidian80.Notice("Reached tunnel entrance - right-click to exit tunnel");
+                new import_obsidian83.Notice("Reached tunnel entrance - right-click to exit tunnel");
               }
             }
           }
@@ -74122,13 +79807,13 @@ async function renderMapView(plugin, source, el, ctx) {
           wallPreviewPos = null;
           redrawAnnotations();
           plugin.saveMapAnnotations(config, el);
-          new import_obsidian80.Notice(`${wallDef.name} chain added (${config.walls.length} segments total)`);
+          new import_obsidian83.Notice(`${wallDef.name} chain added (${config.walls.length} segments total)`);
         } else if (e.key === "Escape") {
           e.preventDefault();
           wallPoints = [];
           wallPreviewPos = null;
           redrawAnnotations();
-          new import_obsidian80.Notice("Wall drawing cancelled");
+          new import_obsidian83.Notice("Wall drawing cancelled");
         }
       }
       if (activeTool === "player-view") {
@@ -74311,7 +79996,7 @@ async function renderMapView(plugin, source, el, ctx) {
           const wt = wall.type || "wall";
           const wallDef = WALL_TYPES[wt] || WALL_TYPES.wall;
           const isOpen = wall.open === true;
-          const menu = new import_obsidian80.Menu();
+          const menu = new import_obsidian83.Menu();
           menu.addItem((item) => item.setTitle(`${wallDef.icon} ${wall.name || wallDef.name}`).setDisabled(true));
           menu.addSeparator();
           menu.addItem(
@@ -74321,7 +80006,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian80.Notice(wall.open ? `${wallDef.name} opened` : `${wallDef.name} closed`);
+              new import_obsidian83.Notice(wall.open ? `${wallDef.name} opened` : `${wallDef.name} closed`);
             })
           );
           if (isPivotType2(wt)) {
@@ -74333,7 +80018,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 redrawAnnotations();
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian80.Notice("Open direction reversed");
+                new import_obsidian83.Notice("Open direction reversed");
               })
             );
             menu.addItem(
@@ -74343,7 +80028,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 redrawAnnotations();
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian80.Notice(`Hinge moved to ${wall.pivotEnd}`);
+                new import_obsidian83.Notice(`Hinge moved to ${wall.pivotEnd}`);
               })
             );
           }
@@ -74384,7 +80069,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-              new import_obsidian80.Notice(`Marker moved to ${layer} layer`);
+              new import_obsidian83.Notice(`Marker moved to ${layer} layer`);
             });
           });
           contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
@@ -74407,7 +80092,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian80.Notice(m.visibleToPlayers ? "Token visible to players" : "Token hidden from players");
+              new import_obsidian83.Notice(m.visibleToPlayers ? "Token visible to players" : "Token hidden from players");
             });
             visibilityRow.addEventListener("click", (e2) => {
               if (e2.target !== visibilityToggle) {
@@ -74444,7 +80129,7 @@ async function renderMapView(plugin, source, el, ctx) {
                     plugin.saveMapAnnotations(config, el);
                     updateGridToolsVisibility();
                     if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                    new import_obsidian80.Notice("AoE effect removed");
+                    new import_obsidian83.Notice("AoE effect removed");
                     return;
                   }
                 }
@@ -74457,7 +80142,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 pendingAoeAnchorMarkerId = m.id;
                 setActiveTool("aoe");
                 if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                new import_obsidian80.Notice(`Place ${label}: move mouse to set size, click to confirm`);
+                new import_obsidian83.Notice(`Place ${label}: move mouse to set size, click to confirm`);
               });
             });
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
@@ -74485,7 +80170,7 @@ async function renderMapView(plugin, source, el, ctx) {
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               refreshVisionSelector();
               if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-              new import_obsidian80.Notice("Light removed from token");
+              new import_obsidian83.Notice("Light removed from token");
             });
             lightOptions.forEach(({ type, icon, label }) => {
               const btn = lightRow.createEl("button", {
@@ -74508,7 +80193,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
                 refreshVisionSelector();
                 if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                new import_obsidian80.Notice(`${lightDef.name} attached to token`);
+                new import_obsidian83.Notice(`${lightDef.name} attached to token`);
               });
             });
             if (m.light) {
@@ -74529,7 +80214,7 @@ async function renderMapView(plugin, source, el, ctx) {
               mlColorPicker.addEventListener("change", () => {
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian80.Notice("Light colour updated");
+                new import_obsidian83.Notice("Light colour updated");
               });
               mlColorPicker.addEventListener("click", (e2) => e2.stopPropagation());
               const mlResetBtn = mlColorRow.createEl("button", { text: "Reset" });
@@ -74544,7 +80229,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 redrawAnnotations();
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian80.Notice("Light colour reset to default");
+                new import_obsidian83.Notice("Light colour reset to default");
               });
             }
             const darkRow = contextMenu.createDiv({ cls: "dnd-map-context-aoe-row" });
@@ -74573,7 +80258,7 @@ async function renderMapView(plugin, source, el, ctx) {
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               refreshVisionSelector();
-              new import_obsidian80.Notice(value > 0 ? `Darkvision set to ${value} ft` : "Darkvision removed");
+              new import_obsidian83.Notice(value > 0 ? `Darkvision set to ${value} ft` : "Darkvision removed");
             });
             darkInput.addEventListener("click", (e2) => e2.stopPropagation());
             darkInput.addEventListener("keydown", (e2) => {
@@ -74603,7 +80288,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian80.Notice("Border color updated");
+              new import_obsidian83.Notice("Border color updated");
             });
             borderColorPicker.addEventListener("click", (e2) => e2.stopPropagation());
             const borderResetBtn = borderRow.createEl("button", {
@@ -74620,7 +80305,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian80.Notice("Border color reset to default");
+              new import_obsidian83.Notice("Border color reset to default");
             });
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
             const elevationHeader = contextMenu.createDiv({ cls: "dnd-map-context-menu-header" });
@@ -74673,7 +80358,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian80.Notice(value > 0 ? `Token flying at ${value} ft` : "Token returned to ground");
+              new import_obsidian83.Notice(value > 0 ? `Token flying at ${value} ft` : "Token returned to ground");
             });
             heightInput.addEventListener("click", (e2) => e2.stopPropagation());
             heightInput.addEventListener("keydown", (e2) => {
@@ -74739,7 +80424,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian80.Notice(value > 0 ? `Token at ${value} ft depth` : "Token surfaced");
+              new import_obsidian83.Notice(value > 0 ? `Token at ${value} ft depth` : "Token surfaced");
             });
             depthInput.addEventListener("click", (e2) => e2.stopPropagation());
             depthInput.addEventListener("keydown", (e2) => {
@@ -74781,10 +80466,10 @@ async function renderMapView(plugin, source, el, ctx) {
                 redrawAnnotations();
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian80.Notice("Burrowing enabled \u2014 tunnel path will be tracked");
+                new import_obsidian83.Notice("Burrowing enabled \u2014 tunnel path will be tracked");
               } else if (burrowCheckbox.checked && depthValue <= 0) {
                 burrowCheckbox.checked = false;
-                new import_obsidian80.Notice("Set depth first before enabling burrowing");
+                new import_obsidian83.Notice("Set depth first before enabling burrowing");
               } else {
                 delete m.elevation.isBurrowing;
                 delete m.elevation.leaveTunnel;
@@ -74805,7 +80490,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 redrawAnnotations();
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian80.Notice("Burrowing disabled \u2014 depth retained (diving/submerged)");
+                new import_obsidian83.Notice("Burrowing disabled \u2014 depth retained (diving/submerged)");
               }
             });
             burrowCheckbox.addEventListener("click", (e2) => e2.stopPropagation());
@@ -74832,17 +80517,17 @@ async function renderMapView(plugin, source, el, ctx) {
                     const tunnelCreatureSize = nearestTunnel.tunnel.creatureSize || "medium";
                     const tunnelSize = CREATURE_SIZE_SQUARES[tunnelCreatureSize] || 1;
                     if (tokenSize > tunnelSize) {
-                      new import_obsidian80.Notice(`This tunnel is too small! Created by ${tunnelCreatureSize} creature, token is ${mDef.creatureSize || "medium"}`);
+                      new import_obsidian83.Notice(`This tunnel is too small! Created by ${tunnelCreatureSize} creature, token is ${mDef.creatureSize || "medium"}`);
                       if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
                       return;
                     }
                     if (((_a3 = m.elevation) == null ? void 0 : _a3.height) && m.elevation.height > 0) {
-                      new import_obsidian80.Notice("Cannot enter tunnel while flying \u2014 land first");
+                      new import_obsidian83.Notice("Cannot enter tunnel while flying \u2014 land first");
                       if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
                       return;
                     }
                     if (!nearestTunnel.tunnel.path || nearestTunnel.tunnel.path.length === 0) {
-                      new import_obsidian80.Notice("This tunnel has no path yet");
+                      new import_obsidian83.Notice("This tunnel has no path yet");
                       if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
                       return;
                     }
@@ -74865,7 +80550,7 @@ async function renderMapView(plugin, source, el, ctx) {
                     plugin.saveMapAnnotations(config, el);
                     if (viewport._syncPlayerView) viewport._syncPlayerView();
                     if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                    new import_obsidian80.Notice("Entered tunnel - use arrow keys to navigate");
+                    new import_obsidian83.Notice("Entered tunnel - use arrow keys to navigate");
                   }
                 });
               }
@@ -74902,7 +80587,7 @@ async function renderMapView(plugin, source, el, ctx) {
                     plugin.saveMapAnnotations(config, el);
                     if (viewport._syncPlayerView) viewport._syncPlayerView();
                     if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                    new import_obsidian80.Notice("Exited tunnel");
+                    new import_obsidian83.Notice("Exited tunnel");
                   });
                 } else {
                   const statusText = tunnelActionsRow.createEl("span", {
@@ -74986,7 +80671,7 @@ async function renderMapView(plugin, source, el, ctx) {
             updateGridToolsVisibility();
             refreshVisionSelector();
             if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-            new import_obsidian80.Notice("Marker removed");
+            new import_obsidian83.Notice("Marker removed");
           });
           document.body.appendChild(contextMenu);
           const menuRect = contextMenu.getBoundingClientRect();
@@ -75047,7 +80732,7 @@ async function renderMapView(plugin, source, el, ctx) {
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-              new import_obsidian80.Notice(light.active ? `${light.name || "Light"} lit` : `${light.name || "Light"} extinguished`);
+              new import_obsidian83.Notice(light.active ? `${light.name || "Light"} lit` : `${light.name || "Light"} extinguished`);
             });
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
             if (light.type === "walllight") {
@@ -75115,7 +80800,7 @@ async function renderMapView(plugin, source, el, ctx) {
                   plugin.saveMapAnnotations(config, el);
                   if (viewport._syncPlayerView) viewport._syncPlayerView();
                   if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                  new import_obsidian80.Notice(`Changed to ${lightDef.name}`);
+                  new import_obsidian83.Notice(`Changed to ${lightDef.name}`);
                 });
               });
               if (light.cone) {
@@ -75210,7 +80895,7 @@ async function renderMapView(plugin, source, el, ctx) {
               colorPicker2.addEventListener("change", () => {
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian80.Notice(`Light colour set to ${light.customColor}`);
+                new import_obsidian83.Notice(`Light colour set to ${light.customColor}`);
               });
               colorPicker2.addEventListener("click", (e2) => e2.stopPropagation());
               const resetBtn = colorRow.createEl("button", { text: "Reset" });
@@ -75225,7 +80910,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 redrawAnnotations();
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian80.Notice("Light colour reset to default");
+                new import_obsidian83.Notice("Light colour reset to default");
               });
             }
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
@@ -75239,7 +80924,7 @@ async function renderMapView(plugin, source, el, ctx) {
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-              new import_obsidian80.Notice("Light removed");
+              new import_obsidian83.Notice("Light removed");
             });
             document.body.appendChild(contextMenu);
             const menuRect = contextMenu.getBoundingClientRect();
@@ -75298,7 +80983,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
                 if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                new import_obsidian80.Notice(wall.open ? "Door opened" : "Door closed");
+                new import_obsidian83.Notice(wall.open ? "Door opened" : "Door closed");
               });
               if (isPivotType2(wallType)) {
                 const revOption = contextMenu.createDiv({ cls: "dnd-map-context-menu-item" });
@@ -75311,7 +80996,7 @@ async function renderMapView(plugin, source, el, ctx) {
                   plugin.saveMapAnnotations(config, el);
                   if (viewport._syncPlayerView) viewport._syncPlayerView();
                   if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                  new import_obsidian80.Notice("Open direction reversed");
+                  new import_obsidian83.Notice("Open direction reversed");
                 });
                 const hingeOption = contextMenu.createDiv({ cls: "dnd-map-context-menu-item" });
                 const curHinge = wall.pivotEnd || "start";
@@ -75323,7 +81008,7 @@ async function renderMapView(plugin, source, el, ctx) {
                   plugin.saveMapAnnotations(config, el);
                   if (viewport._syncPlayerView) viewport._syncPlayerView();
                   if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                  new import_obsidian80.Notice(`Hinge moved to ${wall.pivotEnd}`);
+                  new import_obsidian83.Notice(`Hinge moved to ${wall.pivotEnd}`);
                 });
               }
               contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
@@ -75366,7 +81051,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian80.Notice(wall.height ? `Wall height: ${wall.height} ft` : "Wall height: infinite");
+              new import_obsidian83.Notice(wall.height ? `Wall height: ${wall.height} ft` : "Wall height: infinite");
             });
             infiniteBtn.addEventListener("click", () => {
               saveToHistory();
@@ -75375,7 +81060,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian80.Notice("Wall height: infinite");
+              new import_obsidian83.Notice("Wall height: infinite");
             });
             heightInput.addEventListener("click", (e2) => e2.stopPropagation());
             const typeHeader = contextMenu.createDiv({ cls: "dnd-map-context-menu-header" });
@@ -75400,7 +81085,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
                 if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                new import_obsidian80.Notice(`Changed to ${def.name}`);
+                new import_obsidian83.Notice(`Changed to ${def.name}`);
               });
             });
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
@@ -75413,7 +81098,7 @@ async function renderMapView(plugin, source, el, ctx) {
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-              new import_obsidian80.Notice("Wall removed");
+              new import_obsidian83.Notice("Wall removed");
             });
             document.body.appendChild(contextMenu);
             const menuRect = contextMenu.getBoundingClientRect();
@@ -75557,7 +81242,7 @@ async function renderMapView(plugin, source, el, ctx) {
     });
     linkEncounterBtn.addEventListener("click", (evt) => {
       var _a2, _b2, _c2;
-      const menu = new import_obsidian80.Menu();
+      const menu = new import_obsidian83.Menu();
       const combatState = plugin.combatTracker.getState();
       if (combatState == null ? void 0 : combatState.encounterPath) {
         const label = combatState.encounterName || ((_a2 = combatState.encounterPath.split("/").pop()) == null ? void 0 : _a2.replace(".md", "")) || "Active Combat";
@@ -75567,7 +81252,7 @@ async function renderMapView(plugin, source, el, ctx) {
             plugin.saveMapAnnotations(config, el);
             linkEncounterBtn.textContent = `\u{1F517} ${label}`;
             linkEncounterBtn.title = combatState.encounterPath || "";
-            new import_obsidian80.Notice(`\u2705 Map linked to encounter "${label}"`);
+            new import_obsidian83.Notice(`\u2705 Map linked to encounter "${label}"`);
           })
         );
         menu.addSeparator();
@@ -75586,7 +81271,7 @@ async function renderMapView(plugin, source, el, ctx) {
             plugin.saveMapAnnotations(config, el);
             linkEncounterBtn.textContent = `\u{1F517} ${name}`;
             linkEncounterBtn.title = ef.path;
-            new import_obsidian80.Notice(`\u2705 Map linked to encounter "${name}"`);
+            new import_obsidian83.Notice(`\u2705 Map linked to encounter "${name}"`);
           })
         );
       }
@@ -75601,7 +81286,7 @@ async function renderMapView(plugin, source, el, ctx) {
             plugin.saveMapAnnotations(config, el);
             linkEncounterBtn.textContent = "\u{1F517} Link Encounter";
             linkEncounterBtn.title = "Link an encounter note to this map";
-            new import_obsidian80.Notice("Encounter unlinked from map");
+            new import_obsidian83.Notice("Encounter unlinked from map");
           })
         );
       }
@@ -75666,7 +81351,7 @@ async function renderMapView(plugin, source, el, ctx) {
           tokenId: c.tokenId
         }));
       } else {
-        new import_obsidian80.Notice("\u26A0\uFE0F No active combat \u2014 run an encounter first");
+        new import_obsidian83.Notice("\u26A0\uFE0F No active combat \u2014 run an encounter first");
         return;
       }
       const existingMarkers = config.markers || [];
@@ -75737,7 +81422,7 @@ async function renderMapView(plugin, source, el, ctx) {
             let resolvedNoteFile = null;
             if (!markerDef && creaturePath && typeof creaturePath === "string") {
               const noteFile = plugin.app.vault.getAbstractFileByPath(creaturePath);
-              if (noteFile instanceof import_obsidian80.TFile) {
+              if (noteFile instanceof import_obsidian83.TFile) {
                 resolvedNoteFile = noteFile;
                 const noteCache = plugin.app.metadataCache.getFileCache(noteFile);
                 const noteTokenId = (_c2 = noteCache == null ? void 0 : noteCache.frontmatter) == null ? void 0 : _c2.token_id;
@@ -75842,7 +81527,7 @@ async function renderMapView(plugin, source, el, ctx) {
       if (skippedCount > 0) parts.push(`${skippedCount} skipped`);
       if (errorCount > 0) parts.push(`${errorCount} failed`);
       const msg = addedCount > 0 ? parts[0] + (parts.length > 1 ? ` (${parts.slice(1).join(", ")})` : "") : `\u2139\uFE0F All encounter tokens already on the map` + (parts.length > 0 ? ` (${parts.join(", ")})` : "");
-      new import_obsidian80.Notice(msg);
+      new import_obsidian83.Notice(msg);
       console.log(`[DnD-Map] Import complete: added=${addedCount}, skipped=${skippedCount}, errors=${errorCount}`);
     });
     const clearBtn = controls.createEl("button", {
@@ -75856,7 +81541,7 @@ async function renderMapView(plugin, source, el, ctx) {
         redrawAnnotations();
         plugin.saveMapAnnotations(config, el);
         updateGridToolsVisibility();
-        new import_obsidian80.Notice("Drawings cleared");
+        new import_obsidian83.Notice("Drawings cleared");
       }).open();
     });
     const clearTokensBtn = controls.createEl("button", {
@@ -75866,7 +81551,7 @@ async function renderMapView(plugin, source, el, ctx) {
     clearTokensBtn.addEventListener("click", () => {
       const tokenCount = (config.markers || []).length;
       if (tokenCount === 0) {
-        new import_obsidian80.Notice("No tokens on the map");
+        new import_obsidian83.Notice("No tokens on the map");
         return;
       }
       new ClearTokensConfirmModal(plugin.app, () => {
@@ -75877,7 +81562,7 @@ async function renderMapView(plugin, source, el, ctx) {
         plugin.saveMapAnnotations(config, el);
         updateGridToolsVisibility();
         refreshVisionSelector();
-        new import_obsidian80.Notice(`${tokenCount} token${tokenCount > 1 ? "s" : ""} cleared`);
+        new import_obsidian83.Notice(`${tokenCount} token${tokenCount > 1 ? "s" : ""} cleared`);
       }).open();
     });
     const editButton = controls.createDiv({ cls: "dnd-map-edit-btn-container" });
@@ -75941,7 +81626,7 @@ async function renderMapView(plugin, source, el, ctx) {
 }
 
 // src/encounter/renderEncounterView.ts
-var import_obsidian81 = require("obsidian");
+var import_obsidian84 = require("obsidian");
 function formatTimeAgo(isoDate) {
   const diff = Date.now() - new Date(isoDate).getTime();
   const mins = Math.floor(diff / 6e4);
@@ -75968,7 +81653,7 @@ async function renderEncounterView(plugin, source, el, ctx) {
       encounterFile = plugin.app.vault.getAbstractFileByPath(filePath);
       if (!encounterFile) {
         const resolved = plugin.app.metadataCache.getFirstLinkpathDest(filePath.replace(".md", ""), ctx.sourcePath);
-        if (resolved instanceof import_obsidian81.TFile) {
+        if (resolved instanceof import_obsidian84.TFile) {
           encounterFile = resolved;
         }
       }
@@ -76592,7 +82277,7 @@ function drawFilledHexPointyStretched(ctx, cx2, cy2, rx, ry) {
 }
 
 // src/srd/SRDImporter.ts
-var import_obsidian82 = require("obsidian");
+var import_obsidian85 = require("obsidian");
 async function importAllSRDData(plugin) {
   const categories = [
     { key: "ability-scores", folder: "z_AbilityScores", name: "Ability Scores" },
@@ -76614,14 +82299,14 @@ async function importAllSRDData(plugin) {
   let totalSuccess = 0;
   let totalErrors = 0;
   const startTime = Date.now();
-  new import_obsidian82.Notice("Starting full SRD data import...");
+  new import_obsidian85.Notice("Starting full SRD data import...");
   for (const category of categories) {
     const result = await importSRDCategory(plugin, category.key, category.folder, category.name, true);
     totalSuccess += result.success;
     totalErrors += result.errors;
   }
   const duration = Math.round((Date.now() - startTime) / 1e3);
-  new import_obsidian82.Notice(`\u2705 SRD import complete! ${totalSuccess} items imported, ${totalErrors} errors. (${duration}s)`);
+  new import_obsidian85.Notice(`\u2705 SRD import complete! ${totalSuccess} items imported, ${totalErrors} errors. (${duration}s)`);
 }
 async function importSRDCreatureTokens(plugin) {
   const SRD_BASE = "https://www.dnd5eapi.co";
@@ -76631,31 +82316,31 @@ async function importSRDCreatureTokens(plugin) {
   const BATCH_SIZE = 8;
   let imported = 0;
   let errors = 0;
-  new import_obsidian82.Notice("\u{1F409} Starting SRD creature token import\u2026");
+  new import_obsidian85.Notice("\u{1F409} Starting SRD creature token import\u2026");
   const startTime = Date.now();
   try {
     await plugin.ensureFolderExists(BESTIARY_FOLDER);
     await plugin.ensureFolderExists(IMAGE_FOLDER);
-    const listResponse = await (0, import_obsidian82.requestUrl)({ url: `${API_BASE}/monsters` });
+    const listResponse = await (0, import_obsidian85.requestUrl)({ url: `${API_BASE}/monsters` });
     const monsters = listResponse.json.results || [];
     if (monsters.length === 0) {
-      new import_obsidian82.Notice("\u26A0\uFE0F No monsters returned from the SRD API.");
+      new import_obsidian85.Notice("\u26A0\uFE0F No monsters returned from the SRD API.");
       return { imported: 0, errors: 0 };
     }
-    new import_obsidian82.Notice(`\u{1F4CB} Found ${monsters.length} SRD creatures. Importing\u2026`);
+    new import_obsidian85.Notice(`\u{1F4CB} Found ${monsters.length} SRD creatures. Importing\u2026`);
     for (let i = 0; i < monsters.length; i += BATCH_SIZE) {
       const batch = monsters.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.allSettled(
         batch.map(async (entry) => {
           var _a;
           try {
-            const detailRes = await (0, import_obsidian82.requestUrl)({ url: `${SRD_BASE}${entry.url}` });
+            const detailRes = await (0, import_obsidian85.requestUrl)({ url: `${SRD_BASE}${entry.url}` });
             const m = detailRes.json;
             let imagePath;
             if (m.image) {
               try {
                 const imgUrl = `${SRD_BASE}${m.image}`;
-                const imgRes = await (0, import_obsidian82.requestUrl)({ url: imgUrl });
+                const imgRes = await (0, import_obsidian85.requestUrl)({ url: imgUrl });
                 const ext = m.image.split(".").pop() || "png";
                 imagePath = `${IMAGE_FOLDER}/${m.index}.${ext}`;
                 if (await plugin.app.vault.adapter.exists(imagePath)) {
@@ -76720,16 +82405,16 @@ async function importSRDCreatureTokens(plugin) {
         })
       );
       if (i > 0 && i % 40 === 0) {
-        new import_obsidian82.Notice(`\u{1F409} Progress: ${i}/${monsters.length} creatures\u2026`);
+        new import_obsidian85.Notice(`\u{1F409} Progress: ${i}/${monsters.length} creatures\u2026`);
       }
     }
     const duration = Math.round((Date.now() - startTime) / 1e3);
-    new import_obsidian82.Notice(
+    new import_obsidian85.Notice(
       `\u2705 SRD creature import complete! ${imported} tokens imported, ${errors} errors. (${duration}s)`
     );
   } catch (error2) {
     console.error("[SRD Import] Fatal error during creature import:", error2);
-    new import_obsidian82.Notice("\u274C SRD creature import failed. Check the console for details.");
+    new import_obsidian85.Notice("\u274C SRD creature import failed. Check the console for details.");
   }
   return { imported, errors };
 }
@@ -76933,10 +82618,10 @@ creature: ${m.name}
 async function importSRDCategory(plugin, categoryKey, folderName, categoryName, isBulkImport = false) {
   try {
     if (!isBulkImport) {
-      new import_obsidian82.Notice(`Starting ${categoryName} import...`);
+      new import_obsidian85.Notice(`Starting ${categoryName} import...`);
     }
     await plugin.ensureFolderExists(folderName);
-    const listResponse = await (0, import_obsidian82.requestUrl)({
+    const listResponse = await (0, import_obsidian85.requestUrl)({
       url: `https://www.dnd5eapi.co/api/2014/${categoryKey}`,
       method: "GET"
     });
@@ -76952,7 +82637,7 @@ async function importSRDCategory(plugin, categoryKey, folderName, categoryName, 
           successCount++;
           continue;
         }
-        const detailResponse = await (0, import_obsidian82.requestUrl)({
+        const detailResponse = await (0, import_obsidian85.requestUrl)({
           url: `https://www.dnd5eapi.co${item.url}`,
           method: "GET"
         });
@@ -76968,11 +82653,11 @@ async function importSRDCategory(plugin, categoryKey, folderName, categoryName, 
       }
     }
     if (!isBulkImport) {
-      new import_obsidian82.Notice(`\u2705 ${categoryName} import complete! ${successCount} items imported, ${errorCount} errors.`);
+      new import_obsidian85.Notice(`\u2705 ${categoryName} import complete! ${successCount} items imported, ${errorCount} errors.`);
     }
     return { success: successCount, errors: errorCount };
   } catch (error2) {
-    new import_obsidian82.Notice(`\u274C Failed to import ${categoryName}: ${error2 instanceof Error ? error2.message : String(error2)}`);
+    new import_obsidian85.Notice(`\u274C Failed to import ${categoryName}: ${error2 instanceof Error ? error2.message : String(error2)}`);
     console.error(`${categoryName} import error:`, error2);
     return { success: 0, errors: 0 };
   }
@@ -77525,12 +83210,13 @@ function generateGenericContent(data) {
 }
 
 // src/main.ts
-var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
+var DndCampaignHubPlugin = class extends import_obsidian89.Plugin {
   constructor() {
     super(...arguments);
     this.SessionCreationModal = SessionCreationModal;
     this.SceneCreationModal = SceneCreationModal;
     this.AdventureCreationModal = AdventureCreationModal;
+    this.combatPursuitSync = null;
     this._musicStatusBarEl = null;
     this._musicStatusBarCleanup = null;
     this._playerMapViews = /* @__PURE__ */ new Set();
@@ -77591,8 +83277,17 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
       IDLE_SCREEN_VIEW_TYPE,
       (leaf) => new IdleScreenView(leaf, this)
     );
+    this.registerView(
+      PURSUIT_TRACKER_VIEW_TYPE,
+      (leaf) => new PursuitTrackerView(leaf, this)
+    );
+    this.registerView(
+      PURSUIT_PLAYER_VIEW_TYPE,
+      (leaf) => new PursuitPlayerView(leaf, this)
+    );
     this.encounterBuilder = new EncounterBuilder(this.app, this);
     this.combatTracker = new CombatTracker(this.app, this);
+    this.pursuitTracker = new PursuitTracker(this.app, this);
     this.partyManager = new PartyManager(this.app, this.manifest.id);
     await this.partyManager.load();
     this.mapManager = new MapManager(this.app);
@@ -77661,7 +83356,7 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
             editor.focus();
           }
         }
-        new import_obsidian86.Notice("Focus reset");
+        new import_obsidian89.Notice("Focus reset");
       }
     });
     this.addCommand({
@@ -77682,7 +83377,7 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
       name: "Initialize D&D Campaign Hub",
       callback: async () => {
         if (this.isVaultInitialized()) {
-          new import_obsidian86.Notice("D&D Campaign Hub is already initialized in this vault.");
+          new import_obsidian89.Notice("D&D Campaign Hub is already initialized in this vault.");
           return;
         }
         await this.initializeVault();
@@ -77693,7 +83388,7 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
       name: "Migrate D&D Hub Files",
       callback: () => {
         if (!this.isVaultInitialized()) {
-          new import_obsidian86.Notice("Initialize D&D Campaign Hub before migrating files.");
+          new import_obsidian89.Notice("Initialize D&D Campaign Hub before migrating files.");
           return;
         }
         this.migrateTemplates();
@@ -77716,12 +83411,12 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
         var _a;
         const file = this.app.workspace.getActiveFile();
         if (!file) {
-          new import_obsidian86.Notice("No active file.");
+          new import_obsidian89.Notice("No active file.");
           return;
         }
         const cache = this.app.metadataCache.getFileCache(file);
         if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) !== "session") {
-          new import_obsidian86.Notice("Open a session note first.");
+          new import_obsidian89.Notice("Open a session note first.");
           return;
         }
         new EndSessionModal(this.app, this, file).open();
@@ -77753,10 +83448,10 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
           if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) === "npc") {
             this.editNpc(file.path);
           } else {
-            new import_obsidian86.Notice("This is not an NPC note");
+            new import_obsidian89.Notice("This is not an NPC note");
           }
         } else {
-          new import_obsidian86.Notice("Please open an NPC note first");
+          new import_obsidian89.Notice("Please open an NPC note first");
         }
       }
     });
@@ -77777,13 +83472,13 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
                 await this.markerLibrary.deleteMarker(tokenId);
               }
               await this.app.vault.delete(file);
-              new import_obsidian86.Notice(`\u2714 NPC "${npcName}" deleted`);
+              new import_obsidian89.Notice(`\u2714 NPC "${npcName}" deleted`);
             }
           } else {
-            new import_obsidian86.Notice("This is not an NPC note");
+            new import_obsidian89.Notice("This is not an NPC note");
           }
         } else {
-          new import_obsidian86.Notice("Please open an NPC note first");
+          new import_obsidian89.Notice("Please open an NPC note first");
         }
       }
     });
@@ -77808,10 +83503,10 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
           if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) === "player") {
             this.editPc(file.path);
           } else {
-            new import_obsidian86.Notice("This is not a PC note");
+            new import_obsidian89.Notice("This is not a PC note");
           }
         } else {
-          new import_obsidian86.Notice("Please open a PC note first");
+          new import_obsidian89.Notice("Please open a PC note first");
         }
       }
     });
@@ -77832,13 +83527,13 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
                 await this.markerLibrary.deleteMarker(tokenId);
               }
               await this.app.vault.delete(file);
-              new import_obsidian86.Notice(`\u2714 PC "${pcName}" deleted`);
+              new import_obsidian89.Notice(`\u2714 PC "${pcName}" deleted`);
             }
           } else {
-            new import_obsidian86.Notice("This is not a PC note");
+            new import_obsidian89.Notice("This is not a PC note");
           }
         } else {
-          new import_obsidian86.Notice("Please open a PC note first");
+          new import_obsidian89.Notice("Please open a PC note first");
         }
       }
     });
@@ -77860,10 +83555,10 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
               new PoiEditModal2(this.app, file.path).open();
             });
           } else {
-            new import_obsidian86.Notice("This is not a PoI note");
+            new import_obsidian89.Notice("This is not a PoI note");
           }
         } else {
-          new import_obsidian86.Notice("Please open a PoI note first");
+          new import_obsidian89.Notice("Please open a PoI note first");
         }
       }
     });
@@ -77880,13 +83575,13 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
             const confirmed = await this.confirmDelete(file.name);
             if (confirmed) {
               await this.app.vault.delete(file);
-              new import_obsidian86.Notice(`\u2714 Point of Interest "${poiName}" deleted`);
+              new import_obsidian89.Notice(`\u2714 Point of Interest "${poiName}" deleted`);
             }
           } else {
-            new import_obsidian86.Notice("This is not a PoI note");
+            new import_obsidian89.Notice("This is not a PoI note");
           }
         } else {
-          new import_obsidian86.Notice("Please open a PoI note first");
+          new import_obsidian89.Notice("Please open a PoI note first");
         }
       }
     });
@@ -77928,7 +83623,7 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
         if (file) {
           this.editAdventure(file.path);
         } else {
-          new import_obsidian86.Notice("Please open an adventure note first");
+          new import_obsidian89.Notice("Please open an adventure note first");
         }
       }
     });
@@ -77943,10 +83638,10 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
           if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) === "adventure") {
             await this.deleteAdventure(file);
           } else {
-            new import_obsidian86.Notice("Please open an adventure note first");
+            new import_obsidian89.Notice("Please open an adventure note first");
           }
         } else {
-          new import_obsidian86.Notice("Please open an adventure note first");
+          new import_obsidian89.Notice("Please open an adventure note first");
         }
       }
     });
@@ -77993,7 +83688,7 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
         if (file) {
           this.editScene(file.path);
         } else {
-          new import_obsidian86.Notice("Please open a scene note first");
+          new import_obsidian89.Notice("Please open a scene note first");
         }
       }
     });
@@ -78013,16 +83708,16 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
               await this.app.vault.delete(file);
               if (encounterName) {
                 await this.partyManager.deleteEncounter(encounterName);
-                new import_obsidian86.Notice(`\u2714 Scene "${sceneName}" and its encounter deleted`);
+                new import_obsidian89.Notice(`\u2714 Scene "${sceneName}" and its encounter deleted`);
               } else {
-                new import_obsidian86.Notice(`\u2714 Scene "${sceneName}" deleted from vault`);
+                new import_obsidian89.Notice(`\u2714 Scene "${sceneName}" deleted from vault`);
               }
             }
           } else {
-            new import_obsidian86.Notice("This is not a scene note");
+            new import_obsidian89.Notice("This is not a scene note");
           }
         } else {
-          new import_obsidian86.Notice("Please open a scene note first");
+          new import_obsidian89.Notice("Please open a scene note first");
         }
       }
     });
@@ -78039,7 +83734,7 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
         if (file) {
           this.editTrap(file.path);
         } else {
-          new import_obsidian86.Notice("Please open a trap note first");
+          new import_obsidian89.Notice("Please open a trap note first");
         }
       }
     });
@@ -78057,13 +83752,13 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
             if (confirmed) {
               await this.deleteTrapStatblocks(trapName);
               await this.app.vault.delete(file);
-              new import_obsidian86.Notice(`\u2714 Trap "${trapName}" deleted`);
+              new import_obsidian89.Notice(`\u2714 Trap "${trapName}" deleted`);
             }
           } else {
-            new import_obsidian86.Notice("This is not a trap note");
+            new import_obsidian89.Notice("This is not a trap note");
           }
         } else {
-          new import_obsidian86.Notice("Please open a trap note first");
+          new import_obsidian89.Notice("Please open a trap note first");
         }
       }
     });
@@ -78080,7 +83775,7 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
         if (file) {
           this.editItem(file.path);
         } else {
-          new import_obsidian86.Notice("Please open an item note first");
+          new import_obsidian89.Notice("Please open an item note first");
         }
       }
     });
@@ -78097,13 +83792,13 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
             const confirmed = await this.confirmDelete(file.name);
             if (confirmed) {
               await this.app.vault.delete(file);
-              new import_obsidian86.Notice(`\u2714 Item "${itemName}" deleted`);
+              new import_obsidian89.Notice(`\u2714 Item "${itemName}" deleted`);
             }
           } else {
-            new import_obsidian86.Notice("This is not an item note");
+            new import_obsidian89.Notice("This is not an item note");
           }
         } else {
-          new import_obsidian86.Notice("Please open an item note first");
+          new import_obsidian89.Notice("Please open an item note first");
         }
       }
     });
@@ -78120,7 +83815,7 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
         if (file) {
           this.editCreature(file.path);
         } else {
-          new import_obsidian86.Notice("Please open a creature note first");
+          new import_obsidian89.Notice("Please open a creature note first");
         }
       }
     });
@@ -78138,13 +83833,13 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
             if (confirmed) {
               await this.app.vault.delete(file);
               await this.deleteCreatureStatblock(creatureName);
-              new import_obsidian86.Notice(`\u2714 Creature "${creatureName}" deleted`);
+              new import_obsidian89.Notice(`\u2714 Creature "${creatureName}" deleted`);
             }
           } else {
-            new import_obsidian86.Notice("This is not a creature note");
+            new import_obsidian89.Notice("This is not a creature note");
           }
         } else {
-          new import_obsidian86.Notice("Please open a creature note first");
+          new import_obsidian89.Notice("Please open a creature note first");
         }
       }
     });
@@ -78172,7 +83867,7 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
         if (file) {
           this.editEncounter(file.path);
         } else {
-          new import_obsidian86.Notice("Please open an encounter note first");
+          new import_obsidian89.Notice("Please open an encounter note first");
         }
       }
     });
@@ -78193,7 +83888,7 @@ var DndCampaignHubPlugin = class extends import_obsidian86.Plugin {
             const name = cache.frontmatter.name || file.basename;
             this.combatTracker.resumeCombat(name);
           } else {
-            new import_obsidian86.Notice("Please open an encounter note first");
+            new import_obsidian89.Notice("Please open an encounter note first");
           }
         }
       }
@@ -78216,12 +83911,12 @@ This action cannot be undone.`,
               async (confirmed) => {
                 if (confirmed) {
                   await this.combatTracker.clearSavedState(name);
-                  new import_obsidian86.Notice(`Saved combat state for "${name}" cleared.`);
+                  new import_obsidian89.Notice(`Saved combat state for "${name}" cleared.`);
                 }
               }
             ).open();
           } else {
-            new import_obsidian86.Notice("Please open an encounter note first");
+            new import_obsidian89.Notice("Please open an encounter note first");
           }
         }
       }
@@ -78241,9 +83936,31 @@ This action cannot be undone.`,
       name: "\u23EA Previous Turn",
       callback: () => this.combatTracker.prevTurn()
     });
+    this.addCommand({
+      id: "start-pursuit",
+      name: "\u{1F3C3} Start Pursuit / Chase",
+      callback: () => this.startPursuitSetup()
+    });
+    this.addCommand({
+      id: "open-pursuit-tracker",
+      name: "\u{1F3C3} Open Pursuit Tracker",
+      callback: () => this.openPursuitTracker()
+    });
+    this.addCommand({
+      id: "end-pursuit",
+      name: "\u{1F6D1} End Pursuit",
+      callback: () => {
+        if (this.combatPursuitSync) {
+          this.combatPursuitSync.teardown();
+          this.combatPursuitSync = null;
+        }
+        this.pursuitTracker.endChase("gm-ended");
+        new import_obsidian89.Notice("Pursuit ended.");
+      }
+    });
     this.registerEvent(
       this.app.vault.on("modify", async (file) => {
-        if (file instanceof import_obsidian86.TFile && file.path.startsWith("z_Encounters/")) {
+        if (file instanceof import_obsidian89.TFile && file.path.startsWith("z_Encounters/")) {
           setTimeout(async () => {
             await this.syncEncounterToScenes(file);
           }, 100);
@@ -78252,7 +83969,7 @@ This action cannot be undone.`,
     );
     this.registerEvent(
       this.app.metadataCache.on("changed", async (file) => {
-        if (!(file instanceof import_obsidian86.TFile) || file.extension !== "md") return;
+        if (!(file instanceof import_obsidian89.TFile) || file.extension !== "md") return;
         const cache = this.app.metadataCache.getFileCache(file);
         const fm = cache == null ? void 0 : cache.frontmatter;
         if (!fm || !fm.token_id) return;
@@ -78290,7 +84007,7 @@ This action cannot be undone.`,
     this.registerEvent(
       this.app.vault.on("delete", async (file) => {
         var _a;
-        if (!(file instanceof import_obsidian86.TFile) || file.extension !== "md") return;
+        if (!(file instanceof import_obsidian89.TFile) || file.extension !== "md") return;
         await this.partyManager.removeMemberByPath(file.path);
         const basename = file.basename;
         const allMarkers = this.markerLibrary.getAllMarkers();
@@ -78313,7 +84030,7 @@ This action cannot be undone.`,
     );
     this.registerEvent(
       this.app.vault.on("rename", async (file, oldPath) => {
-        if (!(file instanceof import_obsidian86.TFile) || file.extension !== "md") return;
+        if (!(file instanceof import_obsidian89.TFile) || file.extension !== "md") return;
         await this.partyManager.updateMemberPath(oldPath, file.path);
         setTimeout(async () => {
           const cache = this.app.metadataCache.getFileCache(file);
@@ -78349,13 +84066,13 @@ This action cannot be undone.`,
             if (confirmed) {
               await this.app.vault.delete(file);
               await this.partyManager.deleteEncounter(encounterName);
-              new import_obsidian86.Notice(`\u2714 Encounter "${encounterName}" deleted`);
+              new import_obsidian89.Notice(`\u2714 Encounter "${encounterName}" deleted`);
             }
           } else {
-            new import_obsidian86.Notice("This is not an encounter note");
+            new import_obsidian89.Notice("This is not an encounter note");
           }
         } else {
-          new import_obsidian86.Notice("Please open an encounter note first");
+          new import_obsidian89.Notice("Please open an encounter note first");
         }
       }
     });
@@ -78405,7 +84122,7 @@ This action cannot be undone.`,
           (config) => {
             const codeblock = buildSceneMusicCodeblock(config);
             editor.replaceSelection(codeblock + "\n");
-            new import_obsidian86.Notice("Scene music block inserted");
+            new import_obsidian89.Notice("Scene music block inserted");
           }
         ).open();
       }
@@ -78421,7 +84138,7 @@ This action cannot be undone.`,
           (config) => {
             const codeblock = buildSoundEffectCodeblock(config);
             editor.replaceSelection(codeblock + "\n");
-            new import_obsidian86.Notice("Sound effect block inserted");
+            new import_obsidian89.Notice("Sound effect block inserted");
           }
         ).open();
       }
@@ -78432,7 +84149,7 @@ This action cannot be undone.`,
       callback: () => {
         const vol = Math.min(100, this.musicPlayer.primary.state.volume + 10);
         this.musicPlayer.primary.setVolume(vol);
-        new import_obsidian86.Notice(`\u{1F50A} Volume: ${vol}%`);
+        new import_obsidian89.Notice(`\u{1F50A} Volume: ${vol}%`);
       }
     });
     this.addCommand({
@@ -78441,7 +84158,7 @@ This action cannot be undone.`,
       callback: () => {
         const vol = Math.max(0, this.musicPlayer.primary.state.volume - 10);
         this.musicPlayer.primary.setVolume(vol);
-        new import_obsidian86.Notice(`\u{1F509} Volume: ${vol}%`);
+        new import_obsidian89.Notice(`\u{1F509} Volume: ${vol}%`);
       }
     });
     this.addCommand({
@@ -78451,7 +84168,7 @@ This action cannot be undone.`,
         this.musicPlayer.primary.toggleMute();
         this.musicPlayer.ambient.toggleMute();
         const muted = this.musicPlayer.primary.state.isMuted;
-        new import_obsidian86.Notice(muted ? "\u{1F507} Muted" : "\u{1F50A} Unmuted");
+        new import_obsidian89.Notice(muted ? "\u{1F507} Muted" : "\u{1F50A} Unmuted");
       }
     });
     this.addCommand({
@@ -78462,7 +84179,7 @@ This action cannot be undone.`,
           this.settings.musicSettings = updated;
           this.musicPlayer.reloadSettings(updated);
           await this.saveSettings();
-          new import_obsidian86.Notice("Music settings saved");
+          new import_obsidian89.Notice("Music settings saved");
         }).open();
       }
     });
@@ -78472,7 +84189,7 @@ This action cannot be undone.`,
       callback: () => {
         const key = this.settings.musicSettings.freesoundApiKey;
         if (!key) {
-          new import_obsidian86.Notice("Set a Freesound API Key in Music Settings \u2192 General first");
+          new import_obsidian89.Notice("Set a Freesound API Key in Music Settings \u2192 General first");
           return;
         }
         new FreesoundSearchModal(
@@ -78504,7 +84221,7 @@ This action cannot be undone.`,
       callback: async () => {
         const spm = this.sessionProjectionManager;
         if (spm.isActive()) {
-          new import_obsidian86.Notice("Session is already active");
+          new import_obsidian89.Notice("Session is already active");
           return;
         }
         const configs = this.settings.sessionProjection.managedScreens;
@@ -78556,12 +84273,12 @@ This action cannot be undone.`,
         var _a;
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile) {
-          new import_obsidian86.Notice("Open an encounter table note first.");
+          new import_obsidian89.Notice("Open an encounter table note first.");
           return;
         }
         const cache = this.app.metadataCache.getFileCache(activeFile);
         if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) !== "encounter-table") {
-          new import_obsidian86.Notice("\u26A0\uFE0F This is not an encounter table note.");
+          new import_obsidian89.Notice("\u26A0\uFE0F This is not an encounter table note.");
           return;
         }
         Promise.resolve().then(() => (init_RerollEncounterModal(), RerollEncounterModal_exports)).then(({ RerollEncounterModal: RerollEncounterModal2 }) => {
@@ -78576,12 +84293,12 @@ This action cannot be undone.`,
         var _a;
         const file = this.app.workspace.getActiveFile();
         if (!file) {
-          new import_obsidian86.Notice("Please open an encounter table note first");
+          new import_obsidian89.Notice("Please open an encounter table note first");
           return;
         }
         const cache = this.app.metadataCache.getFileCache(file);
         if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) !== "encounter-table") {
-          new import_obsidian86.Notice("This is not an encounter table note");
+          new import_obsidian89.Notice("This is not an encounter table note");
           return;
         }
         Promise.resolve().then(() => (init_RerollEncounterModal(), RerollEncounterModal_exports)).then(({ RerollEncounterModal: RerollEncounterModal2 }) => {
@@ -78596,32 +84313,36 @@ This action cannot be undone.`,
         var _a;
         const file = this.app.workspace.getActiveFile();
         if (!file) {
-          new import_obsidian86.Notice("Please open an encounter table note first");
+          new import_obsidian89.Notice("Please open an encounter table note first");
           return;
         }
         const cache = this.app.metadataCache.getFileCache(file);
         if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) !== "encounter-table") {
-          new import_obsidian86.Notice("This is not an encounter table note");
+          new import_obsidian89.Notice("This is not an encounter table note");
           return;
         }
         const tableName = cache.frontmatter.name || file.basename;
         const confirmed = await this.confirmDelete(file.name);
         if (confirmed) {
           await this.app.vault.delete(file);
-          new import_obsidian86.Notice(`\u2714 Encounter table "${tableName}" deleted`);
+          new import_obsidian89.Notice(`\u2714 Encounter table "${tableName}" deleted`);
         }
       }
     });
     this.addSettingTab(new DndCampaignHubSettingTab(this.app, this));
+    if (this.isVaultInitialized()) {
+      await this.createTemplateFiles();
+    }
   }
   onunload() {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     this._flushAllPendingSaves();
     this.saveMusicPlaybackState();
     if (this._musicStatusBarCleanup) this._musicStatusBarCleanup();
     (_a = this.musicPlayer) == null ? void 0 : _a.destroy();
-    (_b = this.projectionManager) == null ? void 0 : _b.stopProjection();
-    (_c = this.sessionProjectionManager) == null ? void 0 : _c.stopSession();
+    (_b = this.sessionProjectionManager) == null ? void 0 : _b.stopSession();
+    (_c = this.projectionManager) == null ? void 0 : _c.stopAllProjections();
+    (_d = this.projectionManager) == null ? void 0 : _d.destroy();
     if (this._playerMapViews) {
       this._playerMapViews.forEach((pv) => {
         var _a2;
@@ -78673,7 +84394,7 @@ This action cannot be undone.`,
     const savedVersion = this.settings.pluginVersion;
     if (savedVersion !== currentVersion) {
       if (savedVersion !== "0.0.0") {
-        new import_obsidian86.Notice(`D&D Campaign Hub updated to v${currentVersion}! Use "Migrate D&D Hub Files" to safely update your existing files.`, 1e4);
+        new import_obsidian89.Notice(`D&D Campaign Hub updated to v${currentVersion}! Use "Migrate D&D Hub Files" to safely update your existing files.`, 1e4);
       }
       this.settings.pluginVersion = currentVersion;
       await this.saveSettings();
@@ -78693,7 +84414,7 @@ This action cannot be undone.`,
   renderNoteActions(el, ctx) {
     var _a;
     const file = this.app.vault.getAbstractFileByPath(ctx.sourcePath);
-    if (!(file instanceof import_obsidian86.TFile)) return;
+    if (!(file instanceof import_obsidian89.TFile)) return;
     const cache = this.app.metadataCache.getFileCache(file);
     const type = (_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type;
     if (!type) return;
@@ -78825,10 +84546,10 @@ This action cannot be undone.`,
         await this.app.vault.modify(file, content);
         updated++;
       }
-      new import_obsidian86.Notice(`\u2705 Updated ${updated} PoI icons (${skipped} already correct)`);
+      new import_obsidian89.Notice(`\u2705 Updated ${updated} PoI icons (${skipped} already correct)`);
     } catch (error2) {
       console.error("Error updating PoI icons:", error2);
-      new import_obsidian86.Notice("\u274C Failed to update PoI icons");
+      new import_obsidian89.Notice("\u274C Failed to update PoI icons");
     }
   }
   /**
@@ -78851,7 +84572,7 @@ This action cannot be undone.`,
     ];
     return requiredFolders.every((folder) => {
       const folderExists = this.app.vault.getAbstractFileByPath(folder);
-      return folderExists instanceof import_obsidian86.TFolder;
+      return folderExists instanceof import_obsidian89.TFolder;
     });
   }
   /**
@@ -78893,7 +84614,7 @@ This action cannot be undone.`,
     for (const folderPath of foldersToRemove) {
       try {
         const folder = this.app.vault.getAbstractFileByPath(folderPath);
-        if (folder instanceof import_obsidian86.TFolder) {
+        if (folder instanceof import_obsidian89.TFolder) {
           await this.app.vault.delete(folder, true);
           removedCount++;
         }
@@ -78902,16 +84623,16 @@ This action cannot be undone.`,
       }
     }
     if (errors.length > 0) {
-      new import_obsidian86.Notice(`Purge completed with errors. Removed ${removedCount} folders. Errors: ${errors.join(", ")}`);
+      new import_obsidian89.Notice(`Purge completed with errors. Removed ${removedCount} folders. Errors: ${errors.join(", ")}`);
     } else {
-      new import_obsidian86.Notice(`Successfully purged ${removedCount} D&D Campaign Hub folders.`);
+      new import_obsidian89.Notice(`Successfully purged ${removedCount} D&D Campaign Hub folders.`);
     }
   }
   /**
    * Initialize the vault with the required folder structure and templates
    */
   async initializeVault() {
-    new import_obsidian86.Notice("Initializing D&D Campaign Hub vault structure...");
+    new import_obsidian89.Notice("Initializing D&D Campaign Hub vault structure...");
     const foldersToCreate = [
       "z_Templates",
       "z_Assets",
@@ -78934,7 +84655,7 @@ This action cannot be undone.`,
       }
     }
     await this.createTemplateFiles();
-    new import_obsidian86.Notice("Vault initialized successfully!");
+    new import_obsidian89.Notice("Vault initialized successfully!");
   }
   /**
    * Create template files in z_Templates folder
@@ -78954,7 +84675,7 @@ This action cannot be undone.`,
     for (const [path, content] of Object.entries(templates)) {
       try {
         const existingFile = this.app.vault.getAbstractFileByPath(path);
-        if (existingFile instanceof import_obsidian86.TFile) {
+        if (existingFile instanceof import_obsidian89.TFile) {
           await this.app.vault.modify(existingFile, content);
         } else {
           await this.app.vault.create(path, content);
@@ -78998,15 +84719,15 @@ This action cannot be undone.`,
       if (adventureFolder && adventureFolder.name === file.basename) {
         const children = [...adventureFolder.children];
         for (const child of children) {
-          if (child instanceof import_obsidian86.TFolder) {
+          if (child instanceof import_obsidian89.TFolder) {
             const subChildren = [...child.children];
             for (const subChild of subChildren) {
-              if (subChild instanceof import_obsidian86.TFile) {
+              if (subChild instanceof import_obsidian89.TFile) {
                 await this.app.vault.delete(subChild);
               }
             }
             await this.app.vault.delete(child);
-          } else if (child instanceof import_obsidian86.TFile) {
+          } else if (child instanceof import_obsidian89.TFile) {
             await this.app.vault.delete(child);
           }
         }
@@ -79015,10 +84736,10 @@ This action cannot be undone.`,
         const scenesFolder = this.app.vault.getAbstractFileByPath(
           `${(_c = file.parent) == null ? void 0 : _c.path}/${file.basename} - Scenes`
         );
-        if (scenesFolder instanceof import_obsidian86.TFolder) {
+        if (scenesFolder instanceof import_obsidian89.TFolder) {
           const children = [...scenesFolder.children];
           for (const child of children) {
-            if (child instanceof import_obsidian86.TFile) {
+            if (child instanceof import_obsidian89.TFile) {
               await this.app.vault.delete(child);
             }
           }
@@ -79026,9 +84747,9 @@ This action cannot be undone.`,
         }
         await this.app.vault.delete(file);
       }
-      new import_obsidian86.Notice(`\u2705 Adventure "${adventureName}" deleted!`);
+      new import_obsidian89.Notice(`\u2705 Adventure "${adventureName}" deleted!`);
     } catch (error2) {
-      new import_obsidian86.Notice(`\u274C Error deleting adventure: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      new import_obsidian89.Notice(`\u274C Error deleting adventure: ${error2 instanceof Error ? error2.message : String(error2)}`);
       console.error("Adventure deletion error:", error2);
     }
   }
@@ -79104,7 +84825,7 @@ This action cannot be undone.`,
   }
   async confirmDelete(fileName) {
     return new Promise((resolve) => {
-      const modal = new import_obsidian86.Modal(this.app);
+      const modal = new import_obsidian89.Modal(this.app);
       modal.titleEl.setText("Confirm Delete");
       modal.contentEl.createEl("p", { text: `Are you sure you want to delete "${fileName}"?` });
       modal.contentEl.createEl("p", {
@@ -79181,11 +84902,11 @@ This action cannot be undone.`,
       }
       await this.updateEncounterData(encounterName, encounterCreatures, selectedPartyId, useColorNames);
       if (scenesLinking.length > 0) {
-        new import_obsidian86.Notice(`\u2705 Encounter "${encounterName}" synced to ${scenesLinking.length} scene(s)`);
+        new import_obsidian89.Notice(`\u2705 Encounter "${encounterName}" synced to ${scenesLinking.length} scene(s)`);
       }
     } catch (error2) {
       console.error("[SyncEncounter] Error:", error2);
-      new import_obsidian86.Notice("\u26A0\uFE0F Error syncing encounter to scenes");
+      new import_obsidian89.Notice("\u26A0\uFE0F Error syncing encounter to scenes");
     }
   }
   /**
@@ -79264,7 +84985,7 @@ This action cannot be undone.`,
         creatures: allCombatants
       };
       await pm.saveEncounter(encounterName, updated);
-      new import_obsidian86.Notice(`\u2705 Encounter data updated`);
+      new import_obsidian89.Notice(`\u2705 Encounter data updated`);
     } catch (error2) {
       console.error("[UpdateEncounter] Error updating encounter:", error2);
     }
@@ -79343,6 +85064,29 @@ This action cannot be undone.`,
       await leaf.setViewState({ type: COMBAT_TRACKER_VIEW_TYPE, active: true });
       this.app.workspace.revealLeaf(leaf);
     }
+  }
+  async openPursuitTracker() {
+    const existing = this.app.workspace.getLeavesOfType(PURSUIT_TRACKER_VIEW_TYPE);
+    if (existing.length > 0 && existing[0]) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: PURSUIT_TRACKER_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+  startPursuitSetup() {
+    new PursuitSetupModal(this.app, this).open();
+  }
+  startPursuitFromCombat() {
+    const combatState = this.combatTracker.getState();
+    if (!combatState) {
+      new import_obsidian89.Notice("No active combat to start a chase from.");
+      return;
+    }
+    new PursuitSetupModal(this.app, this, combatState).open();
   }
   /**
    * Register a combat tracker listener that smoothly pans any projected
@@ -79688,12 +85432,12 @@ This action cannot be undone.`,
     var _a, _b, _c, _d, _e;
     const activeFile = this.app.workspace.getActiveFile();
     if (!activeFile) {
-      new import_obsidian86.Notice("Open an encounter table note first.");
+      new import_obsidian89.Notice("Open an encounter table note first.");
       return;
     }
     const cache = this.app.metadataCache.getFileCache(activeFile);
     if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) !== "encounter-table") {
-      new import_obsidian86.Notice("\u26A0\uFE0F This is not an encounter table note.");
+      new import_obsidian89.Notice("\u26A0\uFE0F This is not an encounter table note.");
       return;
     }
     const entries = cache.frontmatter.entries || 6;
@@ -79704,11 +85448,11 @@ This action cannot be undone.`,
     if (match) {
       const encounter = (_c = (_b = match[1]) == null ? void 0 : _b.trim()) != null ? _c : "Unknown";
       const difficulty = (_e = (_d = match[2]) == null ? void 0 : _d.trim()) != null ? _e : "";
-      new import_obsidian86.Notice(`\u{1F3B2} Rolled ${roll} on d${entries}:
+      new import_obsidian89.Notice(`\u{1F3B2} Rolled ${roll} on d${entries}:
 ${encounter}
 Difficulty: ${difficulty}`, 8e3);
     } else {
-      new import_obsidian86.Notice(`\u{1F3B2} Rolled ${roll} on d${entries}!`, 5e3);
+      new import_obsidian89.Notice(`\u{1F3B2} Rolled ${roll} on d${entries}!`, 5e3);
     }
   }
   async ensureFolderExists(path) {
@@ -79752,9 +85496,9 @@ Difficulty: ${difficulty}`, 8e3);
   getAllCampaigns() {
     const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
     const campaigns = [];
-    if (ttrpgsFolder instanceof import_obsidian86.TFolder) {
+    if (ttrpgsFolder instanceof import_obsidian89.TFolder) {
       ttrpgsFolder.children.forEach((child) => {
-        if (child instanceof import_obsidian86.TFolder) {
+        if (child instanceof import_obsidian89.TFolder) {
           campaigns.push({
             path: child.path,
             name: child.name

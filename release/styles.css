@@ -6832,6 +6832,25 @@
   opacity: 1;
 }
 
+/* ── Projection crossfade overlay ──────────────────────────────
+   Used by ProjectionManager.crossfadeOnLeaf() for smooth
+   transitions between view types on managed screens.
+   Attached to the workspace-leaf container so it persists
+   across view swaps (old view destroyed → new view created).
+   ────────────────────────────────────────────────────────────── */
+.dnd-projection-crossfade {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  z-index: 99999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.dnd-projection-crossfade.active {
+  opacity: 1;
+}
+
 /* Player Map View (Popout Window) */
 .dnd-player-map-container {
   background: #000;
@@ -12274,3 +12293,448 @@
   border-radius: 6px;
   background: var(--background-secondary);
 }
+
+/* ── Pursuit / Chase System ──────────────────────────────────── */
+
+/* ── Setup Modal ── */
+.dnd-pursuit-setup-modal { max-width: 900px; width: 90vw; }
+.dnd-pursuit-setup-modal .modal-content { max-height: 80vh; overflow-y: auto; }
+.dnd-pursuit-setup-modal h2 { margin-bottom: 12px; }
+.dnd-pursuit-setup-modal h3 { margin-top: 16px; margin-bottom: 8px; }
+
+.dnd-pursuit-quarry-row { background: rgba(0, 180, 80, 0.06); }
+.dnd-pursuit-pursuer-row { background: rgba(220, 50, 50, 0.06); }
+
+.dnd-pursuit-role-btn { font-size: 0.85em; padding: 2px 8px; border-radius: 4px; cursor: pointer; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); }
+.dnd-pursuit-remove-btn { color: var(--text-error); background: none; border: none; cursor: pointer; font-size: 1.1em; padding: 2px 6px; }
+
+.dnd-pursuit-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 12px; }
+.dnd-pursuit-summary { color: var(--text-muted); font-size: 0.9em; }
+
+.dnd-pursuit-btn { padding: 6px 16px; border-radius: 6px; cursor: pointer; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); }
+.dnd-pursuit-btn-primary { background: var(--interactive-accent); color: var(--text-on-accent); border: none; font-weight: 600; }
+.dnd-pursuit-btn-danger { background: var(--text-error); color: white; border: none; }
+
+/* ── Setup modal now reuses .dnd-creature-* classes from the encounter builder ──
+   Role-based row coloring for creature items: */
+.dnd-pursuit-setup-modal .dnd-creature-item.dnd-pursuit-quarry-row { background: rgba(0, 180, 80, 0.06); }
+.dnd-pursuit-setup-modal .dnd-creature-item.dnd-pursuit-pursuer-row { background: rgba(220, 50, 50, 0.06); }
+
+/* ── Tracker View (GM sidebar) ── */
+.dnd-pursuit-tracker { padding: 8px; }
+.dnd-pursuit-empty { text-align: center; padding: 32px 16px; }
+.dnd-pursuit-empty p { color: var(--text-muted); margin: 8px 0 16px; }
+
+.dnd-pursuit-toolbar { display: flex; align-items: center; gap: 4px; padding: 4px 0 8px; border-bottom: 1px solid var(--background-modifier-border); }
+.dnd-pursuit-toolbar-btn { padding: 4px 10px; border-radius: 4px; cursor: pointer; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); font-size: 1em; }
+.dnd-pursuit-toolbar-btn-primary { background: var(--interactive-accent); color: var(--text-on-accent); border: none; }
+.dnd-pursuit-toolbar-btn-stop { background: var(--text-error); color: white; border: none; }
+.dnd-pursuit-toolbar-round { font-weight: 600; padding: 0 8px; }
+.dnd-pursuit-toolbar-spacer { flex: 1; }
+
+.dnd-pursuit-header { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.dnd-pursuit-header h3 { margin: 0; flex: 1; }
+.dnd-pursuit-condition { font-size: 0.75em; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+.dnd-pursuit-condition-advantage { background: rgba(0, 180, 80, 0.15); color: #0b4; }
+.dnd-pursuit-condition-disadvantage { background: rgba(220, 50, 50, 0.15); color: #d44; }
+.dnd-pursuit-condition-normal { background: var(--background-secondary); color: var(--text-muted); }
+
+/* ── Participant Rows ── */
+.dnd-pursuit-turn-list { margin-top: 4px; }
+.dnd-pursuit-row { padding: 6px 8px; margin: 2px 0; border-radius: 6px; border-left: 3px solid transparent; background: var(--background-secondary); }
+.dnd-pursuit-row-active { border-left-color: var(--interactive-accent); background: var(--background-primary-alt); }
+.dnd-pursuit-row-escaped { opacity: 0.5; border-left-color: #0b4; }
+.dnd-pursuit-row-dropped { opacity: 0.4; text-decoration: line-through; border-left-color: var(--text-error); }
+.dnd-pursuit-row-incap { opacity: 0.4; border-left-color: #888; }
+
+.dnd-pursuit-row-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dnd-pursuit-row-name { font-weight: 600; }
+.dnd-pursuit-turn-badge { font-size: 0.7em; background: var(--interactive-accent); color: var(--text-on-accent); padding: 1px 6px; border-radius: 8px; font-weight: 700; }
+.dnd-pursuit-escaped-badge { font-size: 0.7em; background: rgba(0, 180, 80, 0.2); color: #0b4; padding: 1px 6px; border-radius: 8px; }
+.dnd-pursuit-out-badge { font-size: 0.7em; background: rgba(220, 50, 50, 0.2); color: #d44; padding: 1px 6px; border-radius: 8px; }
+.dnd-pursuit-row-init { font-size: 0.8em; color: var(--text-muted); }
+.dnd-pursuit-row-pos { font-size: 0.8em; color: var(--text-muted); margin-left: auto; }
+
+.dnd-pursuit-row-stats { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 0.85em; flex-wrap: wrap; }
+.dnd-pursuit-speed-select { font-size: 0.85em; padding: 1px 4px; }
+.dnd-pursuit-speed-label { color: var(--text-muted); }
+.dnd-pursuit-effective-speed { font-weight: 600; }
+.dnd-pursuit-carry-warning { color: #e90; }
+.dnd-pursuit-row-hp { color: var(--text-muted); }
+.dnd-pursuit-dash-counter { font-weight: 500; }
+.dnd-pursuit-dash-over { color: var(--text-error); font-weight: 700; }
+
+.dnd-pursuit-exhaustion { display: flex; gap: 2px; }
+.dnd-pursuit-exhaustion-pip { font-size: 0.9em; }
+.dnd-pursuit-exhaustion-filled { color: var(--text-error); }
+
+/* ── Action Buttons ── */
+.dnd-pursuit-row-actions { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; align-items: center; }
+.dnd-pursuit-action-btn { font-size: 0.8em; padding: 2px 8px; border-radius: 4px; cursor: pointer; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); }
+.dnd-pursuit-action-active { background: var(--interactive-accent); color: var(--text-on-accent); border-color: var(--interactive-accent); }
+.dnd-pursuit-bonus-label { font-size: 0.75em; color: var(--text-muted); margin-left: 4px; }
+.dnd-pursuit-bonus-btn { font-size: 0.75em; padding: 1px 6px; border-radius: 3px; cursor: pointer; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); }
+
+/* ── LoS Controls ── */
+.dnd-pursuit-los-line { margin-top: 4px; display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap; }
+.dnd-pursuit-los-hints { font-size: 0.75em; color: var(--text-muted); margin-top: 2px; }
+.dnd-pursuit-hint { padding: 1px 0; }
+.dnd-pursuit-warning { font-size: 0.75em; color: #e90; margin-top: 2px; }
+.dnd-pursuit-success { font-size: 0.75em; color: #0d6; margin-top: 2px; }
+
+/* ── Phase-based Turn UI ── */
+.dnd-pursuit-phase { margin-top: 6px; padding: 6px 8px; background: var(--background-secondary); border-radius: 6px; border-left: 3px solid var(--background-modifier-border); }
+.dnd-pursuit-phase-done { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.dnd-pursuit-phase-done .dnd-pursuit-phase-label { color: var(--text-muted); font-size: 0.85em; }
+.dnd-pursuit-phase-done .dnd-pursuit-phase-value { font-weight: 600; }
+.dnd-pursuit-phase-done .dnd-pursuit-phase-detail { font-size: 0.8em; color: var(--text-muted); }
+.dnd-pursuit-phase-pending { display: flex; flex-direction: column; gap: 4px; }
+.dnd-pursuit-phase-pending .dnd-pursuit-phase-label { font-size: 0.85em; color: var(--text-muted); font-weight: 600; }
+.dnd-pursuit-btn-group { display: flex; gap: 4px; flex-wrap: wrap; }
+.dnd-pursuit-btn-skip { opacity: 0.6; }
+.dnd-pursuit-btn-skip:hover { opacity: 1; }
+.dnd-pursuit-btn-disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Dash speed highlight */
+.dnd-pursuit-dash-speed { font-weight: 700; color: var(--interactive-accent); }
+
+/* Speed info line */
+.dnd-pursuit-speed-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+
+/* Custom movement input */
+.dnd-pursuit-move-custom { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+
+/* CON save banner */
+.dnd-pursuit-phase-banner { padding: 8px; border-radius: 6px; margin-top: 6px; }
+.dnd-pursuit-phase-save { background: rgba(255, 60, 60, 0.08); border-left: 3px solid var(--text-error); }
+.dnd-pursuit-phase-title { font-weight: 700; color: var(--text-error); }
+.dnd-pursuit-phase-detail { font-size: 0.8em; color: var(--text-muted); }
+.dnd-pursuit-save-inline { padding: 6px 8px; margin-top: 4px; }
+.dnd-pursuit-save-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+
+/* Player view action/movement badges */
+.dnd-pursuit-pv-action-badge { font-size: 0.65em; color: #ffb020; font-weight: 600; text-transform: uppercase; }
+.dnd-pursuit-pv-moved-badge { font-size: 0.6em; color: #0ca; font-weight: 600; }
+
+/* ── Carry / Move / Stealth Controls ── */
+.dnd-pursuit-carry-line { margin-top: 4px; font-size: 0.85em; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.dnd-pursuit-carry-btn { font-size: 0.8em; padding: 2px 8px; border-radius: 4px; cursor: pointer; border: 1px solid var(--background-modifier-border); }
+
+.dnd-pursuit-move-line { margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+.dnd-pursuit-move-input { width: 60px; }
+
+.dnd-pursuit-pursuer-actions { margin-top: 4px; }
+.dnd-pursuit-drop-line { margin-top: 4px; }
+
+/* ── Target / Plane / Grapple badges (GM view) ── */
+.dnd-pursuit-target-badge { font-size: 0.75em; color: #f80; background: rgba(255, 136, 0, 0.12); padding: 1px 6px; border-radius: 8px; margin-left: 4px; }
+.dnd-pursuit-plane-badge { font-size: 0.75em; color: #8cf; background: rgba(136, 204, 255, 0.12); padding: 1px 6px; border-radius: 8px; margin-left: 4px; }
+.dnd-pursuit-grappled-badge { font-size: 0.75em; color: #f44; background: rgba(255, 60, 60, 0.12); padding: 1px 6px; border-radius: 8px; margin-left: 4px; }
+.dnd-pursuit-limits-badge { font-size: 0.75em; color: var(--text-muted); margin-left: 8px; }
+
+/* Target selection for pursuers */
+.dnd-pursuit-target-select { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; padding: 4px 8px; background: rgba(255, 136, 0, 0.06); border-left: 2px solid #f80; border-radius: 4px; }
+
+/* Penalty selector in setup modal */
+.dnd-pursuit-penalty-select { width: 90px; font-size: 0.85em; margin-left: 4px; }
+
+/* Add Participant overlay (mid-chase) */
+.dnd-pursuit-add-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+.dnd-pursuit-add-panel { background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 16px; min-width: 300px; max-width: 400px; }
+.dnd-pursuit-add-panel h3 { margin: 0 0 12px; }
+.dnd-pursuit-add-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.dnd-pursuit-add-row label { width: 80px; font-size: 0.85em; color: var(--text-muted); }
+.dnd-pursuit-add-row input, .dnd-pursuit-add-row select { flex: 1; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-normal); }
+.dnd-pursuit-add-btns { justify-content: flex-end; margin-top: 8px; }
+
+.dnd-pursuit-stealth-line { margin-top: 6px; padding: 6px 8px; background: rgba(0, 180, 80, 0.06); border-radius: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dnd-pursuit-stealth-input { width: 60px; }
+.dnd-pursuit-stealth-dc { font-weight: 600; color: var(--text-muted); }
+.dnd-pursuit-stealth-cond { font-size: 0.8em; padding: 1px 6px; border-radius: 8px; }
+
+.dnd-pursuit-save-input { width: 80px; margin: 8px 0; }
+
+/* ── Environment / Log ── */
+.dnd-pursuit-env-summary { margin-top: 8px; padding: 6px 8px; background: var(--background-secondary); border-radius: 4px; }
+.dnd-pursuit-env-summary h4 { margin: 0 0 4px; font-size: 0.9em; }
+.dnd-pursuit-env-tags { font-size: 0.8em; color: var(--text-muted); }
+
+.dnd-pursuit-log { margin-top: 12px; }
+.dnd-pursuit-log h4 { margin: 0 0 6px; }
+.dnd-pursuit-log-list { max-height: 200px; overflow-y: auto; font-size: 0.8em; }
+.dnd-pursuit-log-entry { display: flex; gap: 6px; padding: 2px 0; border-bottom: 1px solid var(--background-modifier-border-hover); }
+.dnd-pursuit-log-round { font-weight: 600; color: var(--text-muted); min-width: 24px; }
+
+.dnd-pursuit-ended { text-align: center; padding: 16px; }
+.dnd-pursuit-ended h3 { margin-bottom: 12px; }
+
+/* Catch-up alerts */
+.dnd-pursuit-catch-alert {
+  margin: 8px 0;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--background-modifier-error);
+  border: 1px solid var(--text-error);
+}
+.dnd-pursuit-catch-alert h4 { margin: 0 0 6px; }
+.dnd-pursuit-catch-alert-btns { display: flex; gap: 8px; margin-top: 8px; }
+
+/* Encounter creature button */
+.dnd-pursuit-btn-encounter {
+  margin-top: 6px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.dnd-pursuit-btn-encounter:hover { opacity: 0.9; }
+
+.dnd-pursuit-init-list { margin: 8px 0; }
+.dnd-pursuit-init-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.dnd-pursuit-init-name { flex: 1; }
+
+/* ── Player View (projected) ── */
+.dnd-pursuit-pv { background: #111; color: #eee; height: 100%; display: flex; flex-direction: column; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; }
+.dnd-pursuit-pv-empty { display: flex; align-items: center; justify-content: center; height: 100%; font-size: 2vh; color: #666; }
+
+/* PV Header */
+.dnd-pursuit-pv-header { display: flex; align-items: center; padding: 1vh 2vh; }
+.dnd-pursuit-pv-header-left { flex: 0 0 auto; }
+.dnd-pursuit-pv-header-center { flex: 1; text-align: center; }
+.dnd-pursuit-pv-header-right { flex: 0 0 auto; }
+.dnd-pursuit-pv-round { font-weight: 700; font-size: 1.2em; color: #fff; }
+.dnd-pursuit-pv-name { font-size: 1.3em; font-weight: 700; color: #fff; }
+.dnd-pursuit-pv-active-turn { font-size: 0.9em; color: #4af; }
+
+/* PV Environment Bar */
+.dnd-pursuit-pv-env-bar { display: flex; align-items: center; justify-content: center; gap: 2vh; padding: 0.5vh 2vh; background: rgba(255,255,255,0.05); font-size: 0.8em; }
+.dnd-pursuit-pv-env-name { color: #aaa; }
+.dnd-pursuit-pv-condition { padding: 0.2em 0.8em; border-radius: 1em; font-weight: 600; }
+.dnd-pursuit-pv-cond-adv { background: rgba(0, 220, 100, 0.2); color: #0d6; }
+.dnd-pursuit-pv-cond-disadv { background: rgba(255, 60, 60, 0.2); color: #f66; }
+.dnd-pursuit-pv-cond-normal { background: rgba(255, 255, 255, 0.1); color: #888; }
+.dnd-pursuit-pv-los-hints { color: #8cf; font-size: 0.9em; }
+
+/* PV Chase Lane */
+.dnd-pursuit-pv-lane { flex: 1; display: flex; flex-direction: column; padding: 1vh 2vh; position: relative; }
+.dnd-pursuit-pv-dir-bar { display: flex; justify-content: space-between; padding: 0.5vh 0; font-size: 0.7em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
+.dnd-pursuit-pv-dir-caught { color: #f44; }
+.dnd-pursuit-pv-dir-escaped { color: #0d6; }
+
+.dnd-pursuit-pv-track { flex: 1; position: relative; min-height: 20vh; }
+
+/* 2D Scene (replaces flat rows) */
+.dnd-pursuit-pv-scene { flex: 1; position: relative; min-height: 50vh; }
+.dnd-pursuit-pv-scene-2d { overflow: visible; }
+
+/* ── 2D Scatter Token positioning ── */
+.dnd-pursuit-pv-scatter-token { position: absolute; transform: translate(-50%, -50%); z-index: 3; transition: left 0.6s ease-in-out, top 0.6s ease-in-out; }
+
+/* ── Role region labels (pursuers / quarry) ── */
+.dnd-pursuit-pv-role-label { position: absolute; left: 0.5em; font-size: 0.5em; color: rgba(255,255,255,0.18); font-weight: 700; text-transform: uppercase; letter-spacing: 0.15em; pointer-events: none; z-index: 0; }
+.dnd-pursuit-pv-role-pursuers { top: 10%; color: rgba(255, 60, 60, 0.2); }
+.dnd-pursuit-pv-role-quarry { bottom: 10%; color: rgba(0, 220, 100, 0.2); }
+
+/* ── Range SVG overlay ── */
+.dnd-pursuit-pv-range-svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; overflow: visible; }
+.dnd-pursuit-pv-range-label { font-size: 10px; fill: #aaa; font-weight: 600; }
+
+/* ── Environment zone tag bar ── */
+.dnd-pursuit-pv-env-zones { position: absolute; top: 0.3em; right: 0.5em; display: flex; gap: 0.3em; z-index: 4; pointer-events: none; }
+.dnd-pursuit-pv-env-zone-tag { font-size: 0.5em; padding: 0.15em 0.5em; border-radius: 0.6em; background: rgba(255,255,255,0.08); color: #999; white-space: nowrap; }
+.dnd-pursuit-pv-zone-cover { background: rgba(100, 200, 100, 0.12); color: #8c8; }
+.dnd-pursuit-pv-zone-obscured { background: rgba(150, 150, 200, 0.12); color: #aac; }
+.dnd-pursuit-pv-zone-crowd { background: rgba(200, 180, 100, 0.12); color: #ca8; }
+.dnd-pursuit-pv-zone-elevation { background: rgba(100, 180, 255, 0.12); color: #8cf; }
+.dnd-pursuit-pv-zone-open { background: rgba(200, 160, 80, 0.12); color: #c96; }
+
+/* Token row — single full-height band, tokens share the entire scene height */
+.dnd-pursuit-pv-flex-row { position: absolute; top: 2%; bottom: 2%; left: 0; right: 0; overflow: visible; }
+/* Position column — placed at a horizontal %, tokens stack vertically inside */
+.dnd-pursuit-pv-pos-column { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.15em; max-height: 100%; overflow-y: auto; overflow-x: visible; scrollbar-width: none; }
+.dnd-pursuit-pv-pos-column::-webkit-scrollbar { display: none; }
+/* Distance label bar (overlaid at bottom of scene) */
+.dnd-pursuit-pv-distance-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 2em; pointer-events: none; }
+.dnd-pursuit-pv-dist-inline { position: absolute; bottom: 0; transform: translateX(-50%); font-size: 0.65em; color: #aaa; white-space: nowrap; background: rgba(0,0,0,0.6); padding: 0.1em 0.5em; border-radius: 0.4em; }
+
+/* Distance markers */
+.dnd-pursuit-pv-dist-marker { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,0.08); }
+.dnd-pursuit-pv-dist-label { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-size: 0.6em; color: #555; white-space: nowrap; }
+
+/* Placed obstacle markers */
+.dnd-pursuit-pv-obstacle-marker { position: absolute; bottom: 8%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 3; pointer-events: none; animation: dnd-pursuit-obstacle-pulse 2s ease-in-out infinite; }
+.dnd-pursuit-pv-obstacle-icon { font-size: 1.5em; filter: drop-shadow(0 0 0.3em rgba(255, 200, 0, 0.6)); }
+.dnd-pursuit-pv-obstacle-label { font-size: 0.5em; color: #fc0; white-space: nowrap; text-shadow: 0 0 0.3em rgba(0,0,0,0.8); margin-top: 0.1em; }
+@keyframes dnd-pursuit-obstacle-pulse { 0%, 100% { opacity: 0.8; } 50% { opacity: 1; } }
+
+/* SVG overlay for connection lines */
+.dnd-pursuit-pv-svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+.dnd-pursuit-pv-line { stroke: rgba(255, 255, 255, 0.15); stroke-width: 0.3; stroke-dasharray: 1 0.8; fill: none; }
+.dnd-pursuit-pv-line-melee { stroke: rgba(255, 60, 60, 0.5); stroke-width: 0.4; stroke-dasharray: none; }
+.dnd-pursuit-pv-line-label { font-size: 2.5px; fill: #aaa; text-anchor: middle; dominant-baseline: auto; }
+
+/* Token rows (legacy, kept for compatibility) */
+.dnd-pursuit-pv-token-row { position: relative; height: 40%; }
+.dnd-pursuit-pv-quarry-row { top: 5%; }
+.dnd-pursuit-pv-pursuer-row { top: 10%; }
+
+/* Tokens */
+.dnd-pursuit-pv-token { display: flex; flex-direction: column; align-items: center; gap: 0.3em; z-index: 2; }
+.dnd-pursuit-pv-token-2d { position: relative; }
+.dnd-pursuit-pv-token-moving { animation: dnd-pursuit-token-slide 0.6s ease-in-out; }
+
+.dnd-pursuit-pv-token-circle { width: 3em; height: 3em; border-radius: 50%; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 0.15em solid rgba(255,255,255,0.3); }
+.dnd-pursuit-pv-token-quarry .dnd-pursuit-pv-token-circle { border-color: #0d6; background: rgba(0, 220, 100, 0.15); }
+.dnd-pursuit-pv-token-pursuer .dnd-pursuit-pv-token-circle { border-color: #f44; background: rgba(255, 60, 60, 0.15); }
+.dnd-pursuit-pv-token-active .dnd-pursuit-pv-token-circle { border-color: #4af; box-shadow: 0 0 1em rgba(68, 170, 255, 0.5); }
+
+.dnd-pursuit-pv-token-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.dnd-pursuit-pv-token-icon-text { font-size: 1.5em; }
+.dnd-pursuit-pv-token-label { font-size: 0.6em; color: #ccc; white-space: nowrap; text-align: center; max-width: 8em; overflow: hidden; text-overflow: ellipsis; }
+
+.dnd-pursuit-pv-your-turn { font-size: 0.5em; background: #4af; color: #000; padding: 0.1em 0.6em; border-radius: 0.6em; font-weight: 700; animation: dnd-pursuit-pulse 1.5s ease-in-out infinite; }
+.dnd-pursuit-pv-carrying { font-size: 0.5em; color: #e90; }
+.dnd-pursuit-pv-hidden-badge { font-size: 0.5em; color: #8cf; background: rgba(136, 204, 255, 0.15); padding: 0.1em 0.5em; border-radius: 0.5em; }
+
+/* Movement plane visual indicators */
+.dnd-pursuit-pv-token-flying .dnd-pursuit-pv-token-circle { border-style: dashed; box-shadow: 0 -0.3em 0.6em rgba(136, 204, 255, 0.3); }
+.dnd-pursuit-pv-token-flying { margin-top: -1em; }
+.dnd-pursuit-pv-token-burrowing .dnd-pursuit-pv-token-circle { border-style: dotted; opacity: 0.7; }
+.dnd-pursuit-pv-plane-icon { font-size: 0.6em; position: absolute; top: -0.3em; right: -0.3em; }
+
+/* Carried / grappled sub-tokens */
+.dnd-pursuit-pv-carried-cluster { display: flex; gap: 0.3em; align-items: center; }
+.dnd-pursuit-pv-sub-token { display: flex; align-items: center; gap: 0.15em; background: rgba(255, 255, 255, 0.08); border-radius: 0.8em; padding: 0.1em 0.4em; font-size: 0.5em; }
+.dnd-pursuit-pv-sub-carried { border: 1px solid rgba(255, 180, 0, 0.4); }
+.dnd-pursuit-pv-sub-grappled { border: 1px solid rgba(255, 60, 60, 0.4); }
+.dnd-pursuit-pv-sub-img { width: 1.2em; height: 1.2em; border-radius: 50%; object-fit: cover; }
+.dnd-pursuit-pv-sub-icon { font-size: 0.9em; }
+.dnd-pursuit-pv-sub-label { color: #ccc; white-space: nowrap; max-width: 5em; overflow: hidden; text-overflow: ellipsis; }
+.dnd-pursuit-pv-chain-icon { font-size: 0.8em; }
+.dnd-pursuit-pv-grapple-cluster .dnd-pursuit-pv-sub-token { background: rgba(255, 60, 60, 0.08); }
+
+/* Stealth results on tokens */
+.dnd-pursuit-pv-stealth-result { font-size: 0.5em; padding: 0.1em 0.5em; border-radius: 0.5em; font-weight: 700; }
+.dnd-pursuit-pv-stealth-pass { background: rgba(0, 220, 100, 0.3); color: #0f8; }
+.dnd-pursuit-pv-stealth-fail { background: rgba(255, 60, 60, 0.3); color: #f66; }
+
+/* Escaped tokens */
+.dnd-pursuit-pv-escaped-row { position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 0.5em; }
+.dnd-pursuit-pv-token-escaped { opacity: 0.7; }
+.dnd-pursuit-pv-escaped-label { font-size: 0.5em; color: #0d6; font-weight: 700; }
+
+/* Escape animation */
+.dnd-pursuit-pv-token-just-escaped { animation: dnd-pursuit-escape-burst 1.2s ease-out; }
+@keyframes dnd-pursuit-escape-burst {
+  0% { transform: scale(1); opacity: 1; }
+  30% { transform: scale(1.4); opacity: 1; filter: brightness(2); }
+  100% { transform: scale(1); opacity: 0.7; filter: brightness(1); }
+}
+
+@keyframes dnd-pursuit-token-slide {
+  0% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+
+/* Distance lines */
+.dnd-pursuit-pv-distance-line { position: absolute; top: 48%; height: 2px; background: rgba(255, 255, 255, 0.15); border-top: 1px dashed rgba(255,255,255,0.3); z-index: 1; transition: left 0.6s ease-in-out, width 0.6s ease-in-out; }
+.dnd-pursuit-pv-distance-label { position: absolute; top: -1.8em; left: 50%; transform: translateX(-50%); font-size: 0.65em; color: #aaa; white-space: nowrap; background: #111; padding: 0 0.4em; }
+.dnd-pursuit-pv-distance-melee .dnd-pursuit-pv-distance-label { color: #f44; font-weight: 700; }
+
+/* Info bar (bottom) */
+.dnd-pursuit-pv-info-bar { display: flex; gap: 3vh; padding: 1vh 2vh; background: rgba(255,255,255,0.03); border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.65em; flex-wrap: wrap; }
+.dnd-pursuit-pv-info-label { color: #888; font-weight: 600; }
+.dnd-pursuit-pv-dash-section,
+.dnd-pursuit-pv-exhaustion-section { display: flex; align-items: center; gap: 1vh; }
+.dnd-pursuit-pv-dash-entry { color: #ccc; padding: 0 0.5em; }
+.dnd-pursuit-pv-dash-over { color: #f44; font-weight: 700; }
+.dnd-pursuit-pv-ex-entry { display: flex; align-items: center; gap: 0.3em; }
+.dnd-pursuit-pv-ex-name { color: #ccc; }
+.dnd-pursuit-pv-ex-pip { color: #555; }
+.dnd-pursuit-pv-ex-filled { color: #f44; }
+.dnd-pursuit-pv-ex-new { animation: dnd-pursuit-ex-pulse 0.6s ease-out; }
+
+/* Ended overlay */
+.dnd-pursuit-pv-ended-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.85); z-index: 10; animation: dnd-pursuit-fade-in 0.5s ease-out; }
+.dnd-pursuit-pv-outcome { font-size: 3em; margin-bottom: 0.5em; }
+.dnd-pursuit-pv-outcome-escaped { color: #0d6; text-shadow: 0 0 30px rgba(0, 220, 100, 0.5); animation: dnd-pursuit-outcome-pop 0.8s ease-out; }
+.dnd-pursuit-pv-outcome-caught { color: #f44; text-shadow: 0 0 30px rgba(255, 60, 60, 0.5); animation: dnd-pursuit-outcome-pop 0.8s ease-out; }
+.dnd-pursuit-pv-outcome-other { color: #888; }
+.dnd-pursuit-pv-outcome-member { font-size: 1.2em; margin: 0.2em 0; }
+.dnd-pursuit-pv-outcome-esc { color: #0d6; }
+.dnd-pursuit-pv-outcome-caught-member { color: #f44; }
+
+/* Animations */
+@keyframes dnd-pursuit-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+@keyframes dnd-pursuit-ex-pulse {
+  0% { transform: scale(1.8); color: #f44; }
+  100% { transform: scale(1); }
+}
+@keyframes dnd-pursuit-fade-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes dnd-pursuit-outcome-pop {
+  0% { transform: scale(0.5); opacity: 0; }
+  60% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ── Guided Phase UI (complication / roll prompt / turn summary) ── */
+.dnd-pursuit-complication { margin-top: 6px; padding: 8px; background: rgba(255, 180, 0, 0.06); border-left: 3px solid #e90; border-radius: 6px; }
+.dnd-pursuit-complication-header { font-weight: 700; font-size: 0.95em; margin-bottom: 4px; }
+.dnd-pursuit-complication-result { font-size: 0.85em; color: var(--text-muted); margin-top: 2px; }
+
+.dnd-pursuit-roll-prompt { margin-top: 6px; padding: 8px; background: rgba(68, 170, 255, 0.06); border-left: 3px solid #4af; border-radius: 6px; }
+.dnd-pursuit-roll-prompt label { font-weight: 600; font-size: 0.9em; display: block; margin-bottom: 4px; }
+.dnd-pursuit-roll-prompt input[type="number"] { width: 80px; margin-right: 6px; }
+
+.dnd-pursuit-turn-summary { margin-top: 6px; padding: 8px; background: var(--background-secondary); border-radius: 6px; font-size: 0.85em; }
+.dnd-pursuit-turn-summary div { padding: 1px 0; }
+
+.dnd-pursuit-btn-continue { margin-top: 6px; }
+
+.dnd-pursuit-action-highlight { border-color: var(--interactive-accent) !important; background: rgba(var(--interactive-accent-rgb), 0.1) !important; font-weight: 700; }
+
+.dnd-pursuit-los-info { font-size: 0.8em; color: #8cf; margin-top: 2px; }
+.dnd-pursuit-auto-result { font-size: 0.85em; margin-top: 2px; padding: 2px 0; }
+
+/* Hidden quarry token overlay on player view */
+.dnd-pursuit-pv-token-hidden .dnd-pursuit-pv-token-circle { border-color: #8cf; background: rgba(136, 204, 255, 0.15); box-shadow: 0 0 0.8em rgba(136, 204, 255, 0.3); }
+.dnd-pursuit-pv-token-hidden .dnd-pursuit-pv-token-label { color: #8cf; font-style: italic; }
+
+/* ── HP Controls (inline damage/heal/tempHP) ── */
+.dnd-pursuit-hp-controls { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; }
+.dnd-pursuit-hp-input { width: 42px; height: 22px; font-size: 0.8em; padding: 1px 4px; text-align: center; border-radius: 4px; border: 1px solid var(--background-modifier-border); background: var(--background-primary); color: var(--text-normal); }
+.dnd-pursuit-hp-btn { padding: 1px 6px; font-size: 0.8em; min-width: 26px; height: 22px; border-radius: 4px; cursor: pointer; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); }
+.dnd-pursuit-hp-btn:hover { background: var(--background-modifier-hover); }
+.dnd-pursuit-btn-heal { color: #0c6; }
+
+/* ── Condition Badges ── */
+.dnd-pursuit-conditions { display: inline-flex; flex-wrap: wrap; gap: 3px; margin-left: 4px; }
+.dnd-pursuit-condition-badge { display: inline-flex; align-items: center; gap: 2px; font-size: 0.7em; padding: 1px 6px; border-radius: 8px; background: rgba(255, 160, 0, 0.15); color: #e90; font-weight: 600; white-space: nowrap; }
+.dnd-pursuit-condition-remove { cursor: pointer; opacity: 0.6; margin-left: 2px; font-size: 0.9em; }
+.dnd-pursuit-condition-remove:hover { opacity: 1; color: #f44; }
+.dnd-pursuit-condition-add { cursor: pointer; font-size: 0.8em; padding: 1px 5px; border-radius: 8px; background: var(--background-secondary); color: var(--text-muted); border: 1px dashed var(--background-modifier-border); }
+.dnd-pursuit-condition-add:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+
+/* ── Check Options Selector ── */
+.dnd-pursuit-check-options { margin: 4px 0; }
+.dnd-pursuit-check-options select { margin-right: 6px; }
+
+/* ── Complication Roll (end-of-turn d20) ── */
+.dnd-pursuit-complication-roll { margin-top: 6px; padding: 8px; background: rgba(180, 120, 255, 0.06); border-left: 3px solid #a6f; border-radius: 6px; }
+
+/* ── Escape Check (end-of-round stealth) ── */
+.dnd-pursuit-escape-check { margin-top: 6px; padding: 8px; background: rgba(100, 200, 255, 0.06); border-left: 3px solid #6cf; border-radius: 6px; }
+
+/* ── Player View: Condition badges on tokens ── */
+.dnd-pursuit-pv-token-conditions { display: flex; flex-wrap: wrap; gap: 0.15em; justify-content: center; }
+.dnd-pursuit-pv-cond-badge { font-size: 0.55em; padding: 0.1em 0.4em; border-radius: 0.5em; background: rgba(255, 160, 0, 0.25); color: #fa0; white-space: nowrap; }
+.dnd-pursuit-pv-token-incapacitated .dnd-pursuit-pv-token-circle { opacity: 0.4; filter: grayscale(0.8); }
+.dnd-pursuit-pv-down-badge { font-size: 0.65em; color: #f44; font-weight: 700; }

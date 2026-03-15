@@ -5,6 +5,90 @@ All notable changes to the D&D Campaign Hub plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-15
+
+### Added
+
+#### D&D 5e RAW Pursuit / Chase System
+- Full pursuit engine (`PursuitTracker`) with turn-based state management following DMG chase rules
+- GM sidebar view (`PursuitTrackerView`) with action selectors, line-of-sight toggle, and carry controls
+- Projectable 2D player view (`PursuitPlayerView`) with animated scatter layout — pursuers in the top band, quarries in the bottom band, with SVG range lines color-coded by distance
+- Setup modal (`PursuitSetupModal`) with vault entity picker, party selector integration, combat import, and per-creature stat editing
+- D&D 5e RAW mechanics: dash limits with CON saves, exhaustion tracking, stealth/escape checks, passive and active Perception
+- D20 complication tables faithful to the DMG (Urban, Wilderness, Underground, Waterfront, Rooftop) — complications affect the *next* participant in initiative order
+- Carry mechanic for downed or willing allies with STR-based capacity, D&D 5e RAW speed penalties (half speed grapple, 5 ft push/drag)
+- Pickup vs grapple distinction — same-role willing pickup requires 0 ft distance; cross-role grapple is contested
+- Multi-step movement: move → pickup → continue moving in a single turn
+- Per-pursuer target selection with distance display
+- Mid-chase "Add Participant" panel with inline vault search
+- Environment zone overlays (cover, obscured, crowded, elevation, wide open)
+- Attack and Create Obstacle actions with position-tracked obstacles that trigger when pursuers cross them
+- Inline HP controls (damage/heal/temp HP) and condition badge management on all participants
+- End-of-round escape checks: quarry with broken LoS makes Stealth vs highest pursuer passive Perception
+- Hidden quarry escapes at end of round if not found; visual token overlay for hidden state
+- Fully automated turn phase state machine: Complication → Action → Bonus → Movement → Turn End
+- Snapshot-based undo stack (50 deep) — replaces the old limited `prevTurn()` rollback
+- "Start Chase from Combat" button in the Combat Tracker toolbar, preserving initiative order and active combatant
+- Bidirectional combat–pursuit sync bridge (`CombatPursuitSync`) — HP, temp HP, and conditions sync live between combat and chase
+
+#### Pursuit Player View
+- 2D scatter layout with role region labels and flex-column token stacking
+- Carried/grappled sub-tokens rendered as attached clusters
+- Flying tokens elevated with dashed border; burrowing tokens dotted and dimmed
+- Movement plane badges and plane icons on tokens
+- Dash counters and exhaustion pips shown only for PCs
+- 3-level fallback for token image resolution (direct ID → frontmatter `token_id` → name match)
+
+#### Pursuit Projection
+- `pursuit` projection content type registered in `ProjectionManager`
+- Projection conflict detection with occupied-screen switch menu
+- Duplicate pursuit projection prevention
+
+#### Map Distance Import
+- "Import from Map" in pursuit setup auto-calculates starting distances from battle-map token positions
+- Flee direction compass picker (N/NE/E/SE/S/SW/W/NW) to determine rearmost token
+- Chase-axis projection algorithm maps 2D token positions to 1D chase-lane ordering
+- Party members matched to map tokens in addition to creatures, with consumed-marker tracking to avoid duplicates
+
+### Changed
+
+- Pursuit setup modal rewritten to match Encounter Builder UI conventions (party checkboxes, vault search, count support, role selectors)
+- Creature notes detected by `statblock: true` instead of `type: creature`, matching the main plugin pattern
+- STR/Stealth/Passive Perception extracted from `skillsaves` array and `senses` string for all entity types (PCs, NPCs, creatures)
+- Template creation modals (`CampaignCreationModal`, `AdventureCreationModal`, `FactionCreationModal`, `SessionCreationModal`) now use bundled template constants instead of reading from `z_Templates/` vault files; vault template files synced on plugin load
+
+### Fixed
+
+#### Encounter Difficulty
+- NPCs no longer show "Level 0" — CR is mapped to an effective level via `estimateLevelFromCR()`
+- Encounter builder displays "CR: X" instead of "Level: 0" for NPCs/creatures
+- `parseStatblockStats` now accounts for recharge abilities (probability-weighted DPR), legendary actions (greedy cost-optimized budget), bonus actions, damage resistances/immunities (effective HP multiplier), Pack Tactics (advantage bonus only with allies), Reckless Attack, and Surprise Attack/Ambusher traits
+- DRY refactor: modal delegates `parseStatblockStats`/`parseHP`/`parseAC` to `EncounterBuilder`
+
+#### Projection System
+- Reactive `onChange()` callback eliminates idle flash when switching projected content
+- Periodic 3-second health check auto-prunes dead projections and verifies host window liveness
+- `crossfadeOnLeaf()` utility for smooth fade-to-black transitions between content types
+- Fixed race condition where `transitionToIdle()` was called without `await`
+- Combat and pursuit toolbar buttons update instantly via `onChange` subscription
+- Deterministic shutdown: session stops first, then standalone projections are cleaned up
+
+#### Pursuit Bugs
+- Active combatant preserved as starting turn when launching chase from combat
+- Drop-out advances turn correctly when the active participant drops out
+- Healing restores consciousness when healed above 0 HP
+- All auto-rolling removed — GM must input all roll results for NPCs and PCs
+- Token overlap resolved via multi-pass collision algorithm with increased minimum gaps
+- Token images use `vault.adapter.getResourcePath` directly
+- Grapple escape: quarry can break free via contested STR check
+- End-of-round escape uses only passive perception (per DMG RAW)
+- Modal width applied to `modalEl` instead of `contentEl`
+
+#### Map Distance Import
+- Edge-to-edge distance formula (matching Token Distance Tool) replaces Euclidean-from-reference-point
+- Effective grid cell size (`gridSizeW`/`gridSizeH` average) used for pixel-to-feet conversion, fixing 4× distance errors after grid calibration
+- Directional projection along pursuer→quarry axis prevents tokens in opposite directions from collapsing to the same distance
+
 ## [0.5.1] - 2026-03-13
 
 ### Added
