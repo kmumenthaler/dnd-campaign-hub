@@ -1547,10 +1547,11 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.saveMusicPlaybackState();
     if (this._musicStatusBarCleanup) this._musicStatusBarCleanup();
     this.musicPlayer?.destroy();
-    // Stop active projection
-    this.projectionManager?.stopProjection();
-    // Stop active session projection
+    // Stop active session projection first (closes managed popouts cleanly)
     this.sessionProjectionManager?.stopSession();
+    // Stop any remaining standalone projections and clean up timers
+    this.projectionManager?.stopAllProjections();
+    this.projectionManager?.destroy();
     // Close all player-view popout windows to prevent orphaned Electron windows
     if (this._playerMapViews) {
       this._playerMapViews.forEach((pv: any) => {

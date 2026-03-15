@@ -2508,7 +2508,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				btn.innerHTML = `⏹ Stop ${typeTag} — ${proj.screen.label}`;
 				btn.addEventListener('click', () => {
 					pvDropdown.addClass('hidden');
-					pm.stopProjectionOnScreen(sKey);
+					void pm.stopProjectionOnScreen(sKey);
 				});
 			}
 
@@ -2518,7 +2518,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				btn.innerHTML = '⏹ Stop All Projections';
 				btn.addEventListener('click', () => {
 					pvDropdown.addClass('hidden');
-					pm.stopAllProjections();
+					void pm.stopAllProjections();
 				});
 			}
 		};

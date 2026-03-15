@@ -18,6 +18,7 @@ import { enumerateScreens, screenKey, type ScreenInfo } from "../utils/ScreenEnu
 export class CombatTrackerView extends ItemView {
   plugin: DndCampaignHubPlugin;
   private unsubscribe: (() => void) | null = null;
+  private _projectionUnsub: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -36,6 +37,7 @@ export class CombatTrackerView extends ItemView {
 
   async onOpen() {
     this.unsubscribe = this.plugin.combatTracker.onChange(() => this.render());
+    this._projectionUnsub = this.plugin.projectionManager?.onChange(() => this.render()) ?? null;
     await this.render();
   }
 
@@ -43,6 +45,10 @@ export class CombatTrackerView extends ItemView {
     if (this.unsubscribe) {
       this.unsubscribe();
       this.unsubscribe = null;
+    }
+    if (this._projectionUnsub) {
+      this._projectionUnsub();
+      this._projectionUnsub = null;
     }
     return Promise.resolve();
   }
@@ -145,13 +151,12 @@ export class CombatTrackerView extends ItemView {
     });
     pvBtn.addEventListener("click", (e) => {
       if (hasCombatProjection && pm) {
-        // Stop all combat projections
+        // Stop all combat projections (async — UI updates via onChange)
         for (const proj of pm.getLiveProjections()) {
           if (proj.contentType === "combat") {
-            pm.stopProjectionOnScreen(screenKey(proj.screen));
+            void pm.stopProjectionOnScreen(screenKey(proj.screen));
           }
         }
-        this.render();
       } else {
         this.openPlayerView(e);
       }
@@ -485,14 +490,12 @@ export class CombatTrackerView extends ItemView {
         menu.addItem((item) =>
           item.setTitle(`🔄 Switch ${screen.label} to Combat View`).onClick(async () => {
             await pm.projectCombatView(screen);
-            this.render();
           })
         );
         if (evt) menu.showAtMouseEvent(evt);
         else menu.showAtPosition({ x: 100, y: 100 });
       } else {
         await pm.projectCombatView(screen);
-        this.render();
       }
       return;
     }
@@ -508,14 +511,12 @@ export class CombatTrackerView extends ItemView {
         menu.addItem((item) =>
           item.setTitle(`🔄 Switch ${screen.label} to Combat View`).onClick(async () => {
             await pm.projectCombatView(screen);
-            this.render();
           })
         );
       } else {
         menu.addItem((item) =>
           item.setTitle(label).onClick(async () => {
             await pm.projectCombatView(screen);
-            this.render();
           })
         );
       }

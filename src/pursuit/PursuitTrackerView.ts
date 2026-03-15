@@ -28,6 +28,7 @@ import { enumerateScreens, screenKey } from "../utils/ScreenEnumeration";
 export class PursuitTrackerView extends ItemView {
   plugin: DndCampaignHubPlugin;
   private unsubscribe: (() => void) | null = null;
+  private _projectionUnsub: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -40,6 +41,7 @@ export class PursuitTrackerView extends ItemView {
 
   async onOpen() {
     this.unsubscribe = this.plugin.pursuitTracker.onChange(() => this.render());
+    this._projectionUnsub = this.plugin.projectionManager?.onChange(() => this.render()) ?? null;
     this.render();
   }
 
@@ -47,6 +49,10 @@ export class PursuitTrackerView extends ItemView {
     if (this.unsubscribe) {
       this.unsubscribe();
       this.unsubscribe = null;
+    }
+    if (this._projectionUnsub) {
+      this._projectionUnsub();
+      this._projectionUnsub = null;
     }
     return Promise.resolve();
   }
@@ -153,10 +159,9 @@ export class PursuitTrackerView extends ItemView {
       if (hasPursuitProjection && pm) {
         for (const proj of pm.getLiveProjections()) {
           if (proj.contentType === "pursuit") {
-            pm.stopProjectionOnScreen(screenKey(proj.screen));
+            void pm.stopProjectionOnScreen(screenKey(proj.screen));
           }
         }
-        this.render();
       } else {
         this.openPlayerView(e);
       }
@@ -1515,13 +1520,11 @@ export class PursuitTrackerView extends ItemView {
         menu.addItem((item) =>
           item.setTitle(`🔄 Switch ${screen.label} to Pursuit View`).onClick(async () => {
             await pm.projectPursuitView(screen);
-            this.render();
           })
         );
         menu.showAtMouseEvent(e);
       } else {
         await pm.projectPursuitView(screen);
-        this.render();
       }
       return;
     }
@@ -1537,14 +1540,12 @@ export class PursuitTrackerView extends ItemView {
         menu.addItem((item) =>
           item.setTitle(`🔄 Switch ${screen.label} to Pursuit View`).onClick(async () => {
             await pm.projectPursuitView(screen);
-            this.render();
           })
         );
       } else {
         menu.addItem((item) =>
           item.setTitle(label).onClick(async () => {
             await pm.projectPursuitView(screen);
-            this.render();
           })
         );
       }

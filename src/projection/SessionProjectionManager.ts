@@ -26,8 +26,28 @@ export class SessionProjectionManager {
   /** Popout leaves opened by this manager, keyed by screenKey. */
   private managedLeaves: Map<string, WorkspaceLeaf> = new Map();
 
+  /** Listeners notified whenever session state changes. */
+  private _changeCallbacks: Set<() => void> = new Set();
+
   constructor(plugin: DndCampaignHubPlugin) {
     this.plugin = plugin;
+  }
+
+  // ── Change Notification ─────────────────────────────────────
+
+  /**
+   * Register a callback invoked whenever session state changes.
+   * Returns an unsubscribe function.
+   */
+  onChange(cb: () => void): () => void {
+    this._changeCallbacks.add(cb);
+    return () => { this._changeCallbacks.delete(cb); };
+  }
+
+  private _notifyChange(): void {
+    for (const cb of this._changeCallbacks) {
+      try { cb(); } catch (e) { console.error('SessionProjectionManager onChange error:', e); }
+    }
   }
 
   // ── Public Query API ────────────────────────────────────────────
@@ -57,7 +77,12 @@ export class SessionProjectionManager {
     const leaf = this.managedLeaves.get(sKey);
     if (!leaf) return null;
     try {
-      if ((leaf.view as any)?.containerEl?.isConnected) return leaf;
+      const el = (leaf.view as any)?.containerEl;
+      if (!el?.isConnected) throw new Error('disconnected');
+      // Extra safety: verify the host window is still open
+      const win = el.ownerDocument?.defaultView;
+      if (win && win !== window && win.closed) throw new Error('window closed');
+      return leaf;
     } catch { /* leaf dead */ }
     this.managedLeaves.delete(sKey);
     this.screenStates.delete(sKey);
@@ -124,6 +149,7 @@ export class SessionProjectionManager {
     }
 
     this._active = true;
+    this._notifyChange();
     new Notice(`🎬 Session started — ${opened} screen${opened > 1 ? 's' : ''} active`);
   }
 
@@ -131,37 +157,35 @@ export class SessionProjectionManager {
   stopSession(): void {
     if (!this._active) return;
 
-    for (const [sKey, leaf] of this.managedLeaves) {
+    for (const [, leaf] of this.managedLeaves) {
       try { leaf.detach(); } catch { /* already gone */ }
     }
     this.managedLeaves.clear();
     this.screenStates.clear();
     this._active = false;
+    this._notifyChange();
     new Notice('🎬 Session ended — all screens closed');
   }
 
   // ── Screen Transitions ──────────────────────────────────────────
 
   /**
-   * Transition a managed screen back to its idle state.
-   *
-   * Swaps the leaf's view state to IdleScreenView with the configured idle content.
+   * Transition a managed screen back to its idle state with a smooth crossfade.
    */
   async transitionToIdle(sKey: string): Promise<void> {
     const leaf = this.getManagedLeaf(sKey);
     const state = this.screenStates.get(sKey);
     if (!leaf || !state) return;
 
-    await leaf.setViewState({
-      type: IDLE_SCREEN_VIEW_TYPE,
-      active: true,
-      state: {
-        idleContent: state.config.idleContent,
-      },
-    });
+    await this.plugin.projectionManager.crossfadeOnLeaf(
+      leaf,
+      IDLE_SCREEN_VIEW_TYPE,
+      { idleContent: state.config.idleContent },
+    );
 
     state.status = 'idle';
     state.mediaPath = undefined;
+    this._notifyChange();
   }
 
   /**

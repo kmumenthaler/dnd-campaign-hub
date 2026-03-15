@@ -6832,6 +6832,25 @@
   opacity: 1;
 }
 
+/* ── Projection crossfade overlay ──────────────────────────────
+   Used by ProjectionManager.crossfadeOnLeaf() for smooth
+   transitions between view types on managed screens.
+   Attached to the workspace-leaf container so it persists
+   across view swaps (old view destroyed → new view created).
+   ────────────────────────────────────────────────────────────── */
+.dnd-projection-crossfade {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  z-index: 99999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.dnd-projection-crossfade.active {
+  opacity: 1;
+}
+
 /* Player Map View (Popout Window) */
 .dnd-player-map-container {
   background: #000;

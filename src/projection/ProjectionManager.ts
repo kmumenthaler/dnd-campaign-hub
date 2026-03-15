@@ -47,6 +47,12 @@ export class ProjectionManager {
   /** All currently active projections, keyed by screenKey. */
   activeProjections: Map<string, ProjectionState> = new Map();
 
+  /** Listeners notified whenever projection state changes. */
+  private _changeCallbacks: Set<() => void> = new Set();
+
+  /** Periodic health-check timer that prunes dead projections. */
+  private _healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+
   /**
    * Compat getter — returns the first live projection, or null.
    * Prefer iterating `activeProjections` directly when possible.
@@ -61,6 +67,99 @@ export class ProjectionManager {
 
   constructor(plugin: DndCampaignHubPlugin) {
     this.plugin = plugin;
+    this._healthCheckInterval = setInterval(() => this._healthCheck(), 3000);
+  }
+
+  // ── Change notification ─────────────────────────────────────
+
+  /**
+   * Register a callback invoked whenever projection state changes.
+   * Returns an unsubscribe function.
+   */
+  onChange(cb: () => void): () => void {
+    this._changeCallbacks.add(cb);
+    return () => { this._changeCallbacks.delete(cb); };
+  }
+
+  /** Notify all listeners of a projection state change. */
+  private _notifyChange(): void {
+    for (const cb of this._changeCallbacks) {
+      try { cb(); } catch (e) { console.error('ProjectionManager onChange error:', e); }
+    }
+  }
+
+  /** Periodic health check — prune dead leaves and notify if state changed. */
+  private _healthCheck(): void {
+    const sizeBefore = this.activeProjections.size;
+    this.pruneDeadProjections();
+    if (this.activeProjections.size !== sizeBefore) {
+      this._notifyChange();
+    }
+  }
+
+  /** Clean up timers and listeners. Call from plugin.onunload(). */
+  destroy(): void {
+    if (this._healthCheckInterval) {
+      clearInterval(this._healthCheckInterval);
+      this._healthCheckInterval = null;
+    }
+    this._changeCallbacks.clear();
+  }
+
+  // ── Crossfade Utility ───────────────────────────────────────
+
+  /**
+   * Smoothly crossfade (fade-to-black-then-fade-in) from the current view
+   * to a new view type on the given leaf. The overlay is attached to
+   * the leaf's containerEl so it survives the view swap.
+   */
+  async crossfadeOnLeaf(
+    leaf: WorkspaceLeaf,
+    viewType: string,
+    viewState?: Record<string, any>,
+  ): Promise<void> {
+    const container: HTMLElement | null = (leaf as any).containerEl ?? null;
+    if (!container?.isConnected) {
+      await leaf.setViewState({ type: viewType, active: true, state: viewState });
+      return;
+    }
+
+    const doc = container.ownerDocument ?? document;
+
+    // Create fade overlay on the leaf container (persists across view swap)
+    const fade = doc.createElement('div');
+    fade.className = 'dnd-projection-crossfade';
+    container.appendChild(fade);
+    void fade.offsetWidth; // force reflow
+    fade.classList.add('active'); // fade to black
+
+    // Wait for fade-out to finish
+    await new Promise<void>(r => setTimeout(r, 450));
+
+    // Swap view state while screen is black
+    await leaf.setViewState({ type: viewType, active: true, state: viewState });
+
+    // Brief delay for the new view to initialise DOM
+    await new Promise<void>(r => setTimeout(r, 150));
+
+    // Re-hide chrome in the popout (new view may have reset styles)
+    const win = container.ownerDocument?.defaultView;
+    if (win && win !== window) {
+      this.hidePopoutChrome(win);
+    }
+
+    // Fade in
+    fade.classList.remove('active');
+    setTimeout(() => { try { fade.remove(); } catch { /* overlay already gone */ } }, 600);
+  }
+
+  /** Find the first projection matching a given content type. */
+  getProjectionByContentType(type: ProjectionContentType): { screenKey: string; state: ProjectionState } | null {
+    this.pruneDeadProjections();
+    for (const [sKey, proj] of this.activeProjections) {
+      if (proj.contentType === type) return { screenKey: sKey, state: proj };
+    }
+    return null;
   }
 
   // ── Public API ────────────────────────────────────────────────────
@@ -80,13 +179,14 @@ export class ProjectionManager {
   ): Promise<void> {
     const sKey = screenKey(screen);
 
-    // ── Reuse existing projection on the SAME screen ───────────────
+    const spm = this.plugin.sessionProjectionManager;
+    const isManaged = !!(spm?.isActive() && spm.isManagedScreen(sKey));
+
+    // ── Reuse existing map projection on the SAME screen ───────────
     const existing = this.activeProjections.get(sKey);
     if (existing && this.isProjectionAliveOnScreen(sKey)) {
-      // If the existing projection is a combat view, stop it first
-      if (existing.contentType === 'combat') {
-        this.stopProjectionOnScreen(sKey);
-      } else {
+      if (existing.contentType === 'map') {
+        // Existing map → use seamless swap (fade-to-black + swap image)
         const pv = existing.leaf.view as PlayerMapView | undefined;
         if (pv && typeof pv.swapMap === 'function') {
           existing.mapId = mapId;
@@ -102,40 +202,45 @@ export class ProjectionManager {
               });
             });
           } else {
-            // Free mode: swap map, fade in immediately (no calibration/orient)
             pv.swapMap(mapId, mapConfig, imageResourcePath);
           }
 
+          this._notifyChange();
           new Notice(`Projection updated — ${mapConfig.name || mapId}`);
           return;
         }
       }
+      // Non-map projection (combat/pursuit) → remove without idle transition
+      this.activeProjections.delete(sKey);
+      if (!isManaged) {
+        try { existing.leaf.detach(); } catch { /* already gone */ }
+      }
     }
 
     // ── Open a fresh popout window (or reuse managed session leaf) ──
-    const spm = this.plugin.sessionProjectionManager;
-    const managedLeaf = spm?.isActive() ? spm.getManagedLeaf(sKey) : null;
+    const managedLeaf = isManaged ? spm!.getManagedLeaf(sKey) : null;
 
     const popoutLeaf = managedLeaf ?? this.plugin.app.workspace.openPopoutLeaf({
       size: { width: screen.width, height: screen.height },
     });
 
-    await popoutLeaf.setViewState({
-      type: PLAYER_MAP_VIEW_TYPE,
-      active: true,
-      state: {
-        mapId,
-        mapConfig,
-        imageResourcePath,
-      },
-    });
+    // Crossfade on managed screens; direct set for new popouts (they start black anyway)
+    if (isManaged) {
+      await this.crossfadeOnLeaf(popoutLeaf, PLAYER_MAP_VIEW_TYPE, {
+        mapId, mapConfig, imageResourcePath,
+      });
+    } else {
+      await popoutLeaf.setViewState({
+        type: PLAYER_MAP_VIEW_TYPE,
+        active: true,
+        state: { mapId, mapConfig, imageResourcePath },
+      });
+    }
 
     this.activeProjections.set(sKey, { leaf: popoutLeaf, screen, mapId, mode, contentType: 'map' });
 
-    // Update session state tracking
     if (spm?.isActive()) spm.setScreenStatus(sKey, 'map');
 
-    // Save last-used screen preference
     this.plugin.settings.lastProjectionScreenKey = sKey;
     await this.plugin.saveSettings();
 
@@ -156,7 +261,6 @@ export class ProjectionManager {
             }
           });
         } else {
-          // Free mode: just fade in (user will position via View Mode)
           if (typeof (pv as any).fadeInInitial === 'function') {
             (pv as any).fadeInInitial();
           }
@@ -164,33 +268,39 @@ export class ProjectionManager {
       }
     }, 300);
 
+    this._notifyChange();
     new Notice(`Projecting to ${screen.label} (${mode === 'battle' ? 'Battle' : 'Free'})`);
   }
 
   /**
    * Project the Combat Tracker player view to a specific screen.
-   * Stops any existing projection on that screen first.
+   * Uses crossfade on managed screens for smooth transitions.
    */
   async projectCombatView(screen: ScreenInfo): Promise<void> {
     const sKey = screenKey(screen);
-
-    // Stop existing projection on this screen (map or combat)
-    if (this.isProjectionAliveOnScreen(sKey)) {
-      this.stopProjectionOnScreen(sKey);
-    }
-
-    // Reuse managed session leaf if available
     const spm = this.plugin.sessionProjectionManager;
-    const managedLeaf = spm?.isActive() ? spm.getManagedLeaf(sKey) : null;
+    const isManaged = !!(spm?.isActive() && spm.isManagedScreen(sKey));
+    const managedLeaf = isManaged ? spm!.getManagedLeaf(sKey) : null;
+
+    // Remove existing projection on this screen without intermediate idle
+    const existing = this.activeProjections.get(sKey);
+    if (existing) {
+      this.activeProjections.delete(sKey);
+      if (!isManaged) {
+        try { existing.leaf.detach(); } catch { /* already gone */ }
+      }
+    }
 
     const popoutLeaf = managedLeaf ?? this.plugin.app.workspace.openPopoutLeaf({
       size: { width: screen.width, height: screen.height },
     });
 
-    await popoutLeaf.setViewState({
-      type: COMBAT_PLAYER_VIEW_TYPE,
-      active: true,
-    });
+    // Crossfade on managed screens (there's already visible content)
+    if (isManaged) {
+      await this.crossfadeOnLeaf(popoutLeaf, COMBAT_PLAYER_VIEW_TYPE);
+    } else {
+      await popoutLeaf.setViewState({ type: COMBAT_PLAYER_VIEW_TYPE, active: true });
+    }
 
     this.activeProjections.set(sKey, {
       leaf: popoutLeaf,
@@ -200,41 +310,46 @@ export class ProjectionManager {
       contentType: 'combat',
     });
 
-    // Update session state tracking
     if (spm?.isActive()) spm.setScreenStatus(sKey, 'combat');
 
-    // Position and fullscreen (skip for managed leaves — already positioned)
     if (!managedLeaf) {
       setTimeout(async () => {
         await this.positionAndFullscreen(popoutLeaf, screen);
       }, 300);
     }
 
+    this._notifyChange();
     new Notice(`⚔️ Combat view projected to ${screen.label}`);
   }
 
   /**
    * Project the Pursuit / Chase player view to a specific screen.
-   * Stops any existing projection on that screen first.
+   * Uses crossfade on managed screens for smooth transitions.
    */
   async projectPursuitView(screen: ScreenInfo): Promise<void> {
     const sKey = screenKey(screen);
-
-    if (this.isProjectionAliveOnScreen(sKey)) {
-      this.stopProjectionOnScreen(sKey);
-    }
-
     const spm = this.plugin.sessionProjectionManager;
-    const managedLeaf = spm?.isActive() ? spm.getManagedLeaf(sKey) : null;
+    const isManaged = !!(spm?.isActive() && spm.isManagedScreen(sKey));
+    const managedLeaf = isManaged ? spm!.getManagedLeaf(sKey) : null;
+
+    // Remove existing projection without intermediate idle
+    const existing = this.activeProjections.get(sKey);
+    if (existing) {
+      this.activeProjections.delete(sKey);
+      if (!isManaged) {
+        try { existing.leaf.detach(); } catch { /* already gone */ }
+      }
+    }
 
     const popoutLeaf = managedLeaf ?? this.plugin.app.workspace.openPopoutLeaf({
       size: { width: screen.width, height: screen.height },
     });
 
-    await popoutLeaf.setViewState({
-      type: PURSUIT_PLAYER_VIEW_TYPE,
-      active: true,
-    });
+    if (isManaged) {
+      await this.crossfadeOnLeaf(popoutLeaf, PURSUIT_PLAYER_VIEW_TYPE);
+    } else {
+      await popoutLeaf.setViewState({ type: PURSUIT_PLAYER_VIEW_TYPE, active: true });
+    }
 
     this.activeProjections.set(sKey, {
       leaf: popoutLeaf,
@@ -252,6 +367,7 @@ export class ProjectionManager {
       }, 300);
     }
 
+    this._notifyChange();
     new Notice(`🏃 Pursuit view projected to ${screen.label}`);
   }
 
@@ -299,47 +415,52 @@ export class ProjectionManager {
     if (first) await this.swapMapOnScreen(first, mapId, mapConfig, imageResourcePath);
   }
 
-  /** Stop a specific projection by screenKey.
-   *  If a session is active and this screen is managed, transitions to idle
-   *  instead of closing the popout window.
+  /**
+   * Stop a specific projection by screenKey.
+   * Managed screens get a smooth crossfade back to idle;
+   * non-managed screens are detached.
    */
-  stopProjectionOnScreen(sKey: string): void {
+  async stopProjectionOnScreen(sKey: string): Promise<void> {
     const proj = this.activeProjections.get(sKey);
     if (!proj) return;
 
-    // Session-aware: transition to idle instead of detaching
     const spm = this.plugin.sessionProjectionManager;
     if (spm?.isActive() && spm.isManagedScreen(sKey)) {
       this.activeProjections.delete(sKey);
-      spm.transitionToIdle(sKey);
+      this._notifyChange();
+      await spm.transitionToIdle(sKey);
       new Notice(`Returned to idle — ${proj.screen.label}`);
       return;
     }
 
     try { proj.leaf.detach(); } catch { /* leaf may already be gone */ }
     this.activeProjections.delete(sKey);
+    this._notifyChange();
     new Notice(`Projection stopped — ${proj.screen.label}`);
   }
 
   /** Stop all active projections.
    *  Managed screens transition to idle; non-managed screens are detached.
    */
-  stopAllProjections(): void {
+  async stopAllProjections(): Promise<void> {
     const spm = this.plugin.sessionProjectionManager;
+    const transitions: Promise<void>[] = [];
     for (const [sKey, proj] of this.activeProjections) {
       if (spm?.isActive() && spm.isManagedScreen(sKey)) {
-        spm.transitionToIdle(sKey);
+        transitions.push(spm.transitionToIdle(sKey));
       } else {
         try { proj.leaf.detach(); } catch { /* leaf may already be gone */ }
       }
     }
     this.activeProjections.clear();
+    this._notifyChange();
+    await Promise.all(transitions);
     new Notice('All projections stopped');
   }
 
   /** @deprecated compat — stops all projections. */
-  stopProjection(): void {
-    this.stopAllProjections();
+  async stopProjection(): Promise<void> {
+    await this.stopAllProjections();
   }
 
   /** Whether ANY projection is alive. */
@@ -388,12 +509,22 @@ export class ProjectionManager {
 
   // ── Housekeeping ────────────────────────────────────────────────
 
-  /** Remove projections whose leaves are no longer connected. */
+  /**
+   * Remove projections whose leaves are no longer connected.
+   * Also checks that the host window is still alive (covers Electron
+   * popout crashes and force-closed windows).
+   */
   private pruneDeadProjections(): void {
     for (const [sKey, proj] of this.activeProjections) {
       try {
         const view = proj.leaf.view;
         if (!view || !(view as any).containerEl?.isConnected) {
+          this.activeProjections.delete(sKey);
+          continue;
+        }
+        // Extra safety: verify the host window is still open
+        const win = (view as any).containerEl?.ownerDocument?.defaultView;
+        if (win && win !== window && win.closed) {
           this.activeProjections.delete(sKey);
         }
       } catch {
