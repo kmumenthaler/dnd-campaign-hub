@@ -5,6 +5,26 @@ All notable changes to the D&D Campaign Hub plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-03-18
+
+### Added
+
+- **PC Quick Stats** — PC notes now display a live Quick Stats block (`dnd-hub-view`) showing HP, AC, level, class, and ability scores, replacing the old static callout. Stats update automatically when frontmatter changes.
+- **Initiative Tracker → PC HP sync** — HP changes made in the Combat Tracker now write back to the PC vault note in real time.
+
+### Fixed
+
+- **D&D Beyond import HP calculation** — fixed incorrect max HP when importing characters with the Tough feat or similar per-level HP bonuses; also fixed reading HP values from the correct `body.data.character` path.
+- **SRD creature frontmatter** — a series of migrations (creature 1.4.0–1.10.0) repair invalid YAML in previously imported SRD bestiary notes:
+  - Added missing `plugin_type: creature` field so action buttons render correctly.
+  - Replaced legacy `dataviewjs` button blocks with native `dnd-hub` code blocks.
+  - Quoted frontmatter values containing YAML-special characters (speed, senses, languages, damage fields, CR).
+  - Repaired broken lines where both field name and value were wrapped in a single double-quoted string.
+  - Fixed bare `skillsaves:` null to `skillsaves: []`.
+  - Converted multi-line double-quoted `desc` values (traits, actions, legendary actions) to `|` block scalars so line breaks are preserved.
+- **SRD creature importer** — new creature imports now emit correct YAML from the start: `|` block scalars for multi-line descriptions, `skillsaves: []` fallback for creatures without skill proficiencies, and `template_version: 1.10.0`.
+- **Scene music listener cleanup** — replaced `MutationObserver` with `MarkdownRenderChild` lifecycle for reliable teardown.
+
 ## [0.6.0] - 2026-03-15
 
 ### Added
