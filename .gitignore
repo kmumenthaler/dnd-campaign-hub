@@ -5,3 +5,7 @@ dist/
 .obsidian/
 .vscode/
 AGENTS.md
+# Claude Code – personal settings only
+.claude/settings.local.json
+.claude/CLAUDE.local.md
+.claude/todos.md

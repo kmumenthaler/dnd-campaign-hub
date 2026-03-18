@@ -1,0 +1,15 @@
+# ── Dependencies ──────────────────────────────────────────
+node_modules/
+
+# ── Build Output & Generated Files ────────────────────────
+dist/
+
+# ── Release Artifacts ─────────────────────────────────────
+release/
+*.zip
+
+# ── IDE & Editor Metadata ─────────────────────────────────
+.vscode/
+
+# ── Large Binary & Media Files ────────────────────────────
+*.map
