@@ -374,6 +374,44 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "creature-1.6.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.6.0",
+      description: "Strip leftover dataviewjs blocks and clean up stray characters from creature notes",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        const original = out;
+
+        // 1. Remove any remaining dataviewjs blocks.
+        // creature-1.5.0 was a no-op on notes that already had a dnd-hub block
+        // (inserted by creature-1.3.0), so the dataviewjs block was never removed.
+        if (out.includes("```dataviewjs")) {
+          const stripped = removeAllDataviewjsBlocks(out);
+          if (stripped !== null) out = stripped;
+        }
+
+        // 2. Ensure a dnd-hub render block exists (in case a note somehow lost it).
+        if (!out.includes("```dnd-hub")) {
+          out = insertAfterTitle(out, DND_HUB_BLOCK);
+        }
+
+        // 3. Remove stray single-character lines that appear between a closing
+        //    code fence (```) and an image embed (![[). These are artifacts of
+        //    the old insertAfterTitle logic that left a dangling character.
+        //    The pattern is: end of code block fence line, optional blank lines,
+        //    a lone non-whitespace single character on its own line, then image.
+        out = out.replace(/(```\n)\n*([^\s`\n!])\n(?=!?\[\[)/g, "$1\n");
+
+        // 4. Collapse 3+ consecutive blank lines down to 2.
+        out = out.replace(/\n{3,}/g, "\n\n");
+
+        if (out === original) return null;
+
+        return setFrontmatterField(out, "template_version", "1.6.0");
+      },
+    },
+
     // ── Scene ────────────────────────────────────────────────────────────
 
     {

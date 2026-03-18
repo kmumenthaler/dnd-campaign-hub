@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getEntityType, replaceDataviewjsBlock, setFrontmatterField } from "../../src/migration/frontmatter";
+import { getEntityType, replaceDataviewjsBlock, removeAllDataviewjsBlocks, setFrontmatterField, insertAfterTitle } from "../../src/migration/frontmatter";
 
 // ── Shared fixture helpers ───────────────────────────────────────────────────
 
@@ -201,5 +201,159 @@ describe("creature-1.5.0: replace dataviewjs with dnd-hub", () => {
     const note = makeSRDNote({ hasDataviewjs: false });
     // No dataviewjs and no dnd-hub — replaceDataviewjsBlock returns null
     expect(applyCreature150(note)).toBeNull();
+  });
+});
+
+// ── creature-1.6.0 migration logic ───────────────────────────────────────────
+
+const DND_HUB_BLOCK_160 = "```dnd-hub\n```";
+
+/**
+ * Simulates the creature-1.6.0 migration step.
+ * Mirrors the logic in registry.ts exactly so tests stay in sync.
+ */
+function applyCreature160(content: string): string | null {
+  let out = content;
+  const original = out;
+
+  // 1. Remove any remaining dataviewjs blocks.
+  if (out.includes("```dataviewjs")) {
+    const stripped = removeAllDataviewjsBlocks(out);
+    if (stripped !== null) out = stripped;
+  }
+
+  // 2. Ensure a dnd-hub render block exists.
+  if (!out.includes("```dnd-hub")) {
+    out = insertAfterTitle(out, DND_HUB_BLOCK_160);
+  }
+
+  // 3. Remove stray single-character lines between a closing code fence and an image embed.
+  out = out.replace(/(```\n)\n*([^\s`\n!])\n(?=!?\[\[)/g, "$1\n");
+
+  // 4. Collapse 3+ consecutive blank lines down to 2.
+  out = out.replace(/\n{3,}/g, "\n\n");
+
+  if (out === original) return null;
+
+  return setFrontmatterField(out, "template_version", "1.6.0");
+}
+
+/** Note that already has a dnd-hub block but ALSO still has a dataviewjs block (the bug state). */
+const makePostCreature130Note = (opts: { strayChar?: string } = {}) => {
+  const strayLine = opts.strayChar !== undefined ? `${opts.strayChar}\n` : "";
+  return [
+    "---",
+    "statblock: true",
+    "layout: Basic 5e Layout",
+    "plugin_type: creature",
+    "name: Adult Black Dragon",
+    "size: Huge",
+    "type: dragon",
+    "template_version: 1.5.0",
+    "source: D&D 5e SRD",
+    "---",
+    "",
+    "```dnd-hub",
+    "```",
+    "",
+    `${strayLine}![[z_Beastiarity/images/adult-black-dragon.png]]`,
+    "",
+    "Adult Black Dragon creature imported from the D&D 5e SRD.",
+    "",
+    "```dataviewjs",
+    "// Action buttons for creature management",
+    'const buttonContainer = dv.el("div", "", { attr: { style: "display: flex;" } });',
+    'const editBtn = buttonContainer.createEl("button", { text: "Edit Creature" });',
+    "editBtn.addEventListener('click', () => {",
+    '  app.commands.executeCommandById("dnd-campaign-hub:edit-creature");',
+    "});",
+    "```",
+    "",
+    "```statblock",
+    "creature: Adult Black Dragon",
+    "```",
+    "",
+  ].join("\n");
+};
+
+describe("creature-1.6.0: strip dataviewjs and clean stray characters", () => {
+  it("removes the dataviewjs block when a dnd-hub block is already present", () => {
+    const note = makePostCreature130Note();
+    const out = applyCreature160(note);
+    expect(out).not.toBeNull();
+    expect(out).not.toContain("```dataviewjs");
+    expect(out).toContain("```dnd-hub\n```");
+  });
+
+  it("sets template_version to 1.6.0", () => {
+    const note = makePostCreature130Note();
+    const out = applyCreature160(note);
+    expect(out).toContain("template_version: 1.6.0");
+  });
+
+  it("removes a stray single character between the code fence and the image embed", () => {
+    const note = makePostCreature130Note({ strayChar: "d" });
+    const out = applyCreature160(note);
+    expect(out).not.toBeNull();
+    // The stray 'd' line should be gone
+    expect(out).not.toMatch(/```\n\nd\n/);
+    // The image embed should still be present
+    expect(out).toContain("![[z_Beastiarity/images/adult-black-dragon.png]]");
+  });
+
+  it("collapses 3+ blank lines to 2", () => {
+    const note = makePostCreature130Note();
+    const out = applyCreature160(note);
+    expect(out).not.toBeNull();
+    expect(out).not.toMatch(/\n{3,}/);
+  });
+
+  it("is idempotent — returns null when already fully migrated", () => {
+    const cleanNote = [
+      "---",
+      "statblock: true",
+      "layout: Basic 5e Layout",
+      "plugin_type: creature",
+      "name: Acolyte",
+      "type: humanoid",
+      "template_version: 1.6.0",
+      "source: D&D 5e SRD",
+      "---",
+      "",
+      "```dnd-hub",
+      "```",
+      "",
+      "![[z_Beastiarity/images/acolyte.png]]",
+      "",
+      "Acolyte creature imported from the D&D 5e SRD.",
+      "",
+      "```statblock",
+      "creature: Acolyte",
+      "```",
+      "",
+    ].join("\n");
+    expect(applyCreature160(cleanNote)).toBeNull();
+  });
+
+  it("inserts a dnd-hub block if one is missing", () => {
+    // Note with neither dnd-hub nor dataviewjs — shouldn't normally exist but
+    // the step should still be safe.
+    const bareNote = [
+      "---",
+      "plugin_type: creature",
+      "name: Test Creature",
+      "type: beast",
+      "template_version: 1.5.0",
+      "source: D&D 5e SRD",
+      "---",
+      "",
+      "# Test Creature",
+      "",
+      "Some content.",
+      "",
+    ].join("\n");
+    const out = applyCreature160(bareNote);
+    expect(out).not.toBeNull();
+    expect(out).toContain("```dnd-hub\n```");
   });
 });
