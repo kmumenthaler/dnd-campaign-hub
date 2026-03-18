@@ -1,6 +1,56 @@
 import { describe, expect, it } from "vitest";
 import { getEntityType, replaceDataviewjsBlock, removeAllDataviewjsBlocks, setFrontmatterField, insertAfterTitle } from "../../src/migration/frontmatter";
 
+// ── creature-1.7.0 simulation helper ─────────────────────────────────────────
+
+/**
+ * Simulates the creature-1.7.0 migration step.
+ * Mirrors the logic in registry.ts exactly so tests stay in sync.
+ */
+function applyCreature170(content: string): string | null {
+  const ALWAYS_QUOTE = [
+    "speed",
+    "senses",
+    "languages",
+    "damage_vulnerabilities",
+    "damage_resistances",
+    "damage_immunities",
+    "condition_immunities",
+  ] as const;
+
+  let out = content;
+  let changed = false;
+
+  for (const field of ALWAYS_QUOTE) {
+    const match = out.match(new RegExp(`^${field}:\\s*(.+)$`, "m"));
+    const rawValue = match?.[1]?.trim() ?? "";
+    if (!rawValue) continue;
+    const alreadyQuoted = rawValue.startsWith('"') || rawValue.startsWith("'");
+    if (alreadyQuoted) continue;
+    const escaped = rawValue.replace(/"/g, '\\"');
+    out = out.replace(
+      new RegExp(`^(${field}:\\s*)(.+)$`, "m"),
+      `$1"${escaped}"`,
+    );
+    changed = true;
+  }
+
+  const crMatch = out.match(/^cr:\s*(.+)$/m);
+  const crRaw = crMatch?.[1]?.trim() ?? "";
+  if (crRaw && crRaw.includes("/")) {
+    const alreadyQuoted = crRaw.startsWith('"') || crRaw.startsWith("'");
+    if (!alreadyQuoted) {
+      const escaped = crRaw.replace(/"/g, '\\"');
+      out = out.replace(/^(cr:\s*)(.+)$/m, `$1"${escaped}"`);
+      changed = true;
+    }
+  }
+
+  if (!changed) return null;
+
+  return setFrontmatterField(out, "template_version", "1.7.0");
+}
+
 // ── Shared fixture helpers ───────────────────────────────────────────────────
 
 /** A realistic SRD creature note before any migration. */
@@ -355,5 +405,157 @@ describe("creature-1.6.0: strip dataviewjs and clean stray characters", () => {
     const out = applyCreature160(bareNote);
     expect(out).not.toBeNull();
     expect(out).toContain("```dnd-hub\n```");
+  });
+});
+
+// ── creature-1.7.0 migration logic ───────────────────────────────────────────
+
+/** A creature note with unquoted special-character frontmatter fields. */
+const makeUnquotedNote = (overrides: Partial<{
+  speed: string;
+  senses: string;
+  languages: string;
+  damage_vulnerabilities: string;
+  damage_resistances: string;
+  damage_immunities: string;
+  condition_immunities: string;
+  cr: string;
+}> = {}) => {
+  const f = {
+    speed: "30 ft., fly 60 ft.",
+    senses: "darkvision 60 ft., passive Perception 14",
+    languages: "Common, Draconic",
+    damage_vulnerabilities: "",
+    damage_resistances: "bludgeoning, piercing, slashing from nonmagical attacks",
+    damage_immunities: "fire, poison",
+    condition_immunities: "charmed, frightened",
+    cr: "1/4",
+    ...overrides,
+  };
+  return [
+    "---",
+    "statblock: true",
+    "layout: Basic 5e Layout",
+    "plugin_type: creature",
+    "name: Test Dragon",
+    "size: Large",
+    "type: dragon",
+    "alignment: chaotic evil",
+    "ac: 18",
+    "hp: 136",
+    `speed: ${f.speed}`,
+    "stats:",
+    "  - 23",
+    "  - 10",
+    "  - 21",
+    "  - 14",
+    "  - 11",
+    "  - 19",
+    `damage_vulnerabilities: ${f.damage_vulnerabilities}`,
+    `damage_resistances: ${f.damage_resistances}`,
+    `damage_immunities: ${f.damage_immunities}`,
+    `condition_immunities: ${f.condition_immunities}`,
+    `senses: ${f.senses}`,
+    `languages: ${f.languages}`,
+    `cr: ${f.cr}`,
+    "template_version: 1.6.0",
+    "source: D&D 5e SRD",
+    "---",
+    "",
+    "```dnd-hub",
+    "```",
+    "",
+    "Test Dragon creature imported from the D&D 5e SRD.",
+    "",
+    "```statblock",
+    "creature: Test Dragon",
+    "```",
+    "",
+  ].join("\n");
+};
+
+describe("creature-1.7.0: quote special-character frontmatter fields", () => {
+  it("quotes speed field containing commas", () => {
+    const note = makeUnquotedNote({ speed: "30 ft., fly 60 ft." });
+    const out = applyCreature170(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain(`speed: "30 ft., fly 60 ft."`);
+  });
+
+  it("quotes cr field containing / (fractional CR)", () => {
+    const note = makeUnquotedNote({ cr: "1/4" });
+    const out = applyCreature170(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain(`cr: "1/4"`);
+  });
+
+  it("does not quote cr when it is a whole number", () => {
+    const note = makeUnquotedNote({ cr: "5" });
+    const out = applyCreature170(note);
+    // The note still has other unquoted fields so out is not null,
+    // but cr should remain unquoted.
+    if (out !== null) {
+      expect(out).toContain("cr: 5");
+      expect(out).not.toContain(`cr: "5"`);
+    }
+  });
+
+  it("quotes senses field containing commas", () => {
+    const note = makeUnquotedNote({ senses: "darkvision 60 ft., passive Perception 14" });
+    const out = applyCreature170(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain(`senses: "darkvision 60 ft., passive Perception 14"`);
+  });
+
+  it("quotes languages field containing commas", () => {
+    const note = makeUnquotedNote({ languages: "Common, Draconic" });
+    const out = applyCreature170(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain(`languages: "Common, Draconic"`);
+  });
+
+  it("sets template_version to 1.7.0", () => {
+    const note = makeUnquotedNote();
+    const out = applyCreature170(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain("template_version: 1.7.0");
+  });
+
+  it("is idempotent — does not double-quote already-quoted fields", () => {
+    // Start with an already-quoted note (simulate running the migration twice)
+    const note = makeUnquotedNote();
+    const firstPass = applyCreature170(note)!;
+    expect(firstPass).not.toBeNull();
+    // Second pass should be a no-op
+    const secondPass = applyCreature170(firstPass);
+    expect(secondPass).toBeNull();
+  });
+
+  it("returns null when all quotable fields are already quoted", () => {
+    const alreadyQuotedNote = [
+      "---",
+      "statblock: true",
+      "layout: Basic 5e Layout",
+      "plugin_type: creature",
+      "name: Acolyte",
+      "size: Medium",
+      "type: humanoid",
+      `speed: "30 ft."`,
+      `damage_vulnerabilities: ""`,
+      `damage_resistances: ""`,
+      `damage_immunities: ""`,
+      `condition_immunities: ""`,
+      `senses: "passive Perception 10"`,
+      `languages: "any one language"`,
+      `cr: "1/4"`,
+      "template_version: 1.7.0",
+      "source: D&D 5e SRD",
+      "---",
+      "",
+      "```dnd-hub",
+      "```",
+      "",
+    ].join("\n");
+    expect(applyCreature170(alreadyQuotedNote)).toBeNull();
   });
 });

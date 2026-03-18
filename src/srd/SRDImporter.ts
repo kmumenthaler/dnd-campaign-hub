@@ -192,6 +192,8 @@ export function buildSRDCreatureNote(m: any, tokenId: string, imagePath?: string
 	// ── Helpers ──
 	const calcMod = (score: number) => Math.floor((score - 10) / 2);
 	const esc = (s: string) => String(s || "").replace(/"/g, '\\"');
+	/** Wrap a non-empty value in double quotes, escaping any inner quotes. */
+	const q = (v: string) => v ? `"${v.replace(/"/g, '\\"')}"` : "";
 
 	// ── Speed string ──
 	let speedParts: string[] = [];
@@ -303,18 +305,20 @@ type: ${m.type || "creature"}`;
 	fm += `\nac: ${acValue}`;
 	fm += `\nhp: ${m.hit_points ?? 1}`;
 	fm += `\nhit_dice: ${m.hit_dice || ""}`;
-	fm += `\nspeed: ${speedStr}`;
+	fm += `\nspeed: ${q(speedStr)}`;
 	fm += `\nstats:\n  - ${str}\n  - ${dex}\n  - ${con}\n  - ${int}\n  - ${wis}\n  - ${cha}`;
 	fm += `\nfage_stats:\n  - ${fage[0]}\n  - ${fage[1]}\n  - ${fage[2]}\n  - ${fage[3]}\n  - ${fage[4]}\n  - ${fage[5]}`;
 	fm += `\nsaves:${saves}`;
 	fm += `\nskillsaves:${skillsaves}`;
-	fm += `\ndamage_vulnerabilities: ${dmgVuln}`;
-	fm += `\ndamage_resistances: ${dmgRes}`;
-	fm += `\ndamage_immunities: ${dmgImm}`;
-	fm += `\ncondition_immunities: ${condImm}`;
-	fm += `\nsenses: ${sensesStr}`;
-	fm += `\nlanguages: ${languages}`;
-	fm += `\ncr: ${formatCR(m.challenge_rating ?? 0)}`;
+	fm += `\ndamage_vulnerabilities: ${q(dmgVuln)}`;
+	fm += `\ndamage_resistances: ${q(dmgRes)}`;
+	fm += `\ndamage_immunities: ${q(dmgImm)}`;
+	fm += `\ncondition_immunities: ${q(condImm)}`;
+	fm += `\nsenses: ${q(sensesStr)}`;
+	fm += `\nlanguages: ${q(languages)}`;
+	// Fractional CRs (1/4, 1/2, 1/8) must be quoted so YAML parses them as strings.
+	const crStr = formatCR(m.challenge_rating ?? 0);
+	fm += `\ncr: ${crStr.includes("/") ? q(crStr) : crStr}`;
 	fm += `\nspells:`;
 	fm += fmtBlock(m.special_abilities, "traits");
 	fm += fmtBlock(m.actions, "actions");
@@ -323,6 +327,7 @@ type: ${m.type || "creature"}`;
 	fm += fmtBlock(m.reactions, "reactions");
 	fm += `\ntoken_id: ${tokenId}`;
 	fm += `\nsource: D&D 5e SRD`;
+	fm += `\ntemplate_version: 1.7.0`;
 	fm += `\n---\n\n`;
 
 	// ── Body ──

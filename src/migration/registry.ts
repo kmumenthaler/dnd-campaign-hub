@@ -412,6 +412,62 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "creature-1.7.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.7.0",
+      description: "Quote special-character frontmatter fields (speed, senses, languages, damage_*, cr) so YAML parses them correctly",
+      async apply(ctx: MigrationContext) {
+        /**
+         * Fields that should always be quoted when non-empty.
+         * These often contain commas, colons, or other YAML-special chars.
+         */
+        const ALWAYS_QUOTE = [
+          "speed",
+          "senses",
+          "languages",
+          "damage_vulnerabilities",
+          "damage_resistances",
+          "damage_immunities",
+          "condition_immunities",
+        ] as const;
+
+        let out = ctx.content;
+        let changed = false;
+
+        for (const field of ALWAYS_QUOTE) {
+          const match = out.match(new RegExp(`^${field}:\\s*(.+)$`, "m"));
+          const rawValue = match?.[1]?.trim() ?? "";
+          if (!rawValue) continue; // empty — skip
+          const alreadyQuoted = rawValue.startsWith('"') || rawValue.startsWith("'");
+          if (alreadyQuoted) continue;
+          // Quote the value, escaping any embedded double-quotes
+          const escaped = rawValue.replace(/"/g, '\\"');
+          out = out.replace(
+            new RegExp(`^(${field}:\\s*)(.+)$`, "m"),
+            `$1"${escaped}"`,
+          );
+          changed = true;
+        }
+
+        // cr: only quote if the value contains '/' (fractional CRs like 1/4, 1/2, 1/8)
+        const crMatch = out.match(/^cr:\s*(.+)$/m);
+        const crRaw = crMatch?.[1]?.trim() ?? "";
+        if (crRaw && crRaw.includes("/")) {
+          const alreadyQuoted = crRaw.startsWith('"') || crRaw.startsWith("'");
+          if (!alreadyQuoted) {
+            const escaped = crRaw.replace(/"/g, '\\"');
+            out = out.replace(/^(cr:\s*)(.+)$/m, `$1"${escaped}"`);
+            changed = true;
+          }
+        }
+
+        if (!changed) return null;
+
+        return setFrontmatterField(out, "template_version", "1.7.0");
+      },
+    },
+
     // ── Scene ────────────────────────────────────────────────────────────
 
     {
