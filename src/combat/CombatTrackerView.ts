@@ -565,6 +565,20 @@ export class CombatTrackerView extends ItemView {
       }),
     );
 
+    if (c.player && c.notePath) {
+      menu.addSeparator();
+      menu.addItem((item) =>
+        item.setTitle("↓ Sync HP to Note").setIcon("arrow-down-to-line").onClick(() => {
+          void tracker.syncPCsToNotes();
+        }),
+      );
+      menu.addItem((item) =>
+        item.setTitle("↑ Refresh HP from Note").setIcon("refresh-cw").onClick(() => {
+          void tracker.refreshPCsFromNotes();
+        }),
+      );
+    }
+
     menu.addSeparator();
 
     const isEnabled = c.enabled ?? true;
@@ -666,6 +680,20 @@ export class CombatTrackerView extends ItemView {
     menu.addItem((item) =>
       item.setTitle("📂 Load Encounter").setIcon("folder-open").onClick(() => {
         new LoadEncounterModal(this.app, this.plugin).open();
+      }),
+    );
+
+    menu.addSeparator();
+
+    menu.addItem((item) =>
+      item.setTitle("↓ Sync PCs to Notes").setIcon("arrow-down-to-line").onClick(() => {
+        void tracker.syncPCsToNotes();
+      }),
+    );
+
+    menu.addItem((item) =>
+      item.setTitle("↑ Refresh PCs from Notes").setIcon("refresh-cw").onClick(() => {
+        void tracker.refreshPCsFromNotes();
       }),
     );
 

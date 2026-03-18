@@ -158,16 +158,18 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 			}));
 
 			// Build party — prefer frontmatter party_members, fall back to PartyManager
-			const partyMembers: Array<{ name: string; level: number; hp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];
+			const partyMembers: Array<{ name: string; level: number; hp: number; maxHp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];
 
 			const fmParty: any[] | undefined = fm.party_members;
 			if (Array.isArray(fmParty) && fmParty.length > 0) {
 				for (const m of fmParty) {
 					if (!m || !m.name) continue;
+					const maxHp = typeof m.hp_max === "number" ? m.hp_max : (typeof m.hp === "number" ? m.hp : 10);
 					partyMembers.push({
 						name: m.name,
 						level: typeof m.level === "number" ? m.level : 1,
-						hp: typeof m.hp === "number" ? m.hp : 10,
+						hp: typeof m.hp === "number" ? m.hp : maxHp,
+						maxHp,
 						ac: typeof m.ac === "number" ? m.ac : 10,
 						notePath: m.note_path || undefined,
 						tokenId: m.token_id || undefined,
@@ -186,7 +188,8 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 						partyMembers.push({
 							name: m.name,
 							level: m.level,
-							hp: m.maxHp,
+							hp: m.hp,
+							maxHp: m.maxHp,
 							ac: m.ac,
 							notePath: m.notePath,
 							tokenId: m.tokenId,

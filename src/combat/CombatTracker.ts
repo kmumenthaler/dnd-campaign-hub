@@ -51,7 +51,7 @@ export class CombatTracker {
   async startFromEncounter(
     encounterName: string,
     creatures: EncounterCreature[],
-    partyMembers: Array<{ name: string; level: number; hp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }>,
+    partyMembers: Array<{ name: string; level: number; hp: number; maxHp?: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }>,
     useColorNames: boolean,
     encounterPath?: string,
   ): Promise<void> {
@@ -59,6 +59,7 @@ export class CombatTracker {
 
     // ── Party members ──
     for (const pm of partyMembers) {
+      const maxHP = pm.maxHp ?? pm.hp;
       combatants.push({
         id: this.generateId(),
         name: pm.name,
@@ -66,7 +67,7 @@ export class CombatTracker {
         initiative: 0,
         modifier: pm.initBonus ?? 0,
         currentHP: pm.hp,
-        maxHP: pm.hp,
+        maxHP,
         tempHP: pm.thp ?? 0,
         ac: pm.ac,
         currentAC: pm.ac,
@@ -662,6 +663,123 @@ export class CombatTracker {
     const s = this.plugin.settings.combatStates?.[encounterName] as CombatState | undefined;
     if (!s) return null;
     return { round: s.round, savedAt: s.savedAt, combatantCount: s.combatants.length };
+  }
+
+  /* ────────────────── PC Note Sync ────────────────── */
+
+  /**
+   * Write each PC combatant's current tracker HP and temp HP back to their
+   * vault note's frontmatter (`hp` and `thp` fields).
+   * NPCs / creatures without a notePath are skipped silently.
+   */
+  async syncPCsToNotes(): Promise<void> {
+    if (!this.state) {
+      new Notice("No active combat to sync");
+      return;
+    }
+
+    const pcs = this.state.combatants.filter(c => c.player && c.notePath);
+    if (pcs.length === 0) {
+      new Notice("No PCs with linked notes in this combat");
+      return;
+    }
+
+    let synced = 0;
+    let failed = 0;
+
+    for (const c of pcs) {
+      if (!c.notePath) continue;
+      try {
+        const file = this.app.vault.getAbstractFileByPath(c.notePath);
+        if (!(file instanceof TFile)) { failed++; continue; }
+
+        let content = await this.app.vault.read(file);
+        content = this.setFrontmatterField(content, "hp", String(c.currentHP));
+        content = this.setFrontmatterField(content, "thp", String(c.tempHP));
+        await this.app.vault.modify(file, content);
+        synced++;
+      } catch (err) {
+        console.error(`[CombatTracker] Failed to sync PC "${c.name}" to note:`, err);
+        failed++;
+      }
+    }
+
+    if (failed > 0) {
+      new Notice(`Synced ${synced} PC${synced !== 1 ? "s" : ""} to notes (${failed} failed)`);
+    } else {
+      new Notice(`Synced ${synced} PC${synced !== 1 ? "s" : ""} to notes`);
+    }
+  }
+
+  /**
+   * Re-read each PC's `hp` and `thp` frontmatter from their vault note and
+   * update the combatant's currentHP / tempHP in the tracker.
+   * NPC / creature combatants without a notePath are left unchanged.
+   */
+  async refreshPCsFromNotes(): Promise<void> {
+    if (!this.state) {
+      new Notice("No active combat to refresh");
+      return;
+    }
+
+    const pcs = this.state.combatants.filter(c => c.player && c.notePath);
+    if (pcs.length === 0) {
+      new Notice("No PCs with linked notes in this combat");
+      return;
+    }
+
+    let refreshed = 0;
+    let failed = 0;
+
+    for (const c of pcs) {
+      if (!c.notePath) continue;
+      try {
+        const file = this.app.vault.getAbstractFileByPath(c.notePath);
+        if (!(file instanceof TFile)) { failed++; continue; }
+
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm = cache?.frontmatter;
+        if (!fm) { failed++; continue; }
+
+        const currentHP = parseInt(fm.hp) || 0;
+        const maxHP = parseInt(fm.hp_max) || parseInt(fm.hp) || c.maxHP;
+        const tempHP = parseInt(fm.thp) || 0;
+
+        c.currentHP = Math.max(0, Math.min(maxHP, currentHP));
+        c.maxHP = maxHP;
+        c.tempHP = Math.max(0, tempHP);
+        this.syncUnconsciousStatus(c);
+        refreshed++;
+      } catch (err) {
+        console.error(`[CombatTracker] Failed to refresh PC "${c.name}" from note:`, err);
+        failed++;
+      }
+    }
+
+    this.emit();
+
+    if (failed > 0) {
+      new Notice(`Refreshed ${refreshed} PC${refreshed !== 1 ? "s" : ""} from notes (${failed} failed)`);
+    } else {
+      new Notice(`Refreshed ${refreshed} PC${refreshed !== 1 ? "s" : ""} from notes`);
+    }
+  }
+
+  /**
+   * Set (or update) a single frontmatter field value in raw file content.
+   * Operates purely on the string — does not call vault.modify().
+   */
+  private setFrontmatterField(content: string, field: string, value: string): string {
+    const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (!fmMatch || fmMatch[1] === undefined) return content;
+
+    const fieldRegex = new RegExp(`^(${field}:\\s*).*$`, "m");
+    if (fieldRegex.test(fmMatch[0])) {
+      return content.replace(fieldRegex, `$1${value}`);
+    }
+
+    // Field not present — insert after the opening --- line
+    return content.replace(/^---(\r?\n)/, `---$1${field}: ${value}$1`);
   }
 
   /* ────────────────── Private Helpers ────────────────── */
