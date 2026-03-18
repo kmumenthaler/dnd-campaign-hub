@@ -1636,7 +1636,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 		if (!(file instanceof TFile)) return;
 
 		const cache = this.app.metadataCache.getFileCache(file);
-		const type = cache?.frontmatter?.type as string | undefined;
+		// plugin_type takes precedence over type (used by SRD creature notes where
+		// `type` holds the D&D monster category rather than the plugin entity type).
+		const type = (cache?.frontmatter?.plugin_type ?? cache?.frontmatter?.type) as string | undefined;
 		if (!type) return;
 
 		const container = el.createDiv({ cls: "dnd-hub-actions" });

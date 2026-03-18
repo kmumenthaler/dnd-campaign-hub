@@ -341,6 +341,39 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "creature-1.4.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.4.0",
+      description: "Add plugin_type: creature field so SRD notes are identified as creature entities",
+      async apply(ctx: MigrationContext) {
+        if (/^plugin_type:/m.test(ctx.content)) return null;
+        // Insert plugin_type before name (or at end of frontmatter if no name field)
+        const match = ctx.content.match(/^---\n([\s\S]*?)\n---/);
+        if (!match || match[1] === undefined) return null;
+        let fm = match[1];
+        // Insert after layout: if present, otherwise before name:, otherwise append
+        if (/^layout:/m.test(fm)) {
+          fm = fm.replace(/^(layout:\s*.+)$/m, "$1\nplugin_type: creature");
+        } else if (/^name:/m.test(fm)) {
+          fm = fm.replace(/^(name:\s*.+)$/m, "plugin_type: creature\n$1");
+        } else {
+          fm = `${fm}\nplugin_type: creature`;
+        }
+        return ctx.content.replace(/^---\n[\s\S]*?\n---/, `---\n${fm}\n---`);
+      },
+    },
+
+    {
+      id: "creature-1.5.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.5.0",
+      description: "Replace inline dataviewjs buttons with dnd-hub render block",
+      async apply(ctx: MigrationContext) {
+        return replaceButtonsWithRenderBlock(ctx.content, "dnd-campaign-hub:edit-creature");
+      },
+    },
+
     // ── Scene ────────────────────────────────────────────────────────────
 
     {

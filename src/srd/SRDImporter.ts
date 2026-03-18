@@ -288,9 +288,13 @@ export function buildSRDCreatureNote(m: any, tokenId: string, imagePath?: string
 	};
 
 	// ── Assemble frontmatter ──
+	// `plugin_type` is the D&D Campaign Hub entity type used for migration and
+	// action-button rendering.  `type` keeps the D&D monster category so the
+	// Fantasy Statblock plugin can still read it.
 	let fm = `---
 statblock: true
 layout: Basic 5e Layout
+plugin_type: creature
 name: ${m.name}
 size: ${m.size || "Medium"}
 type: ${m.type || "creature"}`;
@@ -328,30 +332,7 @@ type: ${m.type || "creature"}`;
 	}
 	body += `${m.name} creature imported from the D&D 5e SRD.\n`;
 
-	body += `\n\`\`\`dataviewjs
-// Action buttons for creature management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Edit Creature button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "✏️ Edit Creature",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-creature");
-});
-
-// Delete Creature button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "🗑️ Delete Creature",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-creature");
-});
-\`\`\`\n\n`;
+	body += `\n\`\`\`dnd-hub\n\`\`\`\n\n`;
 
 	body += `\`\`\`statblock\ncreature: ${m.name}\n\`\`\`\n`;
 

@@ -53,9 +53,24 @@ export function getTemplateVersion(content: string): string | null {
 }
 
 /**
- * Get the type field from file content.
+ * Get the entity type from file content.
+ *
+ * Resolution order:
+ * 1. `plugin_type` field — explicit plugin entity type (used by SRD creature
+ *    notes where `type` holds the D&D monster category, e.g. "humanoid").
+ * 2. SRD bestiary fingerprint — notes with `statblock: true` and
+ *    `source: D&D 5e SRD` are creature notes regardless of `type`.
+ * 3. `type` field — the standard plugin entity type for all other notes.
  */
 export function getEntityType(content: string): string | null {
+  const pluginTypeMatch = content.match(/^plugin_type:\s*(.+)$/m);
+  if (pluginTypeMatch?.[1]) return pluginTypeMatch[1].trim();
+
+  // SRD bestiary fingerprint: statblock notes from the official SRD import
+  if (/^statblock:\s*true$/m.test(content) && /^source:\s*D&D 5e SRD$/m.test(content)) {
+    return "creature";
+  }
+
   const match = content.match(/^type:\s*(.+)$/m);
   return match?.[1]?.trim() ?? null;
 }
