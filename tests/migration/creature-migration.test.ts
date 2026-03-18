@@ -531,6 +531,18 @@ describe("creature-1.7.0: quote special-character frontmatter fields", () => {
     expect(secondPass).toBeNull();
   });
 
+  it("skips empty damage_vulnerabilities (no value to quote)", () => {
+    // The 1.7.0 migration skips fields with no value — that is the root of the 1.8.0 bug
+    const note = makeUnquotedNote({ damage_vulnerabilities: "" });
+    // damage_vulnerabilities has no value, so 1.7.0 skips it
+    // (other fields still get quoted so out is non-null)
+    const out = applyCreature170(note);
+    // The damage_vulnerabilities line should still be bare (no value quoted yet)
+    if (out !== null) {
+      expect(out).toMatch(/^damage_vulnerabilities:\s*$/m);
+    }
+  });
+
   it("returns null when all quotable fields are already quoted", () => {
     const alreadyQuotedNote = [
       "---",
@@ -557,5 +569,279 @@ describe("creature-1.7.0: quote special-character frontmatter fields", () => {
       "",
     ].join("\n");
     expect(applyCreature170(alreadyQuotedNote)).toBeNull();
+  });
+});
+
+// ── creature-1.8.0 migration logic ───────────────────────────────────────────
+
+/**
+ * Simulates the creature-1.8.0 migration step.
+ * Mirrors the logic in registry.ts exactly so tests stay in sync.
+ */
+function applyCreature180(content: string): string | null {
+  let out = content;
+  let changed = false;
+
+  // Fix A — Repair lines like `"damage_resistances:"` (quoted field-name scalar)
+  const brokenFieldRegex = /^"([a-z_]+):"$/gm;
+  if (brokenFieldRegex.test(out)) {
+    out = out.replace(/^"([a-z_]+):"$/gm, '$1: ""');
+    changed = true;
+  }
+
+  // Fix B — Set empty damage/condition fields to ""
+  const emptyStringFields = [
+    "damage_vulnerabilities",
+    "damage_resistances",
+    "damage_immunities",
+    "condition_immunities",
+  ];
+  for (const field of emptyStringFields) {
+    const emptyFieldRegex = new RegExp(`^(${field}:)\\s*$`, "m");
+    if (emptyFieldRegex.test(out)) {
+      out = out.replace(emptyFieldRegex, `$1 ""`);
+      changed = true;
+    }
+  }
+
+  // Fix C — Set empty list fields to []
+  const emptyListFields = ["saves", "spells", "legendary_actions", "bonus_actions", "reactions"];
+  for (const field of emptyListFields) {
+    const emptyFieldRegex = new RegExp(`^(${field}:)[ \\t]*$(?!\\n[ \\t])`, "m");
+    if (emptyFieldRegex.test(out)) {
+      out = out.replace(emptyFieldRegex, `$1 []`);
+      changed = true;
+    }
+  }
+
+  if (!changed) return null;
+
+  return setFrontmatterField(out, "template_version", "1.8.0");
+}
+
+/** Build a creature note that simulates the broken state introduced by creature-1.7.0. */
+const makeBrokenNote = (overrides: {
+  damage_vulnerabilities?: string;
+  damage_resistances?: string;
+  damage_immunities?: string;
+  condition_immunities?: string;
+  saves?: string;
+  spells?: string;
+  legendary_actions?: string;
+  bonus_actions?: string;
+  reactions?: string;
+} = {}) => {
+  const f = {
+    damage_vulnerabilities: "",
+    damage_resistances: "",
+    damage_immunities: "",
+    condition_immunities: "",
+    saves: "",
+    spells: "",
+    legendary_actions: "",
+    bonus_actions: "",
+    reactions: "",
+    ...overrides,
+  };
+  return [
+    "---",
+    "statblock: true",
+    "layout: Basic 5e Layout",
+    "plugin_type: creature",
+    "name: Acolyte",
+    "size: Medium",
+    "type: humanoid",
+    "alignment: any alignment",
+    "ac: 10",
+    "hp: 9",
+    `saves:${f.saves}`,
+    `spells:${f.spells}`,
+    `damage_vulnerabilities:${f.damage_vulnerabilities}`,
+    `damage_resistances:${f.damage_resistances}`,
+    `damage_immunities:${f.damage_immunities}`,
+    `condition_immunities:${f.condition_immunities}`,
+    `legendary_actions:${f.legendary_actions}`,
+    `bonus_actions:${f.bonus_actions}`,
+    `reactions:${f.reactions}`,
+    `cr: "1/4"`,
+    "template_version: 1.7.0",
+    "source: D&D 5e SRD",
+    "---",
+    "",
+    "```dnd-hub",
+    "```",
+    "",
+    "Acolyte creature imported from the D&D 5e SRD.",
+    "",
+  ].join("\n");
+};
+
+describe("creature-1.8.0: repair broken YAML frontmatter", () => {
+  it("repairs a quoted field-name line like \"damage_resistances:\" to damage_resistances: \"\"", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Acolyte",
+      "type: humanoid",
+      "damage_vulnerabilities: ",
+      '"damage_resistances:"',
+      "damage_immunities: ",
+      '"condition_immunities:"',
+      "template_version: 1.7.0",
+      "source: D&D 5e SRD",
+      "---",
+      "",
+      "```dnd-hub",
+      "```",
+      "",
+    ].join("\n");
+    const out = applyCreature180(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain('damage_resistances: ""');
+    expect(out).toContain('condition_immunities: ""');
+    expect(out).not.toContain('"damage_resistances:"');
+    expect(out).not.toContain('"condition_immunities:"');
+  });
+
+  it("sets empty damage_vulnerabilities to \"\"", () => {
+    const note = makeBrokenNote();
+    const out = applyCreature180(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain('damage_vulnerabilities: ""');
+  });
+
+  it("sets empty damage_resistances to \"\"", () => {
+    const note = makeBrokenNote();
+    const out = applyCreature180(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain('damage_resistances: ""');
+  });
+
+  it("sets empty damage_immunities to \"\"", () => {
+    const note = makeBrokenNote();
+    const out = applyCreature180(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain('damage_immunities: ""');
+  });
+
+  it("sets empty condition_immunities to \"\"", () => {
+    const note = makeBrokenNote();
+    const out = applyCreature180(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain('condition_immunities: ""');
+  });
+
+  it("sets empty saves: to saves: []", () => {
+    const note = makeBrokenNote();
+    const out = applyCreature180(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain("saves: []");
+  });
+
+  it("sets empty spells: to spells: []", () => {
+    const note = makeBrokenNote();
+    const out = applyCreature180(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain("spells: []");
+  });
+
+  it("sets empty legendary_actions: to legendary_actions: []", () => {
+    const note = makeBrokenNote();
+    const out = applyCreature180(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain("legendary_actions: []");
+  });
+
+  it("sets empty bonus_actions: to bonus_actions: []", () => {
+    const note = makeBrokenNote();
+    const out = applyCreature180(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain("bonus_actions: []");
+  });
+
+  it("sets empty reactions: to reactions: []", () => {
+    const note = makeBrokenNote();
+    const out = applyCreature180(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain("reactions: []");
+  });
+
+  it("sets template_version to 1.8.0", () => {
+    const note = makeBrokenNote();
+    const out = applyCreature180(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain("template_version: 1.8.0");
+  });
+
+  it("is idempotent — second run returns null", () => {
+    const note = makeBrokenNote();
+    const firstPass = applyCreature180(note);
+    expect(firstPass).not.toBeNull();
+    const secondPass = applyCreature180(firstPass!);
+    expect(secondPass).toBeNull();
+  });
+
+  it("returns null when no changes are needed (all fields already correct)", () => {
+    const cleanNote = [
+      "---",
+      "statblock: true",
+      "layout: Basic 5e Layout",
+      "plugin_type: creature",
+      "name: Acolyte",
+      "size: Medium",
+      "type: humanoid",
+      "ac: 10",
+      "hp: 9",
+      "saves: []",
+      "spells: []",
+      'damage_vulnerabilities: ""',
+      'damage_resistances: ""',
+      'damage_immunities: ""',
+      'condition_immunities: ""',
+      "legendary_actions: []",
+      "bonus_actions: []",
+      "reactions: []",
+      'cr: "1/4"',
+      "template_version: 1.7.0",
+      "source: D&D 5e SRD",
+      "---",
+      "",
+      "```dnd-hub",
+      "```",
+      "",
+    ].join("\n");
+    expect(applyCreature180(cleanNote)).toBeNull();
+  });
+
+  it("does not modify non-empty list fields", () => {
+    const noteWithSaves = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Acolyte",
+      "type: humanoid",
+      "saves:",
+      "  - str: 4",
+      "  - con: 3",
+      'damage_vulnerabilities: ""',
+      'damage_resistances: ""',
+      'damage_immunities: ""',
+      'condition_immunities: ""',
+      "spells: []",
+      "legendary_actions: []",
+      "bonus_actions: []",
+      "reactions: []",
+      "template_version: 1.7.0",
+      "source: D&D 5e SRD",
+      "---",
+      "",
+      "```dnd-hub",
+      "```",
+      "",
+    ].join("\n");
+    // All fields already correct — should be a no-op
+    const out = applyCreature180(noteWithSaves);
+    expect(out).toBeNull();
   });
 });

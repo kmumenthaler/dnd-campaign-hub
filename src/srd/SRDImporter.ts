@@ -278,12 +278,22 @@ export function buildSRDCreatureNote(m: any, tokenId: string, imagePath?: string
 
 	// ── Traits / actions / legendary / reactions ──
 	const fmtBlock = (items: any[] | undefined, key: string) => {
-		if (!items || items.length === 0) return `\n${key}:`;
+		if (!items || items.length === 0) return `\n${key}: []`;
 		let out = `\n${key}:`;
 		for (const item of items) {
 			if (item.name && item.desc) {
 				out += `\n  - name: ${item.name}`;
-				out += `\n    desc: "${esc(item.desc)}"`;
+				const descStr = String(item.desc || "");
+				if (descStr.includes("\n")) {
+					// Multi-line desc: emit as a YAML block scalar (|) with 6-space indent
+					const indented = descStr
+						.split("\n")
+						.map((line) => (line.trim() === "" ? "" : `      ${line}`))
+						.join("\n");
+					out += `\n    desc: |\n${indented}`;
+				} else {
+					out += `\n    desc: "${esc(descStr)}"`;
+				}
 			}
 		}
 		return out;
@@ -308,26 +318,26 @@ type: ${m.type || "creature"}`;
 	fm += `\nspeed: ${q(speedStr)}`;
 	fm += `\nstats:\n  - ${str}\n  - ${dex}\n  - ${con}\n  - ${int}\n  - ${wis}\n  - ${cha}`;
 	fm += `\nfage_stats:\n  - ${fage[0]}\n  - ${fage[1]}\n  - ${fage[2]}\n  - ${fage[3]}\n  - ${fage[4]}\n  - ${fage[5]}`;
-	fm += `\nsaves:${saves}`;
+	fm += `\nsaves:${saves || " []"}`;
 	fm += `\nskillsaves:${skillsaves}`;
-	fm += `\ndamage_vulnerabilities: ${q(dmgVuln)}`;
-	fm += `\ndamage_resistances: ${q(dmgRes)}`;
-	fm += `\ndamage_immunities: ${q(dmgImm)}`;
-	fm += `\ncondition_immunities: ${q(condImm)}`;
+	fm += `\ndamage_vulnerabilities: ${q(dmgVuln) || '""'}`;
+	fm += `\ndamage_resistances: ${q(dmgRes) || '""'}`;
+	fm += `\ndamage_immunities: ${q(dmgImm) || '""'}`;
+	fm += `\ncondition_immunities: ${q(condImm) || '""'}`;
 	fm += `\nsenses: ${q(sensesStr)}`;
 	fm += `\nlanguages: ${q(languages)}`;
 	// Fractional CRs (1/4, 1/2, 1/8) must be quoted so YAML parses them as strings.
 	const crStr = formatCR(m.challenge_rating ?? 0);
 	fm += `\ncr: ${crStr.includes("/") ? q(crStr) : crStr}`;
-	fm += `\nspells:`;
+	fm += `\nspells: []`;
 	fm += fmtBlock(m.special_abilities, "traits");
 	fm += fmtBlock(m.actions, "actions");
 	fm += fmtBlock(m.legendary_actions, "legendary_actions");
-	fm += `\nbonus_actions:`;
+	fm += `\nbonus_actions: []`;
 	fm += fmtBlock(m.reactions, "reactions");
 	fm += `\ntoken_id: ${tokenId}`;
 	fm += `\nsource: D&D 5e SRD`;
-	fm += `\ntemplate_version: 1.7.0`;
+	fm += `\ntemplate_version: 1.8.0`;
 	fm += `\n---\n\n`;
 
 	// ── Body ──

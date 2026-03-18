@@ -468,6 +468,67 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "creature-1.8.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.8.0",
+      description: "Repair broken YAML: fix quoted field-name lines, set empty damage/condition fields to \"\", empty list fields to []",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        let changed = false;
+
+        // Fix A — Repair lines like `"damage_resistances:"` (a double-quoted YAML key
+        // with colon but no value) — a regression introduced by creature-1.7.0.
+        // Replace them with proper empty-value fields: `damage_resistances: ""`
+        const brokenFieldRegex = /^"([a-z_]+):"$/gm;
+        if (brokenFieldRegex.test(out)) {
+          out = out.replace(/^"([a-z_]+):"$/gm, '$1: ""');
+          changed = true;
+        }
+
+        // Fix B — Set empty damage/condition fields to ""
+        // These fields must always have a quoted empty string, never bare null.
+        const emptyStringFields = [
+          "damage_vulnerabilities",
+          "damage_resistances",
+          "damage_immunities",
+          "condition_immunities",
+        ];
+        for (const field of emptyStringFields) {
+          const emptyFieldRegex = new RegExp(`^(${field}:)\\s*$`, "m");
+          if (emptyFieldRegex.test(out)) {
+            out = out.replace(emptyFieldRegex, `$1 ""`);
+            changed = true;
+          }
+        }
+
+        // Fix C — Set empty list fields to []
+        // These fields should be empty arrays, not bare null values.
+        // Use a negative lookahead to skip fields that already have indented list items
+        // on the following line (which would be a valid populated YAML list).
+        const emptyListFields = [
+          "saves",
+          "spells",
+          "legendary_actions",
+          "bonus_actions",
+          "reactions",
+        ];
+        for (const field of emptyListFields) {
+          // Match field: with no value AND not followed by a line starting with whitespace
+          // (indented list items). The (?!\n[ \t]) lookahead prevents matching populated lists.
+          const emptyFieldRegex = new RegExp(`^(${field}:)[ \\t]*$(?!\\n[ \\t])`, "m");
+          if (emptyFieldRegex.test(out)) {
+            out = out.replace(emptyFieldRegex, `$1 []`);
+            changed = true;
+          }
+        }
+
+        if (!changed) return null;
+
+        return setFrontmatterField(out, "template_version", "1.8.0");
+      },
+    },
+
     // ── Scene ────────────────────────────────────────────────────────────
 
     {
