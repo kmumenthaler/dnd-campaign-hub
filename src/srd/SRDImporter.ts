@@ -319,7 +319,7 @@ type: ${m.type || "creature"}`;
 	fm += `\nstats:\n  - ${str}\n  - ${dex}\n  - ${con}\n  - ${int}\n  - ${wis}\n  - ${cha}`;
 	fm += `\nfage_stats:\n  - ${fage[0]}\n  - ${fage[1]}\n  - ${fage[2]}\n  - ${fage[3]}\n  - ${fage[4]}\n  - ${fage[5]}`;
 	fm += `\nsaves:${saves || " []"}`;
-	fm += `\nskillsaves:${skillsaves}`;
+	fm += `\nskillsaves:${skillsaves || " []"}`;
 	fm += `\ndamage_vulnerabilities: ${q(dmgVuln) || '""'}`;
 	fm += `\ndamage_resistances: ${q(dmgRes) || '""'}`;
 	fm += `\ndamage_immunities: ${q(dmgImm) || '""'}`;
@@ -337,7 +337,7 @@ type: ${m.type || "creature"}`;
 	fm += fmtBlock(m.reactions, "reactions");
 	fm += `\ntoken_id: ${tokenId}`;
 	fm += `\nsource: D&D 5e SRD`;
-	fm += `\ntemplate_version: 1.8.0`;
+	fm += `\ntemplate_version: 1.10.0`;
 	fm += `\n---\n\n`;
 
 	// ── Body ──
