@@ -577,6 +577,64 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "creature-1.10.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.10.0",
+      description:
+        "Convert multi-line double-quoted desc values to | block scalars; fix bare skillsaves null",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        let changed = false;
+
+        // Fix A — Convert bare `skillsaves:` to `skillsaves: []`
+        // creature-1.8.0 missed this field in its empty-list fix.
+        const bareSkillsaves = /^(skillsaves:)[ \t]*$(?!\n[ \t])/m;
+        if (bareSkillsaves.test(out)) {
+          out = out.replace(bareSkillsaves, "$1 []");
+          changed = true;
+        }
+
+        // Fix B — Convert multi-line double-quoted desc values to | block
+        // scalars.  Double-quoted strings fold newlines into spaces per YAML
+        // spec, losing intended line breaks in creature descriptions.
+        const descFixed = out.replace(
+          /^( +)desc:\s*"((?:[^"\\]|\\.)*)"$/gm,
+          (fullMatch: string, indent: string, rawContent: string) => {
+            // Only convert values that actually span multiple lines
+            if (!rawContent.includes("\n")) return fullMatch;
+
+            // Unescape YAML double-quoted escapes
+            const unescaped = rawContent
+              .replace(/\\"/g, '"')
+              .replace(/\\\\/g, "\\");
+
+            const contentIndent = indent + "  ";
+            const lines = unescaped.split(/\r?\n/);
+
+            // Trim trailing empty lines left over from the split
+            while (lines.length > 0 && lines[lines.length - 1]!.trim() === "") {
+              lines.pop();
+            }
+
+            const indentedLines = lines.map((line) =>
+              line.trim() === "" ? "" : contentIndent + line,
+            );
+
+            return `${indent}desc: |\n${indentedLines.join("\n")}`;
+          },
+        );
+
+        if (descFixed !== out) {
+          out = descFixed;
+          changed = true;
+        }
+
+        if (!changed) return null;
+        return setFrontmatterField(out, "template_version", "1.10.0");
+      },
+    },
+
     // ── Scene ────────────────────────────────────────────────────────────
 
     {

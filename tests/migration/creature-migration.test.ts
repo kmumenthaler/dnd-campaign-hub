@@ -1032,3 +1032,246 @@ describe("creature-1.9.0: repair quoted fieldname:value lines", () => {
     expect(out).toContain('damage_immunities: "poison"');
   });
 });
+
+// ── creature-1.10.0 simulation helper ────────────────────────────────────────
+
+/**
+ * Simulates the creature-1.10.0 migration step.
+ * Converts multi-line double-quoted desc values to | block scalars and
+ * fixes bare skillsaves null.
+ */
+function applyCreature1100(content: string): string | null {
+  let out = content;
+  let changed = false;
+
+  // Fix A — bare skillsaves: → skillsaves: []
+  const bareSkillsaves = /^(skillsaves:)[ \t]*$(?!\n[ \t])/m;
+  if (bareSkillsaves.test(out)) {
+    out = out.replace(bareSkillsaves, "$1 []");
+    changed = true;
+  }
+
+  // Fix B — multi-line double-quoted desc → | block scalar
+  const descFixed = out.replace(
+    /^( +)desc:\s*"((?:[^"\\]|\\.)*)"$/gm,
+    (fullMatch: string, indent: string, rawContent: string) => {
+      if (!rawContent.includes("\n")) return fullMatch;
+      const unescaped = rawContent.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+      const contentIndent = indent + "  ";
+      const lines = unescaped.split(/\r?\n/);
+      while (lines.length > 0 && lines[lines.length - 1]!.trim() === "") {
+        lines.pop();
+      }
+      const indentedLines = lines.map((line) =>
+        line.trim() === "" ? "" : contentIndent + line,
+      );
+      return `${indent}desc: |\n${indentedLines.join("\n")}`;
+    },
+  );
+  if (descFixed !== out) {
+    out = descFixed;
+    changed = true;
+  }
+
+  if (!changed) return null;
+  return setFrontmatterField(out, "template_version", "1.10.0");
+}
+
+// ── creature-1.10.0 tests ───────────────────────────────────────────────────
+
+describe("creature-1.10.0: block scalar desc + bare skillsaves fix", () => {
+  it("converts multi-line double-quoted desc to | block scalar", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Ancient Brass Dragon",
+      "type: dragon",
+      "template_version: 1.9.0",
+      "actions:",
+      "  - name: Breath Weapons",
+      '    desc: "The dragon uses one of the following breath weapons:',
+      "Fire Breath. The dragon exhales fire in a 90-foot line.",
+      'Sleep Breath. The dragon exhales sleep gas in a 90-foot cone."',
+      "  - name: Bite",
+      '    desc: "Melee Weapon Attack: +14 to hit, reach 15 ft."',
+      "source: D&D 5e SRD",
+      "---",
+      "",
+      "```dnd-hub",
+      "```",
+    ].join("\n");
+
+    const out = applyCreature1100(note);
+    expect(out).not.toBeNull();
+    // Multi-line desc converted to block scalar
+    expect(out).toContain("    desc: |");
+    expect(out).toContain("      The dragon uses one of the following breath weapons:");
+    expect(out).toContain("      Fire Breath. The dragon exhales fire in a 90-foot line.");
+    expect(out).toContain("      Sleep Breath. The dragon exhales sleep gas in a 90-foot cone.");
+    // Single-line desc left unchanged
+    expect(out).toContain('    desc: "Melee Weapon Attack: +14 to hit, reach 15 ft."');
+    expect(out).toContain("template_version: 1.10.0");
+  });
+
+  it("converts multiple multi-line descs in the same note", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Test Dragon",
+      "type: dragon",
+      "template_version: 1.9.0",
+      "actions:",
+      "  - name: Breath Weapons",
+      '    desc: "Line 1.',
+      'Line 2."',
+      "  - name: Change Shape",
+      '    desc: "Paragraph 1.',
+      'Paragraph 2."',
+      "source: D&D 5e SRD",
+      "---",
+    ].join("\n");
+
+    const out = applyCreature1100(note);
+    expect(out).not.toBeNull();
+    // Both descs should be converted
+    expect(out!.match(/desc: \|/g)?.length).toBe(2);
+    expect(out).toContain("      Line 1.");
+    expect(out).toContain("      Line 2.");
+    expect(out).toContain("      Paragraph 1.");
+    expect(out).toContain("      Paragraph 2.");
+  });
+
+  it("fixes bare skillsaves: to skillsaves: []", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Air Elemental",
+      "type: elemental",
+      "template_version: 1.9.0",
+      "skillsaves:",
+      'damage_vulnerabilities: ""',
+      "source: D&D 5e SRD",
+      "---",
+    ].join("\n");
+
+    const out = applyCreature1100(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain("skillsaves: []");
+    expect(out).toContain("template_version: 1.10.0");
+  });
+
+  it("does not touch populated skillsaves list", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Ancient Brass Dragon",
+      "type: dragon",
+      "template_version: 1.9.0",
+      "skillsaves:",
+      "  - history: 9",
+      "  - perception: 14",
+      'damage_vulnerabilities: ""',
+      "source: D&D 5e SRD",
+      "---",
+    ].join("\n");
+
+    const out = applyCreature1100(note);
+    // No bare skillsaves fix and no multi-line desc → null (no-op)
+    expect(out).toBeNull();
+  });
+
+  it("leaves single-line desc values unchanged", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Test",
+      "type: humanoid",
+      "template_version: 1.9.0",
+      "traits:",
+      "  - name: Brave",
+      '    desc: "The knight has advantage on saving throws against being frightened."',
+      "source: D&D 5e SRD",
+      "---",
+    ].join("\n");
+
+    const out = applyCreature1100(note);
+    expect(out).toBeNull();
+  });
+
+  it("is idempotent — returns null when already at 1.10.0 with block scalars", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Test Dragon",
+      "type: dragon",
+      "template_version: 1.10.0",
+      "skillsaves: []",
+      "actions:",
+      "  - name: Breath Weapons",
+      "    desc: |",
+      "      The dragon uses one of the following breath weapons:",
+      "      Fire Breath. Deals fire damage.",
+      "source: D&D 5e SRD",
+      "---",
+    ].join("\n");
+
+    const out = applyCreature1100(note);
+    expect(out).toBeNull();
+  });
+
+  it("handles desc with escaped quotes inside", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Test",
+      "type: humanoid",
+      "template_version: 1.9.0",
+      "traits:",
+      "  - name: Speech",
+      '    desc: "The creature says \\"hello\\".',
+      'Then it says \\"goodbye\\"."',
+      "source: D&D 5e SRD",
+      "---",
+    ].join("\n");
+
+    const out = applyCreature1100(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain("    desc: |");
+    // Escaped quotes should be unescaped in block scalar
+    expect(out).toContain('      The creature says "hello".');
+    expect(out).toContain('      Then it says "goodbye".');
+  });
+
+  it("applies both fixes (skillsaves + desc) in one pass", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Air Elemental",
+      "type: elemental",
+      "template_version: 1.9.0",
+      "skillsaves:",
+      'damage_vulnerabilities: ""',
+      "actions:",
+      "  - name: Whirlwind",
+      '    desc: "Each creature in the elemental\'s space must make a DC 13 Strength saving throw.',
+      'On a failure, a target takes 15 (3d8 + 2) bludgeoning damage."',
+      "source: D&D 5e SRD",
+      "---",
+    ].join("\n");
+
+    const out = applyCreature1100(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain("skillsaves: []");
+    expect(out).toContain("    desc: |");
+    expect(out).toContain("      Each creature in the elemental's space must make a DC 13 Strength saving throw.");
+    expect(out).toContain("template_version: 1.10.0");
+  });
+});
