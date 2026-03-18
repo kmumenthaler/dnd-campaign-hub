@@ -845,3 +845,190 @@ describe("creature-1.8.0: repair broken YAML frontmatter", () => {
     expect(out).toBeNull();
   });
 });
+
+// ── creature-1.9.0 simulation helper ─────────────────────────────────────────
+
+/**
+ * Simulates the creature-1.9.0 migration step.
+ * Repairs lines where the entire "fieldname: value" was wrapped in double quotes.
+ */
+function applyCreature190(content: string): string | null {
+  let out = content;
+  let changed = false;
+
+  const brokenLineRegex = /^"([a-z][a-z_]*):\s*((?:\\"|[^"])*)"$/gm;
+
+  if (brokenLineRegex.test(out)) {
+    brokenLineRegex.lastIndex = 0;
+    out = out.replace(brokenLineRegex, (_match, fieldName: string, rawValue: string) => {
+      let value = rawValue.replace(/\\"/g, '"');
+      if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
+        value = value.slice(1, -1);
+      }
+      if (!value) return `${fieldName}: ""`;
+      if (/[,:#{}\[\]&*!|>'"%@`]/.test(value) || value.includes("\\")) {
+        const escaped = value.replace(/"/g, '\\"');
+        return `${fieldName}: "${escaped}"`;
+      }
+      return `${fieldName}: ${value}`;
+    });
+    changed = true;
+  }
+
+  if (!changed) return null;
+
+  return setFrontmatterField(out, "template_version", "1.9.0");
+}
+
+// ── creature-1.9.0 tests ────────────────────────────────────────────────────
+
+describe("creature-1.9.0: repair quoted fieldname:value lines", () => {
+  it("repairs a non-empty field with value wrapped in quotes", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Balor",
+      "type: fiend",
+      "damage_vulnerabilities: \"\"",
+      '"damage_resistances: cold, lightning, bludgeoning, piercing, and slashing from nonmagical weapons"',
+      'damage_immunities: "fire, poison"',
+      'condition_immunities: "Poisoned"',
+      "template_version: 1.8.0",
+      "source: D&D 5e SRD",
+      "---",
+      "",
+      "```dnd-hub",
+      "```",
+      "",
+    ].join("\n");
+    const out = applyCreature190(note);
+    expect(out).not.toBeNull();
+    // The broken line should be repaired to a proper field: "value"
+    expect(out).toContain('damage_resistances: "cold, lightning, bludgeoning, piercing, and slashing from nonmagical weapons"');
+    // Already-correct fields must be untouched
+    expect(out).toContain('damage_immunities: "fire, poison"');
+    expect(out).toContain("template_version: 1.9.0");
+  });
+
+  it("repairs a field with escaped inner quotes", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Adult Black Dragon",
+      "type: dragon",
+      '"senses: \\"darkvision 120 ft., blindsight 60 ft., passive Perception 21\\""',
+      "template_version: 1.8.0",
+      "source: D&D 5e SRD",
+      "---",
+      "",
+      "```dnd-hub",
+      "```",
+      "",
+    ].join("\n");
+    const out = applyCreature190(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain('senses: "darkvision 120 ft., blindsight 60 ft., passive Perception 21"');
+  });
+
+  it("repairs a plain numeric cr wrapped in quotes", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Tarrasque",
+      "type: monstrosity",
+      '"cr: 30"',
+      "template_version: 1.8.0",
+      "source: D&D 5e SRD",
+      "---",
+      "",
+      "```dnd-hub",
+      "```",
+      "",
+    ].join("\n");
+    const out = applyCreature190(note);
+    expect(out).not.toBeNull();
+    // 30 has no special chars → unquoted
+    expect(out).toContain("cr: 30");
+    // Should NOT be "cr: 30" (still quoted)
+    expect(out).not.toMatch(/^"cr: 30"$/m);
+  });
+
+  it("repairs an empty-value broken line to quoted empty string", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Test",
+      "type: humanoid",
+      '"damage_resistances:"',
+      "template_version: 1.8.0",
+      "source: D&D 5e SRD",
+      "---",
+      "",
+      "```dnd-hub",
+      "```",
+      "",
+    ].join("\n");
+    const out = applyCreature190(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain('damage_resistances: ""');
+  });
+
+  it("is idempotent — returns null when no broken lines remain", () => {
+    const cleanNote = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Acolyte",
+      "type: humanoid",
+      'speed: "30 ft."',
+      'senses: "passive Perception 12"',
+      'languages: "any one language (usually Common)"',
+      'damage_vulnerabilities: ""',
+      'damage_resistances: ""',
+      'damage_immunities: ""',
+      'condition_immunities: ""',
+      'cr: "1/4"',
+      "template_version: 1.8.0",
+      "source: D&D 5e SRD",
+      "---",
+      "",
+      "```dnd-hub",
+      "```",
+      "",
+    ].join("\n");
+    const out = applyCreature190(cleanNote);
+    expect(out).toBeNull();
+  });
+
+  it("handles multiple broken fields in one note", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Air Elemental",
+      "type: elemental",
+      'damage_vulnerabilities: ""',
+      '"damage_resistances: lightning, thunder, bludgeoning, piercing, and slashing from nonmagical weapons"',
+      'damage_immunities: "poison"',
+      '"condition_immunities: Exhaustion, Grappled, Paralyzed, Petrified, Poisoned, Prone, Restrained, Unconscious"',
+      "template_version: 1.8.0",
+      "source: D&D 5e SRD",
+      "---",
+      "",
+      "```dnd-hub",
+      "```",
+      "",
+    ].join("\n");
+    const out = applyCreature190(note);
+    expect(out).not.toBeNull();
+    expect(out).toContain('damage_resistances: "lightning, thunder, bludgeoning, piercing, and slashing from nonmagical weapons"');
+    expect(out).toContain('condition_immunities: "Exhaustion, Grappled, Paralyzed, Petrified, Poisoned, Prone, Restrained, Unconscious"');
+    // Already-correct fields are untouched
+    expect(out).toContain('damage_vulnerabilities: ""');
+    expect(out).toContain('damage_immunities: "poison"');
+  });
+});

@@ -529,6 +529,54 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "creature-1.9.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.9.0",
+      description: "Repair fields where the entire 'fieldname: value' line was wrapped in quotes by creature-1.7.0",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        let changed = false;
+
+        // creature-1.7.0 introduced a regression where some non-empty fields
+        // had their entire line wrapped in double quotes instead of just the
+        // value. Examples of broken lines:
+        //   "damage_resistances: cold, lightning, ..."
+        //   "senses: \"darkvision 120 ft., ...\""
+        //   "cr: 30"
+        //
+        // Match any top-level line that is a quoted string looking like
+        // "fieldname: optional_value". Extract fieldname and value, unescape
+        // inner quotes, and rewrite as proper YAML.
+        const brokenLineRegex = /^"([a-z][a-z_]*):\s*((?:\\"|[^"])*)"$/gm;
+
+        if (brokenLineRegex.test(out)) {
+          // Reset lastIndex after test()
+          brokenLineRegex.lastIndex = 0;
+          out = out.replace(brokenLineRegex, (_match, fieldName: string, rawValue: string) => {
+            // Unescape \" → "
+            let value = rawValue.replace(/\\"/g, '"');
+            // Strip outer quotes from double-quoting: "value" → value
+            if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
+              value = value.slice(1, -1);
+            }
+            if (!value) return `${fieldName}: ""`;
+            // Re-quote if the value contains YAML-special characters
+            if (/[,:#{}\[\]&*!|>'"%@`]/.test(value) || value.includes("\\")) {
+              const escaped = value.replace(/"/g, '\\"');
+              return `${fieldName}: "${escaped}"`;
+            }
+            return `${fieldName}: ${value}`;
+          });
+          changed = true;
+        }
+
+        if (!changed) return null;
+
+        return setFrontmatterField(out, "template_version", "1.9.0");
+      },
+    },
+
     // ── Scene ────────────────────────────────────────────────────────────
 
     {

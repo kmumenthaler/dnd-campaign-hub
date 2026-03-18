@@ -77,7 +77,7 @@ export const TEMPLATE_VERSIONS: Record<string, string> = {
   spell: "1.2.0",
   campaign: "1.1.0",
   trap: "1.3.1",
-  creature: "1.8.0",
+  creature: "1.9.0",
   encounter: "1.2.0",
   "encounter-table": "1.3.0",
   "point-of-interest": "1.2.0",
