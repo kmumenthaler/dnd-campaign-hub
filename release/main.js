@@ -376,14 +376,14 @@ notes: []
 `;
     PC_TEMPLATE = `---
 type: player
-template_version: 1.4.0
-name: 
-player: 
-campaign: 
-world: 
-race: 
-class: 
-subclass: 
+template_version: 1.5.0
+name:
+player:
+campaign:
+world:
+race:
+class:
+subclass:
 level: 1
 hp: 0
 hp_max: 0
@@ -392,12 +392,12 @@ ac: 10
 init_bonus: 0
 speed: 30
 passive_perception: 10
-background: 
-alignment: 
+background:
+alignment:
 experience: 0
-readonlyUrl: 
-characterSheetPdf: 
-date: 
+readonlyUrl:
+characterSheetPdf:
+date:
 ---
 
 # {{name}}
@@ -405,10 +405,9 @@ date:
 \`\`\`dnd-hub
 \`\`\`
 
-> [!info] Quick Stats
-> **Class:** {{class}} {{level}}  
-> **HP:** {{hp}}/{{hp_max}}  
-> **AC:** {{ac}} | **Initiative:** +{{init_bonus}} | **Speed:** {{speed}} ft.
+\`\`\`dnd-hub-view
+pc-quick-stats
+\`\`\`
 
 ## Character Sheet Links
 
@@ -985,8 +984,8 @@ var init_types2 = __esm({
       world: "1.3.0",
       session: "1.5.0",
       npc: "1.4.0",
-      pc: "1.4.0",
-      player: "1.4.0",
+      pc: "1.5.0",
+      player: "1.5.0",
       adventure: "1.4.0",
       scene: "2.3.0",
       faction: "1.2.0",
@@ -994,7 +993,7 @@ var init_types2 = __esm({
       spell: "1.2.0",
       campaign: "1.1.0",
       trap: "1.3.1",
-      creature: "1.3.0",
+      creature: "1.10.0",
       encounter: "1.2.0",
       "encounter-table": "1.3.0",
       "point-of-interest": "1.2.0"
@@ -1027,6 +1026,11 @@ function getTemplateVersion(content) {
 }
 function getEntityType(content) {
   var _a, _b;
+  const pluginTypeMatch = content.match(/^plugin_type:\s*(.+)$/m);
+  if (pluginTypeMatch == null ? void 0 : pluginTypeMatch[1]) return pluginTypeMatch[1].trim();
+  if (/^statblock:\s*true$/m.test(content) && /^source:\s*D&D 5e SRD$/m.test(content)) {
+    return "creature";
+  }
   const match = content.match(/^type:\s*(.+)$/m);
   return (_b = (_a = match == null ? void 0 : match[1]) == null ? void 0 : _a.trim()) != null ? _b : null;
 }
@@ -1260,6 +1264,30 @@ ${block}
         return setFrontmatterField(out, "template_version", "1.4.0");
       }
     },
+    {
+      id: "player-1.5.0",
+      entityTypes: ["player", "pc"],
+      targetVersion: "1.5.0",
+      description: "Replace static Quick Stats callout with live dnd-hub-view block",
+      async apply(ctx) {
+        if (ctx.content.includes("```dnd-hub-view\npc-quick-stats")) return null;
+        let out = ctx.content;
+        const staticCallout = /^> \[!info\] Quick Stats\n(?:>.*\n)*/m;
+        const dynamicBlock = "```dnd-hub-view\npc-quick-stats\n```\n";
+        if (staticCallout.test(out)) {
+          out = out.replace(staticCallout, dynamicBlock);
+        } else {
+          const afterRenderBlock = /^```dnd-hub\n```\n/m;
+          if (afterRenderBlock.test(out)) {
+            out = out.replace(afterRenderBlock, "```dnd-hub\n```\n\n" + dynamicBlock);
+          } else {
+            out = insertAfterTitle(out, dynamicBlock.trimEnd());
+          }
+        }
+        out = out.replace(/\n{3,}/g, "\n\n");
+        return setFrontmatterField(out, "template_version", "1.5.0");
+      }
+    },
     // ── NPC ──────────────────────────────────────────────────────────────
     {
       id: "npc-1.1.0",
@@ -1368,6 +1396,215 @@ statblockBtn.addEventListener("click", () => {
       async apply(ctx) {
         if (ctx.content.includes("```dnd-hub")) return null;
         return insertAfterTitle(ctx.content, DND_HUB_BLOCK);
+      }
+    },
+    {
+      id: "creature-1.4.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.4.0",
+      description: "Add plugin_type: creature field so SRD notes are identified as creature entities",
+      async apply(ctx) {
+        if (/^plugin_type:/m.test(ctx.content)) return null;
+        const match = ctx.content.match(/^---\n([\s\S]*?)\n---/);
+        if (!match || match[1] === void 0) return null;
+        let fm = match[1];
+        if (/^layout:/m.test(fm)) {
+          fm = fm.replace(/^(layout:\s*.+)$/m, "$1\nplugin_type: creature");
+        } else if (/^name:/m.test(fm)) {
+          fm = fm.replace(/^(name:\s*.+)$/m, "plugin_type: creature\n$1");
+        } else {
+          fm = `${fm}
+plugin_type: creature`;
+        }
+        return ctx.content.replace(/^---\n[\s\S]*?\n---/, `---
+${fm}
+---`);
+      }
+    },
+    {
+      id: "creature-1.5.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.5.0",
+      description: "Replace inline dataviewjs buttons with dnd-hub render block",
+      async apply(ctx) {
+        return replaceButtonsWithRenderBlock(ctx.content, "dnd-campaign-hub:edit-creature");
+      }
+    },
+    {
+      id: "creature-1.6.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.6.0",
+      description: "Strip leftover dataviewjs blocks and clean up stray characters from creature notes",
+      async apply(ctx) {
+        let out = ctx.content;
+        const original = out;
+        if (out.includes("```dataviewjs")) {
+          const stripped = removeAllDataviewjsBlocks(out);
+          if (stripped !== null) out = stripped;
+        }
+        if (!out.includes("```dnd-hub")) {
+          out = insertAfterTitle(out, DND_HUB_BLOCK);
+        }
+        out = out.replace(/(```\n)\n*([^\s`\n!])\n(?=!?\[\[)/g, "$1\n");
+        out = out.replace(/\n{3,}/g, "\n\n");
+        if (out === original) return null;
+        return setFrontmatterField(out, "template_version", "1.6.0");
+      }
+    },
+    {
+      id: "creature-1.7.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.7.0",
+      description: "Quote special-character frontmatter fields (speed, senses, languages, damage_*, cr) so YAML parses them correctly",
+      async apply(ctx) {
+        var _a, _b, _c, _d;
+        const ALWAYS_QUOTE = [
+          "speed",
+          "senses",
+          "languages",
+          "damage_vulnerabilities",
+          "damage_resistances",
+          "damage_immunities",
+          "condition_immunities"
+        ];
+        let out = ctx.content;
+        let changed = false;
+        for (const field of ALWAYS_QUOTE) {
+          const match = out.match(new RegExp(`^${field}:\\s*(.+)$`, "m"));
+          const rawValue = (_b = (_a = match == null ? void 0 : match[1]) == null ? void 0 : _a.trim()) != null ? _b : "";
+          if (!rawValue) continue;
+          const alreadyQuoted = rawValue.startsWith('"') || rawValue.startsWith("'");
+          if (alreadyQuoted) continue;
+          const escaped = rawValue.replace(/"/g, '\\"');
+          out = out.replace(
+            new RegExp(`^(${field}:\\s*)(.+)$`, "m"),
+            `$1"${escaped}"`
+          );
+          changed = true;
+        }
+        const crMatch = out.match(/^cr:\s*(.+)$/m);
+        const crRaw = (_d = (_c = crMatch == null ? void 0 : crMatch[1]) == null ? void 0 : _c.trim()) != null ? _d : "";
+        if (crRaw && crRaw.includes("/")) {
+          const alreadyQuoted = crRaw.startsWith('"') || crRaw.startsWith("'");
+          if (!alreadyQuoted) {
+            const escaped = crRaw.replace(/"/g, '\\"');
+            out = out.replace(/^(cr:\s*)(.+)$/m, `$1"${escaped}"`);
+            changed = true;
+          }
+        }
+        if (!changed) return null;
+        return setFrontmatterField(out, "template_version", "1.7.0");
+      }
+    },
+    {
+      id: "creature-1.8.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.8.0",
+      description: 'Repair broken YAML: fix quoted field-name lines, set empty damage/condition fields to "", empty list fields to []',
+      async apply(ctx) {
+        let out = ctx.content;
+        let changed = false;
+        const brokenFieldRegex = /^"([a-z_]+):"$/gm;
+        if (brokenFieldRegex.test(out)) {
+          out = out.replace(/^"([a-z_]+):"$/gm, '$1: ""');
+          changed = true;
+        }
+        const emptyStringFields = [
+          "damage_vulnerabilities",
+          "damage_resistances",
+          "damage_immunities",
+          "condition_immunities"
+        ];
+        for (const field of emptyStringFields) {
+          const emptyFieldRegex = new RegExp(`^(${field}:)\\s*$`, "m");
+          if (emptyFieldRegex.test(out)) {
+            out = out.replace(emptyFieldRegex, `$1 ""`);
+            changed = true;
+          }
+        }
+        const emptyListFields = [
+          "saves",
+          "spells",
+          "legendary_actions",
+          "bonus_actions",
+          "reactions"
+        ];
+        for (const field of emptyListFields) {
+          const emptyFieldRegex = new RegExp(`^(${field}:)[ \\t]*$(?!\\n[ \\t])`, "m");
+          if (emptyFieldRegex.test(out)) {
+            out = out.replace(emptyFieldRegex, `$1 []`);
+            changed = true;
+          }
+        }
+        if (!changed) return null;
+        return setFrontmatterField(out, "template_version", "1.8.0");
+      }
+    },
+    {
+      id: "creature-1.9.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.9.0",
+      description: "Repair fields where the entire 'fieldname: value' line was wrapped in quotes by creature-1.7.0",
+      async apply(ctx) {
+        let out = ctx.content;
+        let changed = false;
+        const brokenLineRegex = /^"([a-z][a-z_]*):\s*((?:\\"|[^"])*)"$/gm;
+        if (brokenLineRegex.test(out)) {
+          brokenLineRegex.lastIndex = 0;
+          out = out.replace(brokenLineRegex, (_match, fieldName, rawValue) => {
+            let value = rawValue.replace(/\\"/g, '"');
+            if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
+              value = value.slice(1, -1);
+            }
+            if (!value) return `${fieldName}: ""`;
+            if (/[,:#{}\[\]&*!|>'"%@`]/.test(value) || value.includes("\\")) {
+              const escaped = value.replace(/"/g, '\\"');
+              return `${fieldName}: "${escaped}"`;
+            }
+            return `${fieldName}: ${value}`;
+          });
+          changed = true;
+        }
+        if (!changed) return null;
+        return setFrontmatterField(out, "template_version", "1.9.0");
+      }
+    },
+    {
+      id: "creature-1.10.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.10.0",
+      description: "Convert multi-line double-quoted desc values to | block scalars; fix bare skillsaves null",
+      async apply(ctx) {
+        let out = ctx.content;
+        let changed = false;
+        const bareSkillsaves = /^(skillsaves:)[ \t]*$(?!\n[ \t])/m;
+        if (bareSkillsaves.test(out)) {
+          out = out.replace(bareSkillsaves, "$1 []");
+          changed = true;
+        }
+        const descFixed = out.replace(
+          /^( +)desc:\s*"((?:[^"\\]|\\.)*)"$/gm,
+          (fullMatch, indent, rawContent) => {
+            if (!rawContent.includes("\n")) return fullMatch;
+            const unescaped = rawContent.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+            const contentIndent = indent + "  ";
+            const lines = unescaped.split(/\r?\n/);
+            while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+              lines.pop();
+            }
+            const indentedLines = lines.map(
+              (line) => line.trim() === "" ? "" : contentIndent + line
+            );
+            return `${indent}desc: |
+${indentedLines.join("\n")}`;
+          }
+        );
+        if (descFixed !== out) {
+          out = descFixed;
+          changed = true;
+        }
+        if (!changed) return null;
+        return setFrontmatterField(out, "template_version", "1.10.0");
       }
     },
     // ── Scene ────────────────────────────────────────────────────────────
@@ -16351,6 +16588,15 @@ var SceneMusicModal = class extends import_obsidian16.Modal {
     cancelBtn.addEventListener("click", () => this.close());
   }
 };
+var SceneMusicRenderChild = class extends import_obsidian16.MarkdownRenderChild {
+  constructor(containerEl, musicPlayer, syncButton) {
+    super(containerEl);
+    this.unsubscribe = musicPlayer.onSceneChange(syncButton);
+  }
+  onunload() {
+    this.unsubscribe();
+  }
+};
 function renderSceneMusicBlock(source, el, ctx, musicPlayer, settings, onPlayTriggered, app) {
   let config;
   try {
@@ -16470,15 +16716,9 @@ function renderSceneMusicBlock(source, el, ctx, musicPlayer, settings, onPlayTri
       syncButton();
     }
   });
-  const unsubscribe = musicPlayer.onSceneChange(() => syncButton());
   syncButton();
-  const observer = new MutationObserver(() => {
-    if (!el.isConnected) {
-      unsubscribe();
-      observer.disconnect();
-    }
-  });
-  observer.observe(el.parentElement || document.body, { childList: true, subtree: true });
+  const child = new SceneMusicRenderChild(el, musicPlayer, syncButton);
+  ctx.addChild(child);
   if (config.autoPlay) {
     controls.createEl("span", {
       text: "\u26A1 auto-play",
@@ -25608,18 +25848,19 @@ var CombatTracker = class {
    * PCs are resolved from vault notes via frontmatter.
    */
   async startFromEncounter(encounterName, creatures, partyMembers, useColorNames, encounterPath) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
     const combatants = [];
     for (const pm of partyMembers) {
+      const maxHP = (_a = pm.maxHp) != null ? _a : pm.hp;
       combatants.push({
         id: this.generateId(),
         name: pm.name,
         display: pm.name,
         initiative: 0,
-        modifier: (_a = pm.initBonus) != null ? _a : 0,
+        modifier: (_b = pm.initBonus) != null ? _b : 0,
         currentHP: pm.hp,
-        maxHP: pm.hp,
-        tempHP: (_b = pm.thp) != null ? _b : 0,
+        maxHP,
+        tempHP: (_c = pm.thp) != null ? _c : 0,
         ac: pm.ac,
         currentAC: pm.ac,
         player: true,
@@ -25671,7 +25912,7 @@ var CombatTracker = class {
           const file = this.app.vault.getAbstractFileByPath(ec.path);
           if (file instanceof import_obsidian32.TFile) {
             const cache = this.app.metadataCache.getFileCache(file);
-            tokenId = (_c = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _c.token_id;
+            tokenId = (_d = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _d.token_id;
           }
         }
         combatants.push({
@@ -25680,14 +25921,14 @@ var CombatTracker = class {
           display,
           initiative: 0,
           modifier,
-          currentHP: (_d = ec.hp) != null ? _d : 1,
-          maxHP: (_e = ec.hp) != null ? _e : 1,
+          currentHP: (_e = ec.hp) != null ? _e : 1,
+          maxHP: (_f = ec.hp) != null ? _f : 1,
           tempHP: 0,
-          ac: (_f = ec.ac) != null ? _f : 10,
-          currentAC: (_g = ec.ac) != null ? _g : 10,
+          ac: (_g = ec.ac) != null ? _g : 10,
+          currentAC: (_h = ec.ac) != null ? _h : 10,
           player: false,
-          friendly: (_h = ec.isFriendly) != null ? _h : false,
-          hidden: (_i = ec.isHidden) != null ? _i : false,
+          friendly: (_i = ec.isFriendly) != null ? _i : false,
+          hidden: (_j = ec.isHidden) != null ? _j : false,
           notePath: ec.path && ec.path !== "[SRD]" ? ec.path : void 0,
           tokenId,
           statuses: [],
@@ -26143,6 +26384,112 @@ var CombatTracker = class {
     const s = (_a = this.plugin.settings.combatStates) == null ? void 0 : _a[encounterName];
     if (!s) return null;
     return { round: s.round, savedAt: s.savedAt, combatantCount: s.combatants.length };
+  }
+  /* ────────────────── PC Note Sync ────────────────── */
+  /**
+   * Write each PC combatant's current tracker HP and temp HP back to their
+   * vault note's frontmatter (`hp` and `thp` fields).
+   * NPCs / creatures without a notePath are skipped silently.
+   */
+  async syncPCsToNotes() {
+    if (!this.state) {
+      new import_obsidian32.Notice("No active combat to sync");
+      return;
+    }
+    const pcs = this.state.combatants.filter((c) => c.player && c.notePath);
+    if (pcs.length === 0) {
+      new import_obsidian32.Notice("No PCs with linked notes in this combat");
+      return;
+    }
+    let synced = 0;
+    let failed = 0;
+    for (const c of pcs) {
+      if (!c.notePath) continue;
+      try {
+        const file = this.app.vault.getAbstractFileByPath(c.notePath);
+        if (!(file instanceof import_obsidian32.TFile)) {
+          failed++;
+          continue;
+        }
+        let content = await this.app.vault.read(file);
+        content = this.setFrontmatterField(content, "hp", String(c.currentHP));
+        content = this.setFrontmatterField(content, "thp", String(c.tempHP));
+        await this.app.vault.modify(file, content);
+        synced++;
+      } catch (err) {
+        console.error(`[CombatTracker] Failed to sync PC "${c.name}" to note:`, err);
+        failed++;
+      }
+    }
+    if (failed > 0) {
+      new import_obsidian32.Notice(`Synced ${synced} PC${synced !== 1 ? "s" : ""} to notes (${failed} failed)`);
+    } else {
+      new import_obsidian32.Notice(`Synced ${synced} PC${synced !== 1 ? "s" : ""} to notes`);
+    }
+  }
+  /**
+   * Re-read each PC's `hp` and `thp` frontmatter from their vault note and
+   * update the combatant's currentHP / tempHP in the tracker.
+   * NPC / creature combatants without a notePath are left unchanged.
+   */
+  async refreshPCsFromNotes() {
+    if (!this.state) {
+      new import_obsidian32.Notice("No active combat to refresh");
+      return;
+    }
+    const pcs = this.state.combatants.filter((c) => c.player && c.notePath);
+    if (pcs.length === 0) {
+      new import_obsidian32.Notice("No PCs with linked notes in this combat");
+      return;
+    }
+    let refreshed = 0;
+    let failed = 0;
+    for (const c of pcs) {
+      if (!c.notePath) continue;
+      try {
+        const file = this.app.vault.getAbstractFileByPath(c.notePath);
+        if (!(file instanceof import_obsidian32.TFile)) {
+          failed++;
+          continue;
+        }
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm = cache == null ? void 0 : cache.frontmatter;
+        if (!fm) {
+          failed++;
+          continue;
+        }
+        const currentHP = parseInt(fm.hp) || 0;
+        const maxHP = parseInt(fm.hp_max) || parseInt(fm.hp) || c.maxHP;
+        const tempHP = parseInt(fm.thp) || 0;
+        c.currentHP = Math.max(0, Math.min(maxHP, currentHP));
+        c.maxHP = maxHP;
+        c.tempHP = Math.max(0, tempHP);
+        this.syncUnconsciousStatus(c);
+        refreshed++;
+      } catch (err) {
+        console.error(`[CombatTracker] Failed to refresh PC "${c.name}" from note:`, err);
+        failed++;
+      }
+    }
+    this.emit();
+    if (failed > 0) {
+      new import_obsidian32.Notice(`Refreshed ${refreshed} PC${refreshed !== 1 ? "s" : ""} from notes (${failed} failed)`);
+    } else {
+      new import_obsidian32.Notice(`Refreshed ${refreshed} PC${refreshed !== 1 ? "s" : ""} from notes`);
+    }
+  }
+  /**
+   * Set (or update) a single frontmatter field value in raw file content.
+   * Operates purely on the string — does not call vault.modify().
+   */
+  setFrontmatterField(content, field, value) {
+    const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (!fmMatch || fmMatch[1] === void 0) return content;
+    const fieldRegex = new RegExp(`^(${field}:\\s*).*$`, "m");
+    if (fieldRegex.test(fmMatch[0])) {
+      return content.replace(fieldRegex, `$1${value}`);
+    }
+    return content.replace(/^---(\r?\n)/, `---$1${field}: ${value}$1`);
   }
   /* ────────────────── Private Helpers ────────────────── */
   findCombatant(id) {
@@ -26645,6 +26992,19 @@ var _CombatTrackerView = class _CombatTrackerView extends import_obsidian33.Item
         new CombatantEditModal(this.app, c, tracker).open();
       })
     );
+    if (c.player && c.notePath) {
+      menu.addSeparator();
+      menu.addItem(
+        (item) => item.setTitle("\u2193 Sync HP to Note").setIcon("arrow-down-to-line").onClick(() => {
+          void tracker.syncPCsToNotes();
+        })
+      );
+      menu.addItem(
+        (item) => item.setTitle("\u2191 Refresh HP from Note").setIcon("refresh-cw").onClick(() => {
+          void tracker.refreshPCsFromNotes();
+        })
+      );
+    }
     menu.addSeparator();
     const isEnabled = (_a = c.enabled) != null ? _a : true;
     menu.addItem(
@@ -26712,6 +27072,17 @@ var _CombatTrackerView = class _CombatTrackerView extends import_obsidian33.Item
     menu.addItem(
       (item) => item.setTitle("\u{1F4C2} Load Encounter").setIcon("folder-open").onClick(() => {
         new LoadEncounterModal(this.app, this.plugin).open();
+      })
+    );
+    menu.addSeparator();
+    menu.addItem(
+      (item) => item.setTitle("\u2193 Sync PCs to Notes").setIcon("arrow-down-to-line").onClick(() => {
+        void tracker.syncPCsToNotes();
+      })
+    );
+    menu.addItem(
+      (item) => item.setTitle("\u2191 Refresh PCs from Notes").setIcon("refresh-cw").onClick(() => {
+        void tracker.refreshPCsFromNotes();
       })
     );
     menu.addSeparator();
@@ -30102,7 +30473,7 @@ function groupActionsByKind(weapons, spellAttacks, featureActions, otherActions)
   return out;
 }
 async function importFromDndBeyond(source, options) {
-  var _a;
+  var _a, _b;
   const characterId = parseCharacterId(source);
   if (!characterId) {
     throw new Error("Could not parse D&D Beyond character ID from input.");
@@ -30122,7 +30493,7 @@ async function importFromDndBeyond(source, options) {
   if (!body.success || !body.data) {
     throw new Error("D&D Beyond API returned an invalid character payload.");
   }
-  const data = body.data;
+  const data = (_b = body.data.character) != null ? _b : body.data;
   const diagKeys = (obj, label) => {
     if (!obj || typeof obj !== "object") {
       console.log(`[DDB Import] ${label}: ${obj === null ? "null" : typeof obj}`);
@@ -30185,9 +30556,11 @@ async function importFromDndBeyond(source, options) {
   const totalLevel = getTotalLevel(data);
   const conScore = resolveAbilityScore(data, 3);
   const conModifier = abilityModifier(conScore || 10);
-  const hpMaxBase = asNumber(data.overrideHitPoints) > 0 ? asNumber(data.overrideHitPoints) : asNumber(data.baseHitPoints) + asNumber(data.bonusHitPoints) + conModifier * Math.max(0, totalLevel);
+  const hpPerLevelBonus = collectModifiers(data).filter((m) => (m == null ? void 0 : m.subType) === "hit-points-per-level").reduce((sum2, m) => sum2 + asNumber(m == null ? void 0 : m.value), 0);
+  const hpMaxBase = asNumber(data.overrideHitPoints) > 0 ? asNumber(data.overrideHitPoints) : asNumber(data.baseHitPoints) + asNumber(data.bonusHitPoints) + (conModifier + hpPerLevelBonus) * Math.max(0, totalLevel);
   const hpRemoved = asNumber(data.removedHitPoints);
   const hpCurrent = Math.max(0, hpMaxBase - hpRemoved);
+  const hpTemp = asNumber(data.temporaryHitPoints);
   const dexScore = resolveAbilityScore(data, 2);
   const initBonusNum = abilityModifier(dexScore || 10);
   const initBonus = initBonusNum >= 0 ? `+${initBonusNum}` : String(initBonusNum);
@@ -30248,6 +30621,7 @@ async function importFromDndBeyond(source, options) {
     level: String(totalLevel > 0 ? totalLevel : 1),
     hpCurrent: String(hpCurrent),
     hpMax: String(hpMaxBase > 0 ? hpMaxBase : 1),
+    hpTemp: String(hpTemp),
     ac: resolveArmorClass(data),
     initBonus,
     speed: resolveWalkSpeed(data),
@@ -30264,7 +30638,7 @@ async function importFromDndBeyond(source, options) {
   };
   console.log("[DDB Import] \u2500\u2500 Result summary \u2500\u2500");
   console.log("[DDB Import] name:", result.name, "| level:", result.level, "| classes:", result.classes);
-  console.log("[DDB Import] hp:", result.hpCurrent, "/", result.hpMax, "| ac:", result.ac, "| speed:", result.speed);
+  console.log("[DDB Import] hp:", result.hpCurrent, "/", result.hpMax, "| thp:", result.hpTemp, "| ac:", result.ac, "| speed:", result.speed);
   console.log("[DDB Import] abilities:", result.abilities);
   console.log("[DDB Import] skillsaves:", result.skillsaves.length, "| traits:", result.traits.length);
   console.log("[DDB Import] actions:", result.actions.length, "| bonusActions:", result.bonusActions.length, "| reactions:", result.reactions.length);
@@ -46215,6 +46589,7 @@ var PCCreationModal = class extends import_obsidian41.Modal {
     this.level = "1";
     this.hpCurrent = "";
     this.hpMax = "";
+    this.hpTemp = "0";
     this.ac = "10";
     this.initBonus = "0";
     this.speed = "30";
@@ -46599,6 +46974,7 @@ var PCCreationModal = class extends import_obsidian41.Modal {
       this.level = imported.level;
       this.hpCurrent = imported.hpCurrent;
       this.hpMax = imported.hpMax;
+      this.hpTemp = imported.hpTemp;
       if (imported.ac) this.ac = imported.ac;
       this.initBonus = imported.initBonus;
       this.speed = imported.speed;
@@ -46842,7 +47218,7 @@ var PCCreationModal = class extends import_obsidian41.Modal {
         level: this.level,
         hp: this.hpCurrent || "0",
         hp_max: this.hpMax || "0",
-        thp: 0,
+        thp: parseInt(this.hpTemp) || 0,
         ac: this.ac,
         init_bonus: this.initBonus,
         speed: this.speed,
@@ -52213,7 +52589,8 @@ function renderView(source, el, app, sourcePath) {
     "trap-elements": () => renderTrapElements(el, app, sourcePath),
     "trap-countermeasures": () => renderTrapCountermeasures(el, app, sourcePath),
     "encounter-difficulty": () => renderEncounterDifficulty(el, app, sourcePath),
-    "encounter-creatures": () => renderEncounterCreatures(el, app, sourcePath)
+    "encounter-creatures": () => renderEncounterCreatures(el, app, sourcePath),
+    "pc-quick-stats": () => renderPcQuickStats(el, app, sourcePath)
   };
   const renderer = viewId ? renderers[viewId] : void 0;
   if (!renderer) {
@@ -52569,6 +52946,55 @@ function renderEncounterCreatures(el, app, sourcePath) {
     row.createEl("td", { text: String(c.hp || "?") });
     row.createEl("td", { text: String(c.ac || "?") });
   }
+}
+function renderPcQuickStats(el, app, sourcePath) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+  const file = app.vault.getAbstractFileByPath(sourcePath);
+  if (!(file instanceof import_obsidian53.TFile)) return;
+  const cache = app.metadataCache.getFileCache(file);
+  const fm = cache == null ? void 0 : cache.frontmatter;
+  if (!fm) return;
+  const card = el.createDiv({ cls: "dnd-pc-quick-stats" });
+  const classLevel = fm.class ? `${fm.class}${fm.subclass ? ` (${fm.subclass})` : ""} \u2014 Level ${(_a = fm.level) != null ? _a : 1}` : `Level ${(_b = fm.level) != null ? _b : 1}`;
+  const classRow = card.createDiv({ cls: "dnd-pc-qs-row dnd-pc-qs-class-row" });
+  classRow.createEl("span", { cls: "dnd-pc-qs-label", text: "Class" });
+  classRow.createEl("span", { cls: "dnd-pc-qs-value", text: classLevel });
+  const hp = Number((_c = fm.hp) != null ? _c : 0);
+  const hpMax = Number((_d = fm.hp_max) != null ? _d : 0);
+  const thp = Number((_e = fm.thp) != null ? _e : 0);
+  const hpRow = card.createDiv({ cls: "dnd-pc-qs-row dnd-pc-qs-hp-row" });
+  hpRow.createEl("span", { cls: "dnd-pc-qs-label", text: "HP" });
+  const hpRight = hpRow.createDiv({ cls: "dnd-pc-qs-hp-right" });
+  const hpText = thp > 0 ? `${hp} / ${hpMax}  (+${thp} THP)` : `${hp} / ${hpMax}`;
+  hpRight.createEl("span", { cls: "dnd-pc-qs-value dnd-pc-qs-hp-value", text: hpText });
+  if (hpMax > 0) {
+    const barOuter = hpRight.createDiv({ cls: "dnd-pc-qs-hp-bar-outer" });
+    const pct = Math.max(0, Math.min(100, Math.round(hp / hpMax * 100)));
+    const barFill = barOuter.createDiv({ cls: "dnd-pc-qs-hp-bar-fill" });
+    barFill.style.width = `${pct}%`;
+    if (pct > 50) {
+      barFill.style.backgroundColor = "var(--color-green)";
+    } else if (pct > 25) {
+      barFill.style.backgroundColor = "var(--color-yellow)";
+    } else {
+      barFill.style.backgroundColor = "var(--color-red)";
+    }
+  }
+  const ac = (_f = fm.ac) != null ? _f : 10;
+  const initBonus = Number((_g = fm.init_bonus) != null ? _g : 0);
+  const initStr = initBonus >= 0 ? `+${initBonus}` : `${initBonus}`;
+  const speed = (_h = fm.speed) != null ? _h : 30;
+  const passPerc = (_i = fm.passive_perception) != null ? _i : 10;
+  const combatRow = card.createDiv({ cls: "dnd-pc-qs-row dnd-pc-qs-combat-row" });
+  const makeStat = (label, value) => {
+    const cell = combatRow.createDiv({ cls: "dnd-pc-qs-stat-cell" });
+    cell.createEl("span", { cls: "dnd-pc-qs-stat-value", text: value });
+    cell.createEl("span", { cls: "dnd-pc-qs-stat-label", text: label });
+  };
+  makeStat("AC", String(ac));
+  makeStat("Initiative", initStr);
+  makeStat("Speed", `${speed} ft`);
+  makeStat("Passive Perc.", String(passPerc));
 }
 function collectScenes(app, adventureFolder, campaignFolder, adventureName) {
   const scenePaths = /* @__PURE__ */ new Set();
@@ -81748,10 +82174,12 @@ async function renderEncounterView(plugin, source, el, ctx) {
       if (Array.isArray(fmParty) && fmParty.length > 0) {
         for (const m of fmParty) {
           if (!m || !m.name) continue;
+          const maxHp = typeof m.hp_max === "number" ? m.hp_max : typeof m.hp === "number" ? m.hp : 10;
           partyMembers.push({
             name: m.name,
             level: typeof m.level === "number" ? m.level : 1,
-            hp: typeof m.hp === "number" ? m.hp : 10,
+            hp: typeof m.hp === "number" ? m.hp : maxHp,
+            maxHp,
             ac: typeof m.ac === "number" ? m.ac : 10,
             notePath: m.note_path || void 0,
             tokenId: m.token_id || void 0,
@@ -81767,7 +82195,8 @@ async function renderEncounterView(plugin, source, el, ctx) {
             partyMembers.push({
               name: m.name,
               level: m.level,
-              hp: m.maxHp,
+              hp: m.hp,
+              maxHp: m.maxHp,
               ac: m.ac,
               notePath: m.notePath,
               tokenId: m.tokenId,
@@ -82422,6 +82851,7 @@ function buildSRDCreatureNote(m, tokenId, imagePath) {
   var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
   const calcMod = (score) => Math.floor((score - 10) / 2);
   const esc = (s) => String(s || "").replace(/"/g, '\\"');
+  const q = (v) => v ? `"${v.replace(/"/g, '\\"')}"` : "";
   let speedParts = [];
   if (m.speed) {
     if (m.speed.walk) speedParts.push(m.speed.walk);
@@ -82493,15 +82923,23 @@ function buildSRDCreatureNote(m, tokenId, imagePath) {
   const languages = m.languages || "";
   const fmtBlock = (items, key) => {
     if (!items || items.length === 0) return `
-${key}:`;
+${key}: []`;
     let out = `
 ${key}:`;
     for (const item of items) {
       if (item.name && item.desc) {
         out += `
   - name: ${item.name}`;
-        out += `
-    desc: "${esc(item.desc)}"`;
+        const descStr = String(item.desc || "");
+        if (descStr.includes("\n")) {
+          const indented = descStr.split("\n").map((line) => line.trim() === "" ? "" : `      ${line}`).join("\n");
+          out += `
+    desc: |
+${indented}`;
+        } else {
+          out += `
+    desc: "${esc(descStr)}"`;
+        }
       }
     }
     return out;
@@ -82509,6 +82947,7 @@ ${key}:`;
   let fm = `---
 statblock: true
 layout: Basic 5e Layout
+plugin_type: creature
 name: ${m.name}
 size: ${m.size || "Medium"}
 type: ${m.type || "creature"}`;
@@ -82523,7 +82962,7 @@ hp: ${(_j = m.hit_points) != null ? _j : 1}`;
   fm += `
 hit_dice: ${m.hit_dice || ""}`;
   fm += `
-speed: ${speedStr}`;
+speed: ${q(speedStr)}`;
   fm += `
 stats:
   - ${str}
@@ -82541,35 +82980,38 @@ fage_stats:
   - ${fage[4]}
   - ${fage[5]}`;
   fm += `
-saves:${saves}`;
+saves:${saves || " []"}`;
   fm += `
-skillsaves:${skillsaves}`;
+skillsaves:${skillsaves || " []"}`;
   fm += `
-damage_vulnerabilities: ${dmgVuln}`;
+damage_vulnerabilities: ${q(dmgVuln) || '""'}`;
   fm += `
-damage_resistances: ${dmgRes}`;
+damage_resistances: ${q(dmgRes) || '""'}`;
   fm += `
-damage_immunities: ${dmgImm}`;
+damage_immunities: ${q(dmgImm) || '""'}`;
   fm += `
-condition_immunities: ${condImm}`;
+condition_immunities: ${q(condImm) || '""'}`;
   fm += `
-senses: ${sensesStr}`;
+senses: ${q(sensesStr)}`;
   fm += `
-languages: ${languages}`;
+languages: ${q(languages)}`;
+  const crStr = formatCR((_k = m.challenge_rating) != null ? _k : 0);
   fm += `
-cr: ${formatCR((_k = m.challenge_rating) != null ? _k : 0)}`;
+cr: ${crStr.includes("/") ? q(crStr) : crStr}`;
   fm += `
-spells:`;
+spells: []`;
   fm += fmtBlock(m.special_abilities, "traits");
   fm += fmtBlock(m.actions, "actions");
   fm += fmtBlock(m.legendary_actions, "legendary_actions");
   fm += `
-bonus_actions:`;
+bonus_actions: []`;
   fm += fmtBlock(m.reactions, "reactions");
   fm += `
 token_id: ${tokenId}`;
   fm += `
 source: D&D 5e SRD`;
+  fm += `
+template_version: 1.10.0`;
   fm += `
 ---
 
@@ -82583,29 +83025,7 @@ source: D&D 5e SRD`;
   body += `${m.name} creature imported from the D&D 5e SRD.
 `;
   body += `
-\`\`\`dataviewjs
-// Action buttons for creature management
-const buttonContainer = dv.el("div", "", { 
-  attr: { style: "display: flex; gap: 10px; margin: 10px 0;" } 
-});
-
-// Edit Creature button
-const editBtn = buttonContainer.createEl("button", { 
-  text: "\u270F\uFE0F Edit Creature",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-editBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:edit-creature");
-});
-
-// Delete Creature button  
-const deleteBtn = buttonContainer.createEl("button", { 
-  text: "\u{1F5D1}\uFE0F Delete Creature",
-  attr: { style: "padding: 8px 16px; cursor: pointer; border-radius: 4px;" }
-});
-deleteBtn.addEventListener("click", () => {
-  app.commands.executeCommandById("dnd-campaign-hub:delete-creature");
-});
+\`\`\`dnd-hub
 \`\`\`
 
 `;
@@ -84412,11 +84832,11 @@ This action cannot be undone.`,
    * This replaces the old per-note dataviewjs button blocks.
    */
   renderNoteActions(el, ctx) {
-    var _a;
+    var _a, _b, _c;
     const file = this.app.vault.getAbstractFileByPath(ctx.sourcePath);
     if (!(file instanceof import_obsidian89.TFile)) return;
     const cache = this.app.metadataCache.getFileCache(file);
-    const type = (_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type;
+    const type = (_c = (_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.plugin_type) != null ? _c : (_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.type;
     if (!type) return;
     const container = el.createDiv({ cls: "dnd-hub-actions" });
     const createBtn = (text, cls, handler) => {

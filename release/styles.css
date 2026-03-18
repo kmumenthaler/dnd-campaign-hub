@@ -12257,6 +12257,103 @@
   border-color: var(--background-modifier-error);
 }
 
+/* ─── PC Quick Stats Card (dnd-hub-view: pc-quick-stats) ──── */
+.dnd-pc-quick-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  margin: 8px 0;
+}
+
+.dnd-pc-qs-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dnd-pc-qs-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 70px;
+  flex-shrink: 0;
+}
+
+.dnd-pc-qs-value {
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+/* HP row */
+.dnd-pc-qs-hp-right {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.dnd-pc-qs-hp-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.dnd-pc-qs-hp-bar-outer {
+  width: 100%;
+  max-width: 200px;
+  height: 6px;
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.dnd-pc-qs-hp-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+/* Combat stats row */
+.dnd-pc-qs-combat-row {
+  gap: 0;
+  flex-wrap: wrap;
+}
+
+.dnd-pc-qs-stat-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 12px;
+  border-right: 1px solid var(--background-modifier-border);
+  min-width: 60px;
+}
+
+.dnd-pc-qs-stat-cell:first-child {
+  padding-left: 0;
+}
+
+.dnd-pc-qs-stat-cell:last-child {
+  border-right: none;
+}
+
+.dnd-pc-qs-stat-value {
+  font-size: var(--font-ui-medium);
+  font-weight: 700;
+  color: var(--text-normal);
+  line-height: 1.2;
+}
+
+.dnd-pc-qs-stat-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* ─── Migration Modal ─────────────────────────────────────── */
 .dnd-migration-modal .migration-file-list {
   max-height: 300px;

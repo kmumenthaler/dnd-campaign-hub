@@ -40,6 +40,10 @@ From the PC creation modal, paste a D&D Beyond character URL or character ID and
 
 The character's read-only D&D Beyond URL is stored in frontmatter for reference.
 
+### PC Quick Stats
+
+Each PC note includes a live Quick Stats block that displays HP, AC, level, class, and ability scores at a glance. The block updates automatically whenever the note's frontmatter changes — for example, when the Combat Tracker syncs HP back to the vault note.
+
 ### Import from PDF character sheet
 
 From the PC creation modal, select a PDF file from the vault or upload one from your computer. The plugin auto-detects the best matching profile and fills in all fields. Four profiles are supported:
@@ -122,3 +126,9 @@ When the Fantasy Statblocks plugin is installed, newly created and edited creatu
 ## SRD creature import
 
 Open **Settings** and select **Import SRD Creatures** under the SRD Creature Token Import section. The plugin downloads all 334 SRD monsters with artwork from the D&D 5e API, creates notes in `z_Beastiarity/` with full stat blocks, and registers matching map marker tokens in the marker library with correct creature sizes and darkvision values. A progress indicator shows the import status.
+
+Creature frontmatter is compatible with the Fantasy Statblocks plugin. Multi-line descriptions (traits, actions, legendary actions) use YAML `|` block scalars so line breaks are preserved. Empty list fields (`skillsaves`, `saves`, `spells`, etc.) default to `[]`.
+
+### Migrating existing creature notes
+
+If you imported SRD creatures with a previous plugin version, run the migration from **Settings → Migrate Notes** to repair frontmatter. The migration adds the `plugin_type: creature` field, replaces old `dataviewjs` button blocks with native `dnd-hub` blocks, quotes special-character values, and converts multi-line descriptions to block scalars.
