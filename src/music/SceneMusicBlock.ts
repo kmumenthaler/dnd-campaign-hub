@@ -7,7 +7,7 @@
  *  2.  renderSceneMusicBlock – registered as a Markdown code-block processor;
  *                             renders a compact card with a ▶ Play button.
  */
-import { App, Modal, Setting, Notice, MarkdownPostProcessorContext, Editor, TFile, TFolder } from 'obsidian';
+import { App, Modal, Setting, Notice, MarkdownPostProcessorContext, MarkdownRenderChild, Editor, TFile, TFolder } from 'obsidian';
 import { MusicPlayer } from './MusicPlayer';
 import type { MusicSettings, Playlist, SceneMusicConfig, RepeatMode } from './types';
 import { DEFAULT_SCENE_MUSIC_CONFIG } from './types';
@@ -247,6 +247,28 @@ export class SceneMusicModal extends Modal {
 }
 
 // ─────────────────────────────────────────────────────────────────
+//  Lifecycle child – cleans up the scene-change listener when the
+//  code block is removed from the document.
+// ─────────────────────────────────────────────────────────────────
+
+class SceneMusicRenderChild extends MarkdownRenderChild {
+  private unsubscribe: () => void;
+
+  constructor(
+    containerEl: HTMLElement,
+    musicPlayer: MusicPlayer,
+    syncButton: () => void,
+  ) {
+    super(containerEl);
+    this.unsubscribe = musicPlayer.onSceneChange(syncButton);
+  }
+
+  onunload() {
+    this.unsubscribe();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
 //  Code-block renderer  –  ```dnd-music
 // ─────────────────────────────────────────────────────────────────
 
@@ -408,22 +430,16 @@ export function renderSceneMusicBlock(
     }
   });
 
-  // Listen for scene changes (another block started / stopped) so the
-  // button always reflects reality.  Unsubscribe when the element is
-  // removed from the DOM.
-  const unsubscribe = musicPlayer.onSceneChange(() => syncButton());
-
   // Initial sync in case this scene is already playing
   syncButton();
 
-  // Clean up listener when the code-block element is detached
-  const observer = new MutationObserver(() => {
-    if (!el.isConnected) {
-      unsubscribe();
-      observer.disconnect();
-    }
-  });
-  observer.observe(el.parentElement || document.body, { childList: true, subtree: true });
+  // Listen for scene changes (another block started / stopped) so the
+  // button always reflects reality.  Use MarkdownRenderChild so Obsidian
+  // calls onunload() reliably when the code-block element is removed —
+  // avoiding the fragile MutationObserver approach which could prematurely
+  // unsubscribe during Obsidian's internal DOM rearrangements.
+  const child = new SceneMusicRenderChild(el, musicPlayer, syncButton);
+  ctx.addChild(child);
 
   // Auto-play indicator
   if (config.autoPlay) {
