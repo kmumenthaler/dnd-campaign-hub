@@ -200,6 +200,43 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "player-1.5.0",
+      entityTypes: ["player", "pc"],
+      targetVersion: "1.5.0",
+      description: "Replace static Quick Stats callout with live dnd-hub-view block",
+      async apply(ctx: MigrationContext) {
+        // Already migrated — the dynamic view block is present
+        if (ctx.content.includes("```dnd-hub-view\npc-quick-stats")) return null;
+
+        let out = ctx.content;
+
+        // Replace the static Quick Stats callout block with the dynamic view block.
+        // The callout spans multiple lines; match greedily from the opening `> [!info] Quick Stats`
+        // line through the last consecutive `>` line in the block.
+        const staticCallout = /^> \[!info\] Quick Stats\n(?:>.*\n)*/m;
+        const dynamicBlock = "```dnd-hub-view\npc-quick-stats\n```\n";
+
+        if (staticCallout.test(out)) {
+          out = out.replace(staticCallout, dynamicBlock);
+        } else {
+          // No static callout found — insert the view block after the dnd-hub render block
+          // (or after the title if no render block exists) to avoid content loss.
+          const afterRenderBlock = /^```dnd-hub\n```\n/m;
+          if (afterRenderBlock.test(out)) {
+            out = out.replace(afterRenderBlock, "```dnd-hub\n```\n\n" + dynamicBlock);
+          } else {
+            out = insertAfterTitle(out, dynamicBlock.trimEnd());
+          }
+        }
+
+        // Collapse any triple-blank-line runs introduced by the replacement
+        out = out.replace(/\n{3,}/g, "\n\n");
+
+        return setFrontmatterField(out, "template_version", "1.5.0");
+      },
+    },
+
     // ── NPC ──────────────────────────────────────────────────────────────
 
     {

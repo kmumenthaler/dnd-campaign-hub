@@ -88,6 +88,7 @@ export function renderView(source: string, el: HTMLElement, app: App, sourcePath
     "trap-countermeasures": () => renderTrapCountermeasures(el, app, sourcePath),
     "encounter-difficulty": () => renderEncounterDifficulty(el, app, sourcePath),
     "encounter-creatures": () => renderEncounterCreatures(el, app, sourcePath),
+    "pc-quick-stats": () => renderPcQuickStats(el, app, sourcePath),
   };
 
   const renderer = viewId ? renderers[viewId] : undefined;
@@ -533,6 +534,75 @@ function renderEncounterCreatures(el: HTMLElement, app: App, sourcePath: string)
     row.createEl("td", { text: String(c.hp || "?") });
     row.createEl("td", { text: String(c.ac || "?") });
   }
+}
+
+// ─── PC Quick Stats (Player Character template) ─────────────────────────────
+
+/**
+ * Renders a live Quick Stats card for a PC note, reading all values from the
+ * note's frontmatter at render time. This replaces the static callout that
+ * was written once at import time and never reflected frontmatter changes.
+ */
+function renderPcQuickStats(el: HTMLElement, app: App, sourcePath: string): void {
+  const file = app.vault.getAbstractFileByPath(sourcePath);
+  if (!(file instanceof TFile)) return;
+  const cache = app.metadataCache.getFileCache(file);
+  const fm = cache?.frontmatter;
+  if (!fm) return;
+
+  const card = el.createDiv({ cls: "dnd-pc-quick-stats" });
+
+  // Row 1: Class & Level
+  const classLevel = fm.class
+    ? `${fm.class}${fm.subclass ? ` (${fm.subclass})` : ""} — Level ${fm.level ?? 1}`
+    : `Level ${fm.level ?? 1}`;
+  const classRow = card.createDiv({ cls: "dnd-pc-qs-row dnd-pc-qs-class-row" });
+  classRow.createEl("span", { cls: "dnd-pc-qs-label", text: "Class" });
+  classRow.createEl("span", { cls: "dnd-pc-qs-value", text: classLevel });
+
+  // Row 2: HP bar + numbers
+  const hp = Number(fm.hp ?? 0);
+  const hpMax = Number(fm.hp_max ?? 0);
+  const thp = Number(fm.thp ?? 0);
+  const hpRow = card.createDiv({ cls: "dnd-pc-qs-row dnd-pc-qs-hp-row" });
+  hpRow.createEl("span", { cls: "dnd-pc-qs-label", text: "HP" });
+  const hpRight = hpRow.createDiv({ cls: "dnd-pc-qs-hp-right" });
+  const hpText = thp > 0 ? `${hp} / ${hpMax}  (+${thp} THP)` : `${hp} / ${hpMax}`;
+  hpRight.createEl("span", { cls: "dnd-pc-qs-value dnd-pc-qs-hp-value", text: hpText });
+  if (hpMax > 0) {
+    const barOuter = hpRight.createDiv({ cls: "dnd-pc-qs-hp-bar-outer" });
+    const pct = Math.max(0, Math.min(100, Math.round((hp / hpMax) * 100)));
+    const barFill = barOuter.createDiv({ cls: "dnd-pc-qs-hp-bar-fill" });
+    barFill.style.width = `${pct}%`;
+    // Colour the bar based on HP percentage
+    if (pct > 50) {
+      barFill.style.backgroundColor = "var(--color-green)";
+    } else if (pct > 25) {
+      barFill.style.backgroundColor = "var(--color-yellow)";
+    } else {
+      barFill.style.backgroundColor = "var(--color-red)";
+    }
+  }
+
+  // Row 3: Combat stats — AC | Initiative | Speed
+  const ac = fm.ac ?? 10;
+  const initBonus = Number(fm.init_bonus ?? 0);
+  const initStr = initBonus >= 0 ? `+${initBonus}` : `${initBonus}`;
+  const speed = fm.speed ?? 30;
+  const passPerc = fm.passive_perception ?? 10;
+
+  const combatRow = card.createDiv({ cls: "dnd-pc-qs-row dnd-pc-qs-combat-row" });
+
+  const makeStat = (label: string, value: string) => {
+    const cell = combatRow.createDiv({ cls: "dnd-pc-qs-stat-cell" });
+    cell.createEl("span", { cls: "dnd-pc-qs-stat-value", text: value });
+    cell.createEl("span", { cls: "dnd-pc-qs-stat-label", text: label });
+  };
+
+  makeStat("AC", String(ac));
+  makeStat("Initiative", initStr);
+  makeStat("Speed", `${speed} ft`);
+  makeStat("Passive Perc.", String(passPerc));
 }
 
 // ─── Shared: Collect Scenes ─────────────────────────────────────────────────

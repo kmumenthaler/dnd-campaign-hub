@@ -345,14 +345,14 @@ notes: []
 
 export const PC_TEMPLATE = `---
 type: player
-template_version: 1.4.0
-name: 
-player: 
-campaign: 
-world: 
-race: 
-class: 
-subclass: 
+template_version: 1.5.0
+name:
+player:
+campaign:
+world:
+race:
+class:
+subclass:
 level: 1
 hp: 0
 hp_max: 0
@@ -361,12 +361,12 @@ ac: 10
 init_bonus: 0
 speed: 30
 passive_perception: 10
-background: 
-alignment: 
+background:
+alignment:
 experience: 0
-readonlyUrl: 
-characterSheetPdf: 
-date: 
+readonlyUrl:
+characterSheetPdf:
+date:
 ---
 
 # {{name}}
@@ -374,10 +374,9 @@ date:
 \`\`\`dnd-hub
 \`\`\`
 
-> [!info] Quick Stats
-> **Class:** {{class}} {{level}}  
-> **HP:** {{hp}}/{{hp_max}}  
-> **AC:** {{ac}} | **Initiative:** +{{init_bonus}} | **Speed:** {{speed}} ft.
+\`\`\`dnd-hub-view
+pc-quick-stats
+\`\`\`
 
 ## Character Sheet Links
 
