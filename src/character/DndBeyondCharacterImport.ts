@@ -13,6 +13,7 @@ export interface DndBeyondPcImportData {
   level: string;
   hpCurrent: string;
   hpMax: string;
+  hpTemp: string;
   ac?: string;
   initBonus: string;
   speed: string;
@@ -1083,7 +1084,9 @@ export async function importFromDndBeyond(source: string, options?: ImportOption
     throw new Error("D&D Beyond API returned an invalid character payload.");
   }
 
-  const data = body.data;
+  // The DDB v5 API nests the character object under body.data.character.
+  // Fall back to body.data for any legacy payloads that omit the wrapper.
+  const data = body.data.character ?? body.data;
 
   // ── Diagnostic: dump API response structure ──
   const diagKeys = (obj: any, label: string) => {
@@ -1158,6 +1161,7 @@ export async function importFromDndBeyond(source: string, options?: ImportOption
       : asNumber(data.baseHitPoints) + asNumber(data.bonusHitPoints) + conModifier * Math.max(0, totalLevel);
   const hpRemoved = asNumber(data.removedHitPoints);
   const hpCurrent = Math.max(0, hpMaxBase - hpRemoved);
+  const hpTemp = asNumber(data.temporaryHitPoints);
 
   const dexScore = resolveAbilityScore(data, 2);
   const initBonusNum = abilityModifier(dexScore || 10);
@@ -1226,6 +1230,7 @@ export async function importFromDndBeyond(source: string, options?: ImportOption
     level: String(totalLevel > 0 ? totalLevel : 1),
     hpCurrent: String(hpCurrent),
     hpMax: String(hpMaxBase > 0 ? hpMaxBase : 1),
+    hpTemp: String(hpTemp),
     ac: resolveArmorClass(data),
     initBonus,
     speed: resolveWalkSpeed(data),
@@ -1243,7 +1248,7 @@ export async function importFromDndBeyond(source: string, options?: ImportOption
 
   console.log("[DDB Import] ── Result summary ──");
   console.log("[DDB Import] name:", result.name, "| level:", result.level, "| classes:", result.classes);
-  console.log("[DDB Import] hp:", result.hpCurrent, "/", result.hpMax, "| ac:", result.ac, "| speed:", result.speed);
+  console.log("[DDB Import] hp:", result.hpCurrent, "/", result.hpMax, "| thp:", result.hpTemp, "| ac:", result.ac, "| speed:", result.speed);
   console.log("[DDB Import] abilities:", result.abilities);
   console.log("[DDB Import] skillsaves:", result.skillsaves.length, "| traits:", result.traits.length);
   console.log("[DDB Import] actions:", result.actions.length, "| bonusActions:", result.bonusActions.length, "| reactions:", result.reactions.length);

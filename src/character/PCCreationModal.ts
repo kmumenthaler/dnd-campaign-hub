@@ -18,6 +18,7 @@ export class PCCreationModal extends Modal {
   level = "1";
   hpCurrent = "";
   hpMax = "";
+  hpTemp = "0";
   ac = "10";
   initBonus = "0";
   speed = "30";
@@ -589,6 +590,7 @@ export class PCCreationModal extends Modal {
       this.level = imported.level;
       this.hpCurrent = imported.hpCurrent;
       this.hpMax = imported.hpMax;
+      this.hpTemp = imported.hpTemp;
       if (imported.ac) this.ac = imported.ac;
       this.initBonus = imported.initBonus;
       this.speed = imported.speed;
@@ -881,7 +883,7 @@ export class PCCreationModal extends Modal {
         level: this.level,
         hp: this.hpCurrent || "0",
         hp_max: this.hpMax || "0",
-        thp: 0,
+        thp: parseInt(this.hpTemp) || 0,
         ac: this.ac,
         init_bonus: this.initBonus,
         speed: this.speed,
