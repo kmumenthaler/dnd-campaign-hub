@@ -1155,10 +1155,14 @@ export async function importFromDndBeyond(source: string, options?: ImportOption
 
   const conScore = resolveAbilityScore(data, 3);
   const conModifier = abilityModifier(conScore || 10);
+  // Sum per-level HP bonuses from feats/features (e.g. Tough feat = +2/level)
+  const hpPerLevelBonus = collectModifiers(data)
+    .filter((m: any) => m?.subType === "hit-points-per-level")
+    .reduce((sum: number, m: any) => sum + asNumber(m?.value), 0);
   const hpMaxBase =
     asNumber(data.overrideHitPoints) > 0
       ? asNumber(data.overrideHitPoints)
-      : asNumber(data.baseHitPoints) + asNumber(data.bonusHitPoints) + conModifier * Math.max(0, totalLevel);
+      : asNumber(data.baseHitPoints) + asNumber(data.bonusHitPoints) + (conModifier + hpPerLevelBonus) * Math.max(0, totalLevel);
   const hpRemoved = asNumber(data.removedHitPoints);
   const hpCurrent = Math.max(0, hpMaxBase - hpRemoved);
   const hpTemp = asNumber(data.temporaryHitPoints);
