@@ -17,8 +17,8 @@ export interface FreesoundResult {
   previews: FreesoundPreview;
   username: string;
   license: string;
-  avg_rating: number;
-  num_downloads: number;
+  rating?: number;  // Some sounds may not have ratings
+  num_downloads?: number;  // Some sounds may not have download counts
 }
 
 export interface FreesoundSearchResponse {
@@ -41,7 +41,7 @@ export interface FreesoundSearchOptions {
 /* ─── Client ──────────────────────────────────────────────── */
 
 const BASE = 'https://freesound.org/apiv2';
-const FIELDS = 'id,name,tags,duration,previews,username,license,avg_rating,num_downloads';
+const FIELDS = 'id,name,tags,duration,previews,username,license,rating,num_downloads';
 
 export class FreesoundClient {
   constructor(private apiKey: string) {}
@@ -62,7 +62,13 @@ export class FreesoundClient {
       method: 'GET',
     });
 
-    return resp.json as FreesoundSearchResponse;
+    if (resp.status !== 200) {
+      throw new Error(`Freesound API error: ${resp.status} - ${resp.text}`);
+    }
+
+    const data = resp.json as FreesoundSearchResponse;
+    console.log('Freesound API response:', data);
+    return data;
   }
 
   /**

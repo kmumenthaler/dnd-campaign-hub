@@ -187,8 +187,12 @@ export class FreesoundSearchModal extends Modal {
 
     const metaEl = topRow.createEl('span', { cls: 'freesound-card-meta' });
     metaEl.createEl('span', { text: `${sound.duration.toFixed(1)}s` });
-    metaEl.createEl('span', { text: ` · ⭐ ${sound.avg_rating.toFixed(1)}` });
-    metaEl.createEl('span', { text: ` · ⬇ ${sound.num_downloads}` });
+    if (sound.rating !== undefined) {
+      metaEl.createEl('span', { text: ` · ⭐ ${sound.rating.toFixed(1)}` });
+    }
+    if (sound.num_downloads !== undefined) {
+      metaEl.createEl('span', { text: ` · ⬇ ${sound.num_downloads}` });
+    }
 
     /* Tags */
     if (sound.tags.length > 0) {
