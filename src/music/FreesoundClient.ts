@@ -55,20 +55,31 @@ export class FreesoundClient {
     if (opts.page) params.set('page', String(opts.page));
     if (opts.filter) params.set('filter', opts.filter);
     if (opts.sort) params.set('sort', opts.sort);
-    params.set('token', this.apiKey);
 
-    const resp = await requestUrl({
-      url: `${BASE}/search/text/?${params.toString()}`,
-      method: 'GET',
-    });
+    const url = `${BASE}/search/text/?${params.toString()}`;
+    console.log('Freesound API request:', url);
 
-    if (resp.status !== 200) {
-      throw new Error(`Freesound API error: ${resp.status} - ${resp.text}`);
+    try {
+      const resp = await requestUrl({
+        url,
+        method: 'GET',
+        headers: {
+          'Authorization': `Token ${this.apiKey}`,
+        },
+      });
+
+      if (resp.status !== 200) {
+        console.error('Freesound API error:', resp.status, resp.text);
+        throw new Error(`Freesound API error: ${resp.status} - ${resp.text || 'Unknown error'}`);
+      }
+
+      const data = resp.json as FreesoundSearchResponse;
+      console.log('Freesound API response:', data);
+      return data;
+    } catch (err) {
+      console.error('Freesound API request failed:', err);
+      throw err;
     }
-
-    const data = resp.json as FreesoundSearchResponse;
-    console.log('Freesound API response:', data);
-    return data;
   }
 
   /**
