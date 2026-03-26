@@ -1,4 +1,4 @@
-import { App, Editor, ItemView, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TextComponent, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { App, Editor, ItemView, MarkdownView, Menu, Modal, Notice, Plugin, PluginSettingTab, Setting, TextComponent, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import {
   WORLD_TEMPLATE,
   SESSION_GM_TEMPLATE,
@@ -95,6 +95,7 @@ import {
   IDLE_SCREEN_VIEW_TYPE,
   PURSUIT_TRACKER_VIEW_TYPE,
   PURSUIT_PLAYER_VIEW_TYPE,
+  HANDOUT_PROJECTION_VIEW_TYPE,
 } from './constants';
 import type { MapMediaElement } from './constants';
 
@@ -146,7 +147,8 @@ import { TabletopCalibrationModal } from './map-views/TabletopCalibrationModal';
 import { GmMapView } from './map-views/GmMapView';
 import { PlayerMapView } from './map-views/PlayerMapView';
 import { ProjectionManager } from './projection/ProjectionManager';
-import { SessionProjectionManager, IdleScreenView, SessionProjectionHubModal } from './projection';
+import { SessionProjectionManager, IdleScreenView, SessionProjectionHubModal, HandoutProjectionView } from './projection';
+import type { HandoutContentType } from './projection/types';
 import { PursuitTracker } from './pursuit/PursuitTracker';
 import { PursuitTrackerView } from './pursuit/PursuitTrackerView';
 import { PursuitPlayerView } from './pursuit/PursuitPlayerView';
@@ -182,6 +184,68 @@ import {
 // Re-export types that other modules import from main
 export type { DndCampaignHubSettings, TabletopCalibration };
 export { DEFAULT_SETTINGS };
+
+// ── Handout projection helpers ─────────────────────────────────────────
+
+/**
+ * Detect the handout content type from a file extension.
+ * Returns null for unsupported file types.
+ */
+function detectHandoutContentType(filePath: string): HandoutContentType | null {
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  if (!ext) return null;
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return 'image';
+  if (ext === 'pdf') return 'pdf';
+  if (ext === 'md') return 'note';
+  return null;
+}
+
+/**
+ * Add "Project to..." and "Stop handout on..." menu items for handout projection.
+ * Adds one item per active managed screen plus stop-items for screens with active handouts.
+ */
+function addHandoutProjectionItems(
+  plugin: DndCampaignHubPlugin,
+  menu: Menu,
+  filePath: string,
+  contentType: HandoutContentType,
+): void {
+  const spm = plugin.sessionProjectionManager;
+  const pm = plugin.projectionManager;
+  if (!spm?.isActive()) return;
+
+  for (const state of spm.getAllScreenStates()) {
+    const label = state.config.screenLabel;
+    menu.addItem((item) =>
+      item
+        .setTitle(`Project to ${label}`)
+        .setIcon('monitor')
+        .onClick(async () => {
+          await pm.projectHandout(filePath, contentType, state.screen);
+        })
+    );
+  }
+
+  // Stop-handout items for screens that currently have a handout active
+  let addedSeparator = false;
+  for (const state of spm.getAllScreenStates()) {
+    if (state.activeHandout) {
+      if (!addedSeparator) {
+        menu.addSeparator();
+        addedSeparator = true;
+      }
+      const sKey = state.config.screenKey;
+      menu.addItem((item) =>
+        item
+          .setTitle(`Stop handout on ${state.config.screenLabel}`)
+          .setIcon('x')
+          .onClick(async () => {
+            await pm.stopHandout(sKey);
+          })
+      );
+    }
+  }
+}
 
 
 export default class DndCampaignHubPlugin extends Plugin {
@@ -295,6 +359,12 @@ export default class DndCampaignHubPlugin extends Plugin {
       (leaf) => new PursuitPlayerView(leaf, this)
     );
 
+    // Register the Handout Projection View (temporary overlay on player screens)
+    this.registerView(
+      HANDOUT_PROJECTION_VIEW_TYPE,
+      (leaf) => new HandoutProjectionView(leaf, this)
+    );
+
     // Initialize the encounter builder
     this.encounterBuilder = new EncounterBuilder(this.app, this);
 
@@ -340,6 +410,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     // Initialize the session projection manager (persistent player screens)
     this.sessionProjectionManager = new SessionProjectionManager(this);
+
+    // Register context menus for handout projection
+    this.registerHandoutProjectionMenus();
 
     // Auto-pan player view to active PC's token on turn change
     this.registerCombatAutoPan();
@@ -2575,6 +2648,61 @@ export default class DndCampaignHubPlugin extends Plugin {
 		});
 
 		this.register(() => unsubscribe());
+	}
+
+	/**
+	 * Register context menus for handout projection.
+	 * Adds "Project to..." items to file explorer, editor, and inline image menus
+	 * when a projection session is active.
+	 */
+	private registerHandoutProjectionMenus(): void {
+		// File explorer + tab header right-click
+		this.registerEvent(
+			this.app.workspace.on('file-menu', (menu, file) => {
+				if (!(file instanceof TFile)) return;
+				const contentType = detectHandoutContentType(file.path);
+				if (!contentType) return;
+				if (!this.sessionProjectionManager?.isActive()) return;
+
+				menu.addSeparator();
+				addHandoutProjectionItems(this, menu, file.path, contentType);
+			})
+		);
+
+		// Editor right-click (always treats the open file as a note)
+		this.registerEvent(
+			this.app.workspace.on('editor-menu', (menu, _editor, view) => {
+				const file = (view as any).file as TFile | null;
+				if (!file) return;
+				if (!this.sessionProjectionManager?.isActive()) return;
+
+				menu.addSeparator();
+				addHandoutProjectionItems(this, menu, file.path, 'note');
+			})
+		);
+
+		// Inline image right-click inside markdown preview
+		this.registerDomEvent(document, 'contextmenu', (evt: MouseEvent) => {
+			const target = evt.target as HTMLElement;
+			if (!(target instanceof HTMLImageElement)) return;
+			const previewContainer = target.closest('.markdown-preview-view, .markdown-reading-view');
+			if (!previewContainer) return;
+			if (!this.sessionProjectionManager?.isActive()) return;
+
+			const src = target.getAttribute('src') ?? '';
+			const imageFile = this.app.vault.getFiles().find((f) => {
+				const ext = f.extension.toLowerCase();
+				if (!['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return false;
+				const resourcePath = this.app.vault.adapter.getResourcePath(f.path);
+				return src.includes(f.path) || src === resourcePath;
+			});
+			if (!imageFile) return;
+
+			evt.preventDefault();
+			const menu = new Menu();
+			addHandoutProjectionItems(this, menu, imageFile.path, 'image');
+			menu.showAtMouseEvent(evt);
+		});
 	}
 
 	/**

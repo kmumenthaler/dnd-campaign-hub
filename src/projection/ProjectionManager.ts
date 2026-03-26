@@ -13,10 +13,11 @@
 import { Notice, WorkspaceLeaf } from 'obsidian';
 import type DndCampaignHubPlugin from '../main';
 import type { PlayerMapView } from '../map-views/PlayerMapView';
-import { PLAYER_MAP_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE, PURSUIT_PLAYER_VIEW_TYPE } from '../constants';
+import { PLAYER_MAP_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE, PURSUIT_PLAYER_VIEW_TYPE, HANDOUT_PROJECTION_VIEW_TYPE } from '../constants';
 import type { ProjectionTarget, TabletopCalibration } from '../types';
 import { enumerateScreens, screenKey, type ScreenInfo } from '../utils/ScreenEnumeration';
 import { queryPhysicalMonitorSizes, matchScreenToPhysical } from '../utils/MonitorPhysicalSize';
+import type { HandoutContentType, HandoutProjectionState } from './types';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -46,6 +47,9 @@ export class ProjectionManager {
 
   /** All currently active projections, keyed by screenKey. */
   activeProjections: Map<string, ProjectionState> = new Map();
+
+  /** Tracks handout popout leaves for unmanaged screens. */
+  private handoutLeaves: Map<string, WorkspaceLeaf> = new Map();
 
   /** Listeners notified whenever projection state changes. */
   private _changeCallbacks: Set<() => void> = new Set();
@@ -103,6 +107,10 @@ export class ProjectionManager {
       clearInterval(this._healthCheckInterval);
       this._healthCheckInterval = null;
     }
+    for (const [, leaf] of this.handoutLeaves) {
+      try { leaf.detach(); } catch { /* already gone */ }
+    }
+    this.handoutLeaves.clear();
     this._changeCallbacks.clear();
   }
 
@@ -323,6 +331,126 @@ export class ProjectionManager {
   }
 
   /**
+   * Project a handout (image, note, or PDF) onto a screen.
+   * On managed screens, overlays on top of primary content.
+   * On unmanaged screens, opens a new popout.
+   */
+  async projectHandout(
+    filePath: string,
+    contentType: HandoutContentType,
+    screen: ScreenInfo,
+  ): Promise<void> {
+    const sKey = screenKey(screen);
+    const spm = this.plugin.sessionProjectionManager;
+    const isManaged = !!(spm?.isActive() && spm.isManagedScreen(sKey));
+
+    const handoutState: HandoutProjectionState = { filePath, contentType };
+
+    if (isManaged) {
+      const leaf = spm!.getManagedLeaf(sKey);
+      if (!leaf) {
+        new Notice('Managed screen not available');
+        return;
+      }
+      spm!.setHandoutStatus(sKey, handoutState);
+      await this.crossfadeOnLeaf(leaf, HANDOUT_PROJECTION_VIEW_TYPE, handoutState as unknown as Record<string, unknown>);
+    } else {
+      // Clean up any existing unmanaged handout on this screen
+      const existingLeaf = this.handoutLeaves.get(sKey);
+      if (existingLeaf) {
+        try { existingLeaf.detach(); } catch { /* already gone */ }
+        this.handoutLeaves.delete(sKey);
+      }
+
+      const popoutLeaf = this.plugin.app.workspace.openPopoutLeaf({
+        size: { width: screen.width, height: screen.height },
+      });
+      await popoutLeaf.setViewState({
+        type: HANDOUT_PROJECTION_VIEW_TYPE,
+        active: true,
+        state: handoutState as unknown as Record<string, unknown>,
+      });
+      this.handoutLeaves.set(sKey, popoutLeaf);
+
+      setTimeout(async () => {
+        await this.positionAndFullscreen(popoutLeaf, screen);
+      }, 300);
+    }
+
+    this._notifyChange();
+    const fileName = filePath.split('/').pop() ?? filePath;
+    new Notice(`Projecting: ${fileName}`);
+  }
+
+  /**
+   * Stop a handout on a specific screen, reverting to primary content or idle.
+   */
+  async stopHandout(sKey: string): Promise<void> {
+    const spm = this.plugin.sessionProjectionManager;
+    const isManaged = !!(spm?.isActive() && spm.isManagedScreen(sKey));
+
+    if (isManaged) {
+      const primaryProj = this.activeProjections.get(sKey);
+      spm!.clearHandout(sKey);
+
+      if (primaryProj) {
+        const leaf = spm!.getManagedLeaf(sKey);
+        if (leaf) {
+          let viewType: string;
+          if (primaryProj.contentType === 'map') viewType = PLAYER_MAP_VIEW_TYPE;
+          else if (primaryProj.contentType === 'combat') viewType = COMBAT_PLAYER_VIEW_TYPE;
+          else viewType = PURSUIT_PLAYER_VIEW_TYPE;
+          await this.crossfadeOnLeaf(leaf, viewType, {});
+        }
+      } else {
+        await spm!.transitionToIdle(sKey);
+      }
+    } else {
+      const leaf = this.handoutLeaves.get(sKey);
+      if (leaf) {
+        try { leaf.detach(); } catch { /* already gone */ }
+        this.handoutLeaves.delete(sKey);
+      }
+    }
+
+    this._notifyChange();
+    new Notice('Handout stopped');
+  }
+
+  /**
+   * Check if a screen has an active handout.
+   */
+  hasActiveHandout(sKey: string): boolean {
+    const spm = this.plugin.sessionProjectionManager;
+    if (spm?.isActive() && spm.isManagedScreen(sKey)) {
+      return spm.hasActiveHandout(sKey);
+    }
+    return this.handoutLeaves.has(sKey);
+  }
+
+  /**
+   * Find the screenKey whose handout leaf matches the given leaf.
+   * Used by HandoutProjectionView to identify itself on file deletion.
+   */
+  findHandoutScreenKeyForLeaf(leaf: WorkspaceLeaf): string | null {
+    // Check unmanaged handout leaves first
+    for (const [sKey, hLeaf] of this.handoutLeaves) {
+      if (hLeaf === leaf) return sKey;
+    }
+    // Check managed screens via SessionProjectionManager
+    const spm = this.plugin.sessionProjectionManager;
+    if (spm?.isActive()) {
+      for (const state of spm.getAllScreenStates()) {
+        if (state.activeHandout) {
+          const managedLeaf = spm.getManagedLeaf(state.config.screenKey);
+          if (managedLeaf === leaf) return state.config.screenKey;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
    * Project the Pursuit / Chase player view to a specific screen.
    * Uses crossfade on managed screens for smooth transitions.
    */
@@ -529,6 +657,23 @@ export class ProjectionManager {
         }
       } catch {
         this.activeProjections.delete(sKey);
+      }
+    }
+
+    // Prune dead handout leaves
+    for (const [sKey, leaf] of this.handoutLeaves) {
+      try {
+        const view = leaf.view;
+        if (!view || !(view as any).containerEl?.isConnected) {
+          this.handoutLeaves.delete(sKey);
+          continue;
+        }
+        const win = (view as any).containerEl?.ownerDocument?.defaultView;
+        if (win && win !== window && win.closed) {
+          this.handoutLeaves.delete(sKey);
+        }
+      } catch {
+        this.handoutLeaves.delete(sKey);
       }
     }
   }

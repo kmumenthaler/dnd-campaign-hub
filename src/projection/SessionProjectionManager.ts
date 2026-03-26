@@ -12,7 +12,7 @@ import { Notice, WorkspaceLeaf } from 'obsidian';
 import type DndCampaignHubPlugin from '../main';
 import { IDLE_SCREEN_VIEW_TYPE } from '../constants';
 import { screenKey, type ScreenInfo } from '../utils/ScreenEnumeration';
-import type { ManagedScreenConfig, ManagedScreenState, ManagedScreenStatus } from './types';
+import type { ManagedScreenConfig, ManagedScreenState, ManagedScreenStatus, HandoutProjectionState } from './types';
 
 export class SessionProjectionManager {
   private plugin: DndCampaignHubPlugin;
@@ -177,6 +177,11 @@ export class SessionProjectionManager {
     const state = this.screenStates.get(sKey);
     if (!leaf || !state) return;
 
+    // Clear any active handout before transitioning to idle
+    if (state.activeHandout) {
+      state.activeHandout = null;
+    }
+
     await this.plugin.projectionManager.crossfadeOnLeaf(
       leaf,
       IDLE_SCREEN_VIEW_TYPE,
@@ -197,6 +202,45 @@ export class SessionProjectionManager {
     if (!state) return;
     state.status = status;
     state.mediaPath = mediaPath;
+  }
+
+  /**
+   * Track a handout overlay on a managed screen.
+   * Called by ProjectionManager.projectHandout().
+   */
+  setHandoutStatus(sKey: string, handout: HandoutProjectionState): void {
+    const state = this.screenStates.get(sKey);
+    if (!state) return;
+    state.status = 'handout';
+    state.activeHandout = handout;
+    this._notifyChange();
+  }
+
+  /**
+   * Clear the handout overlay from a managed screen.
+   * Resets status based on what primary content is active.
+   */
+  clearHandout(sKey: string): void {
+    const state = this.screenStates.get(sKey);
+    if (!state) return;
+    state.activeHandout = null;
+
+    // Revert status to whatever primary content is active (or idle)
+    const primaryProj = this.plugin.projectionManager.activeProjections.get(sKey);
+    if (primaryProj) {
+      state.status = primaryProj.contentType as ManagedScreenStatus;
+    } else {
+      state.status = 'idle';
+    }
+    this._notifyChange();
+  }
+
+  /**
+   * Check if a managed screen has an active handout overlay.
+   */
+  hasActiveHandout(sKey: string): boolean {
+    const state = this.screenStates.get(sKey);
+    return !!(state?.activeHandout);
   }
 
   // ── Internal Helpers ────────────────────────────────────────────

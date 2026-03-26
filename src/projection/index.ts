@@ -13,5 +13,8 @@ export type {
   ManagedScreenStatus,
   ProjectionProfile,
   SessionProjectionSettings,
+  HandoutContentType,
+  HandoutProjectionState,
 } from './types';
 export { DEFAULT_IDLE_CONTENT, DEFAULT_SESSION_PROJECTION_SETTINGS } from './types';
+export { HandoutProjectionView } from './HandoutProjectionView';

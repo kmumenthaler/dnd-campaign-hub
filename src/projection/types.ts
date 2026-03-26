@@ -43,10 +43,23 @@ export interface ManagedScreenConfig {
   idleContent: IdleContentConfig;
 }
 
+// ── Handout overlay types ──────────────────────────────────────────────
+
+/** Content types that can be projected as handouts. */
+export type HandoutContentType = 'image' | 'note' | 'pdf';
+
+/** State for a handout projection overlay. */
+export interface HandoutProjectionState {
+  /** Vault-relative file path. */
+  filePath: string;
+  /** What kind of content this is. */
+  contentType: HandoutContentType;
+}
+
 // ── Session state (runtime only, not persisted) ────────────────────────
 
 /** What kind of content is currently shown on a managed screen. */
-export type ManagedScreenStatus = 'idle' | 'map' | 'combat' | 'pursuit' | 'media';
+export type ManagedScreenStatus = 'idle' | 'map' | 'combat' | 'pursuit' | 'media' | 'handout';
 
 /** Runtime state for a single managed screen during an active session. */
 export interface ManagedScreenState {
@@ -58,6 +71,8 @@ export interface ManagedScreenState {
   status: ManagedScreenStatus;
   /** Vault path of the media file currently projected (for 'media' status). */
   mediaPath?: string;
+  /** Active handout overlay, null when no handout is showing. */
+  activeHandout?: HandoutProjectionState | null;
 }
 
 // ── Profiles ───────────────────────────────────────────────────────────
