@@ -5,6 +5,13 @@ All notable changes to the D&D Campaign Hub plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-03-26
+
+### Added
+
+- **Handout Projection** — New handout projection system allows DMs to share images, vault notes, and PDFs to a second window/screen for players. Handouts can be projected from any note using the "📽️ Project Handout" button, or from the Combat Tracker. Multiple projection modes supported: image viewer, note renderer, and PDF viewer.
+- **Add Party Member to Combat** — DMs can now add party members to an active combat session mid-session using the "➕ Add Party Member" button in the Combat Tracker. Previously, all party members had to be added before combat started.
+
 ## [0.6.1] - 2026-03-18
 
 ### Added
