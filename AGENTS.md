@@ -8,7 +8,7 @@ _Last updated: 2026-03-13_
 - **Main branch**: `main`
 - **Remote**: `https://github.com/kmumenthaler/dnd-campaign-hub.git`
 - **Build**: Run `npm run check`, `npm run test`, then `npm run build`
-- **Deploy Target**: `C:\Users\kevin\SynologyDrive\TTRPG Vault\.obsidian\plugins\dnd-campaign-hub\`
+- **Deploy Target**: `C:\Users\kevin\SynologyDrive\Obsidian Vault\TTRPG Vault\.obsidian\plugins\dnd-campaign-hub\`
 
 ---
 
