@@ -648,6 +648,12 @@ export class CombatTrackerView extends ItemView {
       }),
     );
 
+    menu.addItem((item) =>
+      item.setTitle("➕ Add Party Member").setIcon("user-plus").onClick(() => {
+        new AddPartyMemberModal(this.app, this.plugin, tracker).open();
+      }),
+    );
+
     menu.addSeparator();
 
     menu.addItem((item) =>
@@ -1305,6 +1311,141 @@ class AddCreatureModal extends Modal {
     }
 
     new Notice(`Added ${count}× ${this.creatureName.trim()}`);
+    this.close();
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/** Add a party member (PC) mid-combat. */
+class AddPartyMemberModal extends Modal {
+  private plugin: DndCampaignHubPlugin;
+  private tracker: CombatTracker;
+  private selected = new Set<string>(); // notePaths of selected PCs
+  private memberListEl!: HTMLElement;
+  private addBtn!: HTMLButtonElement;
+  private currentMembers: import("../party/PartyTypes").ResolvedPartyMember[] = [];
+
+  constructor(app: any, plugin: DndCampaignHubPlugin, tracker: CombatTracker) {
+    super(app);
+    this.plugin = plugin;
+    this.tracker = tracker;
+  }
+
+  async onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h3", { text: "➕ Add Party Member" });
+
+    const parties = this.plugin.partyManager.getParties();
+    if (parties.length === 0) {
+      contentEl.createEl("p", {
+        text: "No parties configured. Create a party in the Party Manager first.",
+        cls: "mod-warning",
+      });
+      return;
+    }
+
+    // Pre-select the party linked to the encounter, if any
+    const trackerState = this.tracker.getState();
+    const autoParty = trackerState?.encounterPath
+      ? this.plugin.partyManager.resolvePartyForNote(trackerState.encounterPath)
+      : undefined;
+    const defaultPartyId = autoParty?.id ?? parties[0]!.id;
+
+    // Party dropdown
+    new Setting(contentEl).setName("Party").addDropdown((dd) => {
+      for (const p of parties) dd.addOption(p.id, p.name);
+      dd.setValue(defaultPartyId);
+      dd.onChange((id) => this.loadMembers(id));
+    });
+
+    // Member list container
+    this.memberListEl = contentEl.createDiv();
+
+    // Add button
+    const btnSetting = new Setting(contentEl).addButton((btn) => {
+      this.addBtn = btn.buttonEl;
+      btn.setButtonText("Add Selected").setCta().onClick(() => this.addSelected());
+    });
+    btnSetting.settingEl.style.borderTop = "1px solid var(--background-modifier-border)";
+    btnSetting.settingEl.style.paddingTop = "12px";
+
+    // Load default party
+    await this.loadMembers(defaultPartyId);
+  }
+
+  private async loadMembers(partyId: string) {
+    this.selected.clear();
+    this.memberListEl.empty();
+
+    const trackerState = this.tracker.getState();
+    const presentPaths = new Set(
+      (trackerState?.combatants ?? [])
+        .filter((c) => c.player && c.notePath)
+        .map((c) => c.notePath as string),
+    );
+
+    const members = await this.plugin.partyManager.resolveMembers(partyId);
+    this.currentMembers = members.filter((m) => m.enabled && !presentPaths.has(m.notePath));
+
+    if (this.currentMembers.length === 0) {
+      this.memberListEl.createEl("p", {
+        text: members.length === 0
+          ? "No members in this party."
+          : "All party members are already in combat.",
+        cls: "setting-item-description",
+      });
+      return;
+    }
+
+    for (const pm of this.currentMembers) {
+      const row = new Setting(this.memberListEl)
+        .setName(pm.name)
+        .setDesc(`Level ${pm.level} · HP ${pm.hp}/${pm.maxHp} · AC ${pm.ac}`);
+      row.addToggle((toggle) =>
+        toggle.setValue(false).onChange((v) => {
+          if (v) this.selected.add(pm.notePath);
+          else this.selected.delete(pm.notePath);
+        }),
+      );
+    }
+  }
+
+  private addSelected() {
+    if (this.selected.size === 0) {
+      new Notice("Select at least one party member");
+      return;
+    }
+
+    const toAdd = this.currentMembers.filter((pm) => this.selected.has(pm.notePath));
+    for (const pm of toAdd) {
+      const modifier = pm.initBonus ?? 0;
+      const initiative = Math.floor(Math.random() * 20) + 1 + modifier;
+      this.tracker.addCombatant({
+        id: `add-${Date.now()}-${pm.notePath}`,
+        name: pm.name,
+        display: pm.name,
+        initiative,
+        modifier,
+        currentHP: pm.hp,
+        maxHP: pm.maxHp,
+        tempHP: pm.thp ?? 0,
+        ac: pm.ac,
+        currentAC: pm.ac,
+        player: true,
+        friendly: false,
+        hidden: false,
+        notePath: pm.notePath,
+        tokenId: pm.tokenId,
+        statuses: [],
+        level: pm.level,
+      });
+    }
+
+    new Notice(`Added ${toAdd.length} party member${toAdd.length !== 1 ? "s" : ""}`);
     this.close();
   }
 
