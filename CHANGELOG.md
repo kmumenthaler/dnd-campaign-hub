@@ -5,6 +5,23 @@ All notable changes to the D&D Campaign Hub plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-03-27
+
+### Added
+
+- **HP Sync Confirmation Modal** — Syncing initiative tracker HP to PC vault notes now opens a confirmation dialog showing a diff of all HP changes before writing. Each PC row shows vault HP vs tracker HP with per-row checkboxes to selectively include/exclude PCs. Rows where the tracker is at full HP but the vault shows a significantly wounded PC are flagged with a drastic-change warning to prevent accidental overwriting after a reset.
+- **Sync, Save & End** — The "End Combat" dialog now offers a "Sync, Save & End" button that opens the HP sync confirmation modal before saving and ending combat, making end-of-session HP sync a safe one-step flow.
+
+### Fixed
+
+- **Battlemap annotations in player view** — Canvas scaling (2× HiDPI) broke annotation rendering; fixed fallback dimensions to use logical coordinates.
+- **Aura visibility in player view** — Auras were not re-rendering when changed because aura data was not included in the config digest hash; added aura radius contribution.
+- **Initiative vision switching** — The player view no longer fails to update when vision is switched to a different token in the initiative tracker; the selected vision token ID is now always included in the digest.
+- **DM layer tokens visible to players** — Tokens moved to the DM layer were still rendered in the player view; the marker filter now treats the DM layer as an explicit hide override.
+- **Hidden combatant indicator** — The 👁 eye icon for hidden combatants in the GM's initiative tracker was missing after a refactor; restored.
+- **Per-combatant sync scoped to single PC** — The "Sync HP to Note" context menu item on a single combatant previously synced all PCs; it now correctly scopes to only that combatant.
+- **Freesound API compatibility** — Fixed Authorization header format and updated field names for Freesound API compatibility.
+
 ## [0.7.0] - 2026-03-26
 
 ### Added

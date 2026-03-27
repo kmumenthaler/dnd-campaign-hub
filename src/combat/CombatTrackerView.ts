@@ -2,7 +2,7 @@ import { ItemView, Menu, Modal, Notice, Setting, TFile, TFolder, WorkspaceLeaf }
 import type DndCampaignHubPlugin from "../main";
 import { COMBAT_TRACKER_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE } from "../constants";
 import type { CombatTracker } from "./CombatTracker";
-import type { Combatant, CombatState, StatusEffect } from "./types";
+import type { Combatant, CombatState, StatusEffect, SyncPreviewEntry } from "./types";
 import { enumerateScreens, screenKey, type ScreenInfo } from "../utils/ScreenEnumeration";
 
 /**
@@ -262,6 +262,11 @@ export class CombatTrackerView extends ItemView {
 
     // ── Name cell ──
     const nameCell = row.createDiv({ cls: "dnd-ct-name-cell" });
+
+    // Hidden-from-players indicator
+    if (c.hidden) {
+      nameCell.createEl("span", { text: "👁", cls: "dnd-ct-marker dnd-ct-marker-hidden", attr: { title: "Hidden from players" } });
+    }
 
     // Name (clickable → statblock below)
     const nameEl = nameCell.createEl("span", {
@@ -568,13 +573,25 @@ export class CombatTrackerView extends ItemView {
     if (c.player && c.notePath) {
       menu.addSeparator();
       menu.addItem((item) =>
-        item.setTitle("↓ Sync HP to Note").setIcon("arrow-down-to-line").onClick(() => {
-          void tracker.syncPCsToNotes();
+        item.setTitle("\u2193 Sync HP to Note").setIcon("arrow-down-to-line").onClick(async () => {
+          const entries = await tracker.buildSyncPreview([c.id]);
+          if (!entries.length) return;
+          if (!entries[0]!.changed) {
+            new Notice(`${c.display}: HP already matches note`);
+            return;
+          }
+          new ConfirmSyncModal(this.app, tracker, entries, "toNotes").open();
         }),
       );
       menu.addItem((item) =>
-        item.setTitle("↑ Refresh HP from Note").setIcon("refresh-cw").onClick(() => {
-          void tracker.refreshPCsFromNotes();
+        item.setTitle("\u2191 Refresh HP from Note").setIcon("refresh-cw").onClick(async () => {
+          const entries = await tracker.buildSyncPreview([c.id]);
+          if (!entries.length) return;
+          if (!entries[0]!.changed) {
+            new Notice(`${c.display}: HP already matches tracker`);
+            return;
+          }
+          new ConfirmSyncModal(this.app, tracker, entries, "fromNotes").open();
         }),
       );
     }
@@ -692,14 +709,18 @@ export class CombatTrackerView extends ItemView {
     menu.addSeparator();
 
     menu.addItem((item) =>
-      item.setTitle("↓ Sync PCs to Notes").setIcon("arrow-down-to-line").onClick(() => {
-        void tracker.syncPCsToNotes();
+      item.setTitle("\u2193 Sync PCs to Notes").setIcon("arrow-down-to-line").onClick(async () => {
+        const entries = await tracker.buildSyncPreview();
+        if (!entries.length) { new Notice("No PCs with linked notes"); return; }
+        new ConfirmSyncModal(this.app, tracker, entries, "toNotes").open();
       }),
     );
 
     menu.addItem((item) =>
-      item.setTitle("↑ Refresh PCs from Notes").setIcon("refresh-cw").onClick(() => {
-        void tracker.refreshPCsFromNotes();
+      item.setTitle("\u2191 Refresh PCs from Notes").setIcon("refresh-cw").onClick(async () => {
+        const entries = await tracker.buildSyncPreview();
+        if (!entries.length) { new Notice("No PCs with linked notes"); return; }
+        new ConfirmSyncModal(this.app, tracker, entries, "fromNotes").open();
       }),
     );
 
@@ -1518,7 +1539,23 @@ class ConfirmEndCombatModal extends Modal {
 
     new Setting(contentEl)
       .addButton((btn) =>
-        btn.setButtonText("Save & End").setCta().onClick(async () => {
+        btn.setButtonText("Sync, Save & End").setCta().onClick(async () => {
+          const entries = await this.tracker.buildSyncPreview();
+          const hasChanges = entries.some(e => e.changed);
+          if (hasChanges) {
+            new ConfirmSyncModal(this.app, this.tracker, entries, "toNotes", async () => {
+              await this.tracker.saveCombat();
+              this.tracker.endCombat();
+            }).open();
+          } else {
+            await this.tracker.saveCombat();
+            this.tracker.endCombat();
+          }
+          this.close();
+        }),
+      )
+      .addButton((btn) =>
+        btn.setButtonText("Save & End").onClick(async () => {
           await this.tracker.saveCombat();
           this.tracker.endCombat();
           this.close();
@@ -1531,6 +1568,171 @@ class ConfirmEndCombatModal extends Modal {
         }),
       )
       .addButton((btn) => btn.setButtonText("Cancel").onClick(() => this.close()));
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/** Confirmation modal for syncing HP between tracker and vault notes. */
+class ConfirmSyncModal extends Modal {
+  private selected = new Map<string, boolean>();
+  private _confirmBtn: HTMLButtonElement | null = null;
+
+  constructor(
+    app: any,
+    private tracker: CombatTracker,
+    private entries: SyncPreviewEntry[],
+    private direction: "toNotes" | "fromNotes",
+    private onComplete?: () => Promise<void>,
+  ) {
+    super(app);
+    for (const e of entries) {
+      this.selected.set(e.combatant.id, e.changed);
+    }
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("dnd-ct-sync-modal");
+
+    const isToNotes = this.direction === "toNotes";
+    contentEl.createEl("h3", {
+      text: isToNotes ? "Sync HP to Notes" : "Refresh HP from Notes",
+    });
+    contentEl.createEl("p", {
+      text: isToNotes
+        ? "Review changes before writing tracker HP to vault notes."
+        : "Review changes before overwriting tracker HP with vault note values.",
+      cls: "dnd-ct-sync-subtitle",
+    });
+
+    const hasAnyDrastic = this.entries.some(e => e.drastic);
+    if (hasAnyDrastic) {
+      const warningEl = contentEl.createDiv({ cls: "dnd-ct-sync-warning" });
+      const drasticCount = this.entries.filter(e => e.drastic).length;
+      warningEl.createEl("span", {
+        text: `\u26A0 ${drasticCount} PC${drasticCount !== 1 ? "s" : ""} at full HP \u2014 possible accidental reset. Review carefully.`,
+      });
+    }
+
+    // Table
+    const table = contentEl.createEl("table", { cls: "dnd-ct-sync-table" });
+    const thead = table.createEl("thead");
+    const headRow = thead.createEl("tr");
+    headRow.createEl("th", { text: "" });
+    headRow.createEl("th", { text: "Name" });
+    if (isToNotes) {
+      headRow.createEl("th", { text: "Note HP" });
+      headRow.createEl("th", { text: "" });
+      headRow.createEl("th", { text: "Tracker HP" });
+    } else {
+      headRow.createEl("th", { text: "Tracker HP" });
+      headRow.createEl("th", { text: "" });
+      headRow.createEl("th", { text: "Note HP" });
+    }
+    headRow.createEl("th", { text: "Status" });
+
+    const tbody = table.createEl("tbody");
+    const checkboxEls: HTMLInputElement[] = [];
+
+    for (const entry of this.entries) {
+      const c = entry.combatant;
+      const row = tbody.createEl("tr");
+      if (!entry.changed) row.addClass("dnd-ct-sync-row-unchanged");
+      if (entry.drastic) row.addClass("dnd-ct-sync-row-drastic");
+      if (entry.error) row.addClass("dnd-ct-sync-row-error");
+
+      // Checkbox
+      const cbCell = row.createEl("td");
+      const cb = cbCell.createEl("input", { type: "checkbox" }) as HTMLInputElement;
+      cb.checked = this.selected.get(c.id) ?? false;
+      cb.disabled = !!entry.error;
+      cb.addEventListener("change", () => {
+        this.selected.set(c.id, cb.checked);
+        this.updateConfirmBtn();
+      });
+      checkboxEls.push(cb);
+
+      // Name
+      row.createEl("td", { text: c.display, cls: "dnd-ct-sync-name" });
+
+      const noteHPStr = entry.error
+        ? "?"
+        : `${entry.vaultHP}/${c.maxHP}` + (entry.vaultTHP ? ` (+${entry.vaultTHP})` : "");
+      const trackerHPStr = `${entry.trackerHP}/${c.maxHP}` + (entry.trackerTHP ? ` (+${entry.trackerTHP})` : "");
+
+      if (isToNotes) {
+        // Note HP (old) -> Tracker HP (new)
+        row.createEl("td", { text: noteHPStr, cls: "dnd-ct-sync-hp" });
+        const arrowCell = row.createEl("td", { cls: "dnd-ct-sync-arrow" });
+        if (entry.changed && !entry.error) arrowCell.textContent = "\u2190";
+        row.createEl("td", { text: trackerHPStr, cls: "dnd-ct-sync-hp" });
+      } else {
+        // Tracker HP (old) -> Note HP (new)
+        row.createEl("td", { text: trackerHPStr, cls: "dnd-ct-sync-hp" });
+        const arrowCell = row.createEl("td", { cls: "dnd-ct-sync-arrow" });
+        if (entry.changed && !entry.error) arrowCell.textContent = "\u2192";
+        row.createEl("td", { text: noteHPStr, cls: "dnd-ct-sync-hp" });
+      }
+
+      // Status badge
+      const statusCell = row.createEl("td", { cls: "dnd-ct-sync-status" });
+      if (entry.error) {
+        statusCell.createEl("span", { text: "error", cls: "dnd-ct-sync-badge dnd-ct-sync-badge-error" });
+      } else if (entry.drastic) {
+        statusCell.createEl("span", { text: "reset?", cls: "dnd-ct-sync-badge dnd-ct-sync-badge-reset" });
+      } else if (!entry.changed) {
+        statusCell.createEl("span", { text: "same", cls: "dnd-ct-sync-badge dnd-ct-sync-badge-same" });
+      }
+    }
+
+    // Buttons
+    const btnRow = new Setting(contentEl);
+
+    btnRow.addButton((btn) =>
+      btn.setButtonText("Select Changed").onClick(() => {
+        for (let i = 0; i < this.entries.length; i++) {
+          const e = this.entries[i]!;
+          const checked = e.changed && !e.error;
+          this.selected.set(e.combatant.id, checked);
+          checkboxEls[i]!.checked = checked;
+        }
+        this.updateConfirmBtn();
+      }),
+    );
+
+    btnRow.addButton((btn) => {
+      btn.setButtonText("Confirm Sync").setCta().onClick(async () => {
+        const ids = [...this.selected.entries()]
+          .filter(([, v]) => v)
+          .map(([id]) => id);
+        if (ids.length === 0) return;
+
+        if (isToNotes) {
+          await this.tracker.syncSelectedPCsToNotes(ids);
+        } else {
+          await this.tracker.refreshSelectedPCsFromNotes(ids);
+        }
+        if (this.onComplete) await this.onComplete();
+        this.close();
+      });
+      this._confirmBtn = btn.buttonEl;
+    });
+
+    btnRow.addButton((btn) =>
+      btn.setButtonText("Cancel").onClick(() => this.close()),
+    );
+
+    this.updateConfirmBtn();
+  }
+
+  private updateConfirmBtn() {
+    if (!this._confirmBtn) return;
+    const anySelected = [...this.selected.values()].some(v => v);
+    this._confirmBtn.disabled = !anySelected;
   }
 
   onClose() {

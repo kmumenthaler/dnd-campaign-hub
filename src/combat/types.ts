@@ -83,5 +83,20 @@ export interface CombatState {
   savedAt: string;
 }
 
+/** Preview entry for the HP sync confirmation modal. */
+export interface SyncPreviewEntry {
+  combatant: Combatant;
+  vaultHP: number;
+  vaultTHP: number;
+  trackerHP: number;
+  trackerTHP: number;
+  /** True when any HP/THP value differs between tracker and vault. */
+  changed: boolean;
+  /** True when tracker is at full HP but vault was significantly wounded — possible accidental reset. */
+  drastic: boolean;
+  /** Set when the vault note couldn't be read. */
+  error?: string;
+}
+
 /** Callback signature for combat state change listeners. */
 export type CombatListener = (state: CombatState | null) => void;

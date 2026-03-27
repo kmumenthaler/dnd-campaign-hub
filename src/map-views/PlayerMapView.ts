@@ -1669,24 +1669,25 @@ export class PlayerMapView extends ItemView {
     }
 
     // Filter to Player, Elevated, and Subterranean layers (exclude DM and Background)
-    // Player tokens are always visible regardless of layer
     const visibleLayers = ['Player', 'Elevated', 'Subterranean'];
     const playerMarkers = (config.markers || []).filter((m: any) => {
       const markerLayer = m.layer || 'Player';
       const markerDef = m.markerId ? this.plugin.markerLibrary.getMarker(m.markerId) : null;
-      
-      // Debug: log each marker being filtered
-      
-      // Always show player-type tokens (or tokens marked visible to players), even if on DM layer (for tunneling)
+
+      // DM layer is an explicit hide — only burrowing/tunneling tokens pass through
+      if (markerLayer === 'DM') {
+        return !!(m.elevation?.isBurrowing || m.tunnelState);
+      }
+
+      // Always show player-type tokens or tokens marked visible to players
       if (markerDef && (markerDef.type === 'player' || m.visibleToPlayers)) {
-        return true; // Always show player tokens and tokens visible to players
+        return true;
       }
       // Also show burrowing tokens (they may be visible to players in tunnels)
       if (m.elevation?.isBurrowing) {
         return true;
       }
-      const included = visibleLayers.includes(markerLayer);
-      return included;
+      return visibleLayers.includes(markerLayer);
     });
     const playerDrawings = (config.drawings || []).filter((d: any) => visibleLayers.includes(d.layer || 'Player'));
     const playerHighlights = (config.highlights || []).filter((h: any) => visibleLayers.includes(h.layer || 'Player'));

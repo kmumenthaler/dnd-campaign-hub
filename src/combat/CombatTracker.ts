@@ -1,6 +1,6 @@
 import { App, Notice, TFile } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
-import type { Combatant, CombatState, CombatListener, StatusEffect, DeathSaveState } from "./types";
+import type { Combatant, CombatState, CombatListener, StatusEffect, DeathSaveState, SyncPreviewEntry } from "./types";
 import type { EncounterCreature } from "../encounter/EncounterBuilder";
 
 /**
@@ -668,21 +668,56 @@ export class CombatTracker {
   /* ────────────────── PC Note Sync ────────────────── */
 
   /**
-   * Write each PC combatant's current tracker HP and temp HP back to their
-   * vault note's frontmatter (`hp` and `thp` fields).
-   * NPCs / creatures without a notePath are skipped silently.
+   * Build a read-only preview of what would change if we synced tracker HP
+   * to vault notes. Used by the confirmation modal.
+   * @param combatantIds If provided, only include these combatants. Otherwise all PCs.
    */
-  async syncPCsToNotes(): Promise<void> {
-    if (!this.state) {
-      new Notice("No active combat to sync");
-      return;
+  async buildSyncPreview(combatantIds?: string[]): Promise<SyncPreviewEntry[]> {
+    if (!this.state) return [];
+
+    let pcs = this.state.combatants.filter(c => c.player && c.notePath);
+    if (combatantIds) {
+      const idSet = new Set(combatantIds);
+      pcs = pcs.filter(c => idSet.has(c.id));
     }
 
-    const pcs = this.state.combatants.filter(c => c.player && c.notePath);
-    if (pcs.length === 0) {
-      new Notice("No PCs with linked notes in this combat");
-      return;
+    const entries: SyncPreviewEntry[] = [];
+    for (const c of pcs) {
+      if (!c.notePath) continue;
+      try {
+        const file = this.app.vault.getAbstractFileByPath(c.notePath);
+        if (!(file instanceof TFile)) {
+          entries.push({ combatant: c, vaultHP: 0, vaultTHP: 0, trackerHP: c.currentHP, trackerTHP: c.tempHP, changed: true, drastic: false, error: "Note not found" });
+          continue;
+        }
+
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm = cache?.frontmatter;
+        const vaultHP = fm ? (parseInt(fm.hp) || 0) : 0;
+        const vaultTHP = fm ? (parseInt(fm.thp) || 0) : 0;
+
+        const changed = vaultHP !== c.currentHP || vaultTHP !== c.tempHP;
+        // Drastic: tracker is at full HP but vault was significantly wounded
+        const drastic = changed && c.currentHP === c.maxHP && vaultHP < c.maxHP * 0.9;
+
+        entries.push({ combatant: c, vaultHP, vaultTHP, trackerHP: c.currentHP, trackerTHP: c.tempHP, changed, drastic });
+      } catch (err) {
+        entries.push({ combatant: c, vaultHP: 0, vaultTHP: 0, trackerHP: c.currentHP, trackerTHP: c.tempHP, changed: true, drastic: false, error: String(err) });
+      }
     }
+    return entries;
+  }
+
+  /**
+   * Write selected PC combatants' tracker HP and temp HP back to their
+   * vault note's frontmatter (`hp` and `thp` fields).
+   * @param combatantIds The IDs of combatants to sync. Only PCs with notePath are written.
+   */
+  async syncSelectedPCsToNotes(combatantIds: string[]): Promise<{ synced: number; failed: number }> {
+    if (!this.state) return { synced: 0, failed: 0 };
+
+    const idSet = new Set(combatantIds);
+    const pcs = this.state.combatants.filter(c => c.player && c.notePath && idSet.has(c.id));
 
     let synced = 0;
     let failed = 0;
@@ -706,27 +741,37 @@ export class CombatTracker {
 
     if (failed > 0) {
       new Notice(`Synced ${synced} PC${synced !== 1 ? "s" : ""} to notes (${failed} failed)`);
-    } else {
+    } else if (synced > 0) {
       new Notice(`Synced ${synced} PC${synced !== 1 ? "s" : ""} to notes`);
     }
+    return { synced, failed };
   }
 
   /**
-   * Re-read each PC's `hp` and `thp` frontmatter from their vault note and
-   * update the combatant's currentHP / tempHP in the tracker.
-   * NPC / creature combatants without a notePath are left unchanged.
+   * Write all PC combatants' tracker HP to vault notes (legacy convenience wrapper).
    */
-  async refreshPCsFromNotes(): Promise<void> {
+  async syncPCsToNotes(): Promise<void> {
     if (!this.state) {
-      new Notice("No active combat to refresh");
+      new Notice("No active combat to sync");
       return;
     }
-
     const pcs = this.state.combatants.filter(c => c.player && c.notePath);
     if (pcs.length === 0) {
       new Notice("No PCs with linked notes in this combat");
       return;
     }
+    await this.syncSelectedPCsToNotes(pcs.map(c => c.id));
+  }
+
+  /**
+   * Re-read selected PCs' `hp` and `thp` from their vault notes into the tracker.
+   * @param combatantIds The IDs of combatants to refresh.
+   */
+  async refreshSelectedPCsFromNotes(combatantIds: string[]): Promise<{ refreshed: number; failed: number }> {
+    if (!this.state) return { refreshed: 0, failed: 0 };
+
+    const idSet = new Set(combatantIds);
+    const pcs = this.state.combatants.filter(c => c.player && c.notePath && idSet.has(c.id));
 
     let refreshed = 0;
     let failed = 0;
@@ -756,13 +801,30 @@ export class CombatTracker {
       }
     }
 
-    this.emit();
+    if (refreshed > 0) this.emit();
 
     if (failed > 0) {
       new Notice(`Refreshed ${refreshed} PC${refreshed !== 1 ? "s" : ""} from notes (${failed} failed)`);
-    } else {
+    } else if (refreshed > 0) {
       new Notice(`Refreshed ${refreshed} PC${refreshed !== 1 ? "s" : ""} from notes`);
     }
+    return { refreshed, failed };
+  }
+
+  /**
+   * Re-read all PCs' HP from vault notes (legacy convenience wrapper).
+   */
+  async refreshPCsFromNotes(): Promise<void> {
+    if (!this.state) {
+      new Notice("No active combat to refresh");
+      return;
+    }
+    const pcs = this.state.combatants.filter(c => c.player && c.notePath);
+    if (pcs.length === 0) {
+      new Notice("No PCs with linked notes in this combat");
+      return;
+    }
+    await this.refreshSelectedPCsFromNotes(pcs.map(c => c.id));
   }
 
   /**
