@@ -326,6 +326,7 @@ export class PlayerMapView extends ItemView {
       n(m.visibleToPlayers ? 1 : 0);
       if (m.elevation) { n(m.elevation.height || 0); n(m.elevation.depth || 0); }
       if (m.tunnelState) { s(m.tunnelState.tunnelId || ''); n(m.tunnelState.pathIndex || 0); }
+      if (m.auras) { n(m.auras.length); for (let j = 0; j < m.auras.length; j++) { n(m.auras[j].radius || 0); } }
       if (m.layer) s(m.layer);
     }
 
@@ -377,7 +378,7 @@ export class PlayerMapView extends ItemView {
     if (c.gridType) s(c.gridType);
 
     // Vision selection
-    if (c.selectedVisionTokenId) s(c.selectedVisionTokenId);
+    s(c.selectedVisionTokenId || '__null_vision__');
 
     // Rulers
     if (c.dragRuler) {
@@ -2170,8 +2171,8 @@ export class PlayerMapView extends ItemView {
     // Draw Fog of War (Player view: fully opaque black with light source revelation)
     // Fog must be enabled for darkness to appear - lights reveal areas within the fog
     const hasFogGlobal = config.fogOfWar && config.fogOfWar.enabled;
-    const _logicalW = this.mapImage?.naturalWidth ?? this.canvas!.width;
-    const _logicalH = this.mapImage?.naturalHeight ?? this.canvas!.height;
+    const _logicalW = this.mapImage?.naturalWidth ?? (this.canvas!.width / this._canvasScale);
+    const _logicalH = this.mapImage?.naturalHeight ?? (this.canvas!.height / this._canvasScale);
     if (hasFogGlobal) {
       this.drawFogOfWar(ctx, _logicalW, _logicalH, config);
     } else if (((config.walls && config.walls.length > 0) || (config.envAssets && config.envAssets.some((a: any) => (a.scatterConfig && a.scatterConfig.blocksVision)))) && visionRelevantTokens.length > 0) {
@@ -2476,8 +2477,8 @@ export class PlayerMapView extends ItemView {
   }
 
   private drawGrid(ctx: CanvasRenderingContext2D, config: any) {
-    const w = this.mapImage?.naturalWidth ?? this.canvas!.width;
-    const h = this.mapImage?.naturalHeight ?? this.canvas!.height;
+    const w = this.mapImage?.naturalWidth ?? (this.canvas!.width / this._canvasScale);
+    const h = this.mapImage?.naturalHeight ?? (this.canvas!.height / this._canvasScale);
     const offsetX = config.gridOffsetX || 0;
     const offsetY = config.gridOffsetY || 0;
 
