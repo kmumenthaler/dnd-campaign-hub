@@ -72,6 +72,11 @@ export class PlayerMapView extends ItemView {
   private _pvRendered: boolean = false; // Guard against double renderPlayerView (setState + onOpen race)
   private _lastConfigDigest: number = 0; // Fast hash of last synced config — skip redundant redraws
 
+  /** HiDPI canvas resolution multiplier (mirrors plugin setting). */
+  private get _canvasScale(): number {
+    return Math.max(1, Math.min(4, this.plugin.settings.mapCanvasScale ?? 2));
+  }
+
   // ── Perf: pre-baked fog atlas ─────────────────────────────────────────
   // Stores the complete fog/grayscale/color result so that during a drag
   // the expensive drawFogOfWar() path can be skipped when only the
@@ -926,10 +931,12 @@ export class PlayerMapView extends ItemView {
     // Helper to sync canvas CSS size and position to match displayed image exactly
     const syncCanvasToImage = () => {
       if (img.complete && img.naturalWidth > 0) {
-        // Ensure buffer matches natural image size
-        if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
-          canvas.width = img.naturalWidth;
-          canvas.height = img.naturalHeight;
+        // Ensure buffer matches natural image size × canvas scale
+        const _bw = img.naturalWidth * this._canvasScale;
+        const _bh = img.naturalHeight * this._canvasScale;
+        if (canvas.width !== _bw || canvas.height !== _bh) {
+          canvas.width = _bw;
+          canvas.height = _bh;
         }
 
         if (this.tabletopMode) {
@@ -1127,8 +1134,8 @@ export class PlayerMapView extends ItemView {
 
     // Size canvas when media loads
     const onPlayerMediaReady = () => {
-      canvas.width = (img as any).naturalWidth;
-      canvas.height = (img as any).naturalHeight;
+      canvas.width = (img as any).naturalWidth * this._canvasScale;
+      canvas.height = (img as any).naturalHeight * this._canvasScale;
       // Defer one frame so media has been laid out, then sync position
       requestAnimationFrame(syncCanvasToImage);
     };
@@ -1168,8 +1175,8 @@ export class PlayerMapView extends ItemView {
 
     // If image already loaded
     if (img.complete && img.naturalWidth > 0) {
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width = img.naturalWidth * this._canvasScale;
+      canvas.height = img.naturalHeight * this._canvasScale;
       requestAnimationFrame(syncCanvasToImage);
     }
     
@@ -1644,7 +1651,10 @@ export class PlayerMapView extends ItemView {
     // The cache evicts automatically when it hits VIS_CACHE_MAX.
 
     const config = this.mapConfig;
+    // Clear at physical resolution, then switch to logical (scaled) coords
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.setTransform(this._canvasScale, 0, 0, this._canvasScale, 0, 0);
 
     // Draw grid overlay if active and visible
     if (config.gridType && config.gridType !== 'none' && config.gridSize > 0 && config.gridVisible !== false) {
@@ -2160,13 +2170,15 @@ export class PlayerMapView extends ItemView {
     // Draw Fog of War (Player view: fully opaque black with light source revelation)
     // Fog must be enabled for darkness to appear - lights reveal areas within the fog
     const hasFogGlobal = config.fogOfWar && config.fogOfWar.enabled;
+    const _logicalW = this.mapImage?.naturalWidth ?? this.canvas!.width;
+    const _logicalH = this.mapImage?.naturalHeight ?? this.canvas!.height;
     if (hasFogGlobal) {
-      this.drawFogOfWar(ctx, this.canvas!.width, this.canvas!.height, config);
+      this.drawFogOfWar(ctx, _logicalW, _logicalH, config);
     } else if (((config.walls && config.walls.length > 0) || (config.envAssets && config.envAssets.some((a: any) => (a.scatterConfig && a.scatterConfig.blocksVision)))) && visionRelevantTokens.length > 0) {
       // No fog of war, but walls exist â€” draw wall-occlusion overlay.
       // In daylight, players can see infinitely far EXCEPT through walls.
       // Areas behind walls are darkened so the DM's hidden content stays hidden.
-      this.drawWallOcclusion(ctx, this.canvas!.width, this.canvas!.height, config, visionRelevantTokens);
+      this.drawWallOcclusion(ctx, _logicalW, _logicalH, config, visionRelevantTokens);
     }
 
     // Redraw tunnel paths ON TOP of fog for underground players
@@ -2464,8 +2476,8 @@ export class PlayerMapView extends ItemView {
   }
 
   private drawGrid(ctx: CanvasRenderingContext2D, config: any) {
-    const w = this.canvas!.width;
-    const h = this.canvas!.height;
+    const w = this.mapImage?.naturalWidth ?? this.canvas!.width;
+    const h = this.mapImage?.naturalHeight ?? this.canvas!.height;
     const offsetX = config.gridOffsetX || 0;
     const offsetY = config.gridOffsetY || 0;
 

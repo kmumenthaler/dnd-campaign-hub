@@ -3012,8 +3012,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 	//  Grid Drawing (delegated to map/GridOverlay) 
 
-	drawGridOverlay(container: HTMLElement, img: MapMediaElement, config: any, offsetX: number = 0, offsetY: number = 0, reuseCanvas?: HTMLCanvasElement | null): HTMLCanvasElement {
-		return drawGridOverlayFn(container, img, config, offsetX, offsetY, reuseCanvas);
+	drawGridOverlay(container: HTMLElement, img: MapMediaElement, config: any, offsetX: number = 0, offsetY: number = 0, reuseCanvas?: HTMLCanvasElement | null, canvasScale: number = 1): HTMLCanvasElement {
+		return drawGridOverlayFn(container, img, config, offsetX, offsetY, reuseCanvas, canvasScale);
 	}
 
 	drawFilledHexFlatStretched(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number) {

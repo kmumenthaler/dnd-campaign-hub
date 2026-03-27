@@ -121,6 +121,23 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(maps)
+      .setName("Map canvas resolution")
+      .setDesc(
+        "Multiplier for overlay canvas buffers (tokens, fog, grid). Higher values produce sharper tokens on small maps but use more memory. Requires reopening your map."
+      )
+      .addDropdown((dd) =>
+        dd
+          .addOption("1", "1× (native)")
+          .addOption("2", "2× (default)")
+          .addOption("3", "3× (high)")
+          .setValue(String(this.plugin.settings.mapCanvasScale ?? 2))
+          .onChange(async (value) => {
+            this.plugin.settings.mapCanvasScale = parseInt(value, 10);
+            await this.plugin.saveSettings();
+          })
+      );
+
     // ── 3. SRD Data Import ──────────────────────────────────────────────
     const srd = addSection(containerEl, "SRD Data Import", "Download D&D 5e System Reference Document data from the official API.");
 

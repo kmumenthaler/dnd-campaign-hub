@@ -5,15 +5,17 @@
  * Extracted from DndCampaignHubPlugin.
  */
 
-export function drawGridOverlay(container: HTMLElement, img: MapMediaElement, config: any, offsetX: number = 0, offsetY: number = 0, reuseCanvas?: HTMLCanvasElement | null): HTMLCanvasElement {
+export function drawGridOverlay(container: HTMLElement, img: MapMediaElement, config: any, offsetX: number = 0, offsetY: number = 0, reuseCanvas?: HTMLCanvasElement | null, canvasScale: number = 1): HTMLCanvasElement {
 	let canvas: HTMLCanvasElement;
 	if (reuseCanvas) {
 		// Reuse existing canvas — skip DOM create/remove/append
 		canvas = reuseCanvas;
 		// Ensure dimensions still match (image may have been resized)
-		if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
-			canvas.width = img.naturalWidth;
-			canvas.height = img.naturalHeight;
+		const bw = img.naturalWidth * canvasScale;
+		const bh = img.naturalHeight * canvasScale;
+		if (canvas.width !== bw || canvas.height !== bh) {
+			canvas.width = bw;
+			canvas.height = bh;
 		}
 		canvas.style.width = `${img.width}px`;
 		canvas.style.height = `${img.height}px`;
@@ -25,8 +27,8 @@ export function drawGridOverlay(container: HTMLElement, img: MapMediaElement, co
 		}
 		canvas = document.createElement('canvas');
 		canvas.classList.add('dnd-map-grid-overlay');
-		canvas.width = img.naturalWidth;
-		canvas.height = img.naturalHeight;
+		canvas.width = img.naturalWidth * canvasScale;
+		canvas.height = img.naturalHeight * canvasScale;
 		canvas.style.position = 'absolute';
 		canvas.style.top = '0';
 		canvas.style.left = '0';
@@ -38,8 +40,14 @@ export function drawGridOverlay(container: HTMLElement, img: MapMediaElement, co
 	const ctx = canvas.getContext('2d');
 	if (!ctx) return canvas;
 
-	// Clear previous content
+	// Clear at physical resolution, then switch to logical coords
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
 	ctx.clearRect(0, 0, canvas.width, canvas.height);
+	ctx.setTransform(canvasScale, 0, 0, canvasScale, 0, 0);
+
+	// Logical dimensions for loop bounds
+	const logicalW = img.naturalWidth;
+	const logicalH = img.naturalHeight;
 
 	// Style for grid lines
 	ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
@@ -54,13 +62,13 @@ export function drawGridOverlay(container: HTMLElement, img: MapMediaElement, co
 		
 		// Batch all lines into a single path for one stroke call
 		ctx.beginPath();
-		for (let x = normalizedOffsetX; x <= canvas.width; x += sizeW) {
+		for (let x = normalizedOffsetX; x <= logicalW; x += sizeW) {
 			ctx.moveTo(x, 0);
-			ctx.lineTo(x, canvas.height);
+			ctx.lineTo(x, logicalH);
 		}
-		for (let y = normalizedOffsetY; y <= canvas.height; y += sizeH) {
+		for (let y = normalizedOffsetY; y <= logicalH; y += sizeH) {
 			ctx.moveTo(0, y);
-			ctx.lineTo(canvas.width, y);
+			ctx.lineTo(logicalW, y);
 		}
 		ctx.stroke();
 	} else if (config.gridType === 'hex-horizontal') {
@@ -73,9 +81,9 @@ export function drawGridOverlay(container: HTMLElement, img: MapMediaElement, co
 		const sizeY = vert / Math.sqrt(3);
 		
 		const startCol = Math.floor(-offsetX / horiz) - 2;
-		const endCol = Math.ceil((canvas.width - offsetX) / horiz) + 2;
+		const endCol = Math.ceil((logicalW - offsetX) / horiz) + 2;
 		const startRow = Math.floor(-offsetY / vert) - 2;
-		const endRow = Math.ceil((canvas.height - offsetY) / vert) + 2;
+		const endRow = Math.ceil((logicalH - offsetY) / vert) + 2;
 		
 		// Batch all hexagons into a single path
 		ctx.beginPath();
@@ -98,9 +106,9 @@ export function drawGridOverlay(container: HTMLElement, img: MapMediaElement, co
 		const sizeX = horiz / Math.sqrt(3);
 		
 		const startCol = Math.floor(-offsetX / horiz) - 2;
-		const endCol = Math.ceil((canvas.width - offsetX) / horiz) + 2;
+		const endCol = Math.ceil((logicalW - offsetX) / horiz) + 2;
 		const startRow = Math.floor(-offsetY / vert) - 2;
-		const endRow = Math.ceil((canvas.height - offsetY) / vert) + 2;
+		const endRow = Math.ceil((logicalH - offsetY) / vert) + 2;
 		
 		// Batch all hexagons into a single path
 		ctx.beginPath();

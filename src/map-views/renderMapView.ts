@@ -2914,6 +2914,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		let terrainCanvas: HTMLCanvasElement | null = null;
 		let annotationCanvas: HTMLCanvasElement | null = null;
 
+		// HiDPI canvas resolution multiplier: renders overlay canvases at Nx the
+		// image's natural resolution so tokens/fog/grid stay sharp when zoomed in.
+		const _canvasScale = Math.max(1, Math.min(4, plugin.settings.mapCanvasScale ?? 2));
+
 		// rAF-throttled annotation redraw during pan/zoom so we don't oversaturate
 		let _panRedrawRafId = 0;
 		const schedulePanRedraw = () => {
@@ -3194,7 +3198,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			// Reuses the existing canvas element to avoid DOM churn.
 			const redrawGridOverlays = () => {
 				if (config.gridType && config.gridType !== 'none' && config.gridSize) {
-					gridCanvas = plugin.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0, gridCanvas);
+					gridCanvas = plugin.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0, gridCanvas, _canvasScale);
 				} else if (gridCanvas) {
 					gridCanvas.remove();
 					gridCanvas = null;
@@ -3206,7 +3210,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (!terrainCanvas) return;
 				const tctx = terrainCanvas.getContext('2d');
 				if (!tctx) return;
+				tctx.setTransform(1, 0, 0, 1, 0, 0);
 				tctx.clearRect(0, 0, terrainCanvas.width, terrainCanvas.height);
+				tctx.setTransform(_canvasScale, 0, 0, _canvasScale, 0, 0);
 
 				// Draw terrain hexes
 				if (config.hexTerrains && config.hexTerrains.length > 0 && config.gridSize) {
@@ -3364,7 +3370,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					redrawAnnotations();
 					_buildingStaticLayer = false;
 
-					// Snapshot the static content
+					// Snapshot the static content (physical pixel copy — no transform)
 					const sCtx = _staticLayerCanvas.getContext('2d');
 					if (sCtx) {
 						sCtx.clearRect(0, 0, w, h);
@@ -3373,13 +3379,17 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					_staticLayerDirty = false;
 
 					// First frame: annotationCanvas already has static content — overlay on top
+					// (redrawAnnotations left the scale transform active)
 					_drawDragOverlay(ctx);
 					return;
 				}
 
 				// Fast path: stamp cached static layer + draw dynamic drag items
+				// Blit at physical resolution (identity transform), then restore scale
+				ctx.setTransform(1, 0, 0, 1, 0, 0);
 				ctx.clearRect(0, 0, w, h);
 				ctx.drawImage(_staticLayerCanvas, 0, 0);
+				ctx.setTransform(_canvasScale, 0, 0, _canvasScale, 0, 0);
 				_drawDragOverlay(ctx);
 			};
 
@@ -3522,7 +3532,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				// Ensure flicker animation runs when needed
 				updateFlickerAnimation();
 				
+				// Clear at physical resolution, then switch to logical (scaled) coords
+				ctx.setTransform(1, 0, 0, 1, 0, 0);
 				ctx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
+				ctx.setTransform(_canvasScale, 0, 0, _canvasScale, 0, 0);
 
 				// ── Viewport culling: compute visible rect in canvas coords ──
 				// Elements entirely outside this rect are skipped to avoid
@@ -4121,7 +4134,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (config.fogOfWar && config.fogOfWar.enabled) {
 					const fogAlpha = bgViewAlpha('fog');
 					if (fogAlpha < 1) ctx.globalAlpha = fogAlpha;
-					drawFogOfWar(ctx, annotationCanvas.width, annotationCanvas.height, false);
+					drawFogOfWar(ctx, img.naturalWidth, img.naturalHeight, false);
 					if (fogAlpha < 1) ctx.globalAlpha = 1;
 				}
 				// Draw fog preview during drag
@@ -4706,14 +4719,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (isOnBgLayer && backgroundEditView === 'lights' && annotationCanvas) {
 					try {
 						// Visibility cache keys include wall content, so no manual clear needed.
-						drawLightPreviewOverlay(ctx, annotationCanvas.width, annotationCanvas.height);
+						drawLightPreviewOverlay(ctx, img.naturalWidth, img.naturalHeight);
 					} catch (e) {
 						// Fallback: simple semi-transparent dark overlay
 						console.error('[DnD] Light preview overlay error:', e);
 						ctx.save();
 						ctx.globalAlpha = 0.7;
 						ctx.fillStyle = '#000000';
-						ctx.fillRect(0, 0, annotationCanvas.width, annotationCanvas.height);
+						ctx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
 						ctx.restore();
 					}
 				}
@@ -7661,8 +7674,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				// Create terrain/climate background canvas (sits between grid overlays and annotations)
 				terrainCanvas = document.createElement('canvas');
 				terrainCanvas.classList.add('dnd-map-terrain-layer');
-				terrainCanvas.width = img.naturalWidth;
-				terrainCanvas.height = img.naturalHeight;
+				terrainCanvas.width = img.naturalWidth * _canvasScale;
+				terrainCanvas.height = img.naturalHeight * _canvasScale;
 				terrainCanvas.style.position = 'absolute';
 				terrainCanvas.style.top = '0';
 				terrainCanvas.style.left = '0';
@@ -7676,8 +7689,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				// Create annotation canvas
 				annotationCanvas = document.createElement('canvas');
 				annotationCanvas.classList.add('dnd-map-annotation-layer');
-				annotationCanvas.width = img.naturalWidth;
-				annotationCanvas.height = img.naturalHeight;
+				annotationCanvas.width = img.naturalWidth * _canvasScale;
+				annotationCanvas.height = img.naturalHeight * _canvasScale;
 				annotationCanvas.style.position = 'absolute';
 				annotationCanvas.style.top = '0';
 				annotationCanvas.style.left = '0';

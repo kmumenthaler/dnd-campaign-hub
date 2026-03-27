@@ -43,6 +43,10 @@ export interface DndCampaignHubSettings {
   combatAutoPan: boolean;
   /** Session projection system — managed monitors and idle screen config. */
   sessionProjection: SessionProjectionSettings;
+  /** Canvas resolution multiplier for battle map overlays (tokens, fog, grid, etc.).
+   *  Higher values produce sharper tokens when zoomed in on small maps.
+   *  1 = native (legacy), 2 = double (default), 3 = triple. */
+  mapCanvasScale: number;
 }
 
 export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
@@ -56,4 +60,5 @@ export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   combatStates: {},
   combatAutoPan: false,
   sessionProjection: { ...DEFAULT_SESSION_PROJECTION_SETTINGS },
+  mapCanvasScale: 2,
 };
