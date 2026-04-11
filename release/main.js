@@ -13965,6 +13965,8 @@ var AudioLayer = class {
     this.shuffleIndex = 0;
     /** Fade interval handle */
     this.fadeTimer = null;
+    /** Current pending fade resolver, if any. Resolved when the fade is cancelled. */
+    this.fadeResolve = null;
     /** Duck fade interval handle (separate from main fade so they don't conflict) */
     this.duckFadeTimer = null;
     /** True while this layer is ducked for a sound effect */
@@ -14243,6 +14245,10 @@ var AudioLayer = class {
       cancelAnimationFrame(this.fadeTimer);
       this.fadeTimer = null;
     }
+    if (this.fadeResolve) {
+      this.fadeResolve();
+      this.fadeResolve = null;
+    }
   }
   /** Restore audio.volume to match the logical state (volume + mute). */
   restoreVolume() {
@@ -14253,10 +14259,12 @@ var AudioLayer = class {
   fadeVolumeTo(targetVol, durationMs) {
     return new Promise((resolve) => {
       this.cancelFade();
+      this.fadeResolve = resolve;
       const startVol = this.audio.volume * 100;
       const diff = targetVol - startVol;
       if (Math.abs(diff) < 0.5 || durationMs <= 0) {
         this.audio.volume = Math.max(0, Math.min(1, targetVol / 100));
+        this.fadeResolve = null;
         resolve();
         return;
       }
@@ -14271,6 +14279,7 @@ var AudioLayer = class {
         if (linearProgress >= 1) {
           this.audio.volume = Math.max(0, Math.min(1, targetVol / 100));
           this.fadeTimer = null;
+          this.fadeResolve = null;
           resolve();
         } else {
           this.fadeTimer = requestAnimationFrame(tick);
@@ -14663,6 +14672,7 @@ var MusicPlayer = class _MusicPlayer {
     this._notifySceneChange();
     try {
       await this._awaitLayerStops("stopAll");
+      this.stopSoundEffects();
     } finally {
       if (opToken === this._sceneOpToken) {
         this._activeSceneConfig = null;
@@ -14670,6 +14680,14 @@ var MusicPlayer = class _MusicPlayer {
       this._stopping = false;
       this._notifySceneChange();
     }
+  }
+  stopSoundEffects() {
+    for (const audio of this.sfxAudios) {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.src = "";
+    }
+    this._activeSfxCount = 0;
   }
   /** True while a stopAll fade-out is in progress. */
   isStopping() {
@@ -66412,6 +66430,11 @@ var HandoutProjectionView = class extends import_obsidian72.ItemView {
     super(leaf);
     this.filePath = "";
     this.contentType = "image";
+    this.noteScrollContainer = null;
+    this.sourceView = null;
+    this.sourceScrollListeners = [];
+    this.sourceEditChangeOff = null;
+    this.activeLeafChangeRef = null;
     this._modifyRef = null;
     this._deleteRef = null;
     this.plugin = plugin;
@@ -66430,6 +66453,7 @@ var HandoutProjectionView = class extends import_obsidian72.ItemView {
     container.empty();
     container.addClass("dnd-handout-root");
     this.contentContainer = container.createDiv({ cls: "dnd-handout-content" });
+    await this.bindSourceNoteEvents();
     if (this.filePath) {
       await this.renderContent();
     }
@@ -66438,13 +66462,18 @@ var HandoutProjectionView = class extends import_obsidian72.ItemView {
   }
   async onClose() {
     this.unregisterFileListeners();
+    this.unregisterSourceListeners();
     this.containerEl.empty();
   }
   async setState(state, result) {
     var _a;
+    const previousFilePath = this.filePath;
     if (state == null ? void 0 : state.filePath) {
       this.filePath = state.filePath;
       this.contentType = (_a = state.contentType) != null ? _a : "image";
+      if (this.filePath !== previousFilePath) {
+        await this.bindSourceNoteEvents();
+      }
       if (this.contentContainer) {
         await this.renderContent();
       }
@@ -66456,6 +66485,7 @@ var HandoutProjectionView = class extends import_obsidian72.ItemView {
   }
   // ── Rendering ────────────────────────────────────────────────────
   async renderContent() {
+    const previousScrollRatio = this.getCurrentScrollRatio();
     this.contentContainer.empty();
     switch (this.contentType) {
       case "image":
@@ -66467,6 +66497,9 @@ var HandoutProjectionView = class extends import_obsidian72.ItemView {
       case "note":
         await this.renderNote();
         break;
+    }
+    if (this.contentType === "note" && this.noteScrollContainer && previousScrollRatio !== null) {
+      this.applyScrollRatio(previousScrollRatio);
     }
   }
   renderImage() {
@@ -66489,8 +66522,9 @@ var HandoutProjectionView = class extends import_obsidian72.ItemView {
   }
   async renderNote() {
     const noteContainer = this.contentContainer.createDiv({ cls: "handout-note" });
+    this.noteScrollContainer = noteContainer;
     try {
-      const content = await this.app.vault.adapter.read(this.filePath);
+      const content = await this.getSourceNoteContent();
       await import_obsidian72.MarkdownRenderer.render(
         this.app,
         content,
@@ -66498,6 +66532,7 @@ var HandoutProjectionView = class extends import_obsidian72.ItemView {
         this.filePath,
         this
       );
+      this.applySourceScroll();
     } catch (e) {
       noteContainer.createDiv({
         cls: "handout-fallback",
@@ -66528,6 +66563,132 @@ var HandoutProjectionView = class extends import_obsidian72.ItemView {
   unregisterFileListeners() {
     this._modifyRef = null;
     this._deleteRef = null;
+  }
+  async bindSourceNoteEvents() {
+    this.unregisterSourceListeners();
+    if (this.contentType !== "note" || !this.filePath) return;
+    const activeLeafRef = this.app.workspace.on("active-leaf-change", () => {
+      this.updateSourceBindings();
+    });
+    this.activeLeafChangeRef = activeLeafRef;
+    this.registerEvent(activeLeafRef);
+    this.updateSourceBindings();
+  }
+  updateSourceBindings() {
+    var _a, _b;
+    if (!this.filePath) return;
+    const sourceView = this.findSourceMarkdownView();
+    const sourceScrollContainer = sourceView ? this.getSourceScrollContainer(sourceView) : null;
+    const existingContainer = (_b = (_a = this.sourceScrollListeners[0]) == null ? void 0 : _a.element) != null ? _b : null;
+    if (sourceView === this.sourceView && sourceScrollContainer === existingContainer) return;
+    this.unregisterSourceListeners();
+    this.sourceView = sourceView;
+    if (!sourceView || !sourceScrollContainer) return;
+    const listener = () => this.applySourceScroll();
+    sourceScrollContainer.addEventListener("scroll", listener);
+    this.sourceScrollListeners.push({ element: sourceScrollContainer, listener });
+    const editor = sourceView.editor;
+    if (editor && typeof editor.on === "function") {
+      const changeHandler = () => {
+        if (this.contentType === "note") {
+          void this.renderContent();
+        }
+      };
+      editor.on("change", changeHandler);
+      if (typeof editor.off === "function") {
+        this.sourceEditChangeOff = () => editor.off("change", changeHandler);
+      }
+    }
+  }
+  unregisterSourceListeners() {
+    for (const { element, listener } of this.sourceScrollListeners) {
+      element.removeEventListener("scroll", listener);
+    }
+    this.sourceScrollListeners = [];
+    this.sourceView = null;
+    if (this.sourceEditChangeOff) {
+      this.sourceEditChangeOff();
+      this.sourceEditChangeOff = null;
+    }
+    if (this.activeLeafChangeRef) {
+      this.app.workspace.offref(this.activeLeafChangeRef);
+      this.activeLeafChangeRef = null;
+    }
+  }
+  findSourceMarkdownView() {
+    var _a, _b;
+    const activeLeaf = this.app.workspace.activeLeaf;
+    if ((activeLeaf == null ? void 0 : activeLeaf.view) instanceof import_obsidian72.MarkdownView && ((_a = activeLeaf.view.file) == null ? void 0 : _a.path) === this.filePath) {
+      return activeLeaf.view;
+    }
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      const view = leaf.view;
+      if (((_b = view.file) == null ? void 0 : _b.path) === this.filePath) {
+        return view;
+      }
+    }
+    return null;
+  }
+  getSourceScrollContainer(view) {
+    var _a, _b, _c;
+    const preview = view.containerEl.querySelector(".markdown-preview-view");
+    const source = view.containerEl.querySelector(".cm-scroller");
+    const sourceView = view.containerEl.querySelector(".markdown-source-view");
+    if (typeof view.getMode === "function") {
+      const mode = view.getMode();
+      if (mode === "preview" || mode === "reading") {
+        return (_a = preview != null ? preview : sourceView) != null ? _a : source;
+      }
+      if (mode === "source") {
+        return (_b = source != null ? source : sourceView) != null ? _b : preview;
+      }
+    }
+    if (preview && this.isElementVisible(preview)) return preview;
+    if (source && this.isElementVisible(source)) return source;
+    if (sourceView && this.isElementVisible(sourceView)) return sourceView;
+    return (_c = preview != null ? preview : source) != null ? _c : sourceView;
+  }
+  isElementVisible(element) {
+    return element.offsetHeight > 0 && element.offsetWidth > 0;
+  }
+  getSourceNoteContent() {
+    if (this.sourceView) {
+      const editor = this.sourceView.editor;
+      if ((editor == null ? void 0 : editor.getValue) && typeof editor.getValue === "function") {
+        return Promise.resolve(editor.getValue());
+      }
+    }
+    return this.app.vault.adapter.read(this.filePath);
+  }
+  applySourceScroll() {
+    if (!this.sourceView || !this.noteScrollContainer) return;
+    const sourceScrollInfo = this.getSourceScrollInfo(this.sourceView);
+    if (!sourceScrollInfo) return;
+    const target = this.noteScrollContainer;
+    const targetScrollHeight = target.scrollHeight - target.clientHeight;
+    if (targetScrollHeight <= 0) return;
+    target.scrollTop = Math.round(sourceScrollInfo.ratio * targetScrollHeight);
+  }
+  getSourceScrollInfo(view) {
+    const container = this.getSourceScrollContainer(view);
+    if (!container) return null;
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    if (maxScroll <= 0) return { ratio: 0 };
+    return { ratio: container.scrollTop / maxScroll };
+  }
+  getCurrentScrollRatio() {
+    const container = this.noteScrollContainer;
+    if (!container) return null;
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    if (maxScroll <= 0) return 0;
+    return container.scrollTop / maxScroll;
+  }
+  applyScrollRatio(ratio) {
+    if (!this.noteScrollContainer) return;
+    const target = this.noteScrollContainer;
+    const maxScroll = target.scrollHeight - target.clientHeight;
+    if (maxScroll <= 0) return;
+    target.scrollTop = Math.round(ratio * maxScroll);
   }
   /**
    * Find the screenKey that is currently showing this view as a handout.
