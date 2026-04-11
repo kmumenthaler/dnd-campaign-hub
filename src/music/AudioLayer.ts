@@ -26,6 +26,8 @@ export class AudioLayer {
 
   /** Fade interval handle */
   private fadeTimer: number | null = null;
+  /** Current pending fade resolver, if any. Resolved when the fade is cancelled. */
+  private fadeResolve: (() => void) | null = null;
   /** Duck fade interval handle (separate from main fade so they don't conflict) */
   private duckFadeTimer: number | null = null;
   /** True while this layer is ducked for a sound effect */
@@ -338,6 +340,10 @@ export class AudioLayer {
       cancelAnimationFrame(this.fadeTimer);
       this.fadeTimer = null;
     }
+    if (this.fadeResolve) {
+      this.fadeResolve();
+      this.fadeResolve = null;
+    }
   }
 
   /** Restore audio.volume to match the logical state (volume + mute). */
@@ -350,10 +356,12 @@ export class AudioLayer {
   fadeVolumeTo(targetVol: number, durationMs: number): Promise<void> {
     return new Promise(resolve => {
       this.cancelFade();
+      this.fadeResolve = resolve;
       const startVol = this.audio.volume * 100;
       const diff = targetVol - startVol;
       if (Math.abs(diff) < 0.5 || durationMs <= 0) {
         this.audio.volume = Math.max(0, Math.min(1, targetVol / 100));
+        this.fadeResolve = null;
         resolve();
         return;
       }
@@ -377,6 +385,7 @@ export class AudioLayer {
         if (linearProgress >= 1) {
           this.audio.volume = Math.max(0, Math.min(1, targetVol / 100));
           this.fadeTimer = null;
+          this.fadeResolve = null;
           resolve();
         } else {
           this.fadeTimer = requestAnimationFrame(tick);

@@ -200,6 +200,7 @@ export class MusicPlayer {
     this._notifySceneChange();
     try {
       await this._awaitLayerStops('stopAll');
+      this.stopSoundEffects();
     } finally {
       if (opToken === this._sceneOpToken) {
         this._activeSceneConfig = null;
@@ -207,6 +208,15 @@ export class MusicPlayer {
       this._stopping = false;
       this._notifySceneChange();
     }
+  }
+
+  private stopSoundEffects() {
+    for (const audio of this.sfxAudios) {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.src = '';
+    }
+    this._activeSfxCount = 0;
   }
 
   /** True while a stopAll fade-out is in progress. */
