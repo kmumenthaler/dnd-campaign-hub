@@ -5,6 +5,16 @@ All notable changes to the D&D Campaign Hub plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-04-11
+
+### Added
+
+- **Synchronized Note Projection** — Projected notes now sync scrolling position and live content updates with the GM's source view. When the GM scrolls or edits a projected note, players see the changes in real-time.
+
+### Fixed
+
+- **Music Stop Reliability** — Fixed intermittent failures when stopping scene music playback by hardening fade cancellation and ensuring sound effects are properly stopped.
+
 ## [0.8.0] - 2026-03-27
 
 ### Added
