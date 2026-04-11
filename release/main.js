@@ -14900,7 +14900,7 @@ var import_obsidian13 = require("obsidian");
 // src/music/FreesoundClient.ts
 var import_obsidian12 = require("obsidian");
 var BASE = "https://freesound.org/apiv2";
-var FIELDS = "id,name,tags,duration,previews,username,license,avg_rating,num_downloads";
+var FIELDS = "id,name,tags,duration,previews,username,license,rating,num_downloads";
 var FreesoundClient = class {
   constructor(apiKey) {
     this.apiKey = apiKey;
@@ -14915,12 +14915,27 @@ var FreesoundClient = class {
     if (opts.page) params.set("page", String(opts.page));
     if (opts.filter) params.set("filter", opts.filter);
     if (opts.sort) params.set("sort", opts.sort);
-    params.set("token", this.apiKey);
-    const resp = await (0, import_obsidian12.requestUrl)({
-      url: `${BASE}/search/text/?${params.toString()}`,
-      method: "GET"
-    });
-    return resp.json;
+    const url = `${BASE}/search/text/?${params.toString()}`;
+    console.log("Freesound API request:", url);
+    try {
+      const resp = await (0, import_obsidian12.requestUrl)({
+        url,
+        method: "GET",
+        headers: {
+          "Authorization": `Token ${this.apiKey}`
+        }
+      });
+      if (resp.status !== 200) {
+        console.error("Freesound API error:", resp.status, resp.text);
+        throw new Error(`Freesound API error: ${resp.status} - ${resp.text || "Unknown error"}`);
+      }
+      const data = resp.json;
+      console.log("Freesound API response:", data);
+      return data;
+    } catch (err) {
+      console.error("Freesound API request failed:", err);
+      throw err;
+    }
   }
   /**
    * Download the high-quality MP3 preview of a sound into the vault.
@@ -15111,8 +15126,12 @@ var FreesoundSearchModal = class extends import_obsidian13.Modal {
     const nameEl = topRow.createEl("span", { text: sound.name, cls: "freesound-card-name" });
     const metaEl = topRow.createEl("span", { cls: "freesound-card-meta" });
     metaEl.createEl("span", { text: `${sound.duration.toFixed(1)}s` });
-    metaEl.createEl("span", { text: ` \xB7 \u2B50 ${sound.avg_rating.toFixed(1)}` });
-    metaEl.createEl("span", { text: ` \xB7 \u2B07 ${sound.num_downloads}` });
+    if (sound.rating !== void 0) {
+      metaEl.createEl("span", { text: ` \xB7 \u2B50 ${sound.rating.toFixed(1)}` });
+    }
+    if (sound.num_downloads !== void 0) {
+      metaEl.createEl("span", { text: ` \xB7 \u2B07 ${sound.num_downloads}` });
+    }
     if (sound.tags.length > 0) {
       const tagRow = card.createEl("div", { cls: "freesound-card-tags" });
       for (const tag of sound.tags.slice(0, 8)) {
@@ -22578,7 +22597,8 @@ var DEFAULT_SETTINGS = {
   visionUpdateMode: "on-drop",
   combatStates: {},
   combatAutoPan: false,
-  sessionProjection: { ...DEFAULT_SESSION_PROJECTION_SETTINGS }
+  sessionProjection: { ...DEFAULT_SESSION_PROJECTION_SETTINGS },
+  mapCanvasScale: 2
 };
 
 // src/constants.ts
@@ -26388,20 +26408,48 @@ var CombatTracker = class {
   }
   /* ────────────────── PC Note Sync ────────────────── */
   /**
-   * Write each PC combatant's current tracker HP and temp HP back to their
-   * vault note's frontmatter (`hp` and `thp` fields).
-   * NPCs / creatures without a notePath are skipped silently.
+   * Build a read-only preview of what would change if we synced tracker HP
+   * to vault notes. Used by the confirmation modal.
+   * @param combatantIds If provided, only include these combatants. Otherwise all PCs.
    */
-  async syncPCsToNotes() {
-    if (!this.state) {
-      new import_obsidian32.Notice("No active combat to sync");
-      return;
+  async buildSyncPreview(combatantIds) {
+    if (!this.state) return [];
+    let pcs = this.state.combatants.filter((c) => c.player && c.notePath);
+    if (combatantIds) {
+      const idSet = new Set(combatantIds);
+      pcs = pcs.filter((c) => idSet.has(c.id));
     }
-    const pcs = this.state.combatants.filter((c) => c.player && c.notePath);
-    if (pcs.length === 0) {
-      new import_obsidian32.Notice("No PCs with linked notes in this combat");
-      return;
+    const entries = [];
+    for (const c of pcs) {
+      if (!c.notePath) continue;
+      try {
+        const file = this.app.vault.getAbstractFileByPath(c.notePath);
+        if (!(file instanceof import_obsidian32.TFile)) {
+          entries.push({ combatant: c, vaultHP: 0, vaultTHP: 0, trackerHP: c.currentHP, trackerTHP: c.tempHP, changed: true, drastic: false, error: "Note not found" });
+          continue;
+        }
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm = cache == null ? void 0 : cache.frontmatter;
+        const vaultHP = fm ? parseInt(fm.hp) || 0 : 0;
+        const vaultTHP = fm ? parseInt(fm.thp) || 0 : 0;
+        const changed = vaultHP !== c.currentHP || vaultTHP !== c.tempHP;
+        const drastic = changed && c.currentHP === c.maxHP && vaultHP < c.maxHP * 0.9;
+        entries.push({ combatant: c, vaultHP, vaultTHP, trackerHP: c.currentHP, trackerTHP: c.tempHP, changed, drastic });
+      } catch (err) {
+        entries.push({ combatant: c, vaultHP: 0, vaultTHP: 0, trackerHP: c.currentHP, trackerTHP: c.tempHP, changed: true, drastic: false, error: String(err) });
+      }
     }
+    return entries;
+  }
+  /**
+   * Write selected PC combatants' tracker HP and temp HP back to their
+   * vault note's frontmatter (`hp` and `thp` fields).
+   * @param combatantIds The IDs of combatants to sync. Only PCs with notePath are written.
+   */
+  async syncSelectedPCsToNotes(combatantIds) {
+    if (!this.state) return { synced: 0, failed: 0 };
+    const idSet = new Set(combatantIds);
+    const pcs = this.state.combatants.filter((c) => c.player && c.notePath && idSet.has(c.id));
     let synced = 0;
     let failed = 0;
     for (const c of pcs) {
@@ -26424,18 +26472,17 @@ var CombatTracker = class {
     }
     if (failed > 0) {
       new import_obsidian32.Notice(`Synced ${synced} PC${synced !== 1 ? "s" : ""} to notes (${failed} failed)`);
-    } else {
+    } else if (synced > 0) {
       new import_obsidian32.Notice(`Synced ${synced} PC${synced !== 1 ? "s" : ""} to notes`);
     }
+    return { synced, failed };
   }
   /**
-   * Re-read each PC's `hp` and `thp` frontmatter from their vault note and
-   * update the combatant's currentHP / tempHP in the tracker.
-   * NPC / creature combatants without a notePath are left unchanged.
+   * Write all PC combatants' tracker HP to vault notes (legacy convenience wrapper).
    */
-  async refreshPCsFromNotes() {
+  async syncPCsToNotes() {
     if (!this.state) {
-      new import_obsidian32.Notice("No active combat to refresh");
+      new import_obsidian32.Notice("No active combat to sync");
       return;
     }
     const pcs = this.state.combatants.filter((c) => c.player && c.notePath);
@@ -26443,6 +26490,16 @@ var CombatTracker = class {
       new import_obsidian32.Notice("No PCs with linked notes in this combat");
       return;
     }
+    await this.syncSelectedPCsToNotes(pcs.map((c) => c.id));
+  }
+  /**
+   * Re-read selected PCs' `hp` and `thp` from their vault notes into the tracker.
+   * @param combatantIds The IDs of combatants to refresh.
+   */
+  async refreshSelectedPCsFromNotes(combatantIds) {
+    if (!this.state) return { refreshed: 0, failed: 0 };
+    const idSet = new Set(combatantIds);
+    const pcs = this.state.combatants.filter((c) => c.player && c.notePath && idSet.has(c.id));
     let refreshed = 0;
     let failed = 0;
     for (const c of pcs) {
@@ -26472,12 +26529,28 @@ var CombatTracker = class {
         failed++;
       }
     }
-    this.emit();
+    if (refreshed > 0) this.emit();
     if (failed > 0) {
       new import_obsidian32.Notice(`Refreshed ${refreshed} PC${refreshed !== 1 ? "s" : ""} from notes (${failed} failed)`);
-    } else {
+    } else if (refreshed > 0) {
       new import_obsidian32.Notice(`Refreshed ${refreshed} PC${refreshed !== 1 ? "s" : ""} from notes`);
     }
+    return { refreshed, failed };
+  }
+  /**
+   * Re-read all PCs' HP from vault notes (legacy convenience wrapper).
+   */
+  async refreshPCsFromNotes() {
+    if (!this.state) {
+      new import_obsidian32.Notice("No active combat to refresh");
+      return;
+    }
+    const pcs = this.state.combatants.filter((c) => c.player && c.notePath);
+    if (pcs.length === 0) {
+      new import_obsidian32.Notice("No PCs with linked notes in this combat");
+      return;
+    }
+    await this.refreshSelectedPCsFromNotes(pcs.map((c) => c.id));
   }
   /**
    * Set (or update) a single frontmatter field value in raw file content.
@@ -26745,6 +26818,9 @@ var _CombatTrackerView = class _CombatTrackerView extends import_obsidian33.Item
       new SetInitiativeModal(this.app, c, tracker).open();
     });
     const nameCell = row.createDiv({ cls: "dnd-ct-name-cell" });
+    if (c.hidden) {
+      nameCell.createEl("span", { text: "\u{1F441}", cls: "dnd-ct-marker dnd-ct-marker-hidden", attr: { title: "Hidden from players" } });
+    }
     const nameEl = nameCell.createEl("span", {
       text: c.display,
       cls: `dnd-ct-name ${c.player ? "dnd-ct-name-player" : ""} ${c.friendly && !c.player ? "dnd-ct-name-friendly" : ""} ${!c.player && !c.friendly ? "dnd-ct-name-enemy" : ""}`
@@ -26996,13 +27072,25 @@ var _CombatTrackerView = class _CombatTrackerView extends import_obsidian33.Item
     if (c.player && c.notePath) {
       menu.addSeparator();
       menu.addItem(
-        (item) => item.setTitle("\u2193 Sync HP to Note").setIcon("arrow-down-to-line").onClick(() => {
-          void tracker.syncPCsToNotes();
+        (item) => item.setTitle("\u2193 Sync HP to Note").setIcon("arrow-down-to-line").onClick(async () => {
+          const entries = await tracker.buildSyncPreview([c.id]);
+          if (!entries.length) return;
+          if (!entries[0].changed) {
+            new import_obsidian33.Notice(`${c.display}: HP already matches note`);
+            return;
+          }
+          new ConfirmSyncModal(this.app, tracker, entries, "toNotes").open();
         })
       );
       menu.addItem(
-        (item) => item.setTitle("\u2191 Refresh HP from Note").setIcon("refresh-cw").onClick(() => {
-          void tracker.refreshPCsFromNotes();
+        (item) => item.setTitle("\u2191 Refresh HP from Note").setIcon("refresh-cw").onClick(async () => {
+          const entries = await tracker.buildSyncPreview([c.id]);
+          if (!entries.length) return;
+          if (!entries[0].changed) {
+            new import_obsidian33.Notice(`${c.display}: HP already matches tracker`);
+            return;
+          }
+          new ConfirmSyncModal(this.app, tracker, entries, "fromNotes").open();
         })
       );
     }
@@ -27082,13 +27170,23 @@ var _CombatTrackerView = class _CombatTrackerView extends import_obsidian33.Item
     );
     menu.addSeparator();
     menu.addItem(
-      (item) => item.setTitle("\u2193 Sync PCs to Notes").setIcon("arrow-down-to-line").onClick(() => {
-        void tracker.syncPCsToNotes();
+      (item) => item.setTitle("\u2193 Sync PCs to Notes").setIcon("arrow-down-to-line").onClick(async () => {
+        const entries = await tracker.buildSyncPreview();
+        if (!entries.length) {
+          new import_obsidian33.Notice("No PCs with linked notes");
+          return;
+        }
+        new ConfirmSyncModal(this.app, tracker, entries, "toNotes").open();
       })
     );
     menu.addItem(
-      (item) => item.setTitle("\u2191 Refresh PCs from Notes").setIcon("refresh-cw").onClick(() => {
-        void tracker.refreshPCsFromNotes();
+      (item) => item.setTitle("\u2191 Refresh PCs from Notes").setIcon("refresh-cw").onClick(async () => {
+        const entries = await tracker.buildSyncPreview();
+        if (!entries.length) {
+          new import_obsidian33.Notice("No PCs with linked notes");
+          return;
+        }
+        new ConfirmSyncModal(this.app, tracker, entries, "fromNotes").open();
       })
     );
     menu.addSeparator();
@@ -27848,7 +27946,22 @@ var ConfirmEndCombatModal = class extends import_obsidian33.Modal {
       text: "This will end the current combat. Save first if you want to resume later."
     });
     new import_obsidian33.Setting(contentEl).addButton(
-      (btn) => btn.setButtonText("Save & End").setCta().onClick(async () => {
+      (btn) => btn.setButtonText("Sync, Save & End").setCta().onClick(async () => {
+        const entries = await this.tracker.buildSyncPreview();
+        const hasChanges = entries.some((e) => e.changed);
+        if (hasChanges) {
+          new ConfirmSyncModal(this.app, this.tracker, entries, "toNotes", async () => {
+            await this.tracker.saveCombat();
+            this.tracker.endCombat();
+          }).open();
+        } else {
+          await this.tracker.saveCombat();
+          this.tracker.endCombat();
+        }
+        this.close();
+      })
+    ).addButton(
+      (btn) => btn.setButtonText("Save & End").onClick(async () => {
         await this.tracker.saveCombat();
         this.tracker.endCombat();
         this.close();
@@ -27859,6 +27972,135 @@ var ConfirmEndCombatModal = class extends import_obsidian33.Modal {
         this.close();
       })
     ).addButton((btn) => btn.setButtonText("Cancel").onClick(() => this.close()));
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var ConfirmSyncModal = class extends import_obsidian33.Modal {
+  constructor(app, tracker, entries, direction, onComplete) {
+    super(app);
+    this.tracker = tracker;
+    this.entries = entries;
+    this.direction = direction;
+    this.onComplete = onComplete;
+    this.selected = /* @__PURE__ */ new Map();
+    this._confirmBtn = null;
+    for (const e of entries) {
+      this.selected.set(e.combatant.id, e.changed);
+    }
+  }
+  onOpen() {
+    var _a;
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("dnd-ct-sync-modal");
+    const isToNotes = this.direction === "toNotes";
+    contentEl.createEl("h3", {
+      text: isToNotes ? "Sync HP to Notes" : "Refresh HP from Notes"
+    });
+    contentEl.createEl("p", {
+      text: isToNotes ? "Review changes before writing tracker HP to vault notes." : "Review changes before overwriting tracker HP with vault note values.",
+      cls: "dnd-ct-sync-subtitle"
+    });
+    const hasAnyDrastic = this.entries.some((e) => e.drastic);
+    if (hasAnyDrastic) {
+      const warningEl = contentEl.createDiv({ cls: "dnd-ct-sync-warning" });
+      const drasticCount = this.entries.filter((e) => e.drastic).length;
+      warningEl.createEl("span", {
+        text: `\u26A0 ${drasticCount} PC${drasticCount !== 1 ? "s" : ""} at full HP \u2014 possible accidental reset. Review carefully.`
+      });
+    }
+    const table = contentEl.createEl("table", { cls: "dnd-ct-sync-table" });
+    const thead = table.createEl("thead");
+    const headRow = thead.createEl("tr");
+    headRow.createEl("th", { text: "" });
+    headRow.createEl("th", { text: "Name" });
+    if (isToNotes) {
+      headRow.createEl("th", { text: "Note HP" });
+      headRow.createEl("th", { text: "" });
+      headRow.createEl("th", { text: "Tracker HP" });
+    } else {
+      headRow.createEl("th", { text: "Tracker HP" });
+      headRow.createEl("th", { text: "" });
+      headRow.createEl("th", { text: "Note HP" });
+    }
+    headRow.createEl("th", { text: "Status" });
+    const tbody = table.createEl("tbody");
+    const checkboxEls = [];
+    for (const entry of this.entries) {
+      const c = entry.combatant;
+      const row = tbody.createEl("tr");
+      if (!entry.changed) row.addClass("dnd-ct-sync-row-unchanged");
+      if (entry.drastic) row.addClass("dnd-ct-sync-row-drastic");
+      if (entry.error) row.addClass("dnd-ct-sync-row-error");
+      const cbCell = row.createEl("td");
+      const cb = cbCell.createEl("input", { type: "checkbox" });
+      cb.checked = (_a = this.selected.get(c.id)) != null ? _a : false;
+      cb.disabled = !!entry.error;
+      cb.addEventListener("change", () => {
+        this.selected.set(c.id, cb.checked);
+        this.updateConfirmBtn();
+      });
+      checkboxEls.push(cb);
+      row.createEl("td", { text: c.display, cls: "dnd-ct-sync-name" });
+      const noteHPStr = entry.error ? "?" : `${entry.vaultHP}/${c.maxHP}` + (entry.vaultTHP ? ` (+${entry.vaultTHP})` : "");
+      const trackerHPStr = `${entry.trackerHP}/${c.maxHP}` + (entry.trackerTHP ? ` (+${entry.trackerTHP})` : "");
+      if (isToNotes) {
+        row.createEl("td", { text: noteHPStr, cls: "dnd-ct-sync-hp" });
+        const arrowCell = row.createEl("td", { cls: "dnd-ct-sync-arrow" });
+        if (entry.changed && !entry.error) arrowCell.textContent = "\u2190";
+        row.createEl("td", { text: trackerHPStr, cls: "dnd-ct-sync-hp" });
+      } else {
+        row.createEl("td", { text: trackerHPStr, cls: "dnd-ct-sync-hp" });
+        const arrowCell = row.createEl("td", { cls: "dnd-ct-sync-arrow" });
+        if (entry.changed && !entry.error) arrowCell.textContent = "\u2192";
+        row.createEl("td", { text: noteHPStr, cls: "dnd-ct-sync-hp" });
+      }
+      const statusCell = row.createEl("td", { cls: "dnd-ct-sync-status" });
+      if (entry.error) {
+        statusCell.createEl("span", { text: "error", cls: "dnd-ct-sync-badge dnd-ct-sync-badge-error" });
+      } else if (entry.drastic) {
+        statusCell.createEl("span", { text: "reset?", cls: "dnd-ct-sync-badge dnd-ct-sync-badge-reset" });
+      } else if (!entry.changed) {
+        statusCell.createEl("span", { text: "same", cls: "dnd-ct-sync-badge dnd-ct-sync-badge-same" });
+      }
+    }
+    const btnRow = new import_obsidian33.Setting(contentEl);
+    btnRow.addButton(
+      (btn) => btn.setButtonText("Select Changed").onClick(() => {
+        for (let i = 0; i < this.entries.length; i++) {
+          const e = this.entries[i];
+          const checked = e.changed && !e.error;
+          this.selected.set(e.combatant.id, checked);
+          checkboxEls[i].checked = checked;
+        }
+        this.updateConfirmBtn();
+      })
+    );
+    btnRow.addButton((btn) => {
+      btn.setButtonText("Confirm Sync").setCta().onClick(async () => {
+        const ids = [...this.selected.entries()].filter(([, v]) => v).map(([id]) => id);
+        if (ids.length === 0) return;
+        if (isToNotes) {
+          await this.tracker.syncSelectedPCsToNotes(ids);
+        } else {
+          await this.tracker.refreshSelectedPCsFromNotes(ids);
+        }
+        if (this.onComplete) await this.onComplete();
+        this.close();
+      });
+      this._confirmBtn = btn.buttonEl;
+    });
+    btnRow.addButton(
+      (btn) => btn.setButtonText("Cancel").onClick(() => this.close())
+    );
+    this.updateConfirmBtn();
+  }
+  updateConfirmBtn() {
+    if (!this._confirmBtn) return;
+    const anySelected = [...this.selected.values()].some((v) => v);
+    this._confirmBtn.disabled = !anySelected;
   }
   onClose() {
     this.contentEl.empty();
@@ -58746,6 +58988,17 @@ var DndCampaignHubSettingTab = class extends import_obsidian63.PluginSettingTab 
         await this.plugin.saveSettings();
       })
     );
+    new import_obsidian63.Setting(maps).setName("Map canvas resolution").setDesc(
+      "Multiplier for overlay canvas buffers (tokens, fog, grid). Higher values produce sharper tokens on small maps but use more memory. Requires reopening your map."
+    ).addDropdown(
+      (dd) => {
+        var _a;
+        return dd.addOption("1", "1\xD7 (native)").addOption("2", "2\xD7 (default)").addOption("3", "3\xD7 (high)").setValue(String((_a = this.plugin.settings.mapCanvasScale) != null ? _a : 2)).onChange(async (value) => {
+          this.plugin.settings.mapCanvasScale = parseInt(value, 10);
+          await this.plugin.saveSettings();
+        });
+      }
+    );
     const srd = addSection(containerEl, "SRD Data Import", "Download D&D 5e System Reference Document data from the official API.");
     new import_obsidian63.Setting(srd).setName("Import all SRD reference data").setDesc("Downloads conditions, equipment, races, features, and more into system folders (z_Conditions, z_Equipment, \u2026).").addButton(
       (btn) => btn.setButtonText("Import All").setCta().onClick(async () => {
@@ -59896,7 +60149,6 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     this._pvRendered = false;
     // Guard against double renderPlayerView (setState + onOpen race)
     this._lastConfigDigest = 0;
-    // Fast hash of last synced config — skip redundant redraws
     // ── Perf: pre-baked fog atlas ─────────────────────────────────────────
     // Stores the complete fog/grayscale/color result so that during a drag
     // the expensive drawFogOfWar() path can be skipped when only the
@@ -59943,6 +60195,12 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
   /** Public read-only access to the mapId currently displayed. */
   getMapId() {
     return this.mapId;
+  }
+  // Fast hash of last synced config — skip redundant redraws
+  /** HiDPI canvas resolution multiplier (mirrors plugin setting). */
+  get _canvasScale() {
+    var _a;
+    return Math.max(1, Math.min(4, (_a = this.plugin.settings.mapCanvasScale) != null ? _a : 2));
   }
   getViewType() {
     return PLAYER_MAP_VIEW_TYPE;
@@ -60132,6 +60390,12 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
         s(m.tunnelState.tunnelId || "");
         n(m.tunnelState.pathIndex || 0);
       }
+      if (m.auras) {
+        n(m.auras.length);
+        for (let j = 0; j < m.auras.length; j++) {
+          n(m.auras[j].radius || 0);
+        }
+      }
       if (m.layer) s(m.layer);
     }
     const walls = c.walls || [];
@@ -60172,7 +60436,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     n(c.gridOffsetX || 0);
     n(c.gridOffsetY || 0);
     if (c.gridType) s(c.gridType);
-    if (c.selectedVisionTokenId) s(c.selectedVisionTokenId);
+    s(c.selectedVisionTokenId || "__null_vision__");
     if (c.dragRuler) {
       n(1);
       n(((_n = c.dragRuler.origin) == null ? void 0 : _n.x) || 0);
@@ -60617,9 +60881,11 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     const syncCanvasToImage = () => {
       var _a2;
       if (img.complete && img.naturalWidth > 0) {
-        if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
-          canvas.width = img.naturalWidth;
-          canvas.height = img.naturalHeight;
+        const _bw = img.naturalWidth * this._canvasScale;
+        const _bh = img.naturalHeight * this._canvasScale;
+        if (canvas.width !== _bw || canvas.height !== _bh) {
+          canvas.width = _bw;
+          canvas.height = _bh;
         }
         if (this.tabletopMode) {
           if (this.tabletopScale && ((_a2 = this.mapConfig) == null ? void 0 : _a2.gridSize) > 0) {
@@ -60766,8 +61032,8 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
       applyTabletopMode();
     });
     const onPlayerMediaReady = () => {
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width = img.naturalWidth * this._canvasScale;
+      canvas.height = img.naturalHeight * this._canvasScale;
       requestAnimationFrame(syncCanvasToImage);
     };
     if (isVideo) {
@@ -60796,8 +61062,8 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     win.addEventListener("resize", onWinResize);
     this.register(() => win.removeEventListener("resize", onWinResize));
     if (img.complete && img.naturalWidth > 0) {
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width = img.naturalWidth * this._canvasScale;
+      canvas.height = img.naturalHeight * this._canvasScale;
       requestAnimationFrame(syncCanvasToImage);
     }
     this.ensureFlickerLoop();
@@ -61180,14 +61446,16 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     }
   }
   redrawAnnotations() {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
     if (!this.canvas || !this.mapConfig) return;
     const ctx = this.canvas.getContext("2d");
     if (!ctx) {
       return;
     }
     const config = this.mapConfig;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.setTransform(this._canvasScale, 0, 0, this._canvasScale, 0, 0);
     if (config.gridType && config.gridType !== "none" && config.gridSize > 0 && config.gridVisible !== false) {
       this.drawGrid(ctx, config);
     }
@@ -61197,17 +61465,19 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     }
     const visibleLayers = ["Player", "Elevated", "Subterranean"];
     const playerMarkers = (config.markers || []).filter((m) => {
-      var _a2;
+      var _a2, _b2;
       const markerLayer = m.layer || "Player";
       const markerDef = m.markerId ? this.plugin.markerLibrary.getMarker(m.markerId) : null;
+      if (markerLayer === "DM") {
+        return !!(((_a2 = m.elevation) == null ? void 0 : _a2.isBurrowing) || m.tunnelState);
+      }
       if (markerDef && (markerDef.type === "player" || m.visibleToPlayers)) {
         return true;
       }
-      if ((_a2 = m.elevation) == null ? void 0 : _a2.isBurrowing) {
+      if ((_b2 = m.elevation) == null ? void 0 : _b2.isBurrowing) {
         return true;
       }
-      const included = visibleLayers.includes(markerLayer);
-      return included;
+      return visibleLayers.includes(markerLayer);
     });
     const playerDrawings = (config.drawings || []).filter((d) => visibleLayers.includes(d.layer || "Player"));
     const playerHighlights = (config.highlights || []).filter((h) => visibleLayers.includes(h.layer || "Player"));
@@ -61283,7 +61553,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     const selectedVisionIsInTunnel = !!(selectedVisionToken && selectedVisionToken.tunnelState);
     const visionRelevantTokens = config.selectedVisionTokenId ? selectedVisionToken ? [selectedVisionToken] : [] : playerTokens;
     otherMarkers.forEach((m) => {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k, _l, _m, _n, _o, _p, _q;
       if ((((_a2 = m.elevation) == null ? void 0 : _a2.isBurrowing) || m.tunnelState) && !m.visibleToPlayers) {
         let visibleToPlayerInTunnel = false;
         const getVisionRange = (marker) => {
@@ -61351,7 +61621,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
           }
           if (!visibleToPlayerInTunnel && !m.tunnelState) {
             for (const playerMarker of visionRelevantTokens) {
-              const playerTunnelId = (_g = playerMarker.tunnelState) == null ? void 0 : _g.tunnelId;
+              const playerTunnelId = (_g2 = playerMarker.tunnelState) == null ? void 0 : _g2.tunnelId;
               if (playerTunnelId && config.tunnels) {
                 const tunnel = config.tunnels.find((t) => t.id === playerTunnelId);
                 if (tunnel && tunnel.path && tunnel.path.length > 0) {
@@ -61412,13 +61682,13 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
                     }
                   }
                 }
-              } else if ((_h = playerMarker.elevation) == null ? void 0 : _h.isBurrowing) {
+              } else if ((_h2 = playerMarker.elevation) == null ? void 0 : _h2.isBurrowing) {
                 const visionRangePx = getVisionRange(playerMarker);
                 if (visionRangePx > 0) {
                   const dx = m.position.x - playerMarker.position.x;
                   const dy = m.position.y - playerMarker.position.y;
                   const horizontalDistSq = dx * dx + dy * dy;
-                  const mElev = (((_i = m.elevation) == null ? void 0 : _i.height) || 0) - (((_j = m.elevation) == null ? void 0 : _j.depth) || 0);
+                  const mElev = (((_i2 = m.elevation) == null ? void 0 : _i2.height) || 0) - (((_j2 = m.elevation) == null ? void 0 : _j2.depth) || 0);
                   const pElev = (((_k = playerMarker.elevation) == null ? void 0 : _k.height) || 0) - (((_l = playerMarker.elevation) == null ? void 0 : _l.depth) || 0);
                   const verticalFeet = Math.abs(mElev - pElev);
                   const verticalPx = verticalFeet * pixelsPerFootForVision;
@@ -61532,14 +61802,16 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
       this.drawMarker(ctx, m);
     });
     const hasFogGlobal = config.fogOfWar && config.fogOfWar.enabled;
+    const _logicalW = (_e = (_d = this.mapImage) == null ? void 0 : _d.naturalWidth) != null ? _e : this.canvas.width / this._canvasScale;
+    const _logicalH = (_g = (_f = this.mapImage) == null ? void 0 : _f.naturalHeight) != null ? _g : this.canvas.height / this._canvasScale;
     if (hasFogGlobal) {
-      this.drawFogOfWar(ctx, this.canvas.width, this.canvas.height, config);
+      this.drawFogOfWar(ctx, _logicalW, _logicalH, config);
     } else if ((config.walls && config.walls.length > 0 || config.envAssets && config.envAssets.some((a) => a.scatterConfig && a.scatterConfig.blocksVision)) && visionRelevantTokens.length > 0) {
-      this.drawWallOcclusion(ctx, this.canvas.width, this.canvas.height, config, visionRelevantTokens);
+      this.drawWallOcclusion(ctx, _logicalW, _logicalH, config, visionRelevantTokens);
     }
     const tunnelPlayersForVision = config.selectedVisionTokenId ? tunnelPlayersInMarkers.filter((m) => m.id === config.selectedVisionTokenId) : tunnelPlayersInMarkers;
     if (config.tunnels && config.tunnels.length > 0 && tunnelPlayersForVision.length > 0) {
-      const pixelsPerFootTunnel = config.gridSize && ((_d = config.scale) == null ? void 0 : _d.value) ? config.gridSize / config.scale.value : 1;
+      const pixelsPerFootTunnel = config.gridSize && ((_h = config.scale) == null ? void 0 : _h.value) ? config.gridSize / config.scale.value : 1;
       for (const tunnel of config.tunnels) {
         if (!tunnel.visible || !tunnel.path || tunnel.path.length < 2) continue;
         const playersInThisTunnel = tunnelPlayersForVision.filter(
@@ -61551,7 +61823,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
         if (playersInThisTunnel.length === 0) continue;
         const tunnelWidth = getTunnelWidth(tunnel, config.gridSize);
         for (const playerMarker of playersInThisTunnel) {
-          const pathIdx = ((_e = playerMarker.tunnelState) == null ? void 0 : _e.pathIndex) || 0;
+          const pathIdx = ((_i = playerMarker.tunnelState) == null ? void 0 : _i.pathIndex) || 0;
           let visionRange = 0;
           if (playerMarker.darkvision && playerMarker.darkvision > 0) {
             visionRange = Math.max(visionRange, playerMarker.darkvision);
@@ -61645,7 +61917,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     }
     if (!config.selectedVisionTokenId || selectedVisionIsInTunnel) {
       tunnelPlayerTokens.forEach((m) => {
-        var _a2, _b2, _c2, _d2, _e2, _f2, _g;
+        var _a2, _b2, _c2, _d2, _e2, _f2, _g2;
         if (config.selectedVisionTokenId && m.id === config.selectedVisionTokenId) {
           ctx.save();
           ctx.globalAlpha = 0.85;
@@ -61687,7 +61959,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
           if (distance > visionRangePx) {
             return;
           }
-          const tunnel = (_g = config.tunnels) == null ? void 0 : _g.find((t) => {
+          const tunnel = (_g2 = config.tunnels) == null ? void 0 : _g2.find((t) => {
             var _a3;
             return t.id === ((_a3 = m.tunnelState) == null ? void 0 : _a3.tunnelId);
           });
@@ -61720,7 +61992,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
         ctx.restore();
       }
     });
-    const pixelsPerFoot = config.gridSize && ((_f = config.scale) == null ? void 0 : _f.value) ? config.gridSize / config.scale.value : 1;
+    const pixelsPerFoot = config.gridSize && ((_j = config.scale) == null ? void 0 : _j.value) ? config.gridSize / config.scale.value : 1;
     playerMarkers.forEach((marker) => {
       if (marker.auras && marker.auras.length > 0) {
         marker.auras.forEach((aura) => {
@@ -61758,8 +62030,9 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     }
   }
   drawGrid(ctx, config) {
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    var _a, _b, _c, _d;
+    const w = (_b = (_a = this.mapImage) == null ? void 0 : _a.naturalWidth) != null ? _b : this.canvas.width / this._canvasScale;
+    const h = (_d = (_c = this.mapImage) == null ? void 0 : _c.naturalHeight) != null ? _d : this.canvas.height / this._canvasScale;
     const offsetX = config.gridOffsetX || 0;
     const offsetY = config.gridOffsetY || 0;
     ctx.save();
@@ -72304,7 +72577,7 @@ var TabletopCalibrationModal = class extends import_obsidian78.Modal {
 init_ScreenEnumeration();
 init_EnvAssetTypes();
 async function renderMapView(plugin, source, el, ctx) {
-  var _a, _b, _c, _d, _e, _f;
+  var _a, _b, _c, _d, _e, _f, _g;
   try {
     const config = JSON.parse(source);
     if (!config.mapId) {
@@ -74619,6 +74892,7 @@ async function renderMapView(plugin, source, el, ctx) {
     let gridCanvas = null;
     let terrainCanvas = null;
     let annotationCanvas = null;
+    const _canvasScale = Math.max(1, Math.min(4, (_d = plugin.settings.mapCanvasScale) != null ? _d : 2));
     let _panRedrawRafId = 0;
     const schedulePanRedraw = () => {
       if (_panRedrawRafId) return;
@@ -74842,7 +75116,7 @@ async function renderMapView(plugin, source, el, ctx) {
     };
     const redrawGridOverlays = () => {
       if (config.gridType && config.gridType !== "none" && config.gridSize) {
-        gridCanvas = plugin.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0, gridCanvas);
+        gridCanvas = plugin.drawGridOverlay(mapWrapper, img, config, config.gridOffsetX || 0, config.gridOffsetY || 0, gridCanvas, _canvasScale);
       } else if (gridCanvas) {
         gridCanvas.remove();
         gridCanvas = null;
@@ -74852,7 +75126,9 @@ async function renderMapView(plugin, source, el, ctx) {
       if (!terrainCanvas) return;
       const tctx = terrainCanvas.getContext("2d");
       if (!tctx) return;
+      tctx.setTransform(1, 0, 0, 1, 0, 0);
       tctx.clearRect(0, 0, terrainCanvas.width, terrainCanvas.height);
+      tctx.setTransform(_canvasScale, 0, 0, _canvasScale, 0, 0);
       if (config.hexTerrains && config.hexTerrains.length > 0 && config.gridSize) {
         const geo = getHexGeometry();
         config.hexTerrains.forEach((ht) => {
@@ -74978,8 +75254,10 @@ async function renderMapView(plugin, source, el, ctx) {
         _drawDragOverlay(ctx2);
         return;
       }
+      ctx2.setTransform(1, 0, 0, 1, 0, 0);
       ctx2.clearRect(0, 0, w, h);
       ctx2.drawImage(_staticLayerCanvas, 0, 0);
+      ctx2.setTransform(_canvasScale, 0, 0, _canvasScale, 0, 0);
       _drawDragOverlay(ctx2);
     };
     const _drawDragOverlay = (ctx2) => {
@@ -75092,12 +75370,14 @@ async function renderMapView(plugin, source, el, ctx) {
       _sortedEnvAssetsCache = null;
     };
     const redrawAnnotations = () => {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g, _h, _i, _j;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h, _i, _j;
       if (!annotationCanvas) return;
       const ctx2 = annotationCanvas.getContext("2d");
       if (!ctx2) return;
       updateFlickerAnimation();
+      ctx2.setTransform(1, 0, 0, 1, 0, 0);
       ctx2.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
+      ctx2.setTransform(_canvasScale, 0, 0, _canvasScale, 0, 0);
       const _cullPad = 120;
       const _srX = img.naturalWidth / (img.width || 1);
       const _srY = img.naturalHeight / (img.height || 1);
@@ -75385,7 +75665,7 @@ async function renderMapView(plugin, source, el, ctx) {
         });
       }
       if (config.markers) {
-        const pixelsPerFoot = config.gridSize && ((_g = config.scale) == null ? void 0 : _g.value) ? config.gridSize / config.scale.value : 1;
+        const pixelsPerFoot = config.gridSize && ((_g2 = config.scale) == null ? void 0 : _g2.value) ? config.gridSize / config.scale.value : 1;
         config.markers.forEach((marker, _auraIdx) => {
           if (_buildingStaticLayer && _auraIdx === draggingMarkerIndex) return;
           if (marker.auras && marker.auras.length > 0) {
@@ -75567,7 +75847,7 @@ async function renderMapView(plugin, source, el, ctx) {
       if (config.fogOfWar && config.fogOfWar.enabled) {
         const fogAlpha = bgViewAlpha("fog");
         if (fogAlpha < 1) ctx2.globalAlpha = fogAlpha;
-        drawFogOfWar(ctx2, annotationCanvas.width, annotationCanvas.height, false);
+        drawFogOfWar(ctx2, img.naturalWidth, img.naturalHeight, false);
         if (fogAlpha < 1) ctx2.globalAlpha = 1;
       }
       if (activeTool === "fog") {
@@ -76046,13 +76326,13 @@ async function renderMapView(plugin, source, el, ctx) {
       }
       if (isOnBgLayer && backgroundEditView === "lights" && annotationCanvas) {
         try {
-          drawLightPreviewOverlay(ctx2, annotationCanvas.width, annotationCanvas.height);
+          drawLightPreviewOverlay(ctx2, img.naturalWidth, img.naturalHeight);
         } catch (e) {
           console.error("[DnD] Light preview overlay error:", e);
           ctx2.save();
           ctx2.globalAlpha = 0.7;
           ctx2.fillStyle = "#000000";
-          ctx2.fillRect(0, 0, annotationCanvas.width, annotationCanvas.height);
+          ctx2.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
           ctx2.restore();
         }
       }
@@ -78438,8 +78718,8 @@ async function renderMapView(plugin, source, el, ctx) {
       }
       terrainCanvas = document.createElement("canvas");
       terrainCanvas.classList.add("dnd-map-terrain-layer");
-      terrainCanvas.width = img.naturalWidth;
-      terrainCanvas.height = img.naturalHeight;
+      terrainCanvas.width = img.naturalWidth * _canvasScale;
+      terrainCanvas.height = img.naturalHeight * _canvasScale;
       terrainCanvas.style.position = "absolute";
       terrainCanvas.style.top = "0";
       terrainCanvas.style.left = "0";
@@ -78450,8 +78730,8 @@ async function renderMapView(plugin, source, el, ctx) {
       mapWrapper.appendChild(terrainCanvas);
       annotationCanvas = document.createElement("canvas");
       annotationCanvas.classList.add("dnd-map-annotation-layer");
-      annotationCanvas.width = img.naturalWidth;
-      annotationCanvas.height = img.naturalHeight;
+      annotationCanvas.width = img.naturalWidth * _canvasScale;
+      annotationCanvas.height = img.naturalHeight * _canvasScale;
       annotationCanvas.style.position = "absolute";
       annotationCanvas.style.top = "0";
       annotationCanvas.style.left = "0";
@@ -82107,7 +82387,7 @@ async function renderMapView(plugin, source, el, ctx) {
       zoomReset.textContent = `${Math.round(s * 100)}%`;
       redrawAnnotations();
     });
-    ((_e = (_d = viewport.ownerDocument) == null ? void 0 : _d.defaultView) != null ? _e : window).requestAnimationFrame(() => {
+    ((_f = (_e = viewport.ownerDocument) == null ? void 0 : _e.defaultView) != null ? _f : window).requestAnimationFrame(() => {
       const s = fitToViewport();
       zoomReset.textContent = `${Math.round(s * 100)}%`;
     });
@@ -82133,7 +82413,7 @@ async function renderMapView(plugin, source, el, ctx) {
       });
     }
     const linkEncounterBtn = controls.createEl("button", {
-      text: config.linkedEncounter ? `\u{1F517} ${((_f = config.linkedEncounter.split("/").pop()) == null ? void 0 : _f.replace(".md", "")) || "Linked"}` : "\u{1F517} Link Encounter",
+      text: config.linkedEncounter ? `\u{1F517} ${((_g = config.linkedEncounter.split("/").pop()) == null ? void 0 : _g.replace(".md", "")) || "Linked"}` : "\u{1F517} Link Encounter",
       cls: "dnd-map-toggle-btn",
       attr: { title: config.linkedEncounter || "Link an encounter note to this map" }
     });
@@ -83037,13 +83317,15 @@ async function renderPartyView(plugin, source, el, ctx) {
 }
 
 // src/map/GridOverlay.ts
-function drawGridOverlay(container, img, config, offsetX = 0, offsetY = 0, reuseCanvas) {
+function drawGridOverlay(container, img, config, offsetX = 0, offsetY = 0, reuseCanvas, canvasScale = 1) {
   let canvas;
   if (reuseCanvas) {
     canvas = reuseCanvas;
-    if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+    const bw = img.naturalWidth * canvasScale;
+    const bh = img.naturalHeight * canvasScale;
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width = bw;
+      canvas.height = bh;
     }
     canvas.style.width = `${img.width}px`;
     canvas.style.height = `${img.height}px`;
@@ -83054,8 +83336,8 @@ function drawGridOverlay(container, img, config, offsetX = 0, offsetY = 0, reuse
     }
     canvas = document.createElement("canvas");
     canvas.classList.add("dnd-map-grid-overlay");
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
+    canvas.width = img.naturalWidth * canvasScale;
+    canvas.height = img.naturalHeight * canvasScale;
     canvas.style.position = "absolute";
     canvas.style.top = "0";
     canvas.style.left = "0";
@@ -83065,7 +83347,11 @@ function drawGridOverlay(container, img, config, offsetX = 0, offsetY = 0, reuse
   }
   const ctx = canvas.getContext("2d");
   if (!ctx) return canvas;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(canvasScale, 0, 0, canvasScale, 0, 0);
+  const logicalW = img.naturalWidth;
+  const logicalH = img.naturalHeight;
   ctx.strokeStyle = "rgba(0, 0, 0, 0.4)";
   ctx.lineWidth = 2;
   if (config.gridType === "square") {
@@ -83074,13 +83360,13 @@ function drawGridOverlay(container, img, config, offsetX = 0, offsetY = 0, reuse
     const normalizedOffsetX = (offsetX % sizeW + sizeW) % sizeW;
     const normalizedOffsetY = (offsetY % sizeH + sizeH) % sizeH;
     ctx.beginPath();
-    for (let x = normalizedOffsetX; x <= canvas.width; x += sizeW) {
+    for (let x = normalizedOffsetX; x <= logicalW; x += sizeW) {
       ctx.moveTo(x, 0);
-      ctx.lineTo(x, canvas.height);
+      ctx.lineTo(x, logicalH);
     }
-    for (let y = normalizedOffsetY; y <= canvas.height; y += sizeH) {
+    for (let y = normalizedOffsetY; y <= logicalH; y += sizeH) {
       ctx.moveTo(0, y);
-      ctx.lineTo(canvas.width, y);
+      ctx.lineTo(logicalW, y);
     }
     ctx.stroke();
   } else if (config.gridType === "hex-horizontal") {
@@ -83091,9 +83377,9 @@ function drawGridOverlay(container, img, config, offsetX = 0, offsetY = 0, reuse
     const sizeX = horiz * (2 / 3);
     const sizeY = vert / Math.sqrt(3);
     const startCol = Math.floor(-offsetX / horiz) - 2;
-    const endCol = Math.ceil((canvas.width - offsetX) / horiz) + 2;
+    const endCol = Math.ceil((logicalW - offsetX) / horiz) + 2;
     const startRow = Math.floor(-offsetY / vert) - 2;
-    const endRow = Math.ceil((canvas.height - offsetY) / vert) + 2;
+    const endRow = Math.ceil((logicalH - offsetY) / vert) + 2;
     ctx.beginPath();
     for (let row = startRow; row < endRow; row++) {
       for (let col = startCol; col < endCol; col++) {
@@ -83112,9 +83398,9 @@ function drawGridOverlay(container, img, config, offsetX = 0, offsetY = 0, reuse
     const sizeY = vert * (2 / 3);
     const sizeX = horiz / Math.sqrt(3);
     const startCol = Math.floor(-offsetX / horiz) - 2;
-    const endCol = Math.ceil((canvas.width - offsetX) / horiz) + 2;
+    const endCol = Math.ceil((logicalW - offsetX) / horiz) + 2;
     const startRow = Math.floor(-offsetY / vert) - 2;
-    const endRow = Math.ceil((canvas.height - offsetY) / vert) + 2;
+    const endRow = Math.ceil((logicalH - offsetY) / vert) + 2;
     ctx.beginPath();
     for (let row = startRow; row < endRow; row++) {
       for (let col = startCol; col < endCol; col++) {
@@ -86378,8 +86664,8 @@ This action cannot be undone.`,
     return queryMapTemplates(this, criteria);
   }
   //  Grid Drawing (delegated to map/GridOverlay) 
-  drawGridOverlay(container, img, config, offsetX = 0, offsetY = 0, reuseCanvas) {
-    return drawGridOverlay(container, img, config, offsetX, offsetY, reuseCanvas);
+  drawGridOverlay(container, img, config, offsetX = 0, offsetY = 0, reuseCanvas, canvasScale = 1) {
+    return drawGridOverlay(container, img, config, offsetX, offsetY, reuseCanvas, canvasScale);
   }
   drawFilledHexFlatStretched(ctx, cx2, cy2, rx, ry) {
     return drawFilledHexFlatStretched(ctx, cx2, cy2, rx, ry);

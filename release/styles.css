@@ -1723,6 +1723,78 @@
   50% { opacity: 0.7; }
 }
 
+/* ── Sync Confirmation Modal ── */
+.dnd-ct-sync-modal {
+  max-width: 540px;
+}
+.dnd-ct-sync-subtitle {
+  color: var(--text-muted);
+  margin-bottom: 0.8em;
+}
+.dnd-ct-sync-warning {
+  background: rgba(var(--color-red-rgb, 229, 57, 53), 0.12);
+  border: 1px solid rgba(var(--color-red-rgb, 229, 57, 53), 0.35);
+  border-radius: 6px;
+  padding: 0.5em 0.75em;
+  margin-bottom: 0.8em;
+  color: var(--text-error);
+  font-weight: 600;
+}
+.dnd-ct-sync-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+  margin-bottom: 1em;
+}
+.dnd-ct-sync-table th {
+  text-align: left;
+  padding: 0.3em 0.5em;
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.85em;
+}
+.dnd-ct-sync-table td {
+  padding: 0.35em 0.5em;
+  border-bottom: 1px solid var(--background-modifier-border-hover, rgba(128,128,128,0.1));
+}
+.dnd-ct-sync-row-unchanged {
+  opacity: 0.5;
+}
+.dnd-ct-sync-row-drastic {
+  border-left: 3px solid var(--text-error);
+}
+.dnd-ct-sync-row-error {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+.dnd-ct-sync-arrow {
+  text-align: center;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.dnd-ct-sync-hp {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dnd-ct-sync-badge {
+  display: inline-block;
+  padding: 0.1em 0.4em;
+  border-radius: 0.25em;
+  font-size: 0.8em;
+  font-weight: 600;
+}
+.dnd-ct-sync-badge-same {
+  color: var(--text-muted);
+}
+.dnd-ct-sync-badge-reset {
+  background: rgba(var(--color-red-rgb, 229, 57, 53), 0.15);
+  color: var(--text-error);
+}
+.dnd-ct-sync-badge-error {
+  color: var(--text-error);
+}
+
 /* PoI Block Styles */
 .dnd-poi-block {
   background: var(--background-secondary);
