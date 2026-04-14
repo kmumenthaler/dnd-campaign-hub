@@ -19,6 +19,7 @@ export function drawGridOverlay(container: HTMLElement, img: MapMediaElement, co
 		}
 		canvas.style.width = `${img.width}px`;
 		canvas.style.height = `${img.height}px`;
+		canvas.style.imageRendering = 'pixelated';
 	} else {
 		// Remove existing canvas if any
 		const existingCanvas = container.querySelector('.dnd-map-grid-overlay');
@@ -35,10 +36,12 @@ export function drawGridOverlay(container: HTMLElement, img: MapMediaElement, co
 		canvas.style.width = `${img.width}px`;
 		canvas.style.height = `${img.height}px`;
 		canvas.style.pointerEvents = 'none';
+		canvas.style.imageRendering = 'pixelated';
 	}
 
 	const ctx = canvas.getContext('2d');
 	if (!ctx) return canvas;
+	ctx.imageSmoothingEnabled = false;
 
 	// Clear at physical resolution, then switch to logical coords
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -50,8 +53,10 @@ export function drawGridOverlay(container: HTMLElement, img: MapMediaElement, co
 	const logicalH = img.naturalHeight;
 
 	// Style for grid lines
-	ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
-	ctx.lineWidth = 2;
+	ctx.strokeStyle = 'rgba(0, 0, 0, 0.65)';
+	ctx.lineWidth = 3;
+	ctx.lineCap = 'square';
+	ctx.lineJoin = 'miter';
 
 	if (config.gridType === 'square') {
 		const sizeW = config.gridSizeW || config.gridSize;

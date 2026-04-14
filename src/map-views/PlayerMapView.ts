@@ -2484,8 +2484,10 @@ export class PlayerMapView extends ItemView {
     const offsetY = config.gridOffsetY || 0;
 
     ctx.save();
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.65)';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'square';
+    ctx.lineJoin = 'miter';
 
     if (config.gridType === 'square') {
       const sizeW = config.gridSizeW || config.gridSize;

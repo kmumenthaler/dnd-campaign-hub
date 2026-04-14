@@ -511,8 +511,10 @@ export class MapCreationModal extends Modal {
   private drawPreviewGrid(ctx: CanvasRenderingContext2D, natW: number, natH: number, s: number): void {
     if (this.gridType === 'none') return;
 
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
-    ctx.lineWidth = Math.max(1, 1.5 * s);
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.65)';
+    ctx.lineWidth = Math.max(2, 2 * s);
+    ctx.lineCap = 'square';
+    ctx.lineJoin = 'miter';
 
     const gs = this.gridSize; // in natural pixels
 
