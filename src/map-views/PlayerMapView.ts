@@ -74,7 +74,22 @@ export class PlayerMapView extends ItemView {
 
   /** HiDPI canvas resolution multiplier (mirrors plugin setting). */
   private get _canvasScale(): number {
-    return Math.max(1, Math.min(4, this.plugin.settings.mapCanvasScale ?? 2));
+    const requested = Math.max(1, Math.min(4, this.plugin.settings.mapCanvasScale ?? 2));
+    if (!this.mapImage) return requested;
+
+    const maxSide = 16384;
+    const maxArea = 268435456;
+    const sideScale = Math.min(
+      this.mapImage.naturalWidth ? maxSide / this.mapImage.naturalWidth : requested,
+      this.mapImage.naturalHeight ? maxSide / this.mapImage.naturalHeight : requested
+    );
+    const areaScale = Math.sqrt(
+      (this.mapImage.naturalWidth && this.mapImage.naturalHeight)
+        ? maxArea / (this.mapImage.naturalWidth * this.mapImage.naturalHeight)
+        : requested
+    );
+
+    return Math.max(0.1, Math.min(requested, sideScale, areaScale));
   }
 
   // ── Perf: pre-baked fog atlas ─────────────────────────────────────────

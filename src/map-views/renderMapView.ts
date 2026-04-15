@@ -915,6 +915,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 		// Create the map background element (image or video)
 		let img: MapMediaElement;
+		const onImageError = () => {
+			mapContainer.empty();
+			mapContainer.createEl('div', {
+				text: '⚠️ Failed to load map image. Try a smaller file or check the vault path.',
+				cls: 'dnd-map-error'
+			});
+		};
 		if (config.isVideo) {
 			const video = mapWrapper.createEl('video', {
 				cls: 'dnd-map-image dnd-map-video',
@@ -926,6 +933,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					playsinline: '',
 				}
 			});
+			video.addEventListener('error', onImageError);
 			video.autoplay = true;
 			video.loop = true;
 			video.muted = true;
@@ -946,6 +954,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					alt: config.name || 'Battle Map'
 				}
 			});
+			img.addEventListener('error', onImageError);
 		}
 
 		// Add floating toolbar wrapper (holds toolbar + layer menu)
@@ -2914,9 +2923,20 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		let terrainCanvas: HTMLCanvasElement | null = null;
 		let annotationCanvas: HTMLCanvasElement | null = null;
 
-		// HiDPI canvas resolution multiplier: renders overlay canvases at Nx the
-		// image's natural resolution so tokens/fog/grid stay sharp when zoomed in.
-		const _canvasScale = Math.max(1, Math.min(4, plugin.settings.mapCanvasScale ?? 2));
+		const getSafeCanvasScale = (naturalWidth: number, naturalHeight: number, requestedScale: number): number => {
+			const maxSide = 16384;
+			const maxArea = 268435456;
+			const sideScale = Math.min(
+				naturalWidth ? maxSide / naturalWidth : requestedScale,
+				naturalHeight ? maxSide / naturalHeight : requestedScale,
+			);
+			const areaScale = Math.sqrt(
+				(naturalWidth && naturalHeight) ? maxArea / (naturalWidth * naturalHeight) : requestedScale
+			);
+			return Math.max(0.1, Math.min(requestedScale, sideScale, areaScale));
+		};
+
+		let _canvasScale = Math.max(1, Math.min(4, plugin.settings.mapCanvasScale ?? 2));
 
 		// rAF-throttled annotation redraw during pan/zoom so we don't oversaturate
 		let _panRedrawRafId = 0;
@@ -7667,6 +7687,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			// Add grid overlay when media is ready
 			// For images, use 'load'; for videos, use 'loadeddata' (first frame available)
 			const onMediaReady = () => {
+				_canvasScale = getSafeCanvasScale(img.naturalWidth, img.naturalHeight, Math.max(1, Math.min(4, plugin.settings.mapCanvasScale ?? 2)));
 				if (config.gridType && config.gridType !== 'none' && config.gridSize) {
 					redrawGridOverlays();
 				}

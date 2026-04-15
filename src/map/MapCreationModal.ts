@@ -4,6 +4,7 @@ import { MAP_PRESETS, MAP_MEDIA_EXTENSIONS, isVideoExtension, isMapMediaExtensio
 import type DndCampaignHubPlugin from '../main';
 import { CREATURE_SIZE_SQUARES } from '../marker/MarkerTypes';
 import type { MarkerDefinition } from '../marker/MarkerTypes';
+import { _flushMapSave } from './MapPersistence';
 
 /** Folder where battlemap template notes are stored */
 export const BATTLEMAP_TEMPLATE_FOLDER = 'z_BattlemapTemplates';
@@ -910,6 +911,9 @@ export class MapCreationModal extends Modal {
       await this.plugin.saveMapAnnotations(fullConfig, document.createElement('div'));
 
       if (this.templateMode) {
+        // Flush the pending save immediately so the new template note can
+        // load its annotation data as soon as it opens.
+        await _flushMapSave(this.plugin, mapData.id);
         // Template mode: create a note in z_BattlemapTemplates/ with a dnd-map code block
         await this.createTemplateNote(mapData);
       } else if (this.editMode && this.editConfig) {
