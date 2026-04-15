@@ -1658,7 +1658,7 @@ export class PlayerMapView extends ItemView {
     ctx.setTransform(this._canvasScale, 0, 0, this._canvasScale, 0, 0);
 
     // Draw grid overlay if active and visible
-    if (config.gridType && config.gridType !== 'none' && config.gridSize > 0 && config.gridVisible !== false) {
+    if (config.gridType && config.gridType !== 'none' && config.gridSize > 0 && config.gridVisible === true) {
       this.drawGrid(ctx, config);
     }
 
