@@ -416,6 +416,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			let selectedWallIndices: number[] = [];
 			let wallClickStartPos: { x: number; y: number } | null = null; // For detecting click vs drag on walls
 
+			// Multi-selection state (for bulk operations on multiple elements)
+			let multiSelectionRect: { startX: number; startY: number; endX: number; endY: number } | null = null;
+			let selectedMarkerIndices: number[] = [];
+			let selectedLightIndices: number[] = [];
+			let selectedEnvAssetIds: string[] = [];
+			let selectedTextAnnotationIds: string[] = [];
+
 			// ── Grid-proportional snap helpers ───────────────────────────
 			// All thresholds scale with gridSize so snapping feels consistent
 			// regardless of the grid resolution.  The base fraction (0.12)
@@ -715,6 +722,378 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					};
 					document.addEventListener('click', outsideClick);
 				}, 50);
+			};
+
+			const clearMultiSelection = () => {
+				selectedMarkerIndices = [];
+				selectedLightIndices = [];
+				selectedEnvAssetIds = [];
+				selectedTextAnnotationIds = [];
+				selectedWallIndices = [];
+				redrawAnnotations();
+			};
+
+			const showMultiSelectionMenu = () => {
+				const totalSelected = selectedMarkerIndices.length + selectedLightIndices.length + 
+					selectedEnvAssetIds.length + selectedWallIndices.length;
+				
+				const popup = document.createElement('div');
+				popup.addClass('dnd-map-context-menu');
+				popup.style.position = 'fixed';
+				popup.style.zIndex = '10000';
+				
+				const header = popup.createDiv({ cls: 'dnd-map-context-menu-header' });
+				header.textContent = `🔲 Bulk Operations (${totalSelected} selected)`;
+				
+				// Show selection summary
+				const summaryRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				summaryRow.style.padding = '4px 8px';
+				summaryRow.style.fontSize = '11px';
+				summaryRow.style.opacity = '0.8';
+				const summaryParts = [];
+				if (selectedMarkerIndices.length > 0) summaryParts.push(`${selectedMarkerIndices.length} marker${selectedMarkerIndices.length > 1 ? 's' : ''}`);
+				if (selectedLightIndices.length > 0) summaryParts.push(`${selectedLightIndices.length} light${selectedLightIndices.length > 1 ? 's' : ''}`);
+				if (selectedEnvAssetIds.length > 0) summaryParts.push(`${selectedEnvAssetIds.length} asset${selectedEnvAssetIds.length > 1 ? 's' : ''}`);
+				if (selectedWallIndices.length > 0) summaryParts.push(`${selectedWallIndices.length} wall${selectedWallIndices.length > 1 ? 's' : ''}`);
+				summaryRow.textContent = summaryParts.join(', ');
+				
+				// Bulk operations
+				if (selectedLightIndices.length > 0) {
+					const lightRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+					lightRow.style.display = 'flex';
+					lightRow.style.alignItems = 'center';
+					lightRow.style.gap = '6px';
+					lightRow.style.padding = '6px 8px';
+					
+					const lightBtn = lightRow.createEl('button', { text: '💡 Edit Lights', cls: 'mod-cta' });
+					lightBtn.addEventListener('click', () => {
+						document.body.removeChild(popup);
+						showBulkLightEditor();
+					});
+				}
+				
+				if (selectedWallIndices.length > 0) {
+					const wallRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+					wallRow.style.display = 'flex';
+					wallRow.style.alignItems = 'center';
+					wallRow.style.gap = '6px';
+					wallRow.style.padding = '6px 8px';
+					
+					const wallBtn = wallRow.createEl('button', { text: '🧱 Set Wall Height', cls: 'mod-cta' });
+					wallBtn.addEventListener('click', () => {
+						document.body.removeChild(popup);
+						showWallHeightPopup(selectedWallIndices);
+					});
+				}
+				
+				if (selectedMarkerIndices.length > 0) {
+					const markerRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+					markerRow.style.display = 'flex';
+					markerRow.style.alignItems = 'center';
+					markerRow.style.gap = '6px';
+					markerRow.style.padding = '6px 8px';
+					
+					const markerBtn = markerRow.createEl('button', { text: '🎯 Edit Markers', cls: 'mod-cta' });
+					markerBtn.addEventListener('click', () => {
+						document.body.removeChild(popup);
+						showBulkMarkerEditor();
+					});
+				}
+				
+				if (selectedEnvAssetIds.length > 0) {
+					const assetRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+					assetRow.style.display = 'flex';
+					assetRow.style.alignItems = 'center';
+					assetRow.style.gap = '6px';
+					assetRow.style.padding = '6px 8px';
+					
+					const assetBtn = assetRow.createEl('button', { text: '🏞️ Edit Assets', cls: 'mod-cta' });
+					assetBtn.addEventListener('click', () => {
+						document.body.removeChild(popup);
+						showBulkAssetEditor();
+					});
+				}
+				
+				// Delete all selected
+				const deleteRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				deleteRow.style.display = 'flex';
+				deleteRow.style.alignItems = 'center';
+				deleteRow.style.gap = '6px';
+				deleteRow.style.padding = '6px 8px';
+				
+				const deleteBtn = deleteRow.createEl('button', { text: '🗑️ Delete All', cls: 'mod-warning' });
+				deleteBtn.addEventListener('click', () => {
+					document.body.removeChild(popup);
+					deleteSelectedElements();
+				});
+				
+				// Cancel
+				const cancelRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				cancelRow.style.display = 'flex';
+				cancelRow.style.alignItems = 'center';
+				cancelRow.style.gap = '6px';
+				cancelRow.style.padding = '6px 8px';
+				
+				const cancelBtn = cancelRow.createEl('button', { text: 'Cancel' });
+				cancelBtn.addEventListener('click', () => {
+					document.body.removeChild(popup);
+					clearMultiSelection();
+				});
+				
+				document.body.appendChild(popup);
+				// Center the popup
+				const popupRect = popup.getBoundingClientRect();
+				popup.style.left = `${Math.max(10, (window.innerWidth - popupRect.width) / 2)}px`;
+				popup.style.top = `${Math.max(10, (window.innerHeight - popupRect.height) / 2)}px`;
+			};
+
+			const showBulkLightEditor = () => {
+				const popup = document.createElement('div');
+				popup.addClass('dnd-map-context-menu');
+				popup.style.position = 'fixed';
+				popup.style.zIndex = '10000';
+				
+				const header = popup.createDiv({ cls: 'dnd-map-context-menu-header' });
+				header.textContent = `💡 Edit ${selectedLightIndices.length} Light${selectedLightIndices.length > 1 ? 's' : ''}`;
+				
+				// Color picker
+				const colorRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				colorRow.style.display = 'flex';
+				colorRow.style.alignItems = 'center';
+				colorRow.style.gap = '6px';
+				colorRow.style.padding = '6px 8px';
+				
+				colorRow.createEl('span', { text: 'Color:' });
+				const colorInput = colorRow.createEl('input', { attr: { type: 'color' } });
+				colorInput.style.width = '40px';
+				colorInput.style.height = '24px';
+				colorInput.style.border = 'none';
+				colorInput.style.borderRadius = '3px';
+				
+				// Brightness slider
+				const brightRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				brightRow.style.display = 'flex';
+				brightRow.style.alignItems = 'center';
+				brightRow.style.gap = '6px';
+				brightRow.style.padding = '6px 8px';
+				
+				brightRow.createEl('span', { text: 'Brightness:' });
+				const brightInput = brightRow.createEl('input', { 
+					attr: { type: 'range', min: '0', max: '100', step: '5' } 
+				});
+				brightInput.style.flex = '1';
+				const brightValue = brightRow.createEl('span', { text: '50' });
+				brightValue.style.width = '30px';
+				brightValue.style.textAlign = 'right';
+				
+				brightInput.addEventListener('input', () => {
+					brightValue.textContent = brightInput.value;
+				});
+				
+				// Buttons
+				const btnRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				btnRow.style.display = 'flex';
+				btnRow.style.gap = '6px';
+				btnRow.style.padding = '4px 8px';
+				
+				const applyBtn = btnRow.createEl('button', { text: 'Apply', cls: 'mod-cta' });
+				const cancelBtn = btnRow.createEl('button', { text: 'Cancel' });
+				
+				const closePopup = () => {
+					if (popup.parentNode) document.body.removeChild(popup);
+					clearMultiSelection();
+				};
+				
+				applyBtn.addEventListener('click', () => {
+					saveToHistory();
+					selectedLightIndices.forEach(i => {
+						if (config.lights[i]) {
+							config.lights[i].color = colorInput.value;
+							config.lights[i].brightness = parseInt(brightInput.value);
+						}
+					});
+					new Notice(`Updated ${selectedLightIndices.length} light${selectedLightIndices.length > 1 ? 's' : ''}`);
+					plugin.saveMapAnnotations(config, el);
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					closePopup();
+				});
+				
+				cancelBtn.addEventListener('click', closePopup);
+				
+				document.body.appendChild(popup);
+				const popupRect = popup.getBoundingClientRect();
+				popup.style.left = `${Math.max(10, (window.innerWidth - popupRect.width) / 2)}px`;
+				popup.style.top = `${Math.max(10, (window.innerHeight - popupRect.height) / 2)}px`;
+			};
+
+			const showBulkMarkerEditor = () => {
+				const popup = document.createElement('div');
+				popup.addClass('dnd-map-context-menu');
+				popup.style.position = 'fixed';
+				popup.style.zIndex = '10000';
+				
+				const header = popup.createDiv({ cls: 'dnd-map-context-menu-header' });
+				header.textContent = `🎯 Edit ${selectedMarkerIndices.length} Marker${selectedMarkerIndices.length > 1 ? 's' : ''}`;
+				
+				// Size slider
+				const sizeRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				sizeRow.style.display = 'flex';
+				sizeRow.style.alignItems = 'center';
+				sizeRow.style.gap = '6px';
+				sizeRow.style.padding = '6px 8px';
+				
+				sizeRow.createEl('span', { text: 'Size:' });
+				const sizeInput = sizeRow.createEl('input', { 
+					attr: { type: 'range', min: '10', max: '200', step: '5' } 
+				});
+				sizeInput.style.flex = '1';
+				const sizeValue = sizeRow.createEl('span', { text: '50' });
+				sizeValue.style.width = '35px';
+				sizeValue.style.textAlign = 'right';
+				
+				sizeInput.addEventListener('input', () => {
+					sizeValue.textContent = sizeInput.value;
+				});
+				
+				// Buttons
+				const btnRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				btnRow.style.display = 'flex';
+				btnRow.style.gap = '6px';
+				btnRow.style.padding = '4px 8px';
+				
+				const applyBtn = btnRow.createEl('button', { text: 'Apply', cls: 'mod-cta' });
+				const cancelBtn = btnRow.createEl('button', { text: 'Cancel' });
+				
+				const closePopup = () => {
+					if (popup.parentNode) document.body.removeChild(popup);
+					clearMultiSelection();
+				};
+				
+				applyBtn.addEventListener('click', () => {
+					saveToHistory();
+					selectedMarkerIndices.forEach(i => {
+						if (config.markers[i]) {
+							config.markers[i].size = parseInt(sizeInput.value);
+						}
+					});
+					new Notice(`Updated ${selectedMarkerIndices.length} marker${selectedMarkerIndices.length > 1 ? 's' : ''}`);
+					plugin.saveMapAnnotations(config, el);
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					closePopup();
+				});
+				
+				cancelBtn.addEventListener('click', closePopup);
+				
+				document.body.appendChild(popup);
+				const popupRect = popup.getBoundingClientRect();
+				popup.style.left = `${Math.max(10, (window.innerWidth - popupRect.width) / 2)}px`;
+				popup.style.top = `${Math.max(10, (window.innerHeight - popupRect.height) / 2)}px`;
+			};
+
+			const showBulkAssetEditor = () => {
+				const popup = document.createElement('div');
+				popup.addClass('dnd-map-context-menu');
+				popup.style.position = 'fixed';
+				popup.style.zIndex = '10000';
+				
+				const header = popup.createDiv({ cls: 'dnd-map-context-menu-header' });
+				header.textContent = `🏞️ Edit ${selectedEnvAssetIds.length} Asset${selectedEnvAssetIds.length > 1 ? 's' : ''}`;
+				
+				// Scale slider
+				const scaleRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				scaleRow.style.display = 'flex';
+				scaleRow.style.alignItems = 'center';
+				scaleRow.style.gap = '6px';
+				scaleRow.style.padding = '6px 8px';
+				
+				scaleRow.createEl('span', { text: 'Scale:' });
+				const scaleInput = scaleRow.createEl('input', { 
+					attr: { type: 'range', min: '0.1', max: '5', step: '0.1' } 
+				});
+				scaleInput.style.flex = '1';
+				const scaleValue = scaleRow.createEl('span', { text: '1.0' });
+				scaleValue.style.width = '35px';
+				scaleValue.style.textAlign = 'right';
+				
+				scaleInput.addEventListener('input', () => {
+					scaleValue.textContent = parseFloat(scaleInput.value).toFixed(1);
+				});
+				
+				// Buttons
+				const btnRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				btnRow.style.display = 'flex';
+				btnRow.style.gap = '6px';
+				btnRow.style.padding = '4px 8px';
+				
+				const applyBtn = btnRow.createEl('button', { text: 'Apply', cls: 'mod-cta' });
+				const cancelBtn = btnRow.createEl('button', { text: 'Cancel' });
+				
+				const closePopup = () => {
+					if (popup.parentNode) document.body.removeChild(popup);
+					clearMultiSelection();
+				};
+				
+				applyBtn.addEventListener('click', () => {
+					saveToHistory();
+					selectedEnvAssetIds.forEach(id => {
+						if (config.envAssets[id]) {
+							config.envAssets[id].scale = parseFloat(scaleInput.value);
+						}
+					});
+					new Notice(`Updated ${selectedEnvAssetIds.length} asset${selectedEnvAssetIds.length > 1 ? 's' : ''}`);
+					plugin.saveMapAnnotations(config, el);
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					closePopup();
+				});
+				
+				cancelBtn.addEventListener('click', closePopup);
+				
+				document.body.appendChild(popup);
+				const popupRect = popup.getBoundingClientRect();
+				popup.style.left = `${Math.max(10, (window.innerWidth - popupRect.width) / 2)}px`;
+				popup.style.top = `${Math.max(10, (window.innerHeight - popupRect.height) / 2)}px`;
+			};
+
+			const deleteSelectedElements = () => {
+				const confirmDelete = () => {
+					const total = selectedMarkerIndices.length + selectedLightIndices.length + 
+						selectedEnvAssetIds.length + selectedWallIndices.length;
+					
+					const confirmed = window.confirm(`Delete ${total} selected element${total > 1 ? 's' : ''}? This cannot be undone.`);
+					if (!confirmed) {
+						clearMultiSelection();
+						return;
+					}
+					
+					saveToHistory();
+					
+					// Delete markers (in reverse order to maintain indices)
+					selectedMarkerIndices.sort((a, b) => b - a).forEach(i => {
+						config.markers.splice(i, 1);
+					});
+					
+					// Delete lights (in reverse order)
+					selectedLightIndices.sort((a, b) => b - a).forEach(i => {
+						config.lights.splice(i, 1);
+					});
+					
+					// Delete env assets
+					selectedEnvAssetIds.forEach(id => {
+						delete config.envAssets[id];
+					});
+					
+					// Delete walls (in reverse order)
+					selectedWallIndices.sort((a, b) => b - a).forEach(i => {
+						config.walls.splice(i, 1);
+					});
+					
+					new Notice(`Deleted ${total} element${total > 1 ? 's' : ''}`);
+					plugin.saveMapAnnotations(config, el);
+					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					clearMultiSelection();
+				};
+				
+				confirmDelete();
 			};
 			// Wall types for dynamic lighting
 			const WALL_TYPES = {
@@ -1354,6 +1733,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				wallSelectionRect = null;
 				draggingWallIndex = -1;
 			}
+			// Clear multi-selection when view changes
+			selectedMarkerIndices = [];
+			selectedLightIndices = [];
+			selectedEnvAssetIds = [];
+			selectedTextAnnotationIds = [];
+			selectedWallIndices = [];
+			multiSelectionRect = null;
 			redrawAnnotations();
 		};
 		for (const v of bgViews) {
@@ -4707,6 +5093,24 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					ctx.restore();
 				}
 
+				// Draw multi-selection rectangle overlay
+				if (multiSelectionRect && activeTool === 'select') {
+					const sr = multiSelectionRect;
+					const srMinX = Math.min(sr.startX, sr.endX);
+					const srMinY = Math.min(sr.startY, sr.endY);
+					const srW = Math.abs(sr.endX - sr.startX);
+					const srH = Math.abs(sr.endY - sr.startY);
+					ctx.save();
+					ctx.strokeStyle = '#ff6b35';
+					ctx.lineWidth = 2 / scale;
+					ctx.setLineDash([6 / scale, 4 / scale]);
+					ctx.strokeRect(srMinX, srMinY, srW, srH);
+					ctx.fillStyle = 'rgba(255, 107, 53, 0.12)';
+					ctx.fillRect(srMinX, srMinY, srW, srH);
+					ctx.setLineDash([]);
+					ctx.restore();
+				}
+
 				// Highlight selected walls (after rectangle selection completes)
 				if (selectedWallIndices.length > 0 && config.walls) {
 					ctx.save();
@@ -4720,6 +5124,50 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						ctx.lineWidth = 6;
 						ctx.lineCap = 'round';
 						ctx.stroke();
+					});
+					ctx.restore();
+				}
+
+				// Highlight selected markers
+				if (selectedMarkerIndices.length > 0 && config.markers) {
+					ctx.save();
+					selectedMarkerIndices.forEach(i => {
+						const marker = config.markers[i];
+						if (!marker) return;
+						ctx.beginPath();
+						ctx.arc(marker.position.x, marker.position.y, marker.size / 2 + 4, 0, 2 * Math.PI);
+						ctx.strokeStyle = '#ff6b35';
+						ctx.lineWidth = 3;
+						ctx.stroke();
+					});
+					ctx.restore();
+				}
+
+				// Highlight selected lights
+				if (selectedLightIndices.length > 0 && config.lights) {
+					ctx.save();
+					selectedLightIndices.forEach(i => {
+						const light = config.lights[i];
+						if (!light) return;
+						ctx.beginPath();
+						ctx.arc(light.position.x, light.position.y, 8, 0, 2 * Math.PI);
+						ctx.strokeStyle = '#ff6b35';
+						ctx.lineWidth = 3;
+						ctx.stroke();
+					});
+					ctx.restore();
+				}
+
+				// Highlight selected env assets
+				if (selectedEnvAssetIds.length > 0 && config.envAssets) {
+					ctx.save();
+					selectedEnvAssetIds.forEach(id => {
+						const asset = config.envAssets[id];
+						if (!asset) return;
+						const size = 32 * (asset.scale || 1);
+						ctx.strokeStyle = '#ff6b35';
+						ctx.lineWidth = 3;
+						ctx.strokeRect(asset.position.x - size/2, asset.position.y - size/2, size, size);
 					});
 					ctx.restore();
 				}
@@ -7490,6 +7938,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					textAnnotDragOffset = null;
 					textAnnotTransformHandle = null;
 				}
+
+				// Clear multi-selection when switching tools
+				selectedMarkerIndices = [];
+				selectedLightIndices = [];
+				selectedEnvAssetIds = [];
+				selectedTextAnnotationIds = [];
+				selectedWallIndices = [];
+				multiSelectionRect = null;
 				
 				// Cancel wall drawing when switching away
 				if (tool !== 'walls' && tool !== 'magic-wand') {
@@ -8186,10 +8642,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							}
 						}
 					}
-					// If nothing was clicked, start a wall selection rectangle (only in walls view)
-					if (!foundMarker && !foundEnvAsset && !foundTextAnnot && draggingLightIndex < 0 && draggingWallIndex < 0 && canInteractWalls) {
-						wallSelectionRect = { startX: mapPos.x, startY: mapPos.y, endX: mapPos.x, endY: mapPos.y };
-						selectedWallIndices = [];
+					// If nothing was clicked, start a multi-selection rectangle
+					if (!foundMarker && !foundEnvAsset && !foundTextAnnot && draggingLightIndex < 0 && draggingWallIndex < 0) {
+						multiSelectionRect = { startX: mapPos.x, startY: mapPos.y, endX: mapPos.x, endY: mapPos.y };
+						// Clear any existing multi-selections
+						selectedMarkerIndices = [];
+						selectedLightIndices = [];
+						selectedEnvAssetIds = [];
+						selectedTextAnnotationIds = [];
+						selectedWallIndices = []; // Also clear wall selection for consistency
 						viewport.style.cursor = 'crosshair';
 					}
 				} else if (activeTool === 'highlight') {
@@ -9386,6 +9847,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					// Updating wall selection rectangle
 					wallSelectionRect.endX = mapPos.x;
 					wallSelectionRect.endY = mapPos.y;
+				} else if (activeTool === 'select' && multiSelectionRect) {
+					// Updating multi-selection rectangle
+					multiSelectionRect.endX = mapPos.x;
+					multiSelectionRect.endY = mapPos.y;
 					_requestDragRedraw();
 				} else if (activeTool === 'draw' && activeDrawSubTool === 'pen' && isDrawing) {
 					currentPath.push({ x: mapPos.x, y: mapPos.y });
@@ -9927,6 +10392,94 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						viewport.style.cursor = 'default';
 						redrawAnnotations();
 					}
+				} else if (activeTool === 'select' && multiSelectionRect) {
+					// Finish multi-selection rectangle
+					const rect = multiSelectionRect;
+					const minX = Math.min(rect.startX, rect.endX);
+					const maxX = Math.max(rect.startX, rect.endX);
+					const minY = Math.min(rect.startY, rect.endY);
+					const maxY = Math.max(rect.startY, rect.endY);
+					const rectWidth = maxX - minX;
+					const rectHeight = maxY - minY;
+					
+					// Only process if rectangle is large enough (not just a click)
+					if (rectWidth > 5 && rectHeight > 5) {
+						// Find elements within the selection rectangle based on current view filter
+						const canSelectMarkers = config.activeLayer === 'Tokens';
+						const canSelectLights = config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'lights');
+						const canSelectEnvAssets = config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'env-assets');
+						const canSelectWalls = config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'walls');
+						
+						// Select markers
+						if (canSelectMarkers && config.markers) {
+							selectedMarkerIndices = [];
+							for (let i = 0; i < config.markers.length; i++) {
+								const marker = config.markers[i];
+								if (marker.position.x >= minX && marker.position.x <= maxX && 
+									marker.position.y >= minY && marker.position.y <= maxY) {
+									selectedMarkerIndices.push(i);
+								}
+							}
+						}
+						
+						// Select lights
+						if (canSelectLights && config.lights) {
+							selectedLightIndices = [];
+							for (let i = 0; i < config.lights.length; i++) {
+								const light = config.lights[i];
+								if (light.position.x >= minX && light.position.x <= maxX && 
+									light.position.y >= minY && light.position.y <= maxY) {
+									selectedLightIndices.push(i);
+								}
+							}
+						}
+						
+						// Select env assets
+						if (canSelectEnvAssets && config.envAssets) {
+							selectedEnvAssetIds = [];
+							for (const [id, asset] of Object.entries(config.envAssets) as [string, any][]) {
+								if (asset.position.x >= minX && asset.position.x <= maxX && 
+									asset.position.y >= minY && asset.position.y <= maxY) {
+									selectedEnvAssetIds.push(id);
+								}
+							}
+						}
+						
+						// Select walls
+						if (canSelectWalls && config.walls) {
+							selectedWallIndices = [];
+							for (let wi = 0; wi < config.walls.length; wi++) {
+								const w = config.walls[wi];
+								const startInside = w.start.x >= minX && w.start.x <= maxX && w.start.y >= minY && w.start.y <= maxY;
+								const endInside = w.end.x >= minX && w.end.x <= maxX && w.end.y >= minY && w.end.y <= maxY;
+								const midX = (w.start.x + w.end.x) / 2;
+								const midY = (w.start.y + w.end.y) / 2;
+								const midInside = midX >= minX && midX <= maxX && midY >= minY && midY <= maxY;
+								if (startInside || endInside || midInside) {
+									selectedWallIndices.push(wi);
+								}
+							}
+						}
+						
+						// Check if any elements were selected
+						const totalSelected = selectedMarkerIndices.length + selectedLightIndices.length + 
+							selectedEnvAssetIds.length + selectedWallIndices.length;
+						
+						if (totalSelected > 0) {
+							// Show bulk operations menu
+							showMultiSelectionMenu();
+						} else {
+							// No elements selected, clear everything
+							clearMultiSelection();
+						}
+					} else {
+						// Click was too small, just clear selection
+						clearMultiSelection();
+					}
+					
+					multiSelectionRect = null;
+					viewport.style.cursor = 'default';
+					redrawAnnotations();
 				} else if (activeTool === 'move-grid' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'move';
