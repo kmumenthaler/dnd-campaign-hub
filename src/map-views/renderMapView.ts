@@ -106,7 +106,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			config.aoeEffects = []; // AoE effects are session-only, never persisted
 			config.tunnels = savedData.tunnels || [];
 			// Regenerate wall geometry for any tunnels loaded without cached walls (#38)
-			ensureTunnelWalls(config.tunnels, config.gridSize);
+			ensureTunnelWalls(config.tunnels, ((config.gridSizeW || config.gridSize) + (config.gridSizeH || config.gridSize)) / 2);
 			config.poiReferences = savedData.poiReferences || [];
 			
 			// Load hexcrawl terrain, climate, and state data
@@ -433,7 +433,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			const WALL_SNAP_MAX_PX = 20;
 			/** Compute wall-snap threshold in map pixels. */
 			const getWallSnapThreshold = (): number => {
-				const gs = config.gridSize || 70;
+				const gs = Math.min(config.gridSizeW || config.gridSize || 70, config.gridSizeH || config.gridSize || 70);
 				return Math.max(WALL_SNAP_MIN_PX, Math.min(WALL_SNAP_MAX_PX, gs * WALL_SNAP_FRACTION));
 			};
 
@@ -2846,7 +2846,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							if ((pv as any).mapId !== mapId) return;
 							try {
 								const cal = plugin.settings.tabletopCalibration;
-								const gridSize = config?.gridSize || 0;
+								const gridSize = ((config?.gridSizeW || config?.gridSize || 0) + (config?.gridSizeH || config?.gridSize || 0)) / 2;
 								if (cal && gridSize > 0) {
 									const calibratedScale = (cal.pixelsPerMm * cal.miniBaseMm) / gridSize;
 									const safeScale = Math.max(0.001, Math.min(100, calibratedScale));
@@ -3528,7 +3528,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						Math.pow(aoe.origin.x - px, 2) +
 						Math.pow(aoe.origin.y - py, 2)
 					);
-					if (dist < (config.gridSize || 70)) {
+					if (dist < (((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2)) {
 						config.aoeEffects.splice(i, 1);
 						removed = true;
 					}
@@ -3915,7 +3915,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				// 1. Light glow
 				if (draggedMarker.light && draggedMarker.light.bright !== undefined) {
-					const pxPerFt = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+					const _gsAvgLight = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+					const pxPerFt = _gsAvgLight && config.scale?.value ? _gsAvgLight / config.scale.value : 1;
 					const baseBrightPx = draggedMarker.light.bright * pxPerFt;
 					const baseDimPx = draggedMarker.light.dim * pxPerFt;
 					const flickerKey = `marker_${draggedMarker.id || draggingMarkerIndex}`;
@@ -3964,7 +3965,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				// 2. Auras
 				if (draggedMarker.auras && draggedMarker.auras.length > 0) {
-					const pxPerFt = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+					const _gsAvgAura = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+					const pxPerFt = _gsAvgAura && config.scale?.value ? _gsAvgAura / config.scale.value : 1;
 					draggedMarker.auras.forEach((aura: any) => {
 						const radiusPx = (aura.radius || 0) * pxPerFt;
 						if (radiusPx > 0) {
@@ -4004,7 +4006,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							t.creatorMarkerId === draggedMarker.id && t.active
 						);
 						if (activeTunnel && activeTunnel.path.length > 0) {
-							const tunnelWidth = getTunnelWidth(activeTunnel, config.gridSize);
+							const _gsAvgTunnel = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+							const tunnelWidth = getTunnelWidth(activeTunnel, _gsAvgTunnel);
 							ctx.save();
 							ctx.globalAlpha = 0.6;
 							ctx.strokeStyle = '#8B4513';
@@ -4074,7 +4077,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				// Draw tile elevations (Background layer visualization)
 				if (config.tileElevations && Object.keys(config.tileElevations).length > 0) {
-					const gs = config.gridSize || 70;
+					const _teGsW = config.gridSizeW || config.gridSize || 70;
+					const _teGsH = config.gridSizeH || config.gridSize || 70;
 					const ox = config.gridOffsetX || 0;
 					const oy = config.gridOffsetY || 0;
 					const isBackgroundLayer = config.activeLayer === 'Background';
@@ -4090,19 +4094,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						const parts = key.split(',');
 						const col = parseInt(parts[0] ?? '0');
 						const row = parseInt(parts[1] ?? '0');
-						const cellX = col * gs + ox;
-						const cellY = row * gs + oy;
-						if (!_inViewRect(cellX, cellY, gs, gs)) continue;
+						const cellX = col * _teGsW + ox;
+						const cellY = row * _teGsH + oy;
+						if (!_inViewRect(cellX, cellY, _teGsW, _teGsH)) continue;
 						const elev = elevation as number;
 						
 						// Fill tile with elevation color
 						ctx.fillStyle = getElevationColor(elev);
-						ctx.fillRect(cellX, cellY, gs, gs);
+						ctx.fillRect(cellX, cellY, _teGsW, _teGsH);
 						
 						// Draw border
 						ctx.strokeStyle = getElevationColor(elev, 0.5);
 						ctx.lineWidth = 1.5;
-						ctx.strokeRect(cellX + 0.5, cellY + 0.5, gs - 1, gs - 1);
+						ctx.strokeRect(cellX + 0.5, cellY + 0.5, _teGsW - 1, _teGsH - 1);
 						
 						// Draw elevation label at top-right (only on Background layer)
 						if (isBackgroundLayer) {
@@ -4111,7 +4115,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							ctx.textAlign = 'right';
 							ctx.textBaseline = 'top';
 							ctx.fillStyle = getElevationColor(elev, 1.0);
-							ctx.fillText(label, cellX + gs - 3, cellY + 2);
+							ctx.fillText(label, cellX + _teGsW - 3, cellY + 2);
 						}
 					}
 					
@@ -4120,7 +4124,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				// Draw difficult terrain tiles
 				if (config.difficultTerrain && Object.keys(config.difficultTerrain).length > 0) {
-					const gs = config.gridSize || 70;
+					const _dtGsW = config.gridSizeW || config.gridSize || 70;
+					const _dtGsH = config.gridSizeH || config.gridSize || 70;
 					const ox = config.gridOffsetX || 0;
 					const oy = config.gridOffsetY || 0;
 					const isBackgroundLayer = config.activeLayer === 'Background';
@@ -4136,29 +4141,32 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						const parts = key.split(',');
 						const col = parseInt(parts[0] ?? '0');
 						const row = parseInt(parts[1] ?? '0');
-						const cellX = col * gs + ox;
-						const cellY = row * gs + oy;
-						if (!_inViewRect(cellX, cellY, gs, gs)) continue;
+						const cellX = col * _dtGsW + ox;
+						const cellY = row * _dtGsH + oy;
+						if (!_inViewRect(cellX, cellY, _dtGsW, _dtGsH)) continue;
 						
 						// Fill tile with semi-transparent brown/tan hatching pattern
 						ctx.fillStyle = 'rgba(139, 90, 43, 0.25)';
-						ctx.fillRect(cellX, cellY, gs, gs);
+						ctx.fillRect(cellX, cellY, _dtGsW, _dtGsH);
 						
 						// Draw diagonal hatching lines for visual texture
 						ctx.strokeStyle = 'rgba(139, 90, 43, 0.4)';
 						ctx.lineWidth = 1;
-						const step = gs / 4;
+						const stepW = _dtGsW / 4;
+						const stepH = _dtGsH / 4;
+						const step = Math.min(stepW, stepH);
+						const maxDim = Math.max(_dtGsW, _dtGsH);
 						ctx.beginPath();
-						for (let d = -gs; d <= gs; d += step) {
+						for (let d = -maxDim; d <= maxDim; d += step) {
 							ctx.moveTo(cellX + Math.max(0, d), cellY + Math.max(0, -d));
-							ctx.lineTo(cellX + Math.min(gs, d + gs), cellY + Math.min(gs, gs - d));
+							ctx.lineTo(cellX + Math.min(_dtGsW, d + _dtGsH), cellY + Math.min(_dtGsH, _dtGsH - d));
 						}
 						ctx.stroke();
 						
 						// Draw border
 						ctx.strokeStyle = 'rgba(139, 90, 43, 0.5)';
 						ctx.lineWidth = 1.5;
-						ctx.strokeRect(cellX + 0.5, cellY + 0.5, gs - 1, gs - 1);
+						ctx.strokeRect(cellX + 0.5, cellY + 0.5, _dtGsW - 1, _dtGsH - 1);
 						
 						// Draw label (only on Background layer)
 						if (isBackgroundLayer) {
@@ -4166,7 +4174,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							ctx.textAlign = 'left';
 							ctx.textBaseline = 'bottom';
 							ctx.fillStyle = 'rgba(139, 90, 43, 0.9)';
-							ctx.fillText('DT', cellX + 3, cellY + gs - 2);
+							ctx.fillText('DT', cellX + 3, cellY + _dtGsH - 2);
 						}
 					}
 					
@@ -4199,7 +4207,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				
 				// Draw light glow around markers that have lights attached
 				if (config.markers) {
-					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+					const _gsAvgLights = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+					const pixelsPerFoot = _gsAvgLights && config.scale?.value ? _gsAvgLights / config.scale.value : 1;
 					config.markers.forEach((marker: any, mIdx: number) => {
 						if (_buildingStaticLayer && mIdx === draggingMarkerIndex) return; // drawn in overlay
 						if (marker.light && marker.light.bright !== undefined) {
@@ -4266,7 +4275,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					config.tunnels.forEach((tunnel: any) => {
 						if (!tunnel.visible) return;
 						
-						const radius = getTunnelPortalRadius(tunnel.creatureSize as CreatureSize, config.gridSize);
+						const radius = getTunnelPortalRadius(tunnel.creatureSize as CreatureSize, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
 						
 						// Viewport cull: skip tunnel if both entrance & exit are off-screen
 						const entrance = tunnel.entrancePosition;
@@ -4428,7 +4437,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				// ══════════════════════════════════════════════════════════════
 
 				if (config.markers) {
-					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+					const _gsAvgAuras = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+					const pixelsPerFoot = _gsAvgAuras && config.scale?.value ? _gsAvgAuras / config.scale.value : 1;
 					config.markers.forEach((marker: any, _auraIdx: number) => {
 						if (_buildingStaticLayer && _auraIdx === draggingMarkerIndex) return; // drawn in overlay
 						if (marker.auras && marker.auras.length > 0) {
@@ -4460,7 +4470,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						if (marker.tunnelState) return; // tunnel tokens drawn after tunnel paths
 						// Viewport cull: skip markers entirely outside the view
 						const _mDef = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
-						const _mR = _mDef && _mDef.creatureSize ? ((_CULL_SIZE_SQ[_mDef.creatureSize] || 1) * (config.gridSize || 70)) / 2 : 30;
+						const _mR = _mDef && _mDef.creatureSize ? ((_CULL_SIZE_SQ[_mDef.creatureSize] || 1) * Math.max(config.gridSizeW || config.gridSize || 70, config.gridSizeH || config.gridSize || 70)) / 2 : 30;
 						if (!_inViewCircle(marker.position.x, marker.position.y, _mR)) return;
 						drawMarker(ctx, marker);
 					});
@@ -4475,7 +4485,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					config.tunnels.forEach((tunnel: any) => {
 						if (!tunnel.path || tunnel.path.length < 2) return;
 						
-					const tunnelWidth = getTunnelWidth(tunnel, config.gridSize);
+					const tunnelWidth = getTunnelWidth(tunnel, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
 					ctx.save();
 						ctx.lineCap = 'round';
 						ctx.lineJoin = 'round';
@@ -4524,7 +4534,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						if (_buildingStaticLayer && _tIdx === draggingMarkerIndex) return; // drawn in overlay
 						if (!marker.tunnelState) return; // only tunnel tokens in this pass
 						const _mDef = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
-						const _mR = _mDef && _mDef.creatureSize ? ((_CULL_SIZE_SQ[_mDef.creatureSize] || 1) * (config.gridSize || 70)) / 2 : 30;
+						const _mR = _mDef && _mDef.creatureSize ? ((_CULL_SIZE_SQ[_mDef.creatureSize] || 1) * Math.max(config.gridSizeW || config.gridSize || 70, config.gridSizeH || config.gridSize || 70)) / 2 : 30;
 						if (!_inViewCircle(marker.position.x, marker.position.y, _mR)) return;
 						drawMarker(ctx, marker);
 					});
@@ -5308,7 +5318,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					// Helper to scale any alpha value by the view dim factor
 					const la = (a: number) => a * lightAlpha;
 					// Calculate pixels per foot based on grid settings
-					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+					const _gsAvgDynLight = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+					const pixelsPerFoot = _gsAvgDynLight && config.scale?.value ? _gsAvgDynLight / config.scale.value : 1;
 					
 					config.lightSources.forEach((light: any, idx: number) => {
 						const isActive = light.active !== false; // Default to active
@@ -5739,7 +5750,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							t.creatorMarkerId === draggedMarker.id && t.active
 						);
 						if (activeTunnel && activeTunnel.path.length > 0) {
-							const tunnelWidth = getTunnelWidth(activeTunnel, config.gridSize);
+							const tunnelWidth = getTunnelWidth(activeTunnel, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
 							
 							ctx.save();
 							ctx.globalAlpha = 0.6;
@@ -5776,11 +5787,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					ctx.setLineDash([]);
 					
 					// Draw measurement with outline for visibility
-					const distance = Math.sqrt(
-						Math.pow(rulerEnd.x - rulerStart.x, 2) + 
-						Math.pow(rulerEnd.y - rulerStart.y, 2)
-					);
-					const gridDistance = distance / config.gridSize;
+					const _rulerDx = rulerEnd.x - rulerStart.x;
+					const _rulerDy = rulerEnd.y - rulerStart.y;
+					const _rulerGsW = config.gridSizeW || config.gridSize || 70;
+					const _rulerGsH = config.gridSizeH || config.gridSize || 70;
+					const gridDistance = Math.sqrt((_rulerDx / _rulerGsW) ** 2 + (_rulerDy / _rulerGsH) ** 2);
 					const horizontalFeet = gridDistance * config.scale.value;
 					
 					// Get tile elevation at start and end points for 3D distance
@@ -5850,19 +5861,25 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						
 						// Calculate D&D 5e RAW distance: edge-to-edge, not center-to-center
 						// Each token's space is sizeSquares × sizeSquares grid cells.
-						// Half-extent = (sizeSquares * gridSize) / 2 pixels from center to edge.
+						// Half-extent uses gsW for X axis and gsH for Y axis.
 						const originSizeSquares = originDef?.creatureSize ? (CREATURE_SIZE_SQUARES[originDef.creatureSize] || 1) : 1;
 						const targetSizeSquares = targetDef?.creatureSize ? (CREATURE_SIZE_SQUARES[targetDef.creatureSize] || 1) : 1;
-						const originHalf = (originSizeSquares * config.gridSize) / 2;
-						const targetHalf = (targetSizeSquares * config.gridSize) / 2;
+						const _tdGsW = config.gridSizeW || config.gridSize || 70;
+						const _tdGsH = config.gridSizeH || config.gridSize || 70;
+						const originHalfW = (originSizeSquares * _tdGsW) / 2;
+						const originHalfH = (originSizeSquares * _tdGsH) / 2;
+						const targetHalfW = (targetSizeSquares * _tdGsW) / 2;
+						const targetHalfH = (targetSizeSquares * _tdGsH) / 2;
 
 						const dx = targetPos.x - originPos.x;
 						const dy = targetPos.y - originPos.y;
-						// Edge-to-edge AABB distance: subtract each token's half-extent, clamp to 0
-						const edgeDx = Math.max(0, Math.abs(dx) - originHalf - targetHalf);
-						const edgeDy = Math.max(0, Math.abs(dy) - originHalf - targetHalf);
-						const horizontalPixelDist = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
-						const horizontalGridDist = horizontalPixelDist / config.gridSize;
+						// Edge-to-edge AABB distance: subtract each token's half-extent per axis, clamp to 0
+						const edgeDx = Math.max(0, Math.abs(dx) - originHalfW - targetHalfW);
+						const edgeDy = Math.max(0, Math.abs(dy) - originHalfH - targetHalfH);
+						// Convert each axis to grid squares separately, then compute euclidean
+						const edgeGridX = edgeDx / _tdGsW;
+						const edgeGridY = edgeDy / _tdGsH;
+						const horizontalGridDist = Math.sqrt(edgeGridX * edgeGridX + edgeGridY * edgeGridY);
 						const horizontalFeet = horizontalGridDist * config.scale.value;
 						
 						// Get elevation difference in feet
@@ -6819,7 +6836,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 			// Helper: snap distance to grid multiples
 			const snapDistanceToGrid = (pixelDist: number): number => {
-				const gs = config.gridSize || 70;
+				const gs = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
 				return Math.max(gs, Math.round(pixelDist / gs) * gs);
 			};
 
@@ -6832,16 +6849,17 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				originPx: { x: number; y: number },
 				currentPx: { x: number; y: number },
 			): { cells: { col: number; row: number; dist: number }[]; totalDist: number; climbDist: number } => {
-				const gs = config.gridSize || 70;
+				const gsW = config.gridSizeW || config.gridSize || 70;
+				const gsH = config.gridSizeH || config.gridSize || 70;
 				const ox = config.gridOffsetX || 0;
 				const oy = config.gridOffsetY || 0;
 				const scaleVal = config.scale?.value || 5;
 
 				// Convert pixel positions to grid coordinates
-				const startCol = Math.floor((originPx.x - ox) / gs);
-				const startRow = Math.floor((originPx.y - oy) / gs);
-				const endCol = Math.floor((currentPx.x - ox) / gs);
-				const endRow = Math.floor((currentPx.y - oy) / gs);
+				const startCol = Math.floor((originPx.x - ox) / gsW);
+				const startRow = Math.floor((originPx.y - oy) / gsH);
+				const endCol = Math.floor((currentPx.x - ox) / gsW);
+				const endRow = Math.floor((currentPx.y - oy) / gsH);
 
 				if (startCol === endCol && startRow === endRow) {
 					return { cells: [], totalDist: 0, climbDist: 0 };
@@ -6947,7 +6965,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				currentPx: { x: number; y: number },
 				pathData?: { cells: { col: number; row: number; dist: number }[]; totalDist: number; climbDist?: number },
 			) => {
-				const gs = config.gridSize || 70;
+				const gsW = config.gridSizeW || config.gridSize || 70;
+				const gsH = config.gridSizeH || config.gridSize || 70;
 				const ox = config.gridOffsetX || 0;
 				const oy = config.gridOffsetY || 0;
 				const scaleUnit = config.scale?.unit || 'feet';
@@ -6963,10 +6982,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				ctx.strokeStyle = 'rgba(255, 255, 0, 0.35)';
 				ctx.lineWidth = 1.5;
 				for (const cell of path.cells) {
-					const cellX = cell.col * gs + ox;
-					const cellY = cell.row * gs + oy;
-					ctx.fillRect(cellX, cellY, gs, gs);
-					ctx.strokeRect(cellX + 0.5, cellY + 0.5, gs - 1, gs - 1);
+					const cellX = cell.col * gsW + ox;
+					const cellY = cell.row * gsH + oy;
+					ctx.fillRect(cellX, cellY, gsW, gsH);
+					ctx.strokeRect(cellX + 0.5, cellY + 0.5, gsW - 1, gsH - 1);
 				}
 
 				// Dashed ruler line
@@ -7001,7 +7020,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				// Position label above current token position
 				const labelX = currentPx.x;
-				const labelY = currentPx.y - gs * 0.8;
+				const labelY = currentPx.y - gsH * 0.8;
 
 				// Background pill
 				const metrics = ctx.measureText(labelText);
@@ -7140,7 +7159,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 			// Draw an AoE shape (used for both preview and saved effects)
 			const drawAoeShape = (ctx: CanvasRenderingContext2D, origin: { x: number; y: number }, end: { x: number; y: number }, shape: string, color: string, isPreview: boolean, centered: boolean = false) => {
-				const gs = config.gridSize || 70;
+				const gs = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
 				const dx = end.x - origin.x;
 				const dy = end.y - origin.y;
 				const rawDist = Math.sqrt(dx * dx + dy * dy);
@@ -7433,7 +7452,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					return wall;
 				});
 
-				const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+				const _gsAvgFog = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+				const pixelsPerFoot = _gsAvgFog && config.scale?.value ? _gsAvgFog / config.scale.value : 1;
 
 				// --- Phase 1: Fog canvas (black with light holes) ---
 				const fogCanvas = _canvasPool.acquire(w, h);
@@ -7624,7 +7644,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				// Light sources reveal fog (only in player view)
 				if (isPlayerView && config.lightSources && config.lightSources.length > 0) {
 					// Calculate pixels per foot based on grid settings
-					const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
+					const _gsAvgFogLight = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+					const pixelsPerFoot = _gsAvgFogLight && config.scale?.value ? _gsAvgFogLight / config.scale.value : 1;
 					
 					fogCtx.globalCompositeOperation = 'destination-out';
 					fogCtx.fillStyle = '#ffffff';
@@ -9346,11 +9367,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					).open();
 				} else if (activeTool === 'elevation-paint') {
 					// Paint tile elevation onto clicked grid square
-					const gs = config.gridSize || 70;
+					const _epGsW = config.gridSizeW || config.gridSize || 70;
+					const _epGsH = config.gridSizeH || config.gridSize || 70;
 					const ox = config.gridOffsetX || 0;
 					const oy = config.gridOffsetY || 0;
-					const col = Math.floor((mapPos.x - ox) / gs);
-					const row = Math.floor((mapPos.y - oy) / gs);
+					const col = Math.floor((mapPos.x - ox) / _epGsW);
+					const row = Math.floor((mapPos.y - oy) / _epGsH);
 					const key = `${col},${row}`;
 					saveToHistory();
 					if (!config.tileElevations) config.tileElevations = {};
@@ -9365,11 +9387,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					plugin.saveMapAnnotations(config, el);
 				} else if (activeTool === 'difficult-terrain') {
 					// Paint or erase difficult terrain on clicked grid square
-					const gs = config.gridSize || 70;
+					const _dtpGsW = config.gridSizeW || config.gridSize || 70;
+					const _dtpGsH = config.gridSizeH || config.gridSize || 70;
 					const ox = config.gridOffsetX || 0;
 					const oy = config.gridOffsetY || 0;
-					const col = Math.floor((mapPos.x - ox) / gs);
-					const row = Math.floor((mapPos.y - oy) / gs);
+					const col = Math.floor((mapPos.x - ox) / _dtpGsW);
+					const row = Math.floor((mapPos.y - oy) / _dtpGsH);
 					const key = `${col},${row}`;
 					saveToHistory();
 					if (!config.difficultTerrain) config.difficultTerrain = {};
@@ -9490,7 +9513,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
                   if (cal && cal.pixelsPerMm && config.gridSize > 0) {
                     // Calculate scale that makes grid match calibrated miniature size
                     const miniBaseMm = cal.miniBaseMm || 25;
-                    targetScale = (cal.pixelsPerMm * miniBaseMm) / config.gridSize;
+                    const _gsAvgCal = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+                    targetScale = (cal.pixelsPerMm * miniBaseMm) / _gsAvgCal;
                   } else {
                   }
                   
@@ -9622,7 +9646,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const _tSnapped = snapTokenToGrid(_tpRaw.x, _tpRaw.y, _tSizeSq);
 
 							// ── Lateral freedom for smaller creatures in wider tunnels ──
-							const gs = config.gridSize || 70;
+							const gs = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
 							const maxLat = computeMaxLateral(tunnel, _tSizeSq, gs);
 							if (maxLat > 0) {
 								const perp = getPathPerpendicular(tunnel.path, closestIndex);
@@ -9709,7 +9733,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							
 								// Regenerate tunnel walls after path update
 								if (activeTunnel.path.length >= 2) {
-									const tunnelWidth = getTunnelWidth(activeTunnel, config.gridSize);
+									const tunnelWidth = getTunnelWidth(activeTunnel, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
 									activeTunnel.walls = generateTunnelWalls(activeTunnel.path, tunnelWidth);
 								}
 							}
@@ -9934,11 +9958,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					redrawAnnotations();
 				} else if (activeTool === 'elevation-paint' && isPaintingElevation) {
 					// Drag-paint tile elevations
-					const gs = config.gridSize || 70;
+					const _epDragGsW = config.gridSizeW || config.gridSize || 70;
+					const _epDragGsH = config.gridSizeH || config.gridSize || 70;
 					const ox = config.gridOffsetX || 0;
 					const oy = config.gridOffsetY || 0;
-					const col = Math.floor((mapPos.x - ox) / gs);
-					const row = Math.floor((mapPos.y - oy) / gs);
+					const col = Math.floor((mapPos.x - ox) / _epDragGsW);
+					const row = Math.floor((mapPos.y - oy) / _epDragGsH);
 					const key = `${col},${row}`;
 					if (!config.tileElevations) config.tileElevations = {};
 					if (elevationPaintValue === 0) {
@@ -9954,11 +9979,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 				} else if (activeTool === 'difficult-terrain' && isPaintingDifficultTerrain) {
 					// Drag-paint difficult terrain
-					const gs = config.gridSize || 70;
+					const _dtDragGsW = config.gridSizeW || config.gridSize || 70;
+					const _dtDragGsH = config.gridSizeH || config.gridSize || 70;
 					const ox = config.gridOffsetX || 0;
 					const oy = config.gridOffsetY || 0;
-					const col = Math.floor((mapPos.x - ox) / gs);
-					const row = Math.floor((mapPos.y - oy) / gs);
+					const col = Math.floor((mapPos.x - ox) / _dtDragGsW);
+					const row = Math.floor((mapPos.y - oy) / _dtDragGsH);
 					const key = `${col},${row}`;
 					if (!config.difficultTerrain) config.difficultTerrain = {};
 					if (isDifficultTerrainEraser) {
@@ -10742,7 +10768,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							saveToHistory();
 							
 							let newIndex = marker.tunnelState.pathIndex;
-							const gs = config.gridSize || 70;
+							const gs = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
 							const _akMarkerDef = marker.markerId
 								? plugin.markerLibrary.getMarker(marker.markerId) : null;
 							const _akSizeSq = _akMarkerDef?.creatureSize
@@ -11635,7 +11661,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 										const creatureSize = mDef.creatureSize || 'medium';
 										const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
 										const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
-										tunnel = createTunnelSegment(m.id, snapped, creatureSize, value, config.gridSize || 70);
+										tunnel = createTunnelSegment(m.id, snapped, creatureSize, value, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
 										config.tunnels.push(tunnel);
 									}
 								}
@@ -11712,7 +11738,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 										const creatureSize = mDef.creatureSize || 'medium';
 										const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
 										const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
-										tunnel = createTunnelSegment(m.id, snapped, creatureSize, depthValue, config.gridSize || 70);
+										tunnel = createTunnelSegment(m.id, snapped, creatureSize, depthValue, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
 										config.tunnels.push(tunnel);
 									}
 									
@@ -11756,8 +11782,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							burrowCheckbox.addEventListener('click', (e) => e.stopPropagation());
 							
 							// Tunnel Traversal section (for following existing tunnels)
-							const nearEntrance = findNearTunnelEntrance(config.tunnels, m.position, config.gridSize);
-							const nearExit = findNearTunnelExit(config.tunnels, m.position, config.gridSize);
+							const _gsAvgTunProx = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+							const nearEntrance = findNearTunnelEntrance(config.tunnels, m.position, _gsAvgTunProx);
+							const nearExit = findNearTunnelExit(config.tunnels, m.position, _gsAvgTunProx);
 							const isInTunnel = m.tunnelState !== undefined;
 							const isNearTunnelAccess = nearEntrance || nearExit;
 							
@@ -11844,7 +11871,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 											const tunnel = config.tunnels?.find((t: any) => t.id === m.tunnelState.tunnelId);
 											let isAtEntranceOrExit = false;
 											if (tunnel && tunnel.path.length > 0) {
-												const gs = config.gridSize || 70;
+												const gs = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
 												const portalR = getTunnelPortalRadius((tunnel.creatureSize || 'medium') as CreatureSize, gs);
 												const exitThresh = Math.max(gs * 1.5, portalR + gs * 0.5);
 												const ent = tunnel.entrancePosition;
@@ -12840,13 +12867,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				}
 
 				// Calculate grid placement — uses a compact layout that stays within map bounds
-				const gridPx = config.gridSize || 70;
+				const _ciGsW = config.gridSizeW || config.gridSize || 70;
+				const _ciGsH = config.gridSizeH || config.gridSize || 70;
 				const ox = config.gridOffsetX || 0;
 				const oy = config.gridOffsetY || 0;
 				const mapW = config.dimensions?.width || 1000;
 				const mapH = config.dimensions?.height || 800;
-				const totalCols = Math.floor(mapW / gridPx);
-				const totalRows = Math.floor(mapH / gridPx);
+				const totalCols = Math.floor(mapW / _ciGsW);
+				const totalRows = Math.floor(mapH / _ciGsH);
 				// Start from row 1, column 1 (leaving a 1-cell margin)
 				let placementCol = 1;
 				let placementRow = 1;
@@ -12858,7 +12886,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				let errorCount = 0;
 				saveToHistory();
 
-				console.log(`[DnD-Map] Import Encounter Tokens: ${creatures.length} creatures in IT state, map=${mapW}x${mapH}, grid=${gridPx}px (${totalCols}x${totalRows} cells)`);
+				console.log(`[DnD-Map] Import Encounter Tokens: ${creatures.length} creatures in IT state, map=${mapW}x${mapH}, grid=${_ciGsW}x${_ciGsH}px (${totalCols}x${totalRows} cells)`);
 				for (const [name, insts] of creaturesByName) {
 					console.log(`[DnD-Map]   Group "${name}": ${insts.length} instance(s)`);
 				}
@@ -12975,11 +13003,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 						// Calculate grid-snapped position
 						const sizeSquares = CREATURE_SIZE_SQUARES[markerDef.creatureSize || 'medium'] || 1;
-						const halfToken = (sizeSquares * gridPx) / 2;
+						const halfTokenW = (sizeSquares * _ciGsW) / 2;
+						const halfTokenH = (sizeSquares * _ciGsH) / 2;
 						// Use integer column steps (ceil to 1) to keep placement grid-aligned
 						const colAdvance = Math.max(1, Math.ceil(sizeSquares)) + 1;
-						const posX = ox + placementCol * gridPx + halfToken;
-						const posY = oy + placementRow * gridPx + halfToken;
+						const posX = ox + placementCol * _ciGsW + halfTokenW;
+						const posY = oy + placementRow * _ciGsH + halfTokenH;
 
 						// Create marker reference
 						// Enemy creatures go to DM layer (hidden from players), players/friendlies to Player layer
