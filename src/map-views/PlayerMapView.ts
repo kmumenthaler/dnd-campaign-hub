@@ -4488,7 +4488,9 @@ export class PlayerMapView extends ItemView {
           
           // Apply to fog canvas (remove fog where light is)
           fogCtx.globalCompositeOperation = 'destination-out';
+          fogCtx.globalAlpha = pvFlicker.alpha;
           fogCtx.drawImage(lightCanvas, 0, 0);
+          fogCtx.globalAlpha = 1.0;
           fogCtx.globalCompositeOperation = 'source-over';
           
           _canvasPool.release(lightCanvas);
