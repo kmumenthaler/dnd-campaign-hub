@@ -3657,8 +3657,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					return { horiz, vert, sizeX, sizeY };
 				} else {
 					// Square fallback
-					const s = config.gridSize;
-					return { horiz: s, vert: s, sizeX: s, sizeY: s };
+					const sW = config.gridSizeW || config.gridSize;
+					const sH = config.gridSizeH || config.gridSize;
+					return { horiz: sW, vert: sH, sizeX: sW, sizeY: sH };
 				}
 			};
 
@@ -6074,7 +6075,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			const getMarkerRadius = (markerDef: MarkerDefinition): number => {
 				if (['player', 'npc', 'creature'].includes(markerDef.type) && markerDef.creatureSize && config.gridSize) {
 					const squares = CREATURE_SIZE_SQUARES[markerDef.creatureSize] || 1;
-					return (squares * config.gridSize * 0.90) / 2;
+					const gsW = config.gridSizeW || config.gridSize;
+					const gsH = config.gridSizeH || config.gridSize;
+					const avgGs = (gsW + gsH) / 2;
+					return (squares * avgGs * 0.90) / 2;
 				}
 				return (markerDef.pixelSize || 30) / 2;
 			};
@@ -6085,15 +6089,18 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			 * All other sizes snap to full-cell boundaries.
 			 */
 			const snapTokenToGrid = (posX: number, posY: number, sizeSquares: number): { x: number; y: number } => {
-				const gs = config.gridSize || 70;
+				const gsW = config.gridSizeW || config.gridSize || 70;
+				const gsH = config.gridSizeH || config.gridSize || 70;
 				const ox = config.gridOffsetX || 0;
 				const oy = config.gridOffsetY || 0;
 				// For tiny tokens the snap step is half a cell; for everything else it's full cell widths
-				const step = sizeSquares < 1 ? gs * sizeSquares : gs;
-				const halfToken = (sizeSquares * gs) / 2;
-				const col = Math.round((posX - ox - halfToken) / step);
-				const row = Math.round((posY - oy - halfToken) / step);
-				return { x: ox + col * step + halfToken, y: oy + row * step + halfToken };
+				const stepX = sizeSquares < 1 ? gsW * sizeSquares : gsW;
+				const stepY = sizeSquares < 1 ? gsH * sizeSquares : gsH;
+				const halfTokenW = (sizeSquares * gsW) / 2;
+				const halfTokenH = (sizeSquares * gsH) / 2;
+				const col = Math.round((posX - ox - halfTokenW) / stepX);
+				const row = Math.round((posY - oy - halfTokenH) / stepY);
+				return { x: ox + col * stepX + halfTokenW, y: oy + row * stepY + halfTokenH };
 			};
 
 			// Image cache for marker token images
@@ -6696,8 +6703,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const oy = config.gridOffsetY || 0;
 				const gs = config.gridSize || 70;
 				if (config.gridType === 'square') {
-					const snappedX = Math.round((x - ox) / gs) * gs + ox;
-					const snappedY = Math.round((y - oy) / gs) * gs + oy;
+					const gsW = config.gridSizeW || gs;
+					const gsH = config.gridSizeH || gs;
+					const snappedX = Math.round((x - ox) / gsW) * gsW + ox;
+					const snappedY = Math.round((y - oy) / gsH) * gsH + oy;
 					return { x: snappedX, y: snappedY };
 				}
 				// For hex grids, snap to nearest cell center
@@ -6724,8 +6733,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const oy = config.gridOffsetY || 0;
 				const gs = config.gridSize || 70;
 				if (config.gridType === 'square') {
-					const snappedX = Math.floor((x - ox) / gs) * gs + ox + gs / 2;
-					const snappedY = Math.floor((y - oy) / gs) * gs + oy + gs / 2;
+					const gsW = config.gridSizeW || gs;
+					const gsH = config.gridSizeH || gs;
+					const snappedX = Math.floor((x - ox) / gsW) * gsW + ox + gsW / 2;
+					const snappedY = Math.floor((y - oy) / gsH) * gsH + oy + gsH / 2;
 					return { x: snappedX, y: snappedY };
 				}
 				// For hex grids, snap to nearest cell center (same as intersection helper)
@@ -6749,11 +6760,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			// Helper: get tile ground elevation (in feet) at a pixel position
 			const getTileElevationAt = (x: number, y: number): number => {
 				if (!config.tileElevations) return 0;
-				const gs = config.gridSize || 70;
+				const gsW = config.gridSizeW || config.gridSize || 70;
+				const gsH = config.gridSizeH || config.gridSize || 70;
 				const ox = config.gridOffsetX || 0;
 				const oy = config.gridOffsetY || 0;
-				const col = Math.floor((x - ox) / gs);
-				const row = Math.floor((y - oy) / gs);
+				const col = Math.floor((x - ox) / gsW);
+				const row = Math.floor((y - oy) / gsH);
 				const key = `${col},${row}`;
 				return config.tileElevations[key] || 0;
 			};
@@ -8405,11 +8417,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						new GridCalibrationModal(
 							plugin.app,
 							config,
-							async (gs, gw, gh) => {
+							async (gs, gw, gh, ox, oy) => {
 								saveToHistory();
 								config.gridSize = gs;
 								config.gridSizeW = gw;
 								config.gridSizeH = gh;
+								config.gridOffsetX = ox;
+								config.gridOffsetY = oy;
 								gridSlider.value = String(gs);
 								gridSliderLabel.textContent = `${Math.round(gs * 10) / 10}px`;
 								// Update W/H inputs
@@ -9550,10 +9564,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					schedulePanRedraw();
 				} else if (activeTool === 'move-grid' && isDragging) {
 					// Calculate delta in image-space pixels
-					const rect = viewport.getBoundingClientRect();
 					const scaleX = img.naturalWidth / img.width;
+					const scaleY = img.naturalHeight / img.height;
 					const dx = ((e.clientX - startX) / scale) * scaleX;
-					const dy = ((e.clientY - startY) / scale) * scaleX;
+					const dy = ((e.clientY - startY) / scale) * scaleY;
 					config.gridOffsetX = (config.gridOffsetX || 0) + dx;
 					config.gridOffsetY = (config.gridOffsetY || 0) + dy;
 					startX = e.clientX;

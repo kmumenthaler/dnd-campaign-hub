@@ -247,9 +247,10 @@ export class MapController {
 		}
 
 		// ── Compute position (find empty grid cell) ──
-		const gs = config.gridSize || 70;
+		const gsW = config.gridSizeW || config.gridSize || 70;
+		const gsH = config.gridSizeH || config.gridSize || 70;
 		const squares = CREATURE_SIZE_SQUARES[(markerDef.creatureSize as CreatureSize) || "medium"] || 1;
-		const position = this.findOpenPosition(config, gs, squares);
+		const position = this.findOpenPosition(config, gsW, gsH, squares);
 
 		// ── Determine layer ──
 		const isAlly = opts.player || opts.friendly;
@@ -321,24 +322,26 @@ export class MapController {
 	 * Find an open grid position for a new token.
 	 * Starts near the map centre and spirals outward.
 	 */
-	private findOpenPosition(config: any, gridSize: number, sizeSquares: number): { x: number; y: number } {
+	private findOpenPosition(config: any, gridSizeW: number, gridSizeH: number, sizeSquares: number): { x: number; y: number } {
 		const ox = config.gridOffsetX || 0;
 		const oy = config.gridOffsetY || 0;
 		const w = config.dimensions?.width || 2000;
 		const h = config.dimensions?.height || 2000;
-		const halfToken = (sizeSquares * gridSize) / 2;
-		const step = sizeSquares < 1 ? gridSize * sizeSquares : gridSize;
+		const halfTokenW = (sizeSquares * gridSizeW) / 2;
+		const halfTokenH = (sizeSquares * gridSizeH) / 2;
+		const stepX = sizeSquares < 1 ? gridSizeW * sizeSquares : gridSizeW;
+		const stepY = sizeSquares < 1 ? gridSizeH * sizeSquares : gridSizeH;
 		const markers: MarkerReference[] = config.markers || [];
 
 		// Centre of map in grid coords
-		const centreCol = Math.round((w / 2 - ox - halfToken) / step);
-		const centreRow = Math.round((h / 2 - oy - halfToken) / step);
+		const centreCol = Math.round((w / 2 - ox - halfTokenW) / stepX);
+		const centreRow = Math.round((h / 2 - oy - halfTokenH) / stepY);
 
 		// Check if a grid cell is occupied
 		const isOccupied = (col: number, row: number): boolean => {
-			const cx = ox + col * step + halfToken;
-			const cy = oy + row * step + halfToken;
-			const threshold = gridSize * 0.4;
+			const cx = ox + col * stepX + halfTokenW;
+			const cy = oy + row * stepY + halfTokenH;
+			const threshold = Math.min(gridSizeW, gridSizeH) * 0.4;
 			return markers.some((m) => {
 				const dx = m.position.x - cx;
 				const dy = m.position.y - cy;
@@ -355,8 +358,8 @@ export class MapController {
 					const row = centreRow + dr;
 					if (!isOccupied(col, row)) {
 						return {
-							x: ox + col * step + halfToken,
-							y: oy + row * step + halfToken,
+							x: ox + col * stepX + halfTokenW,
+							y: oy + row * stepY + halfTokenH,
 						};
 					}
 				}
@@ -364,6 +367,6 @@ export class MapController {
 		}
 
 		// Fallback: offset from centre
-		return { x: w / 2 + markers.length * gridSize, y: h / 2 };
+		return { x: w / 2 + markers.length * gridSizeW, y: h / 2 };
 	}
 }
