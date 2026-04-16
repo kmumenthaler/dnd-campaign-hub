@@ -25,6 +25,7 @@ export function showEnvAssetContextMenu(
 	callbacks: {
 		onUpdate: (inst: EnvAssetInstance) => void;
 		onDelete: (instId: string) => void;
+		onDuplicate?: (inst: EnvAssetInstance) => void;
 		onRedraw: () => void;
 		onSave: () => void;
 	}
@@ -118,6 +119,16 @@ export function showEnvAssetContextMenu(
 				);
 			}
 		}
+	}
+
+	// ── Duplicate ───────────────────────────────────────────────────────────
+	if (callbacks.onDuplicate) {
+		menu.addItem(item => item
+			.setTitle('📋 Duplicate')
+			.onClick(() => {
+				callbacks.onDuplicate!(instance);
+			})
+		);
 	}
 
 	// ── Delete ───────────────────────────────────────────────────────────────

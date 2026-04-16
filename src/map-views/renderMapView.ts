@@ -221,6 +221,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		let envAssetTransformHandle: TransformHandle | null = null; // Currently grabbed handle
 		let envAssetTransformStart: { x: number; y: number; w: number; h: number; rot: number } | null = null;
 		let envAssetRotateStart: number | null = null;
+
+		// ── Element duplication state ───────────────────────────────────────
+		type DuplicableElementType = 'marker' | 'light' | 'env-asset' | 'wall' | 'text-annotation';
+		let selectedElementForDuplication: { type: DuplicableElementType; index: number } | null = null;
 		// Image cache for env assets
 		const envAssetImageCache: Map<string, HTMLImageElement> = new Map();
 		// Helper to get/load image
@@ -900,6 +904,104 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 				updateUndoRedoButtons();
 				new Notice('Redo');
+			};
+
+			// ── Element Duplication Function ───────────────────────────────────
+			const duplicateElement = (type: DuplicableElementType, index: number) => {
+				saveToHistory();
+
+				const DUPLICATE_OFFSET = 25; // pixels to offset duplicates
+
+				switch (type) {
+					case 'marker': {
+						if (!config.markers || index < 0 || index >= config.markers.length) return;
+						const original = config.markers[index];
+						const duplicate: any = {
+							...original,
+							id: `marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+							position: {
+								x: original.position.x + DUPLICATE_OFFSET,
+								y: original.position.y + DUPLICATE_OFFSET
+							},
+							placedAt: Date.now()
+						};
+						config.markers.push(duplicate);
+						selectedElementForDuplication = { type: 'marker', index: config.markers.length - 1 };
+						new Notice('Token duplicated');
+						break;
+					}
+					case 'light': {
+						if (!config.lightSources || index < 0 || index >= config.lightSources.length) return;
+						const original = config.lightSources[index];
+						const duplicate: any = {
+							...original,
+							x: original.x + DUPLICATE_OFFSET,
+							y: original.y + DUPLICATE_OFFSET
+						};
+						config.lightSources.push(duplicate);
+						selectedElementForDuplication = { type: 'light', index: config.lightSources.length - 1 };
+						new Notice('Light source duplicated');
+						break;
+					}
+					case 'env-asset': {
+						if (!config.envAssets || index < 0 || index >= config.envAssets.length) return;
+						const original = config.envAssets[index];
+						const duplicate: any = {
+							...original,
+							id: `env_asset_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+							position: {
+								x: original.position.x + DUPLICATE_OFFSET,
+								y: original.position.y + DUPLICATE_OFFSET
+							},
+							placedAt: Date.now()
+						};
+						config.envAssets.push(duplicate);
+						selectedElementForDuplication = { type: 'env-asset', index: config.envAssets.length - 1 };
+						selectedEnvAssetInstanceId = duplicate.id;
+						new Notice('Environment asset duplicated');
+						break;
+					}
+					case 'wall': {
+						if (!config.walls || index < 0 || index >= config.walls.length) return;
+						const original = config.walls[index];
+						const duplicate: any = {
+							...original,
+							start: {
+								x: original.start.x + DUPLICATE_OFFSET,
+								y: original.start.y + DUPLICATE_OFFSET
+							},
+							end: {
+								x: original.end.x + DUPLICATE_OFFSET,
+								y: original.end.y + DUPLICATE_OFFSET
+							}
+						};
+						config.walls.push(duplicate);
+						selectedElementForDuplication = { type: 'wall', index: config.walls.length - 1 };
+						new Notice('Wall duplicated');
+						break;
+					}
+					case 'text-annotation': {
+						if (!config.textAnnotations || index < 0 || index >= config.textAnnotations.length) return;
+						const original = config.textAnnotations[index];
+						const duplicate: any = {
+							...original,
+							id: `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+							position: {
+								x: original.position.x + DUPLICATE_OFFSET,
+								y: original.position.y + DUPLICATE_OFFSET
+							}
+						};
+						config.textAnnotations.push(duplicate);
+						selectedElementForDuplication = { type: 'text-annotation', index: config.textAnnotations.length - 1 };
+						selectedTextAnnotationId = duplicate.id;
+						new Notice('Text annotation duplicated');
+						break;
+					}
+				}
+
+				redrawAnnotations();
+				plugin.saveMapAnnotations(config, el);
+				if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 			};
 
 
@@ -6115,6 +6217,16 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					});
 				});
 				menu.addSeparator();
+				// Duplicate
+				menu.addItem((item) => {
+					item.setTitle('📋 Duplicate');
+					item.onClick(() => {
+						const idx = config.textAnnotations.indexOf(ta);
+						if (idx >= 0) {
+							duplicateElement('text-annotation', idx);
+						}
+					});
+				});
 				// Delete
 				menu.addItem((item) => {
 					item.setTitle('🗑️ Delete');
@@ -7904,6 +8016,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							dragOffsetY = m.position.y - mapPos.y;
 							markerDragOrigin = { x: m.position.x, y: m.position.y };
 							viewport.style.cursor = 'grabbing';
+							selectedElementForDuplication = { type: 'marker', index: i };
 							foundMarker = true;
 							break;
 						}
@@ -7943,6 +8056,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const hitInst = findEnvAssetAtPoint(mapPos.x, mapPos.y);
 							if (hitInst) {
 								selectedEnvAssetInstanceId = hitInst.id;
+								const index = config.envAssets.findIndex((a: EnvAssetInstance) => a.id === hitInst.id);
+								selectedElementForDuplication = { type: 'env-asset', index };
 								foundEnvAsset = true;
 								if (!hitInst.locked) {
 									saveToHistory();
@@ -7993,6 +8108,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const hitTa = findTextAnnotationAtPoint(mapPos.x, mapPos.y);
 							if (hitTa) {
 								selectedTextAnnotationId = hitTa.id;
+								const index = config.textAnnotations.findIndex((t: any) => t.id === hitTa.id);
+								selectedElementForDuplication = { type: 'text-annotation', index };
 								saveToHistory();
 								textAnnotDragOffset = {
 									x: mapPos.x - hitTa.position.x,
@@ -8021,6 +8138,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							if (dist <= lightClickRadius) {
 								saveToHistory();
 								draggingLightIndex = i;
+								selectedElementForDuplication = { type: 'light', index: i };
 								lightDragOffsetX = light.x - mapPos.x;
 								lightDragOffsetY = light.y - mapPos.y;
 								lightDragOrigin = { x: light.x, y: light.y };
@@ -8056,6 +8174,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							if (dist <= wallClickRadius || lineDist <= wallClickRadius) {
 								saveToHistory();
 								draggingWallIndex = i;
+								selectedElementForDuplication = { type: 'wall', index: i };
 								wallDragOffsetStartX = wall.start.x - mapPos.x;
 								wallDragOffsetStartY = wall.start.y - mapPos.y;
 								wallDragOffsetEndX = wall.end.x - mapPos.x;
@@ -10009,6 +10128,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						redo();
 						return;
 					}
+					// ── Duplicate selected element (Ctrl+D) ──
+					if (e.key === 'd' && selectedElementForDuplication) {
+						e.preventDefault();
+						e.stopPropagation();
+						duplicateElement(selectedElementForDuplication.type, selectedElementForDuplication.index);
+						return;
+					}
 				}
 
 				// ── Tool-switching shortcuts (single letter, no modifiers) ──
@@ -10398,6 +10524,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 										redrawAnnotations();
 										plugin.saveMapAnnotations(config, el);
 										if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									},
+									onDuplicate: (inst: EnvAssetInstance) => {
+										const idx = config.envAssets.findIndex((a: EnvAssetInstance) => a.id === inst.id);
+										if (idx >= 0) {
+											duplicateElement('env-asset', idx);
+										}
 									},
 									onRedraw: () => redrawAnnotations(),
 									onSave: () => {
@@ -11279,6 +11411,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
 						}
 						
+						// Duplicate option
+						const duplicateOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+						duplicateOption.innerHTML = `<span>📋</span> Duplicate`;
+						duplicateOption.addEventListener('click', () => {
+							duplicateElement('marker', i);
+							if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+						});
+						
 						// Delete option
 						const deleteOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item delete' });
 						deleteOption.innerHTML = `<span>🗑️</span> Delete`;
@@ -11583,6 +11723,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							// Separator
 							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
 							
+							// Duplicate option
+							const duplicateOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+							duplicateOption.innerHTML = `<span>📋</span> Duplicate`;
+							duplicateOption.addEventListener('click', () => {
+								duplicateElement('light', i);
+								if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+							});
+							
 							// Delete option
 							const deleteOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item delete' });
 							deleteOption.innerHTML = `<span>🗑️</span> Delete`;
@@ -11801,6 +11949,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							
 							// Separator
 							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+							
+							// Duplicate option
+							const duplicateOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+							duplicateOption.innerHTML = `<span>📋</span> Duplicate`;
+							duplicateOption.addEventListener('click', () => {
+								duplicateElement('wall', i);
+								if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+							});
 							
 							// Delete option
 							const deleteOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item delete' });
