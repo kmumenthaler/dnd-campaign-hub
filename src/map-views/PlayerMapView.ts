@@ -6,6 +6,7 @@ import { computeLightFlicker, computeNeonBuzz, hexToRgb, getFlickerSeedForKey, F
 import { getDefaultLightColor } from "../map/LightTypes";
 import { versionMapResourcePath } from "../map/resourcePath";
 import { getWallsHash as _getWallsHash, visCacheKey as _visCacheKey, visCacheMap as _visCacheMap, VIS_CACHE_MAX as _VIS_CACHE_MAX, visCacheEvict as _visCacheEvict } from "../utils/VisibilityCache";
+import { mixWallVisibilityDigest } from "./playerMapDigest";
 import { canvasPool as _canvasPool } from "../utils/CanvasPool";
 import type { MarkerReference, MarkerDefinition } from "../marker/MarkerTypes";
 import { CREATURE_SIZE_SQUARES } from "../marker/MarkerTypes";
@@ -437,7 +438,7 @@ export class PlayerMapView extends ItemView {
 
   /**
    * Compute a fast numeric hash (djb2) of player-relevant config fields.
-   * Captures marker positions, wall open-states, light positions, rulers,
+   * Captures marker positions, wall geometry, light positions, rulers,
    * fog regions, grid settings, and vision selection.
    * Cost: ~microseconds for typical maps (<50 markers).
    */
@@ -476,16 +477,11 @@ export class PlayerMapView extends ItemView {
       if (m.layer) s(m.layer);
     }
 
-    // Walls (count + open-state + pivot door properties)
+    // Walls (geometry + visibility-relevant state)
     const walls: any[] = c.walls || [];
     n(walls.length);
     for (let i = 0; i < walls.length; i++) {
-      const wl = walls[i];
-      n(wl.open ? 1 : 0);
-      if (isPivotType(wl.type)) {
-        n(wl.openDirection || 1);
-        n(wl.pivotEnd === 'end' ? 2 : 1);
-      }
+      mixWallVisibilityDigest(walls[i], n, s);
     }
 
     // Light sources
@@ -4645,17 +4641,11 @@ export class PlayerMapView extends ItemView {
       if (m.markerId) s(m.markerId);
     }
 
-    // Walls (count + per-wall open state / height + pivot door properties)
+    // Walls (geometry + visibility-relevant state)
     const walls: any[] = config.walls || [];
     n(walls.length);
     for (let i = 0; i < walls.length; i++) {
-      const wl = walls[i];
-      n(wl.open ? 1 : 0);
-      n(wl.height || 0);
-      if (isPivotType(wl.type)) {
-        n(wl.openDirection || 1);
-        n(wl.pivotEnd === 'end' ? 2 : 1);
-      }
+      mixWallVisibilityDigest(walls[i], n, s);
     }
 
     // Standalone light sources
