@@ -4,6 +4,7 @@ import { PLAYER_MAP_VIEW_TYPE } from "../constants";
 import type { MapMediaElement } from "../constants";
 import { computeLightFlicker, computeNeonBuzz, hexToRgb, getFlickerSeedForKey, FLICKER_LIGHT_TYPES_SET, BUZZ_LIGHT_TYPES_SET } from "../utils/LightFlicker";
 import { getDefaultLightColor } from "../map/LightTypes";
+import { versionMapResourcePath } from "../map/resourcePath";
 import { getWallsHash as _getWallsHash, visCacheKey as _visCacheKey, visCacheMap as _visCacheMap, VIS_CACHE_MAX as _VIS_CACHE_MAX, visCacheEvict as _visCacheEvict } from "../utils/VisibilityCache";
 import { canvasPool as _canvasPool } from "../utils/CanvasPool";
 import type { MarkerReference, MarkerDefinition } from "../marker/MarkerTypes";
@@ -235,6 +236,28 @@ export class PlayerMapView extends ItemView {
    * ResizeObserver, image onload, and tabletop-mode change handlers.
    */
   updateMapData(config: any) {
+    const nextImageFile = typeof config?.imageFile === 'string' ? config.imageFile : '';
+    if (nextImageFile) {
+      const current = this.mapConfig || {};
+      const currentDims = current.dimensions || {};
+      const nextDims = config.dimensions || {};
+      const backgroundChanged =
+        nextImageFile !== current.imageFile ||
+        (nextDims.width || 0) !== (currentDims.width || 0) ||
+        (nextDims.height || 0) !== (currentDims.height || 0) ||
+        (config.lastModified || '') !== (current.lastModified || '') ||
+        (config.templateSyncedAt || '') !== (current.templateSyncedAt || '');
+
+      if (backgroundChanged) {
+        const nextResourcePath = versionMapResourcePath(
+          this.plugin.app.vault.adapter.getResourcePath(nextImageFile),
+          config,
+        );
+        this.swapMap(config.mapId || this.mapId, config, nextResourcePath);
+        return;
+      }
+    }
+
     // Extract travel animation data before storing config
     const hexcrawlTravel = config.hexcrawlTravel;
     if (hexcrawlTravel) {
@@ -270,10 +293,20 @@ export class PlayerMapView extends ItemView {
     if (!nextConfig?.mapId) return;
 
     const nextResourcePath = nextConfig.imageFile
-      ? this.plugin.app.vault.adapter.getResourcePath(nextConfig.imageFile)
+      ? versionMapResourcePath(this.plugin.app.vault.adapter.getResourcePath(nextConfig.imageFile), nextConfig)
       : this.imageResourcePath;
 
-    if (nextConfig.imageFile && nextConfig.imageFile !== this.mapConfig?.imageFile) {
+    const currentDims = this.mapConfig?.dimensions || {};
+    const nextDims = nextConfig.dimensions || {};
+    const backgroundChanged = !!nextConfig.imageFile && (
+      nextConfig.imageFile !== this.mapConfig?.imageFile ||
+      (nextDims.width || 0) !== (currentDims.width || 0) ||
+      (nextDims.height || 0) !== (currentDims.height || 0) ||
+      (nextConfig.lastModified || '') !== (this.mapConfig?.lastModified || '') ||
+      (nextConfig.templateSyncedAt || '') !== (this.mapConfig?.templateSyncedAt || '')
+    );
+
+    if (backgroundChanged) {
       this.swapMap(this.mapId, nextConfig, nextResourcePath);
       return;
     }

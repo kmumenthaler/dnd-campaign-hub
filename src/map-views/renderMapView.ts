@@ -30,6 +30,7 @@ import { showEnvAssetContextMenu } from "../envasset/EnvAssetContextMenu";
 import { EnvAssetPickerModal } from "../envasset/EnvAssetPickerModal";
 import type { EnvAssetInstance, EnvAssetDefinition, TransformHandle } from "../envasset/EnvAssetTypes";
 import { TRANSFORM_HANDLE_SIZE, ROTATION_HANDLE_OFFSET } from "../envasset/EnvAssetTypes";
+import { versionMapResourcePath } from "../map/resourcePath";
 import {
   HexcrawlTracker,
   HexProcedureModal,
@@ -2122,7 +2123,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		const mapWrapper = viewport.createDiv({ cls: 'dnd-map-wrapper' });
 		
 		// Get the resource path for the image
-		const resourcePath = plugin.app.vault.getResourcePath(imageFile);
+		const resourcePath = versionMapResourcePath(plugin.app.vault.getResourcePath(imageFile), config);
 
 		// Create the map background element (image or video)
 		let img: MapMediaElement;
@@ -4236,6 +4237,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					};
 				}
 				const payload: any = {
+					mapId: config.mapId || resourcePath,
+					imageFile: config.imageFile,
+					isVideo: config.isVideo,
+					dimensions: config.dimensions,
+					lastModified: config.lastModified,
+					templateSyncedAt: config.templateSyncedAt,
 					markers: config.markers,
 					drawings: config.drawings,
 					highlights: config.highlights,
@@ -4395,6 +4402,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				state: {
 					mapId: config.mapId || resourcePath,
 					mapConfig: {
+						mapId: config.mapId || resourcePath,
+						imageFile: config.imageFile,
+						isVideo: config.isVideo,
+						dimensions: config.dimensions,
+						lastModified: config.lastModified,
+						templateSyncedAt: config.templateSyncedAt,
 						markers: config.markers,
 						drawings: config.drawings,
 						highlights: config.highlights,
@@ -4410,7 +4423,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						gridOffsetY: config.gridOffsetY || 0,
 						scale: config.scale,
 						name: config.name,
-						isVideo: config.isVideo,
 						type: config.type,
 						showInitiativeInPlayerView: config.showInitiativeInPlayerView === true,
 						initiativeOverlaySize: config.initiativeOverlaySize || 'medium',
