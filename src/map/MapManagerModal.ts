@@ -545,17 +545,18 @@ export class MapManagerModal extends Modal {
     const fullData = await this.plugin.loadMapAnnotations(map.mapId);
 
     const editConfig = {
-      ...fullData,              // carry all stored fields
-      mapId: map.mapId,
-      id: map.mapId,
-      name: map.name,
-      imageFile: map.imageFile,
-      isVideo: map.isVideo,
-      type: map.type,
-      gridType: map.gridType,
-      gridSize: map.gridSize,
-      scale: map.scale,
-      dimensions: map.dimensions,
+      ...map,
+      ...fullData,              // carry all stored fields as the source of truth
+      mapId: fullData.mapId || map.mapId,
+      id: fullData.mapId || map.mapId,
+      name: fullData.name || map.name,
+      imageFile: fullData.imageFile || map.imageFile,
+      isVideo: fullData.isVideo ?? map.isVideo,
+      type: fullData.type || map.type,
+      gridType: fullData.gridType || map.gridType,
+      gridSize: fullData.gridSize ?? map.gridSize,
+      scale: fullData.scale || map.scale,
+      dimensions: fullData.dimensions || map.dimensions,
       createdDate: (fullData as any).createdDate || (map as any).createdDate,
     };
     new MapCreationModal(this.app, this.plugin, this.mapManager, editConfig).open();

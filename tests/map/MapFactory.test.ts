@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyEditableMapSettings,
   getTemplateSyncChangedFields,
   syncMapFromTemplate,
 } from "../../src/map/MapFactory";
@@ -120,5 +121,40 @@ describe("map/MapFactory template sync", () => {
       { id: "template-wall", name: "Updated wall", start: { x: 0, y: 0 }, end: { x: 5, y: 5 } },
       { id: "active-wall", name: "Battlemap wall", start: { x: 2, y: 2 }, end: { x: 3, y: 3 } },
     ]);
+  });
+
+  it("clears per-axis grid overrides when saving a uniform edited grid size", () => {
+    const edited = applyEditableMapSettings(
+      {
+        mapId: "template-map",
+        isTemplate: true,
+        templateTags: { terrain: ["forest"] },
+        gridSize: 70,
+        gridSizeW: 92,
+        gridSizeH: 88,
+        markers: [{ id: "token-1" }],
+        walls: [{ id: "wall-1" }],
+      },
+      {
+        id: "template-map",
+        name: "Edited Template",
+        imageFile: "Maps/map.png",
+        isVideo: false,
+        type: "battlemap",
+        dimensions: { width: 1200, height: 800 },
+        gridType: "square",
+        gridSize: 100,
+        scale: { value: 5, unit: "feet" },
+        lastModified: "2026-07-09T20:00:00.000Z",
+      },
+    );
+
+    expect(edited.gridSize).toBe(100);
+    expect(edited.gridSizeW).toBeUndefined();
+    expect(edited.gridSizeH).toBeUndefined();
+    expect(edited.markers).toEqual([{ id: "token-1" }]);
+    expect(edited.walls).toEqual([{ id: "wall-1" }]);
+    expect(edited.isTemplate).toBe(true);
+    expect(edited.templateTags).toEqual({ terrain: ["forest"] });
   });
 });

@@ -5,6 +5,7 @@ import type DndCampaignHubPlugin from '../main';
 import { CREATURE_SIZE_SQUARES } from '../marker/MarkerTypes';
 import type { MarkerDefinition } from '../marker/MarkerTypes';
 import { _flushMapSave } from './MapPersistence';
+import { applyEditableMapSettings } from './MapFactory';
 
 /** Folder where battlemap template notes are stored */
 export const BATTLEMAP_TEMPLATE_FOLDER = 'z_BattlemapTemplates';
@@ -842,19 +843,7 @@ export class MapCreationModal extends Modal {
         // drawings, fog-of-war, light sources, etc. are NOT wiped
         const existing = await this.plugin.loadMapAnnotations(mapData.id);
 
-        fullConfig = {
-          ...existing,            // preserve ALL existing annotation data
-          // overwrite only the map-settings fields the user can edit
-          mapId: mapData.id,
-          name: mapData.name,
-          imageFile: mapData.imageFile,
-          isVideo: mapData.isVideo || false,
-          type: mapData.type,
-          dimensions: mapData.dimensions,
-          gridType: mapData.gridType,
-          gridSize: mapData.gridSize,
-          scale: mapData.scale,
-        };
+        fullConfig = applyEditableMapSettings(existing, mapData);
       } else if (this.templateMode) {
         // Template mode: create with isTemplate flag and default tags
         fullConfig = {
@@ -909,8 +898,11 @@ export class MapCreationModal extends Modal {
         };
       }
 
-      // Use a dummy element since we don't have a rendered map yet
-      await this.plugin.saveMapAnnotations(fullConfig, document.createElement('div'));
+      const saveEl = this.editElement || document.createElement('div');
+      if (this.editMode && this.editConfig) {
+        Object.assign(this.editConfig, fullConfig);
+      }
+      await this.plugin.saveMapAnnotations(fullConfig, saveEl);
 
       if (this.templateMode) {
         // Flush the pending save immediately so the new template note can
@@ -920,7 +912,10 @@ export class MapCreationModal extends Modal {
         await this.createTemplateNote(mapData);
       } else if (this.editMode && this.editConfig) {
         // Edit mode: code block already has mapId, just update the JSON
-        new Notice(`✅ Map "${this.mapName}" updated`);
+        await _flushMapSave(this.plugin, mapData.id);
+        await this.refreshRenderedMap(mapData.id);
+        const refreshedViews = await this.refreshOpenMapViews(mapData.id);
+        new Notice(`✅ Map "${this.mapName}" updated${refreshedViews > 0 ? ` (${refreshedViews} open view${refreshedViews === 1 ? '' : 's'} refreshed)` : ''}`);
       } else if (this.insertCodeBlock) {
         // Create mode via command: insert minimal code block with just mapId
         const activeFile = this.app.workspace.getActiveFile();
@@ -945,6 +940,47 @@ export class MapCreationModal extends Modal {
       console.error('Error creating map:', error);
       new Notice('Failed to create map');
     }
+  }
+
+  private async refreshRenderedMap(mapId: string): Promise<void> {
+    if (!this.editElement) return;
+
+    this.editElement.empty();
+    await this.plugin.renderMapView(
+      JSON.stringify({ mapId }),
+      this.editElement,
+      {
+        sourcePath: '',
+        getSectionInfo: () => null,
+        addChild: () => {},
+        frontmatter: undefined,
+      } as any,
+    );
+  }
+
+  private async refreshOpenMapViews(mapId: string): Promise<number> {
+    let refreshed = 0;
+    const tasks: Promise<void>[] = [];
+
+    for (const view of Array.from(this.plugin._gmMapViews || [])) {
+      const gmView = view as any;
+      if (gmView.getMapId?.() !== mapId || typeof gmView.reloadMapFromDisk !== 'function') continue;
+      tasks.push(Promise.resolve(gmView.reloadMapFromDisk()).then(() => {
+        refreshed++;
+      }));
+    }
+
+    for (const view of Array.from(this.plugin._playerMapViews || [])) {
+      const playerView = view as any;
+      if (playerView.getMapId?.() !== mapId || typeof playerView.reloadMapDataFromDisk !== 'function') continue;
+      tasks.push(Promise.resolve(playerView.reloadMapDataFromDisk()).then(() => {
+        refreshed++;
+      }));
+    }
+
+    if (tasks.length === 0) return 0;
+    await Promise.allSettled(tasks);
+    return refreshed;
   }
 
   private refresh() {

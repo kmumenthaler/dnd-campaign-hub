@@ -347,6 +347,29 @@ export function getTemplateSyncChangedFields(mapData: any, templateData: any): T
 }
 
 /**
+ * Apply the small set of settings exposed by MapCreationModal edit mode.
+ * The modal edits one uniform grid size, so stale per-axis calibration
+ * overrides must be cleared or they will keep winning at render time.
+ */
+export function applyEditableMapSettings(existingData: any, mapData: any): any {
+  return {
+    ...existingData,
+    mapId: mapData.id || mapData.mapId || existingData?.mapId || '',
+    name: mapData.name,
+    imageFile: mapData.imageFile,
+    isVideo: mapData.isVideo || false,
+    type: mapData.type,
+    dimensions: mapData.dimensions,
+    gridType: mapData.gridType,
+    gridSize: mapData.gridSize,
+    gridSizeW: undefined,
+    gridSizeH: undefined,
+    scale: mapData.scale,
+    lastModified: mapData.lastModified || new Date().toISOString(),
+  };
+}
+
+/**
  * Apply the latest structural base from a source template to an existing
  * active map. Sync is non-destructive for map components: template items are
  * added/updated by identity, while active-map additions remain on the map.
