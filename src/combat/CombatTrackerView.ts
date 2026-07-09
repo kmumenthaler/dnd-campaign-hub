@@ -98,6 +98,7 @@ export class CombatTrackerView extends ItemView {
 
     this.renderToolbar(container, tracker, state);
     this.renderEncounterHeader(container, state);
+    this.renderRecentActions(container, tracker);
     this.renderColumnHeaders(container);
     this.renderCombatantList(container, tracker, state);
   }
@@ -246,6 +247,14 @@ export class CombatTrackerView extends ItemView {
       });
     }
 
+    const undoBtn = toolbar.createEl("button", {
+      text: "↶",
+      cls: "dnd-ct-toolbar-btn",
+      attr: { title: "Undo Last Action" },
+    });
+    undoBtn.disabled = !tracker.canUndo();
+    undoBtn.addEventListener("click", () => tracker.undoLastAction());
+
     // Spacer
     toolbar.createDiv({ cls: "dnd-ct-toolbar-spacer" });
 
@@ -292,6 +301,31 @@ export class CombatTrackerView extends ItemView {
       attr: { title: "Options" },
     });
     menuBtn.addEventListener("click", (e) => this.showOptionsMenu(e, tracker, state));
+  }
+
+  private renderRecentActions(container: HTMLElement, tracker: CombatTracker) {
+    const actions = tracker.getRecentActions(4);
+    if (actions.length === 0) return;
+
+    const panel = container.createDiv({ cls: "dnd-ct-recent-actions" });
+    const header = panel.createDiv({ cls: "dnd-ct-recent-header" });
+    header.createEl("span", { text: "Recent", cls: "dnd-ct-recent-title" });
+    const undoBtn = header.createEl("button", {
+      text: "↶ Undo",
+      cls: "dnd-ct-recent-undo",
+      attr: { title: "Undo latest action" },
+    });
+    undoBtn.addEventListener("click", () => tracker.undoLastAction());
+
+    const list = panel.createDiv({ cls: "dnd-ct-recent-list" });
+    for (const action of actions) {
+      const row = list.createDiv({ cls: `dnd-ct-recent-action dnd-ct-recent-${action.kind}` });
+      const main = row.createDiv({ cls: "dnd-ct-recent-action-main" });
+      main.createEl("span", { text: action.label, cls: "dnd-ct-recent-action-label" });
+      if (action.detail) {
+        main.createEl("span", { text: action.detail, cls: "dnd-ct-recent-action-detail" });
+      }
+    }
   }
 
   /* ═══════════════════════ Encounter Header ═══════════════════════ */
@@ -837,6 +871,16 @@ export class CombatTrackerView extends ItemView {
   private showOptionsMenu(e: MouseEvent, tracker: CombatTracker, state: CombatState) {
     const menu = new Menu();
     const hasLoadedEncounter = !!state.encounterPath;
+
+    menu.addItem((item) =>
+      item
+        .setTitle("↶ Undo Last Action")
+        .setIcon("undo-2")
+        .setDisabled(!tracker.canUndo())
+        .onClick(() => tracker.undoLastAction()),
+    );
+
+    menu.addSeparator();
 
     menu.addItem((item) =>
       item.setTitle(hasLoadedEncounter ? "➕ Add Creature to Encounter" : "➕ Add Creature").setIcon("plus").onClick(() => {

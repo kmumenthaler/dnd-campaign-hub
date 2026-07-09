@@ -94,6 +94,12 @@ export class GmMapView extends ItemView {
     } catch { /* ignore */ }
   }
 
+  async reloadMapFromDisk(): Promise<void> {
+    if (!this.mapId || !this.sourceConfig) return;
+    this._gmRendered = true;
+    await this.renderMap();
+  }
+
   async onClose() {
     // Remove from tracking set
     if (this.plugin._gmMapViews) {

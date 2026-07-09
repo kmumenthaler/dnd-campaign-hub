@@ -3,9 +3,11 @@ import { CombatTracker } from "../../src/combat/CombatTracker";
 
 vi.mock("obsidian", () => {
   class TFile {}
+  class TFolder {}
   return {
     Notice: vi.fn(),
     TFile,
+    TFolder,
   };
 });
 
@@ -253,5 +255,49 @@ describe("combat/CombatTracker", () => {
     expect(added).toBe(2);
     expect(state.combatants.filter((c) => c.name === "Wolf")).toHaveLength(2);
     expect(state.combatants.filter((c) => c.name === "Wolf").map((c) => c.initiative)).toEqual([12, 12]);
+  });
+
+  it("undoes the latest damage and removes its encounter summary event", async () => {
+    const { tracker } = createTracker();
+    const [id] = await seedCombat(tracker, [{ name: "Goblin", count: 1, hp: 10, ac: 13, path: "[SRD]" }]);
+    tracker.rollAllInitiative();
+
+    const eventsBeforeDamage = tracker.getState()!.runStats?.events.length ?? 0;
+    tracker.applyDamage(id!, 5);
+
+    expect(tracker.getState()!.combatants[0]!.currentHP).toBe(5);
+    expect(tracker.getRecentActions()[0]?.label).toContain("damage");
+
+    expect(tracker.undoLastAction()).toBe(true);
+
+    const state = tracker.getState()!;
+    expect(state.combatants[0]!.currentHP).toBe(10);
+    expect(state.runStats?.events.length ?? 0).toBe(eventsBeforeDamage);
+  });
+
+  it("undoes a turn advance including status duration ticks", async () => {
+    const { tracker } = createTracker();
+    const ids = await seedCombat(tracker, [
+      { name: "A", count: 1, hp: 10, ac: 10, path: "[SRD]" },
+      { name: "B", count: 1, hp: 10, ac: 10, path: "[SRD]" },
+    ]);
+
+    tracker.setInitiative(ids[0]!, 20);
+    tracker.setInitiative(ids[1]!, 10);
+    (tracker as any).state.started = true;
+    (tracker as any).state.round = 1;
+    (tracker as any).state.turnIndex = 0;
+    tracker.addStatus(ids[0]!, { name: "Bless", duration: 1 });
+
+    tracker.nextTurn();
+    expect(tracker.getState()!.turnIndex).toBe(1);
+    expect(tracker.getState()!.combatants[0]!.statuses).toEqual([]);
+
+    expect(tracker.undoLastAction()).toBe(true);
+
+    const state = tracker.getState()!;
+    expect(state.turnIndex).toBe(0);
+    expect(state.round).toBe(1);
+    expect(state.combatants[0]!.statuses).toMatchObject([{ name: "Bless", duration: 1 }]);
   });
 });

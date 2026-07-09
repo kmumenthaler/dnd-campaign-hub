@@ -1,6 +1,6 @@
 import { App, Notice, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
-import type { Combatant, CombatState, CombatListener, StatusEffect, DeathSaveState, SyncPreviewEntry, CombatRunActorRef, CombatRunEventType, CombatRunEvent } from "./types";
+import type { Combatant, CombatState, CombatListener, StatusEffect, DeathSaveState, SyncPreviewEntry, CombatRunActorRef, CombatRunEventType, CombatRunEvent, CombatUndoKind, CombatUndoSummary } from "./types";
 import type { EncounterCreature } from "../encounter/EncounterBuilder";
 
 /**
@@ -11,6 +11,8 @@ import type { EncounterCreature } from "../encounter/EncounterBuilder";
 export class CombatTracker {
   private state: CombatState | null = null;
   private listeners = new Set<CombatListener>();
+  private undoStack: Array<CombatUndoSummary & { before: CombatState; beforeSortAscending: boolean }> = [];
+  private readonly maxUndoEntries = 25;
 
   constructor(private app: App, public readonly plugin: DndCampaignHubPlugin) {}
 
@@ -24,6 +26,66 @@ export class CombatTracker {
   private emit() {
     const snap = this.getState();
     for (const fn of this.listeners) fn(snap);
+  }
+
+  private cloneState(state: CombatState): CombatState {
+    return JSON.parse(JSON.stringify(state)) as CombatState;
+  }
+
+  private createUndo(label: string, kind: CombatUndoKind, detail?: string): (CombatUndoSummary & { before: CombatState; beforeSortAscending: boolean }) | null {
+    if (!this.state) return null;
+    return {
+      id: this.generateId(),
+      label,
+      detail,
+      kind,
+      timestamp: new Date().toISOString(),
+      before: this.cloneState(this.state),
+      beforeSortAscending: this.sortAscending,
+    };
+  }
+
+  private pushUndo(entry: (CombatUndoSummary & { before: CombatState; beforeSortAscending: boolean }) | null) {
+    if (!entry) return;
+    this.undoStack.push(entry);
+    if (this.undoStack.length > this.maxUndoEntries) {
+      this.undoStack.splice(0, this.undoStack.length - this.maxUndoEntries);
+    }
+  }
+
+  private clearUndoHistory() {
+    this.undoStack = [];
+  }
+
+  canUndo(): boolean {
+    return this.undoStack.length > 0 && !!this.state;
+  }
+
+  getRecentActions(limit = 5): CombatUndoSummary[] {
+    return this.undoStack
+      .slice(-limit)
+      .reverse()
+      .map(({ before: _before, beforeSortAscending: _beforeSortAscending, ...summary }) => ({ ...summary }));
+  }
+
+  undoLastAction(): boolean {
+    if (!this.state || this.undoStack.length === 0) {
+      new Notice("Nothing to undo");
+      return false;
+    }
+
+    const entry = this.undoStack.pop()!;
+    this.state = this.cloneState(entry.before);
+    this.sortAscending = entry.beforeSortAscending;
+    this.emit();
+    new Notice(`Undid: ${entry.label}`);
+    return true;
+  }
+
+  private turnContextDetail(): string {
+    if (!this.state?.started) return "Pre-combat";
+    const current = this.state.combatants[this.state.turnIndex];
+    return `Round ${this.state.round}${current ? `, ${current.display}'s turn` : ""}`;
   }
 
   /* ────────────────── State Accessors ────────────────── */
@@ -333,6 +395,8 @@ export class CombatTracker {
     useColorNames: boolean,
     encounterPath?: string,
   ): Promise<void> {
+    this.clearUndoHistory();
+    this.sortAscending = false;
     const combatants: Combatant[] = [];
 
     // ── Party members ──
@@ -393,8 +457,10 @@ export class CombatTracker {
     const additions = await this.buildCreatureCombatants(creatures, useColorNames, this.state.started);
     if (additions.length === 0) return 0;
 
+    const undo = this.createUndo(`Added ${additions.length} participant${additions.length !== 1 ? "s" : ""}`, "combatant", this.turnContextDetail());
     this.state.combatants.push(...additions);
     this.sortByInitiative();
+    this.pushUndo(undo);
     this.emit();
     new Notice(`Added ${additions.length} participant${additions.length !== 1 ? "s" : ""} from "${encounterName}"`);
     return additions.length;
@@ -480,6 +546,7 @@ export class CombatTracker {
    *  PCs are skipped unless the Initiative Tracker's "Roll for Players" setting is enabled. */
   rollAllInitiative(): void {
     if (!this.state) return;
+    const undo = this.createUndo("Rolled initiative", "initiative", "Combat start");
     const rollPCs = this.rollPlayerInitiatives;
 
     for (const c of this.state.combatants) {
@@ -494,6 +561,7 @@ export class CombatTracker {
     this.state.started = true;
 
     // Mark first combatant as active turn
+    this.pushUndo(undo);
     this.emit();
     const pcNote = rollPCs ? "" : " (enter PC initiatives manually)";
     new Notice(`🎲 Initiative rolled! Round 1 — ${this.state.combatants[0]?.display}'s turn${pcNote}`);
@@ -503,8 +571,10 @@ export class CombatTracker {
   setInitiative(combatantId: string, value: number): void {
     const c = this.findCombatant(combatantId);
     if (!c || !this.state) return;
+    const undo = this.createUndo(`Set initiative for ${c.display}`, "initiative", `${c.initiative} -> ${value}`);
     c.initiative = value;
     this.sortByInitiative();
+    this.pushUndo(undo);
     this.emit();
   }
 
@@ -512,14 +582,18 @@ export class CombatTracker {
   rollInitiativeFor(combatantId: string): void {
     const c = this.findCombatant(combatantId);
     if (!c || !this.state) return;
+    const undo = this.createUndo(`Rolled initiative for ${c.display}`, "initiative", this.turnContextDetail());
     c.initiative = this.rollD20() + c.modifier;
     this.sortByInitiative();
+    this.pushUndo(undo);
     this.emit();
   }
 
   /** Advance to the next combatant's turn. */
   nextTurn(): void {
     if (!this.state || !this.state.started) return;
+    const previous = this.state.combatants[this.state.turnIndex];
+    const undo = this.createUndo("Advanced turn", "turn", this.turnContextDetail());
 
     // Tick down status durations on the combatant whose turn is ending
     this.tickStatuses(this.state.turnIndex);
@@ -543,6 +617,10 @@ export class CombatTracker {
       }
     }
     if (!foundEligible) {
+      if (undo) {
+        undo.label = "Advanced turn: no active combatants";
+        this.pushUndo(undo);
+      }
       this.emit();
       new Notice("No active combatants left to advance to.");
       return;
@@ -551,9 +629,14 @@ export class CombatTracker {
     this.state.round = nextRound;
 
     const current = this.state.combatants[this.state.turnIndex];
+    if (previous && current) {
+      undo!.label = `Advanced turn: ${previous.display} -> ${current.display}`;
+      undo!.detail = `Round ${this.state.round}`;
+    }
     if (current) {
       this.recordRunEvent("turn-start", { target: this.actorRef(current) });
     }
+    this.pushUndo(undo);
     this.emit();
     if (current) {
       new Notice(`⏩ Round ${this.state.round} — ${current.display}'s turn`);
@@ -563,6 +646,8 @@ export class CombatTracker {
   /** Go back to the previous combatant's turn. */
   prevTurn(): void {
     if (!this.state || !this.state.started) return;
+    const previous = this.state.combatants[this.state.turnIndex];
+    const undo = this.createUndo("Moved to previous turn", "turn", this.turnContextDetail());
 
     const len = this.state.combatants.length;
     let prev = this.state.turnIndex;
@@ -585,6 +670,12 @@ export class CombatTracker {
       this.state.round = prevRound;
     }
 
+    const current = this.state.combatants[this.state.turnIndex];
+    if (foundEligible && previous && current) {
+      undo!.label = `Previous turn: ${previous.display} -> ${current.display}`;
+      undo!.detail = `Round ${this.state.round}`;
+      this.pushUndo(undo);
+    }
     this.emit();
   }
 
@@ -596,6 +687,8 @@ export class CombatTracker {
       this.recordRunEvent("combat-end", { note: this.state.encounterName });
     }
     this.state = null;
+    this.clearUndoHistory();
+    this.sortAscending = false;
     this.emit();
     new Notice("🏁 Combat ended");
   }
@@ -611,6 +704,11 @@ export class CombatTracker {
     const c = this.findCombatant(combatantId);
     if (!c || c.dead) return;
     const source = sourceCombatantId ? this.findCombatant(sourceCombatantId) : (this.state?.combatants[this.state.turnIndex] || null);
+    const undo = this.createUndo(
+      `${source?.display || "Environment"} dealt ${Math.max(0, amount)} damage to ${c.display}`,
+      "hp",
+      this.turnContextDetail(),
+    );
     let remaining = Math.max(0, amount);
     const hpBeforeDamage = c.currentHP;
 
@@ -674,6 +772,7 @@ export class CombatTracker {
         target: this.actorRef(c),
       });
     }
+    this.pushUndo(undo);
     this.emit();
   }
 
@@ -683,6 +782,11 @@ export class CombatTracker {
     const c = this.findCombatant(combatantId);
     if (!c || c.dead) return;
     const source = sourceCombatantId ? this.findCombatant(sourceCombatantId) : (this.state?.combatants[this.state.turnIndex] || null);
+    const undo = this.createUndo(
+      `${source?.display || "Environment"} healed ${c.display} for ${Math.max(0, amount)}`,
+      "hp",
+      this.turnContextDetail(),
+    );
     const wasAtZero = c.currentHP <= 0;
     const before = c.currentHP;
     c.currentHP = Math.min(c.maxHP, c.currentHP + Math.max(0, amount));
@@ -695,6 +799,7 @@ export class CombatTracker {
       target: this.actorRef(c),
       amount: Math.max(0, c.currentHP - before),
     });
+    this.pushUndo(undo);
     this.emit();
   }
 
@@ -702,16 +807,24 @@ export class CombatTracker {
   setTempHP(combatantId: string, amount: number): void {
     const c = this.findCombatant(combatantId);
     if (!c) return;
-    c.tempHP = Math.max(0, amount);
+    const next = Math.max(0, amount);
+    if (c.tempHP === next) return;
+    const undo = this.createUndo(`Set temp HP for ${c.display}`, "hp", `${c.tempHP} -> ${next}`);
+    c.tempHP = next;
+    this.pushUndo(undo);
     this.emit();
   }
 
   /** Modify max HP (positive = increase, negative = reduce). */
   modifyMaxHP(combatantId: string, delta: number): void {
     const c = this.findCombatant(combatantId);
-    if (!c) return;
+    if (!c || delta === 0) return;
+    const next = Math.max(1, c.maxHP + delta);
+    if (c.maxHP === next) return;
+    const undo = this.createUndo(`Changed max HP for ${c.display}`, "hp", `${c.maxHP} -> ${next}`);
     c.maxHP = Math.max(1, c.maxHP + delta);
     c.currentHP = Math.min(c.currentHP, c.maxHP);
+    this.pushUndo(undo);
     this.emit();
   }
 
@@ -719,8 +832,12 @@ export class CombatTracker {
   setHP(combatantId: string, hp: number): void {
     const c = this.findCombatant(combatantId);
     if (!c) return;
+    const next = Math.max(0, Math.min(c.maxHP, hp));
+    const hasRecoveryState = c.dead || !!c.deathSaves || c.statuses.some(s => s.name === "Dead" || s.name === "Unconscious");
+    if (c.currentHP === next && !hasRecoveryState) return;
+    const undo = this.createUndo(`Set HP for ${c.display}`, "hp", `${c.currentHP} -> ${next}`);
     const wasAtZero = c.currentHP <= 0;
-    c.currentHP = Math.max(0, Math.min(c.maxHP, hp));
+    c.currentHP = next;
     if (wasAtZero && c.currentHP > 0) {
       c.deathSaves = undefined;
       c.dead = false;
@@ -729,14 +846,19 @@ export class CombatTracker {
       if (deadIdx !== -1) c.statuses.splice(deadIdx, 1);
     }
     this.syncUnconsciousStatus(c);
+    this.pushUndo(undo);
     this.emit();
   }
 
   /** Modify AC (e.g. Shield spell: +5). */
   modifyAC(combatantId: string, delta: number): void {
     const c = this.findCombatant(combatantId);
-    if (!c) return;
+    if (!c || delta === 0) return;
+    const next = Math.max(0, c.currentAC + delta);
+    if (c.currentAC === next) return;
+    const undo = this.createUndo(`Changed AC for ${c.display}`, "state", `${c.currentAC} -> ${next}`);
     c.currentAC = Math.max(0, c.currentAC + delta);
+    this.pushUndo(undo);
     this.emit();
   }
 
@@ -772,6 +894,7 @@ export class CombatTracker {
   addDeathSaveSuccess(combatantId: string): void {
     const c = this.findCombatant(combatantId);
     if (!c || c.dead || c.currentHP > 0) return;
+    const undo = this.createUndo(`Added death save success for ${c.display}`, "hp", this.turnContextDetail());
     if (!c.deathSaves) c.deathSaves = { successes: 0, failures: 0 };
     c.deathSaves.successes++;
     if (c.deathSaves.successes >= 3) {
@@ -783,6 +906,7 @@ export class CombatTracker {
       }
       new Notice(`💤 ${c.display} is stabilized!`);
     }
+    this.pushUndo(undo);
     this.emit();
   }
 
@@ -790,11 +914,13 @@ export class CombatTracker {
   addDeathSaveFailure(combatantId: string): void {
     const c = this.findCombatant(combatantId);
     if (!c || c.dead || c.currentHP > 0) return;
+    const undo = this.createUndo(`Added death save failure for ${c.display}`, "hp", this.turnContextDetail());
     if (!c.deathSaves) c.deathSaves = { successes: 0, failures: 0 };
     c.deathSaves.failures++;
     if (c.deathSaves.failures >= 3) {
       this.killCombatant(c);
     }
+    this.pushUndo(undo);
     this.emit();
   }
 
@@ -809,9 +935,11 @@ export class CombatTracker {
   rollDeathSave(combatantId: string): number | null {
     const c = this.findCombatant(combatantId);
     if (!c || c.dead || c.currentHP > 0) return null;
+    const undo = this.createUndo(`Rolled death save for ${c.display}`, "hp", this.turnContextDetail());
     if (!c.deathSaves) c.deathSaves = { successes: 0, failures: 0 };
 
     const roll = this.rollD20();
+    if (undo) undo.label = `Rolled death save for ${c.display}: ${roll}`;
 
     if (roll === 1) {
       // Natural 1: two failures
@@ -823,6 +951,7 @@ export class CombatTracker {
       c.deathSaves = undefined;
       c.statuses = c.statuses.filter(s => s.name !== "Unconscious" && s.name !== "Stable");
       new Notice(`🎲 ${c.display} death save: ✨ Natural 20! Regains 1 HP!`);
+      this.pushUndo(undo);
       this.emit();
       return roll;
     } else if (roll >= 10) {
@@ -845,6 +974,7 @@ export class CombatTracker {
       new Notice(`💤 ${c.display} is stabilized!`);
     }
 
+    this.pushUndo(undo);
     this.emit();
     return roll;
   }
@@ -861,16 +991,22 @@ export class CombatTracker {
   addStatus(combatantId: string, status: StatusEffect): void {
     const c = this.findCombatant(combatantId);
     if (!c || !this.state) return;
+    const undo = this.createUndo(`Added ${status.name} to ${c.display}`, "status", this.turnContextDetail());
     // Record the applied round for expiry tracking
     status.appliedRound = status.appliedRound ?? this.state.round;
     c.statuses.push(status);
+    this.pushUndo(undo);
     this.emit();
   }
 
   removeStatus(combatantId: string, statusIndex: number): void {
     const c = this.findCombatant(combatantId);
     if (!c) return;
+    const status = c.statuses[statusIndex];
+    if (!status) return;
+    const undo = this.createUndo(`Removed ${status.name} from ${c.display}`, "status", this.turnContextDetail());
     c.statuses.splice(statusIndex, 1);
+    this.pushUndo(undo);
     this.emit();
   }
 
@@ -879,8 +1015,10 @@ export class CombatTracker {
   /** Add a combatant mid-combat. */
   addCombatant(combatant: Combatant): void {
     if (!this.state) return;
+    const undo = this.createUndo(`Added ${combatant.display}`, "combatant", this.turnContextDetail());
     this.state.combatants.push(combatant);
     this.sortByInitiative();
+    this.pushUndo(undo);
     this.emit();
   }
 
@@ -890,6 +1028,8 @@ export class CombatTracker {
     const idx = this.state.combatants.findIndex(c => c.id === combatantId);
     if (idx < 0) return;
 
+    const removed = this.state.combatants[idx]!;
+    const undo = this.createUndo(`Removed ${removed.display}`, "combatant", this.turnContextDetail());
     this.state.combatants.splice(idx, 1);
     // Adjust turn index if needed
     if (this.state.turnIndex >= this.state.combatants.length) {
@@ -897,6 +1037,7 @@ export class CombatTracker {
     } else if (idx < this.state.turnIndex) {
       this.state.turnIndex--;
     }
+    this.pushUndo(undo);
     this.emit();
   }
 
@@ -904,7 +1045,9 @@ export class CombatTracker {
   toggleHidden(combatantId: string): void {
     const c = this.findCombatant(combatantId);
     if (!c) return;
+    const undo = this.createUndo(`${c.hidden ? "Showed" : "Hid"} ${c.display}`, "state", this.turnContextDetail());
     c.hidden = !c.hidden;
+    this.pushUndo(undo);
     this.emit();
   }
 
@@ -912,16 +1055,25 @@ export class CombatTracker {
   updateCombatant(combatantId: string, updates: Partial<Pick<Combatant, "display" | "modifier" | "friendly" | "hidden">>): void {
     const c = this.findCombatant(combatantId);
     if (!c) return;
+    const changes: string[] = [];
+    if (updates.display !== undefined && updates.display !== c.display) changes.push("name");
+    if (updates.modifier !== undefined && updates.modifier !== c.modifier) changes.push("initiative modifier");
+    if (updates.friendly !== undefined && updates.friendly !== c.friendly) changes.push("allegiance");
+    if (updates.hidden !== undefined && updates.hidden !== c.hidden) changes.push("visibility");
+    if (changes.length === 0) return;
+    const undo = this.createUndo(`Updated ${c.display}`, "state", changes.join(", "));
     if (updates.display !== undefined) c.display = updates.display;
     if (updates.modifier !== undefined) c.modifier = updates.modifier;
     if (updates.friendly !== undefined) c.friendly = updates.friendly;
     if (updates.hidden !== undefined) c.hidden = updates.hidden;
+    this.pushUndo(undo);
     this.emit();
   }
 
   /** Reset all combatants to full HP, clear temp HP, statuses, death saves, and dead flag. */
   resetHPAndStatuses(): void {
     if (!this.state) return;
+    const undo = this.createUndo("Reset HP & statuses", "state", this.turnContextDetail());
     for (const c of this.state.combatants) {
       c.currentHP = c.maxHP;
       c.tempHP = 0;
@@ -930,6 +1082,7 @@ export class CombatTracker {
       c.deathSaves = undefined;
       c.dead = false;
     }
+    this.pushUndo(undo);
     this.emit();
     new Notice("❤️ All HP & statuses reset");
   }
@@ -938,6 +1091,7 @@ export class CombatTracker {
    *  PCs are skipped unless the Initiative Tracker's "Roll for Players" setting is enabled. */
   rerollAllInitiative(): void {
     if (!this.state) return;
+    const undo = this.createUndo("Re-rolled initiative", "initiative", this.turnContextDetail());
     const rollPCs = this.rollPlayerInitiatives;
     for (const c of this.state.combatants) {
       if (c.fixedInitiative) continue;
@@ -946,6 +1100,7 @@ export class CombatTracker {
     }
     this.sortByInitiative();
     this.state.turnIndex = 0;
+    this.pushUndo(undo);
     this.emit();
     new Notice("🎲 Initiative re-rolled!");
   }
@@ -954,8 +1109,9 @@ export class CombatTracker {
   sortAscending: boolean = false;
 
   toggleSortOrder(): void {
-    this.sortAscending = !this.sortAscending;
     if (!this.state) return;
+    const undo = this.createUndo(this.sortAscending ? "Sorted descending" : "Sorted ascending", "initiative", this.turnContextDetail());
+    this.sortAscending = !this.sortAscending;
     const currentId = this.state.combatants[this.state.turnIndex]?.id;
     if (this.sortAscending) {
       this.state.combatants.sort((a, b) => {
@@ -978,6 +1134,7 @@ export class CombatTracker {
       const newIdx = this.state.combatants.findIndex(c => c.id === currentId);
       if (newIdx >= 0) this.state.turnIndex = newIdx;
     }
+    this.pushUndo(undo);
     this.emit();
     new Notice(this.sortAscending ? "↑ Sorted ascending" : "↓ Sorted descending");
   }
@@ -986,7 +1143,9 @@ export class CombatTracker {
   toggleEnabled(combatantId: string): void {
     const c = this.findCombatant(combatantId);
     if (!c) return;
+    const undo = this.createUndo(`${(c.enabled ?? true) ? "Disabled" : "Enabled"} ${c.display}`, "state", this.turnContextDetail());
     c.enabled = !(c.enabled ?? true);
+    this.pushUndo(undo);
     this.emit();
   }
 
@@ -1002,6 +1161,7 @@ export class CombatTracker {
     const target = this.state.combatants[targetIndex];
     if (!source || !target || source.initiative !== target.initiative) return false;
 
+    const undo = this.createUndo(`Swapped ${source.display} and ${target.display}`, "initiative", `Initiative ${source.initiative}`);
     const currentId = this.state.combatants[this.state.turnIndex]?.id;
     this.state.combatants[sourceIndex] = target;
     this.state.combatants[targetIndex] = source;
@@ -1012,6 +1172,7 @@ export class CombatTracker {
       if (nextTurnIndex >= 0) this.state.turnIndex = nextTurnIndex;
     }
 
+    this.pushUndo(undo);
     this.emit();
     return true;
   }
@@ -1050,6 +1211,8 @@ export class CombatTracker {
     }
     // Deep-clone so edits don't mutate the stored copy
     this.state = JSON.parse(JSON.stringify(saved));
+    this.clearUndoHistory();
+    this.sortAscending = false;
     this.emit();
     new Notice(`✅ Combat resumed! Round ${saved.round}, ${saved.combatants.length} combatants`);
     return true;
@@ -1181,6 +1344,9 @@ export class CombatTracker {
 
     const idSet = new Set(combatantIds);
     const pcs = this.state.combatants.filter(c => c.player && c.notePath && idSet.has(c.id));
+    const undo = pcs.length > 0
+      ? this.createUndo(`Refreshed ${pcs.length} PC${pcs.length !== 1 ? "s" : ""} from notes`, "hp", this.turnContextDetail())
+      : null;
 
     let refreshed = 0;
     let failed = 0;
@@ -1210,7 +1376,11 @@ export class CombatTracker {
       }
     }
 
-    if (refreshed > 0) this.emit();
+    if (refreshed > 0) {
+      if (undo) undo.label = `Refreshed ${refreshed} PC${refreshed !== 1 ? "s" : ""} from notes`;
+      this.pushUndo(undo);
+      this.emit();
+    }
 
     if (failed > 0) {
       new Notice(`Refreshed ${refreshed} PC${refreshed !== 1 ? "s" : ""} from notes (${failed} failed)`);

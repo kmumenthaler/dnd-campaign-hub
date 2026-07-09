@@ -263,6 +263,26 @@ export class PlayerMapView extends ItemView {
     }
   }
 
+  async reloadMapDataFromDisk(): Promise<void> {
+    if (!this.mapId) return;
+
+    const nextConfig = await this.plugin.loadMapAnnotations(this.mapId);
+    if (!nextConfig?.mapId) return;
+
+    const nextResourcePath = nextConfig.imageFile
+      ? this.plugin.app.vault.adapter.getResourcePath(nextConfig.imageFile)
+      : this.imageResourcePath;
+
+    if (nextConfig.imageFile && nextConfig.imageFile !== this.mapConfig?.imageFile) {
+      this.swapMap(this.mapId, nextConfig, nextResourcePath);
+      return;
+    }
+
+    if (nextResourcePath) this.imageResourcePath = nextResourcePath;
+    this.updateMapData(nextConfig);
+    this.syncCanvasToImage?.();
+  }
+
   /**
    * Swap the displayed map without destroying the window.
    * Used by the projection system for seamless map transitions: the player

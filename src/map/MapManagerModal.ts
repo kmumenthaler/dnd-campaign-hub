@@ -3,7 +3,7 @@ import { MapManager } from './MapManager';
 import { MapCreationModal, BATTLEMAP_TEMPLATE_FOLDER } from './MapCreationModal';
 import { MapTemplateTagModal } from './MapTemplateTagModal';
 import { TemplatePickerModal } from './TemplatePickerModal';
-import { syncMapFromTemplate as syncMapDataFromTemplate } from './MapFactory';
+import { getTemplateSyncChangedFields, syncMapFromTemplate as syncMapDataFromTemplate, type TemplateStructuralField } from './MapFactory';
 import { _flushMapSave, invalidateTemplateIndex } from './MapPersistence';
 import { MapTemplateTags, createDefaultTemplateTags } from './types';
 import type DndCampaignHubPlugin from '../main';
@@ -28,6 +28,32 @@ interface StoredMapInfo {
   templateSourceName?: string;
   templateSyncedAt?: string;
 }
+
+const TEMPLATE_SYNC_FIELD_LABELS: Record<TemplateStructuralField, string> = {
+  imageFile: 'image',
+  isVideo: 'media type',
+  type: 'map type',
+  dimensions: 'dimensions',
+  gridType: 'grid type',
+  gridSize: 'grid size',
+  gridOffsetX: 'grid offset',
+  gridOffsetY: 'grid offset',
+  gridSizeW: 'grid width',
+  gridSizeH: 'grid height',
+  gridVisible: 'grid visibility',
+  scale: 'scale',
+  fogOfWar: 'fog',
+  walls: 'walls',
+  lightSources: 'lights',
+  tunnels: 'tunnels',
+  tileElevations: 'elevations',
+  difficultTerrain: 'difficult terrain',
+  envAssets: 'environment assets',
+  hexTerrains: 'terrain',
+  hexClimates: 'climate',
+  customTerrainDescriptions: 'terrain descriptions',
+  hexcrawlState: 'hexcrawl state',
+};
 
 /**
  * Modal for managing all maps – list, create, edit, delete.
@@ -705,7 +731,7 @@ export class MapManagerModal extends Modal {
         text: `Apply the latest template structure from "${map.templateSourceName || map.templateSourceId}" to "${map.name || 'Unnamed Map'}"?`,
       });
       contentEl.createEl('p', {
-        text: 'This updates walls, lighting, fog of war, grid, terrain, elevations, tunnels, and environment assets. Tokens, drawings, labels, highlights, POIs, and scene/encounter links stay on this map.',
+        text: 'This adds or updates template walls, lighting, fog of war, terrain, elevations, tunnels, and environment assets. Battlemap-added tokens, components, drawings, labels, highlights, POIs, and scene/encounter links stay on this map.',
         cls: 'setting-item-description',
       });
 
@@ -751,6 +777,7 @@ export class MapManagerModal extends Modal {
         return;
       }
 
+      const changedFields = getTemplateSyncChangedFields(currentData, templateData);
       const syncedData = syncMapDataFromTemplate(currentData, templateData);
       await this.plugin.saveMapAnnotations(syncedData, document.createElement('div'));
       await _flushMapSave(this.plugin, syncedData.mapId);
@@ -767,11 +794,48 @@ export class MapManagerModal extends Modal {
       map.templateSyncedAt = syncedData.templateSyncedAt;
 
       this.renderMapList();
-      new Notice(`✅ "${map.name || 'Map'}" synced from template`);
+      const refreshedViews = await this.refreshOpenMapViews(syncedData.mapId);
+      if (changedFields.length === 0) {
+        new Notice(`"${map.name || 'Map'}" is already up to date for template-owned fields. Tokens, drawings, labels, highlights, and POIs are preserved.`);
+      } else {
+        const summary = this.formatSyncFieldSummary(changedFields);
+        new Notice(`✅ "${map.name || 'Map'}" synced: ${summary}${refreshedViews > 0 ? ` (${refreshedViews} open view${refreshedViews === 1 ? '' : 's'} refreshed)` : ''}`);
+      }
     } catch (err) {
       console.error('[MapManager] Error syncing map from template:', err);
       new Notice('❌ Failed to sync map from template');
     }
+  }
+
+  private formatSyncFieldSummary(fields: TemplateStructuralField[]): string {
+    const labels = Array.from(new Set(fields.map((field) => TEMPLATE_SYNC_FIELD_LABELS[field] || field)));
+    if (labels.length <= 3) return labels.join(', ');
+    return `${labels.slice(0, 3).join(', ')} +${labels.length - 3} more`;
+  }
+
+  private async refreshOpenMapViews(mapId: string): Promise<number> {
+    let refreshed = 0;
+    const tasks: Promise<void>[] = [];
+
+    for (const view of Array.from(this.plugin._gmMapViews || [])) {
+      const gmView = view as any;
+      if (gmView.getMapId?.() !== mapId || typeof gmView.reloadMapFromDisk !== 'function') continue;
+      tasks.push(Promise.resolve(gmView.reloadMapFromDisk()).then(() => {
+        refreshed++;
+      }));
+    }
+
+    for (const view of Array.from(this.plugin._playerMapViews || [])) {
+      const playerView = view as any;
+      if (playerView.getMapId?.() !== mapId || typeof playerView.reloadMapDataFromDisk !== 'function') continue;
+      tasks.push(Promise.resolve(playerView.reloadMapDataFromDisk()).then(() => {
+        refreshed++;
+      }));
+    }
+
+    if (tasks.length === 0) return 0;
+    await Promise.allSettled(tasks);
+    return refreshed;
   }
 
   /**
@@ -852,6 +916,7 @@ export class MapManagerModal extends Modal {
         return;
       }
 
+      const changedFields = syncNow ? getTemplateSyncChangedFields(currentData, templateData) : [];
       const nextData = syncNow
         ? syncMapDataFromTemplate(currentData, templateData)
         : {
@@ -880,9 +945,10 @@ export class MapManagerModal extends Modal {
       }
 
       this.renderMapList();
+      const refreshedViews = await this.refreshOpenMapViews(nextData.mapId);
       new Notice(syncNow
-        ? `✅ "${map.name || 'Map'}" linked and synced`
-        : `✅ "${map.name || 'Map'}" linked to template`);
+        ? `✅ "${map.name || 'Map'}" linked and synced${changedFields.length > 0 ? `: ${this.formatSyncFieldSummary(changedFields)}` : ''}${refreshedViews > 0 ? ` (${refreshedViews} open view${refreshedViews === 1 ? '' : 's'} refreshed)` : ''}`
+        : `✅ "${map.name || 'Map'}" linked to template${refreshedViews > 0 ? ` (${refreshedViews} open view${refreshedViews === 1 ? '' : 's'} refreshed)` : ''}`);
     } catch (err) {
       console.error('[MapManager] Error linking map to template:', err);
       new Notice('❌ Failed to link template');

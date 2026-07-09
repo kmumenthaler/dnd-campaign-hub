@@ -13,6 +13,7 @@ export class Notice {
 export class TFile {}
 export class TFolder {}
 export class App {}
+export class Modal {}
 
 export function parseYaml(yaml: string): any {
   return parse(yaml);

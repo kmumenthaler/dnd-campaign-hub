@@ -56,6 +56,22 @@ export interface CombatRunStats {
   events: CombatRunEvent[];
 }
 
+export type CombatUndoKind =
+  | "turn"
+  | "hp"
+  | "status"
+  | "initiative"
+  | "combatant"
+  | "state";
+
+export interface CombatUndoSummary {
+  id: string;
+  label: string;
+  detail?: string;
+  kind: CombatUndoKind;
+  timestamp: string;
+}
+
 /** A single combatant in a running combat. */
 export interface Combatant {
   /** Unique identifier for this instance. */

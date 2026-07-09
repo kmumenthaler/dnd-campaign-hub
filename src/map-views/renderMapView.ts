@@ -278,6 +278,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			// Load template system fields
 			if (savedData.isTemplate !== undefined) config.isTemplate = savedData.isTemplate;
 			if (savedData.templateTags) config.templateTags = savedData.templateTags;
+			if (savedData.templateSourceId !== undefined) config.templateSourceId = savedData.templateSourceId;
+			if (savedData.templateSourceName !== undefined) config.templateSourceName = savedData.templateSourceName;
+			if (savedData.templateSyncedAt !== undefined) config.templateSyncedAt = savedData.templateSyncedAt;
 			
 			// Ensure grid offset defaults
 			if (config.gridOffsetX === undefined) config.gridOffsetX = 0;

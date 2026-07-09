@@ -193,10 +193,10 @@ export function cloneTemplateToMap(
 
 /**
  * Fields that are considered part of the reusable map/template structure.
- * Syncing copies these from the latest template while preserving active-map
- * encounter content such as placed tokens, drawings, labels, and links.
+ * Syncing applies these from the latest template while preserving active-map
+ * encounter content and child-map additions.
  */
-const TEMPLATE_STRUCTURAL_FIELDS = [
+export const TEMPLATE_STRUCTURAL_FIELDS = [
   'imageFile',
   'isVideo',
   'type',
@@ -220,20 +220,146 @@ const TEMPLATE_STRUCTURAL_FIELDS = [
   'hexClimates',
   'customTerrainDescriptions',
   'hexcrawlState',
-];
+] as const;
+
+export type TemplateStructuralField = typeof TEMPLATE_STRUCTURAL_FIELDS[number];
+
+function deepEqual(a: any, b: any): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function mergeRecord(currentVal: any, templateVal: any): any {
+  const current = currentVal && typeof currentVal === 'object' && !Array.isArray(currentVal) ? currentVal : {};
+  const template = templateVal && typeof templateVal === 'object' && !Array.isArray(templateVal) ? templateVal : {};
+  return {
+    ...structuredClone(current),
+    ...structuredClone(template),
+  };
+}
+
+function formatCoord(value: any): string {
+  return Number.isFinite(value) ? Number(value).toFixed(3) : '';
+}
+
+function getItemKey(item: any, fallbackKey?: (item: any) => string | null): string | null {
+  if (item?.id !== undefined && item?.id !== null && String(item.id).trim()) {
+    return `id:${String(item.id)}`;
+  }
+  return fallbackKey?.(item) || null;
+}
+
+function mergeArrayByKey(
+  currentVal: any,
+  templateVal: any,
+  fallbackKey?: (item: any) => string | null,
+): any[] {
+  const current = Array.isArray(currentVal) ? currentVal : [];
+  const template = Array.isArray(templateVal) ? templateVal : [];
+  const merged = structuredClone(current);
+  const indexByKey = new Map<string, number>();
+
+  merged.forEach((item: any, index: number) => {
+    const key = getItemKey(item, fallbackKey);
+    if (key && !indexByKey.has(key)) indexByKey.set(key, index);
+  });
+
+  for (const templateItem of template) {
+    const key = getItemKey(templateItem, fallbackKey);
+    const clonedTemplateItem = structuredClone(templateItem);
+
+    if (key && indexByKey.has(key)) {
+      merged[indexByKey.get(key)!] = clonedTemplateItem;
+      continue;
+    }
+
+    if (!merged.some((item: any) => deepEqual(item, templateItem))) {
+      if (key) indexByKey.set(key, merged.length);
+      merged.push(clonedTemplateItem);
+    }
+  }
+
+  return merged;
+}
+
+function lightFallbackKey(light: any): string | null {
+  if (!light) return null;
+  if (light.start && light.end) {
+    return [
+      'walllight',
+      light.type || '',
+      formatCoord(light.start.x),
+      formatCoord(light.start.y),
+      formatCoord(light.end.x),
+      formatCoord(light.end.y),
+    ].join(':');
+  }
+  return ['light', light.type || '', formatCoord(light.x), formatCoord(light.y)].join(':');
+}
+
+function hexFallbackKey(hex: any): string | null {
+  if (!Number.isFinite(hex?.col) || !Number.isFinite(hex?.row)) return null;
+  return `hex:${hex.col}:${hex.row}`;
+}
+
+function mergeFogOfWar(currentVal: any, templateVal: any): any {
+  const current = currentVal && typeof currentVal === 'object' ? currentVal : {};
+  const template = templateVal && typeof templateVal === 'object' ? templateVal : {};
+
+  return {
+    ...structuredClone(current),
+    ...structuredClone(template),
+    enabled: current.enabled === true || template.enabled === true,
+    regions: mergeArrayByKey(current.regions, template.regions),
+  };
+}
+
+function mergeTemplateField(field: TemplateStructuralField, currentVal: any, templateVal: any): any {
+  switch (field) {
+    case 'fogOfWar':
+      return mergeFogOfWar(currentVal, templateVal);
+    case 'walls':
+    case 'tunnels':
+    case 'envAssets':
+      return mergeArrayByKey(currentVal, templateVal);
+    case 'lightSources':
+      return mergeArrayByKey(currentVal, templateVal, lightFallbackKey);
+    case 'hexTerrains':
+    case 'hexClimates':
+      return mergeArrayByKey(currentVal, templateVal, hexFallbackKey);
+    case 'tileElevations':
+    case 'difficultTerrain':
+    case 'customTerrainDescriptions':
+    case 'hexcrawlState':
+      return mergeRecord(currentVal, templateVal);
+    default:
+      return structuredClone(templateVal);
+  }
+}
+
+export function getTemplateSyncChangedFields(mapData: any, templateData: any): TemplateStructuralField[] {
+  const map = normalizeMapAnnotations(structuredClone(mapData));
+  const template = normalizeMapAnnotations(structuredClone(templateData));
+
+  return TEMPLATE_STRUCTURAL_FIELDS.filter((field) => {
+    const merged = mergeTemplateField(field, map[field], template[field]);
+    return !deepEqual(map[field], merged);
+  });
+}
 
 /**
- * Apply the latest structural data from a source template to an existing
- * active map. Instance-specific data remains on the map:
- * markers/tokens, highlights, drawings, text annotations, POI refs, linked
- * scene/encounter, active layer, and player-view settings.
+ * Apply the latest structural base from a source template to an existing
+ * active map. Sync is non-destructive for map components: template items are
+ * added/updated by identity, while active-map additions remain on the map.
+ * Instance-specific data also remains on the map: markers/tokens, highlights,
+ * drawings, text annotations, POI refs, linked scene/encounter, active layer,
+ * and player-view settings.
  */
 export function syncMapFromTemplate(mapData: any, templateData: any): any {
   const synced = normalizeMapAnnotations(structuredClone(mapData));
   const template = normalizeMapAnnotations(structuredClone(templateData));
 
   for (const field of TEMPLATE_STRUCTURAL_FIELDS) {
-    synced[field] = structuredClone(template[field]);
+    synced[field] = mergeTemplateField(field, synced[field], template[field]);
   }
 
   synced.isTemplate = false;

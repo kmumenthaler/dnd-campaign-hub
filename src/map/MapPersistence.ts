@@ -93,9 +93,30 @@ export async function _flushMapSave(plugin: DndCampaignHubPlugin, mapId: string)
 
 	const config = entry.config;
 	try {
+		const annotationPath = getMapAnnotationPath(plugin, config.mapId);
+		let existingData: any = null;
+		if (await plugin.app.vault.adapter.exists(annotationPath)) {
+			try {
+				existingData = JSON.parse(await plugin.app.vault.adapter.read(annotationPath));
+			} catch {
+				existingData = null;
+			}
+		}
+
 		// Normalise through the canonical schema so every field is present
 		const mapData = normalizeMapAnnotations(config);
 		mapData.lastModified = new Date().toISOString();
+		// Older/open map views may not have template-link metadata in their
+		// in-memory config. Preserve it so routine map saves do not unlink maps.
+		for (const key of ['templateSourceId', 'templateSourceName', 'templateSyncedAt']) {
+			const configValue = config[key];
+			const existingValue = existingData?.[key];
+			const configHasValue = configValue !== undefined && configValue !== null && String(configValue).trim() !== '';
+			const existingHasValue = existingValue !== undefined && existingValue !== null && String(existingValue).trim() !== '';
+			if (!configHasValue && existingHasValue) {
+				mapData[key] = existingData[key];
+			}
+		}
 
 		// Ensure annotation directory exists
 		const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
@@ -105,7 +126,6 @@ export async function _flushMapSave(plugin: DndCampaignHubPlugin, mapId: string)
 		}
 
 		// Save to dedicated file using adapter for config directory files
-		const annotationPath = getMapAnnotationPath(plugin, config.mapId);
 		const annotationJson = JSON.stringify(mapData, null, 2);
 
 		await plugin.app.vault.adapter.write(annotationPath, annotationJson);
@@ -145,6 +165,11 @@ export function getMapAnnotationPath(plugin: DndCampaignHubPlugin, mapId: string
  */
 export async function loadMapAnnotations(plugin: DndCampaignHubPlugin, mapId: string): Promise<any> {
 	try {
+		const pending = plugin._pendingSaves.get(mapId);
+		if (pending) {
+			return normalizeMapAnnotations(structuredClone(pending.config));
+		}
+
 		const annotationPath = getMapAnnotationPath(plugin, mapId);
 
 		// Check if annotation file exists
