@@ -484,15 +484,23 @@ export class SessionRunDashboardView extends ItemView {
     }
 
 
-    // Get active adventure and scene
-    const adventures = await this.getActiveAdventures();
-    const adventure = adventures.length > 0 ? adventures[0] : null;
+    // Use the adventures explicitly linked to this session, in session order.
+    const adventures = await this.getSessionAdventures();
+    let adventure = adventures.length > 0 ? adventures[0] : null;
+    const orderedScenes: Array<{ scene: RunScene; adventure: typeof adventure }> = [];
+    for (const candidate of adventures) {
+      const scenes = await this.getScenesForAdventure(candidate.path) as RunScene[];
+      orderedScenes.push(...scenes.map(scene => ({ scene, adventure: candidate })));
+    }
+    const selected = orderedScenes.find(entry => entry.scene.status === "in-progress")
+      || orderedScenes.find(entry => entry.scene.status === "not-started")
+      || orderedScenes.find(entry => entry.scene.status !== "completed");
+    const currentScene = selected?.scene;
+    if (selected) {
+      adventure = selected.adventure;
+    }
     
     if (adventure) {
-      const scenes = await this.getScenesForAdventure(adventure.path);
-      const currentScene = scenes.find(s => s.status === "in-progress") || 
-                          scenes.find(s => s.status === "not-started");
-      
       if (currentScene) {
         // Open scene in main pane (largest view)
         const sceneFile = this.app.vault.getAbstractFileByPath(currentScene.path);
@@ -783,11 +791,11 @@ export class SessionRunDashboardView extends ItemView {
   }
 
   private async getLiveSceneContext(): Promise<{ current: RunScene | null; previous: RunScene | null; next: RunScene | null }> {
-    const adventures = await this.getActiveAdventures();
-    const adventure = adventures[0];
-    if (!adventure) return { current: null, previous: null, next: null };
-
-    const scenes = await this.getScenesForAdventure(adventure.path) as RunScene[];
+    const adventures = await this.getSessionAdventures();
+    const scenes: RunScene[] = [];
+    for (const adventure of adventures) {
+      scenes.push(...await this.getScenesForAdventure(adventure.path) as RunScene[]);
+    }
     for (const scene of scenes) {
       await this.enrichRunScene(scene);
     }
@@ -1085,6 +1093,9 @@ export class SessionRunDashboardView extends ItemView {
   }
 
   private extractLinkPath(raw: unknown): string {
+    if (raw && typeof raw === "object" && "path" in raw) {
+      return String((raw as { path?: unknown }).path ?? "").trim();
+    }
     if (typeof raw !== "string") return "";
     const trimmed = raw.trim();
     const wiki = trimmed.match(/^\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]$/);
@@ -1525,6 +1536,46 @@ export class SessionRunDashboardView extends ItemView {
     }
 
     return adventures;
+  }
+
+  /** Resolve the current session's ordered adventures, deduplicated by vault path. */
+  async getSessionAdventures(): Promise<Array<{ path: string; name: string; status: string }>> {
+    if (!this.currentSessionFile) return this.getActiveAdventures();
+
+    const fm = this.app.metadataCache.getFileCache(this.currentSessionFile)?.frontmatter;
+    const raw = Array.isArray(fm?.adventures) && fm.adventures.length > 0
+      ? fm.adventures
+      : [fm?.adventure];
+    const result: Array<{ path: string; name: string; status: string }> = [];
+    const seen = new Set<string>();
+
+    for (const value of raw) {
+      const ref = this.extractLinkPath(value);
+      if (!ref) continue;
+      const file = this.resolveAdventureFile(ref);
+      if (!file || seen.has(file.path)) continue;
+      seen.add(file.path);
+      result.push({
+        path: file.path,
+        name: file.basename,
+        status: this.app.metadataCache.getFileCache(file)?.frontmatter?.status || "planning",
+      });
+    }
+
+    // Sessions predating adventure links retain the old campaign-active fallback.
+    return result.length > 0 ? result : this.getActiveAdventures();
+  }
+
+  private resolveAdventureFile(ref: string): TFile | null {
+    const direct = this.app.vault.getAbstractFileByPath(ref);
+    if (direct instanceof TFile) return direct;
+    const withExtension = this.app.vault.getAbstractFileByPath(`${ref}.md`);
+    if (withExtension instanceof TFile) return withExtension;
+    const basename = ref.split('/').pop()?.replace(/\.md$/i, "") || ref;
+    return this.app.vault.getMarkdownFiles().find(file => {
+      if (file.basename !== basename) return false;
+      return this.app.metadataCache.getFileCache(file)?.frontmatter?.type === "adventure";
+    }) || null;
   }
 
   async getScenesForAdventure(adventurePath: string) {
