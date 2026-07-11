@@ -8,7 +8,7 @@ export class EndSessionModal extends Modal {
   plugin: DndCampaignHubPlugin;
   sessionFile: TFile;
   endingScenePath = "";
-  scenes: Array<{ path: string; name: string; sceneNumber: number; status: string }> = [];
+  scenes: Array<{ path: string; name: string; sceneNumber: number; status: string; adventurePath: string; adventureName: string }> = [];
 
   constructor(app: App, plugin: DndCampaignHubPlugin, sessionFile: TFile) {
     super(app);
@@ -34,10 +34,23 @@ export class EndSessionModal extends Modal {
 
     const cache = this.app.metadataCache.getFileCache(this.sessionFile);
     const fm = cache?.frontmatter;
-    const adventurePath = this.parseWikilink(fm?.adventure);
+    const tmp = new SessionCreationModal(this.app, this.plugin);
+    const rawAdventures = Array.isArray(fm?.adventures) && fm.adventures.length > 0
+      ? fm.adventures
+      : [fm?.adventure];
+    const linkedAdventures: Array<{ path: string; name: string }> = [];
+    const seen = new Set<string>();
+    for (const value of rawAdventures) {
+      const ref = this.parseWikilink(value);
+      if (!ref) continue;
+      const file = tmp.resolveAdventureFile(ref);
+      if (!file || seen.has(file.path)) continue;
+      seen.add(file.path);
+      linkedAdventures.push({ path: file.path, name: file.basename });
+    }
 
-    if (adventurePath) {
-      await this.buildScenePicker(contentEl, adventurePath);
+    if (linkedAdventures.length > 0) {
+      await this.buildScenePicker(contentEl, linkedAdventures);
     } else {
       // No adventure linked — show adventure picker first
       contentEl.createEl('p', {
@@ -74,16 +87,32 @@ export class EndSessionModal extends Modal {
       loadBtn.onclick = async () => {
         loadBtn.remove();
         sceneArea.empty();
-        await this.buildScenePicker(sceneArea, pickedAdventurePath, pickedAdventurePath);
+        await this.buildScenePicker(sceneArea, [{
+          path: pickedAdventurePath,
+          name: adventures.find(a => a.path === pickedAdventurePath)?.name ?? pickedAdventurePath,
+        }]);
       };
     }
   }
 
   /** Renders the scene picker and Save button into `container`. */
-  private async buildScenePicker(container: HTMLElement, adventurePath: string, overrideAdventurePath?: string) {
+  private async buildScenePicker(container: HTMLElement, adventures: Array<{ path: string; name: string }>) {
     const modal = this;
     const tmp = new SessionCreationModal(this.app, this.plugin);
-    this.scenes = await tmp.getAllScenesForAdventure(adventurePath);
+    this.scenes = [];
+    const seenScenes = new Set<string>();
+    for (const adventure of adventures) {
+      const scenes = await tmp.getAllScenesForAdventure(adventure.path);
+      for (const scene of scenes) {
+        if (seenScenes.has(scene.path)) continue;
+        seenScenes.add(scene.path);
+        this.scenes.push({
+          ...scene,
+          adventurePath: adventure.path,
+          adventureName: adventure.name,
+        });
+      }
+    }
 
     if (this.scenes.length === 0) {
       container.createEl('p', { text: `No scenes found for this adventure. Check that scene notes have type: scene in their frontmatter.` });
@@ -106,7 +135,7 @@ export class EndSessionModal extends Modal {
       .addDropdown(dd => {
         dd.addOption('', '-- None --');
         for (const sc of this.scenes) {
-          dd.addOption(sc.path, `${sc.name} [${sc.status}]`);
+          dd.addOption(sc.path, `${sc.adventureName} — ${sc.name} [${sc.status}]`);
         }
         dd.setValue(this.endingScenePath);
         dd.onChange(v => { this.endingScenePath = v; });
@@ -118,7 +147,8 @@ export class EndSessionModal extends Modal {
     const save = btns.createEl('button', { text: '🏁 Save Ending Scene', cls: 'mod-cta' });
     save.onclick = async () => {
       this.close();
-      await modal.saveEndingScene(overrideAdventurePath ?? adventurePath);
+      const selected = modal.scenes.find(scene => scene.path === modal.endingScenePath);
+      if (selected) await modal.saveEndingScene(selected.adventurePath);
     };
   }
 
