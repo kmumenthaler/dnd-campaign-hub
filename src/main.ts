@@ -631,7 +631,6 @@ export default class DndCampaignHubPlugin extends Plugin {
       id: "find-campaign-content",
       name: "D&D Hub: Find Campaign Content",
       callback: () => this.openCampaignContentSearch(),
-      hotkeys: [{ modifiers: ["Ctrl", "Shift"], key: "F" }],
     });
 
     this.addCommand({

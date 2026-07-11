@@ -32,6 +32,9 @@ export class CampaignContentSearchModal extends Modal {
     input.setAttribute("aria-label", "Search campaign content");
     const results = contentEl.createDiv({ cls: "dnd-campaign-search-results" });
     let visible = this.items.slice(0, 50);
+    const updateSelection = () => {
+      Array.from(results.children).forEach((child, index) => child.toggleClass("is-selected", index === this.selectedIndex));
+    };
     const render = () => {
       visible = searchCampaignItems(this.items, input.value, 50) as typeof this.items;
       this.selectedIndex = Math.min(this.selectedIndex, Math.max(visible.length - 1, 0));
@@ -44,7 +47,7 @@ export class CampaignContentSearchModal extends Modal {
         const row = results.createDiv({ cls: `dnd-campaign-search-result${index === this.selectedIndex ? " is-selected" : ""}` });
         row.createEl("strong", { text: item.name });
         row.createEl("span", { text: `${TYPE_LABELS[item.type] || item.type} · ${item.context}`, cls: "setting-item-description" });
-        row.addEventListener("mouseenter", () => { this.selectedIndex = index; render(); });
+        row.addEventListener("mouseenter", () => { this.selectedIndex = index; updateSelection(); });
         row.addEventListener("click", () => void this.openItem(item));
       });
     };
