@@ -118,7 +118,7 @@ export class EndSessionModal extends Modal {
       container.createEl('p', { text: `No scenes found for this adventure. Check that scene notes have type: scene in their frontmatter.` });
       container.createEl('button', { text: '🏁 Complete Session', cls: 'mod-cta' }).onclick = async () => {
         this.close();
-        await this.saveEndingScene(adventurePath);
+        await this.saveEndingScene(adventures[0]?.path ?? '');
       };
       return;
     }
@@ -148,7 +148,7 @@ export class EndSessionModal extends Modal {
     save.onclick = async () => {
       this.close();
       const selected = modal.scenes.find(scene => scene.path === modal.endingScenePath);
-      if (selected) await modal.saveEndingScene(selected.adventurePath);
+      await modal.saveEndingScene(selected?.adventurePath ?? adventures[0]?.path ?? '');
     };
   }
 
