@@ -156,7 +156,7 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
       scenes: collectScenes(app, adventureFile.parent?.path || "", adventureFm?.campaign || "", adventureName),
     });
   }
-  const allScenes = adventureGroups.flatMap(group => group.scenes);
+  let allScenes = adventureGroups.flatMap(group => group.scenes);
   if (plannedLinks.length > 0) {
     const byPath = new Map<string, FileMeta>();
     for (const scene of allScenes) {
@@ -174,7 +174,10 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
         plannedScenes.push(scene);
       }
     }
-    adventureGroups.splice(0, adventureGroups.length, { name: "Planned Scenes", scenes: plannedScenes });
+    if (plannedScenes.length > 0) {
+      adventureGroups.splice(0, adventureGroups.length, { name: "Planned Scenes", scenes: plannedScenes });
+      allScenes = plannedScenes;
+    }
   }
 
   if (allScenes.length === 0) {
