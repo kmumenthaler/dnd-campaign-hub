@@ -15246,3 +15246,28 @@
   text-align: center;
   padding: 2rem;
 }
+/* Campaign-scoped, keyboard-first content finder. */
+.dnd-campaign-content-search .dnd-campaign-search-input {
+  width: 100%;
+  margin: 0.5rem 0;
+  padding: 0.65rem 0.75rem;
+}
+
+.dnd-campaign-search-results {
+  max-height: min(60vh, 32rem);
+  overflow-y: auto;
+}
+
+.dnd-campaign-search-result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.dnd-campaign-search-result.is-selected,
+.dnd-campaign-search-result:hover {
+  background: var(--background-modifier-hover);
+}

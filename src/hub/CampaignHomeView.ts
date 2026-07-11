@@ -132,11 +132,11 @@ export class CampaignHomeView extends ItemView {
 
   private renderPrimaryActions(container: HTMLElement) {
     const actions = container.createDiv({ cls: "campaign-home-primary-actions" });
-    this.createActionButton(actions, "New Session", "mod-cta", () => this.plugin.createSession(this.campaignPath));
+    this.createActionButton(actions, "Find Campaign Content", "mod-cta", () => this.plugin.openCampaignContentSearch(this.campaignPath));
+    this.createActionButton(actions, "New Session", "", () => this.plugin.createSession(this.campaignPath));
     this.createActionButton(actions, "Continue Last Session", "", () => this.plugin.continueLastSession(this.campaignPath));
     this.createActionButton(actions, "Create Content", "", () => this.plugin.openCreateContent(this.campaignPath));
     this.createActionButton(actions, "Add Scene", "", () => this.plugin.createScene(this.campaignPath));
-    this.createActionButton(actions, "Build Encounter", "", () => this.plugin.createEncounter(this.campaignPath));
     this.createActionButton(actions, "Open Party", "", () => this.plugin.openPartyManager(this.campaignPath));
     this.createActionButton(actions, "Open Music", "", () => this.plugin.ensureMusicPlayerOpen());
     this.createActionButton(actions, "Open Map Manager", "", () => this.plugin.openMapManager());
