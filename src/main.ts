@@ -149,6 +149,7 @@ import { SpellDetailsModal } from './spell/SpellDetailsModal';
 import { DndCampaignHubSettingTab } from './settings/SettingsTab';
 import { DndHubModal } from './hub/DndHubModal';
 import { CampaignHomeView } from './hub/CampaignHomeView';
+import { CampaignContentSearchModal } from './hub/CampaignContentSearchModal';
 import { CreateContentModal } from './hub/CreateContentModal';
 import { CreationNextStepsModal } from './hub/CreationNextStepsModal';
 import type { CreationNextStepKind } from './hub/CreationNextStepsModal';
@@ -623,6 +624,13 @@ export default class DndCampaignHubPlugin extends Plugin {
       id: "open-campaign-home",
       name: "D&D Hub: Open Campaign Home",
       callback: () => this.openCampaignHome(),
+    });
+
+    this.addCommand({
+      id: "find-campaign-content",
+      name: "D&D Hub: Find Campaign Content",
+      callback: () => this.openCampaignContentSearch(),
+      hotkeys: [{ modifiers: ["Ctrl", "Shift"], key: "F" }],
     });
 
     this.addCommand({
@@ -2910,6 +2918,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
 		// Open session creation modal
 		new SessionCreationModal(this.app, this, undefined, campaignPath).open();
+	}
+
+	openCampaignContentSearch(campaignPathOverride?: string) {
+		new CampaignContentSearchModal(this.app, this, campaignPathOverride || this.getActiveCampaignPath()).open();
 	}
 
 	async openCampaignHome(campaignPathOverride?: string) {
