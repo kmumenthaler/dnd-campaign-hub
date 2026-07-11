@@ -129,6 +129,7 @@ import { TimerNameModal } from './session/TimerNameModal';
 import { SessionRunDashboardView } from './session/SessionRunDashboardView';
 import { SessionCreationModal } from './session/SessionCreationModal';
 import { EndSessionModal } from './session/EndSessionModal';
+import { collectSessionRelationshipPaths, removeSessionBacklink } from './session/SessionBacklinks';
 import { DMScreenView } from './dm-screen/DMScreenView';
 import { CampaignCreationModal } from './campaign/CampaignCreationModal';
 import { CampaignSystemModal } from './campaign/CampaignSystemModal';
@@ -684,6 +685,24 @@ export default class DndCampaignHubPlugin extends Plugin {
         }
         new SessionCreationModal(this.app, this, undefined, file.parent?.path, file.path).open();
       },
+    });
+
+    this.addCommand({
+      id: "archive-session",
+      name: "Archive Session",
+      callback: () => void this.archiveActiveSession(true),
+    });
+
+    this.addCommand({
+      id: "restore-session",
+      name: "Restore Archived Session",
+      callback: () => void this.archiveActiveSession(false),
+    });
+
+    this.addCommand({
+      id: "delete-session",
+      name: "Delete Session",
+      callback: () => void this.deleteActiveSession(),
     });
 
     this.addCommand({
@@ -2152,10 +2171,17 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			case "session":
 				createBtn("✏️ Edit Session", "dnd-hub-btn-edit", cmd("edit-session"));
-				createBtn("▶️ Start Session", "dnd-hub-btn-extra", () => this.openSessionRunDashboard(campaignPathForNote(), file.path, true), "Mark this session in progress and open the run dashboard");
-				createBtn("🧭 Prep Dashboard", "dnd-hub-btn-extra", () => this.openSessionPrepDashboard(campaignPathForNote(), file.path), "Open preparation for this session");
-				createBtn("🏠 Campaign Home", "dnd-hub-btn-extra", () => this.openCampaignHome(campaignPathForNote()), "Open this campaign in Campaign Home");
-				createBtn("🏁 End Session", "dnd-hub-btn-extra", () => new EndSessionModal(this.app, this, file).open(), "Record the ending scene for this session");
+				if (String(frontmatter.status || "").toLowerCase() === "archived") {
+					createBtn("↩️ Restore Session", "dnd-hub-btn-extra", () => this.setSessionArchived(file, false), "Restore this session to its previous status");
+					createBtn("🧭 Prep Dashboard", "dnd-hub-btn-extra", () => this.openSessionPrepDashboard(campaignPathForNote(), file.path), "Explicitly open preparation for this archived session");
+				} else {
+					createBtn("📦 Archive Session", "dnd-hub-btn-extra", () => this.setSessionArchived(file, true), "Hide this session from current and preparation workflows");
+					createBtn("▶️ Start Session", "dnd-hub-btn-extra", () => this.openSessionRunDashboard(campaignPathForNote(), file.path, true), "Mark this session in progress and open the run dashboard");
+					createBtn("🧭 Prep Dashboard", "dnd-hub-btn-extra", () => this.openSessionPrepDashboard(campaignPathForNote(), file.path), "Open preparation for this session");
+					createBtn("🏠 Campaign Home", "dnd-hub-btn-extra", () => this.openCampaignHome(campaignPathForNote()), "Open this campaign in Campaign Home");
+					createBtn("🏁 End Session", "dnd-hub-btn-extra", () => new EndSessionModal(this.app, this, file).open(), "Record the ending scene for this session");
+				}
+				createBtn("🗑️ Delete Session", "dnd-hub-btn-delete", () => this.confirmAndDeleteSession(file), "Permanently delete this session note and remove its backlinks");
 				break;
 
 			case "adventure": {
@@ -3110,7 +3136,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const sessions = this.app.vault.getMarkdownFiles().filter((file) => {
 			if (!(file.path === campaignPath || file.path.startsWith(`${campaignPath}/`))) return false;
 			const cache = this.app.metadataCache.getFileCache(file);
-			return cache?.frontmatter?.type === "session";
+			return cache?.frontmatter?.type === "session"
+				&& String(cache.frontmatter.status || "").toLowerCase() !== "archived";
 		});
 
 		sessions.sort((a, b) => {
@@ -3311,12 +3338,103 @@ export default class DndCampaignHubPlugin extends Plugin {
 		}
 	}
 
-	async updateSessionLifecycleStatus(sessionPath: string, status: "planned" | "in-progress" | "completed"): Promise<void> {
+	async updateSessionLifecycleStatus(sessionPath: string, status: "planned" | "in-progress" | "completed" | "archived"): Promise<void> {
 		const file = this.app.vault.getAbstractFileByPath(sessionPath);
 		if (!(file instanceof TFile)) return;
 		const content = await this.app.vault.read(file);
 		const updated = updateYamlFrontmatter(content, (fm) => ({ ...fm, status }));
 		if (updated !== content) await this.app.vault.modify(file, updated);
+	}
+
+	private getActiveSessionFile(): TFile | null {
+		const file = this.app.workspace.getActiveFile();
+		return file instanceof TFile
+			&& this.app.metadataCache.getFileCache(file)?.frontmatter?.type === "session" ? file : null;
+	}
+
+	private async archiveActiveSession(archive: boolean): Promise<void> {
+		const file = this.getActiveSessionFile();
+		if (!file) {
+			new Notice("Open a session note first.");
+			return;
+		}
+		const isArchived = String(this.app.metadataCache.getFileCache(file)?.frontmatter?.status || "").toLowerCase() === "archived";
+		if (archive === isArchived) {
+			new Notice(archive ? "This session is already archived." : "This session is not archived.");
+			return;
+		}
+		await this.setSessionArchived(file, archive);
+	}
+
+	async setSessionArchived(file: TFile, archive: boolean): Promise<void> {
+		if (archive) {
+			const confirmed = await new Promise<boolean>(resolve => new ConfirmModal(
+				this.app,
+				"Archive session?",
+				`Archive \"${file.basename}\"? It will be hidden from automatic current-session and prep selection. You can restore it from this note at any time.`,
+				resolve,
+			).open());
+			if (!confirmed) return;
+		}
+		const content = await this.app.vault.read(file);
+		const updated = updateYamlFrontmatter(content, fm => {
+			if (archive) {
+				return {
+					...fm,
+					archived_from_status: String(fm.status || "completed"),
+					status: "archived",
+				};
+			}
+			const restoredStatus = ["planned", "in-progress", "completed"].includes(String(fm.archived_from_status))
+				? String(fm.archived_from_status)
+				: "completed";
+			delete fm.archived_from_status;
+			return { ...fm, status: restoredStatus };
+		});
+		if (updated !== content) await this.app.vault.modify(file, updated);
+		new Notice(archive ? `📦 Session "${file.basename}" archived.` : `↩️ Session "${file.basename}" restored.`);
+	}
+
+	private async deleteActiveSession(): Promise<void> {
+		const file = this.getActiveSessionFile();
+		if (!file) {
+			new Notice("Open a session note first.");
+			return;
+		}
+		await this.confirmAndDeleteSession(file);
+	}
+
+	async confirmAndDeleteSession(file: TFile): Promise<void> {
+		const confirmed = await new Promise<boolean>(resolve => new ConfirmModal(
+			this.app,
+			"Permanently delete session?",
+			`Delete \"${file.basename}\" permanently?\nThis removes only this session's backlinks from linked adventures and scenes. Those notes will not be deleted. This action cannot be undone.`,
+			resolve,
+		).open());
+		if (!confirmed) return;
+
+		try {
+			const sessionContent = await this.app.vault.read(file);
+			const { frontmatter } = parseYamlFrontmatter(sessionContent);
+			const relationshipPaths = collectSessionRelationshipPaths(frontmatter);
+			for (const relationshipPath of relationshipPaths) {
+				const linked = this.app.metadataCache.getFirstLinkpathDest(relationshipPath, file.path)
+					?? this.app.vault.getAbstractFileByPath(relationshipPath)
+					?? this.app.vault.getAbstractFileByPath(`${relationshipPath}.md`);
+				if (!(linked instanceof TFile) || linked.path === file.path) continue;
+				const content = await this.app.vault.read(linked);
+				const updated = updateYamlFrontmatter(content, fm => ({
+					...fm,
+					sessions: removeSessionBacklink(fm.sessions, file.path),
+				}));
+				if (updated !== content) await this.app.vault.modify(linked, updated);
+			}
+			await this.app.vault.delete(file);
+			new Notice(`🗑️ Session "${file.basename}" deleted.`);
+		} catch (error) {
+			console.error("Could not delete session:", error);
+			new Notice(`Could not delete session: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 
 	async openDMScreen() {

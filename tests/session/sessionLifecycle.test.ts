@@ -25,5 +25,16 @@ describe("session lifecycle selection", () => {
   it("only accepts supported lifecycle values", () => {
     expect(normalizeSessionStatus(" COMPLETED ")).toBe("completed");
     expect(normalizeSessionStatus("active")).toBeNull();
+    expect(normalizeSessionStatus(" ARCHIVED ")).toBe("archived");
+  });
+
+  it("never implicitly selects archived sessions", () => {
+    expect(selectCurrentSession([
+      { value: "archived-new", status: "archived", sessionNumber: 99 },
+      { value: "completed", status: "completed", sessionNumber: 2 },
+    ])).toBe("completed");
+    expect(selectCurrentSession([
+      { value: "archived", status: "archived", sessionNumber: 1 },
+    ])).toBeNull();
   });
 });

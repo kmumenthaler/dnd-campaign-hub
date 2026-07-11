@@ -318,7 +318,10 @@ export class SessionPrepDashboardView extends ItemView {
   }
 
   private getOrderedSessions(): TFile[] {
-    return this.getSessionFiles().sort((a, b) => {
+    return this.getSessionFiles()
+      .sort((a, b) => {
+      const archived = (file: TFile) => this.getSessionStatus(file) === "archived";
+      if (archived(a) !== archived(b)) return archived(a) ? 1 : -1;
       const preferred = (file: TFile) => ["in-progress", "active", "planned", "planning"].indexOf(this.getSessionStatus(file));
       const aRank = preferred(a);
       const bRank = preferred(b);
@@ -328,13 +331,13 @@ export class SessionPrepDashboardView extends ItemView {
         if (aRank !== bRank) return aRank - bRank;
       }
       return this.getSessionNumber(b) - this.getSessionNumber(a) || b.stat.mtime - a.stat.mtime;
-    });
+      });
   }
 
   private getTargetSession(): TFile | null {
     const sessions = this.getOrderedSessions();
     const selected = sessions.find((file) => file.path === this.targetSessionPath);
-    const target = selected || sessions[0] || null;
+    const target = selected || sessions.find(file => this.getSessionStatus(file) !== "archived") || null;
     this.targetSessionPath = target?.path || "";
     return target;
   }
@@ -1074,8 +1077,14 @@ export class SessionPrepDashboardView extends ItemView {
       }
     }
 
+    // Archived sessions remain available when explicitly targeted, but never
+    // become the implicit "last session" used by preparation workflows.
+    const visibleSessionFiles = sessionFiles.filter(file =>
+      this.getSessionStatus(file) !== "archived" || file.path === this.targetSessionPath
+    );
+
     // Sort by session number (descending)
-    sessionFiles.sort((a, b) => {
+    visibleSessionFiles.sort((a, b) => {
       const cacheA = this.app.metadataCache.getFileCache(a);
       const cacheB = this.app.metadataCache.getFileCache(b);
       
@@ -1088,7 +1097,7 @@ export class SessionPrepDashboardView extends ItemView {
     const targeted = this.targetSessionPath
       ? this.app.vault.getAbstractFileByPath(this.targetSessionPath)
       : null;
-    const lastSession = targeted instanceof TFile ? targeted : sessionFiles[0];
+    const lastSession = targeted instanceof TFile ? targeted : visibleSessionFiles[0];
     if (!lastSession) {
       this.renderEmptyState(
         container,
@@ -1249,7 +1258,8 @@ export class SessionPrepDashboardView extends ItemView {
     content.style.display = isExpanded ? "block" : "none";
     toggle.textContent = isExpanded ? "▼" : "▶";
 
-    const sessionFiles = this.getSessionFiles();
+    const sessionFiles = this.getSessionFiles()
+      .filter(file => this.getSessionStatus(file) !== "archived");
 
     if (sessionFiles.length === 0) {
       this.renderEmptyState(

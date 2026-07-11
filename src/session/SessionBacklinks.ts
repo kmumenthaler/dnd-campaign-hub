@@ -1,4 +1,4 @@
-function extractBacklinkPath(value: unknown): string {
+export function extractBacklinkPath(value: unknown): string {
   if (typeof value === "object" && value !== null && "path" in value) {
     return String((value as { path?: unknown }).path || "").replace(/\.md$/i, "").trim();
   }
@@ -36,6 +36,31 @@ export function addSessionBacklink(raw: unknown, sessionPath: string): string[] 
 
 export function removeSessionBacklink(raw: unknown, sessionPath: string): string[] {
   const target = extractBacklinkPath(sessionPath).toLowerCase();
+  const basename = target.split("/").pop();
   return normalizeSessionBacklinks(raw)
-    .filter((value) => extractBacklinkPath(value).toLowerCase() !== target);
+    .filter((value) => {
+      const valuePath = extractBacklinkPath(value).toLowerCase();
+      // Old notes sometimes stored only the session basename. Match that legacy
+      // form, but never remove a path belonging to a different folder.
+      return valuePath !== target && !(valuePath === basename && !valuePath.includes("/"));
+    });
+}
+
+/** Flatten scalar/array legacy relationship fields into link targets. */
+export function collectSessionRelationshipPaths(frontmatter: Record<string, unknown>): string[] {
+  const fields = ["adventures", "adventure", "starting_scene", "ending_scene", "planned_scenes"];
+  const seen = new Set<string>();
+  const paths: string[] = [];
+  for (const field of fields) {
+    const raw = frontmatter[field];
+    const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    for (const value of values) {
+      const path = extractBacklinkPath(value);
+      const key = path.toLowerCase();
+      if (!path || seen.has(key)) continue;
+      seen.add(key);
+      paths.push(path);
+    }
+  }
+  return paths;
 }
