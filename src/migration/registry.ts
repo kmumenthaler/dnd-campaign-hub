@@ -830,6 +830,21 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "session-1.9.0",
+      entityTypes: ["session"],
+      targetVersion: "1.9.0",
+      description: "Add an ordered per-session scene plan",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        if (!/^planned_scenes:/m.test(out)) {
+          out = addFrontmatterFieldAfter(out, "adventures", "planned_scenes", "[]");
+          if (out === ctx.content) out = addFrontmatterField(out, "planned_scenes", "[]");
+        }
+        return setFrontmatterField(out, "template_version", "1.9.0");
+      },
+    },
+
     // ── Adventure ────────────────────────────────────────────────────────
 
     {

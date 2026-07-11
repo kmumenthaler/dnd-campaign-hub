@@ -488,6 +488,11 @@ export class SessionRunDashboardView extends ItemView {
       const scenes = await this.getScenesForAdventure(candidate.path) as RunScene[];
       orderedScenes.push(...scenes.map(scene => ({ scene, adventure: candidate })));
     }
+    const planned = await this.getPlannedScenes();
+    if (planned.length > 0) {
+      const adventureByScene = new Map(orderedScenes.map(entry => [entry.scene.path, entry.adventure]));
+      orderedScenes.splice(0, orderedScenes.length, ...planned.map(scene => ({ scene, adventure: adventureByScene.get(scene.path) || adventure })));
+    }
     const selected = orderedScenes.find(entry => entry.scene.status === "in-progress")
       || orderedScenes.find(entry => entry.scene.status === "not-started")
       || orderedScenes.find(entry => entry.scene.status !== "completed");
@@ -795,6 +800,8 @@ export class SessionRunDashboardView extends ItemView {
     for (const adventure of adventures) {
       scenes.push(...await this.getScenesForAdventure(adventure.path) as RunScene[]);
     }
+    const planned = await this.getPlannedScenes();
+    if (planned.length > 0) scenes.splice(0, scenes.length, ...planned);
     for (const scene of scenes) {
       await this.enrichRunScene(scene);
     }
@@ -1100,6 +1107,24 @@ export class SessionRunDashboardView extends ItemView {
     const wiki = trimmed.match(/^\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]$/);
     if (wiki?.[1]) return wiki[1].trim();
     return trimmed.replace(/^["']|["']$/g, "");
+  }
+
+  private async getPlannedScenes(): Promise<RunScene[]> {
+    if (!this.currentSessionFile) return [];
+    const fm = this.app.metadataCache.getFileCache(this.currentSessionFile)?.frontmatter;
+    if (!Array.isArray(fm?.planned_scenes) || fm.planned_scenes.length === 0) return [];
+    const result: RunScene[] = [];
+    const seen = new Set<string>();
+    for (const raw of fm.planned_scenes) {
+      const ref = this.extractLinkPath(raw);
+      const file = this.app.metadataCache.getFirstLinkpathDest(ref, this.currentSessionFile.path);
+      if (!(file instanceof TFile) || seen.has(file.path)) continue;
+      seen.add(file.path);
+      const sceneFm = this.app.metadataCache.getFileCache(file)?.frontmatter || {};
+      if (sceneFm.type !== "scene") continue;
+      result.push({ path: file.path, number: Number(sceneFm.scene_number) || 0, name: file.basename, type: sceneFm.scene_type || "", difficulty: sceneFm.difficulty || "", status: sceneFm.status || "not-started" });
+    }
+    return result;
   }
 
   async renderQuickNotes(container: HTMLElement) {

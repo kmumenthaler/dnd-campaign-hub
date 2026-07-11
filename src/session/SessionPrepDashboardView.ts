@@ -387,6 +387,24 @@ export class SessionPrepDashboardView extends ItemView {
     return adventures;
   }
 
+  private getTargetPlannedScenePaths(): string[] {
+    const session = this.getTargetSession();
+    if (!session) return [];
+    const fm = this.app.metadataCache.getFileCache(session)?.frontmatter;
+    if (!Array.isArray(fm?.planned_scenes)) return [];
+    const seen = new Set<string>();
+    const paths: string[] = [];
+    for (const raw of fm.planned_scenes) {
+      const ref = this.extractLinkPath(raw);
+      const file = this.app.metadataCache.getFirstLinkpathDest(ref, session.path);
+      if (!(file instanceof TFile) || seen.has(file.path)) continue;
+      if (this.app.metadataCache.getFileCache(file)?.frontmatter?.type !== "scene") continue;
+      seen.add(file.path);
+      paths.push(file.path);
+    }
+    return paths;
+  }
+
   private getNpcCount(): number {
     const npcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/NPCs`);
     if (!(npcsFolder instanceof TFolder)) return 0;
@@ -410,7 +428,12 @@ export class SessionPrepDashboardView extends ItemView {
     let nextSceneHasGoal = false;
     let hasScenes = false;
     let nextScenePath = "";
-    const sessionScenes = (await Promise.all(adventures.map((adventure) => this.getScenesForAdventure(adventure.path)))).flat();
+    let sessionScenes = (await Promise.all(adventures.map((adventure) => this.getScenesForAdventure(adventure.path)))).flat();
+    const plannedPaths = this.getTargetPlannedScenePaths();
+    if (plannedPaths.length > 0) {
+      const byPath = new Map(sessionScenes.map(scene => [scene.path, scene]));
+      sessionScenes = plannedPaths.map(path => byPath.get(path)).filter((scene): scene is NonNullable<typeof scene> => Boolean(scene));
+    }
     hasScenes = sessionScenes.length > 0;
     const nextScene = sessionScenes.find((s) => s.status !== "completed") || sessionScenes[0];
     nextScenePath = nextScene?.path || "";
@@ -761,7 +784,12 @@ export class SessionPrepDashboardView extends ItemView {
       });
 
       // Get scenes for this adventure
-      const scenes = await this.getScenesForAdventure(adventure.path);
+      let scenes = await this.getScenesForAdventure(adventure.path);
+      const plannedPaths = this.getTargetPlannedScenePaths();
+      if (plannedPaths.length > 0) {
+        const order = new Map(plannedPaths.map((path, index) => [path, index]));
+        scenes = scenes.filter(scene => order.has(scene.path)).sort((a, b) => order.get(a.path)! - order.get(b.path)!);
+      }
       
       if (scenes.length === 0) {
         this.renderEmptyState(

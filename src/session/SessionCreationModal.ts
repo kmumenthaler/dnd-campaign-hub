@@ -15,6 +15,7 @@ export class SessionCreationModal extends Modal {
   location = "";
   adventurePath = "";
   adventurePaths: string[] = [];
+  plannedScenePaths: string[] = [];
   startingScenePath = "";
   useCustomDate = false;
   calendar = "";
@@ -77,6 +78,9 @@ export class SessionCreationModal extends Modal {
     if (this.adventurePath && !this.adventurePaths.includes(this.adventurePath)) this.adventurePaths.unshift(this.adventurePath);
     this.originalAdventurePaths = [...this.adventurePaths];
     this.startingScenePath = this.parseFrontmatterLink(fm.starting_scene);
+    this.plannedScenePaths = (Array.isArray(fm.planned_scenes) ? fm.planned_scenes : [])
+      .map((value: unknown) => this.parseFrontmatterLink(value)).filter(Boolean)
+      .filter((path: string, index: number, paths: string[]) => paths.indexOf(path) === index);
     this.originalStartingScenePath = this.startingScenePath;
     this.location = String(fm.location ?? "");
     this.sessionDate = String(fm.date ?? this.sessionDate);
@@ -341,11 +345,43 @@ export class SessionCreationModal extends Modal {
     const adventureSelectionContainer = contentEl.createDiv({ cls: "dnd-session-adventure-selection" });
     const primaryAdventureContainer = contentEl.createDiv();
     const scenePickerContainer = contentEl.createDiv();
+    const scenePlanContainer = contentEl.createDiv({ cls: "dnd-session-scene-plan" });
 
-    const refreshScenePicker = async (adventurePath: string) => {
+    const renderScenePlan = async () => {
+      scenePlanContainer.empty();
+      scenePlanContainer.createEl("h3", { text: "Session Scene Plan" });
+      scenePlanContainer.createEl("p", { text: "Choose the scenes you expect to run. Selected scenes are used in this order by prep and live-session tools.", cls: "setting-item-description" });
+      const available = (await Promise.all(this.adventurePaths.map(async adventure => ({ adventure, scenes: await this.getAllScenesForAdventure(adventure) }))));
+      const valid = new Set(available.flatMap(group => group.scenes.map(scene => scene.path)));
+      this.plannedScenePaths = this.plannedScenePaths.filter(path => valid.has(path));
+      for (const group of available) {
+        const adventure = adventures.find(item => item.path === group.adventure);
+        scenePlanContainer.createEl("h4", { text: adventure?.name ?? group.adventure });
+        for (const scene of group.scenes) {
+          const setting = new Setting(scenePlanContainer).setName(scene.name).setDesc(scene.status);
+          const selectedIndex = this.plannedScenePaths.indexOf(scene.path);
+          if (selectedIndex >= 0) {
+            setting.addButton(button => button.setIcon("arrow-up").setTooltip("Move earlier").setDisabled(selectedIndex === 0).onClick(() => {
+              [this.plannedScenePaths[selectedIndex - 1], this.plannedScenePaths[selectedIndex]] = [this.plannedScenePaths[selectedIndex]!, this.plannedScenePaths[selectedIndex - 1]!]; void renderScenePlan();
+            }));
+            setting.addButton(button => button.setIcon("arrow-down").setTooltip("Move later").setDisabled(selectedIndex === this.plannedScenePaths.length - 1).onClick(() => {
+              [this.plannedScenePaths[selectedIndex], this.plannedScenePaths[selectedIndex + 1]] = [this.plannedScenePaths[selectedIndex + 1]!, this.plannedScenePaths[selectedIndex]!]; void renderScenePlan();
+            }));
+          }
+          setting.addToggle(toggle => toggle.setValue(selectedIndex >= 0).onChange(value => {
+            if (value && !this.plannedScenePaths.includes(scene.path)) this.plannedScenePaths.push(scene.path);
+            if (!value) this.plannedScenePaths = this.plannedScenePaths.filter(path => path !== scene.path);
+            void renderScenePlan();
+          }));
+        }
+      }
+    };
+
+    const refreshScenePicker = async (_adventurePath: string) => {
       scenePickerContainer.empty();
-      if (!adventurePath) return;
-      const scenes = await this.getAllScenesForAdventure(adventurePath);
+      if (this.adventurePaths.length === 0) return;
+      const scenes = (await Promise.all(this.adventurePaths.map(path => this.getAllScenesForAdventure(path))))
+        .flat().filter((scene, index, all) => all.findIndex(candidate => candidate.path === scene.path) === index);
       if (scenes.length === 0) return;
 
       // Pre-select first in-progress, then first not-started, then first overall
@@ -357,7 +393,7 @@ export class SessionCreationModal extends Modal {
 
       new Setting(scenePickerContainer)
         .setName("Starting Scene")
-        .setDesc("Scene where this session begins (auto-populated from adventure progress)")
+        .setDesc("Scene where this session begins, from any linked adventure")
         .addDropdown(dd => {
           dd.addOption("", "-- None --");
           for (const sc of scenes) {
@@ -418,10 +454,12 @@ export class SessionCreationModal extends Modal {
               this.adventurePaths = this.adventurePaths.filter(path => path !== adventure.path);
             }
             renderPrimaryAdventurePicker();
+            void renderScenePlan();
           }));
       }
       renderPrimaryAdventurePicker();
       await refreshScenePicker(this.adventurePath);
+      await renderScenePlan();
     }
 
     const advancedDetails = contentEl.createEl("details", { cls: "dnd-advanced-section" });
@@ -560,6 +598,7 @@ export class SessionCreationModal extends Modal {
         ...current,
         adventure: this.adventurePath ? `[[${this.adventurePath}]]` : "",
         adventures: adventureLinks,
+        planned_scenes: this.plannedScenePaths.map(path => `[[${path}]]`),
         starting_scene: this.startingScenePath ? `[[${this.startingScenePath}]]` : "",
         party_id: this.selectedPartyId,
         location: this.location,
@@ -705,6 +744,7 @@ export class SessionCreationModal extends Modal {
         world: campaignName,
         adventure: adventureLink,
         adventures: adventureLinks,
+        planned_scenes: this.plannedScenePaths.map(path => `[[${path}]]`),
         starting_scene: startingSceneLink,
         ending_scene: "",
         party_id: this.selectedPartyId,
