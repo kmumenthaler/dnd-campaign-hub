@@ -5,6 +5,7 @@ import { SESSION_GM_TEMPLATE, SESSION_PLAYER_TEMPLATE } from '../templates';
 import { ConfirmModal } from '../utils/ConfirmModal';
 import { PartySelector } from '../party/PartySelector';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
+import { addSessionBacklink, removeSessionBacklink } from './SessionBacklinks';
 
 export class SessionCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -30,6 +31,7 @@ export class SessionCreationModal extends Modal {
   isEdit = false;
   originalSessionPath = "";
   private originalAdventurePaths: string[] = [];
+  private originalStartingScenePath = "";
 
   constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, campaignPath?: string, sessionPath?: string) {
     super(app);
@@ -75,6 +77,7 @@ export class SessionCreationModal extends Modal {
     if (this.adventurePath && !this.adventurePaths.includes(this.adventurePath)) this.adventurePaths.unshift(this.adventurePath);
     this.originalAdventurePaths = [...this.adventurePaths];
     this.startingScenePath = this.parseFrontmatterLink(fm.starting_scene);
+    this.originalStartingScenePath = this.startingScenePath;
     this.location = String(fm.location ?? "");
     this.sessionDate = String(fm.date ?? this.sessionDate);
     this.calendar = String(fm["fc-calendar"] ?? this.calendar);
@@ -570,6 +573,7 @@ export class SessionCreationModal extends Modal {
       for (const path of this.originalAdventurePaths.filter(oldPath => !this.adventurePaths.includes(oldPath))) {
         await this.unlinkSessionFromAdventure(path, file.path);
       }
+      await this.reconcileStartingSceneBacklink(file.path);
       new Notice(`✅ Session ${sessionNumber} updated!`);
     } catch (error) {
       new Notice(`❌ Error updating session: ${error instanceof Error ? error.message : String(error)}`);
@@ -586,10 +590,10 @@ export class SessionCreationModal extends Modal {
     if (!(adventureFile instanceof TFile)) return;
     const content = await this.app.vault.read(adventureFile);
     const raw = this.app.metadataCache.getFileCache(adventureFile)?.frontmatter?.sessions;
-    const sessions = (Array.isArray(raw) ? raw : raw ? [raw] : [])
-      .map(value => String(value))
-      .filter(value => !value.includes(sessionFilePath));
-    const updated = updateYamlFrontmatter(content, fm => ({ ...fm, sessions }));
+    const updated = updateYamlFrontmatter(content, fm => ({
+      ...fm,
+      sessions: removeSessionBacklink(raw, sessionFilePath),
+    }));
     await this.app.vault.modify(adventureFile, updated);
   }
 
@@ -745,40 +749,21 @@ export class SessionCreationModal extends Modal {
 
   /** Append this session's wikilink to the adventure's sessions[] frontmatter array. */
   async linkSessionToAdventure(adventurePath: string, sessionFilePath: string) {
-    const advFile = this.app.vault.getAbstractFileByPath(adventurePath);
+    const advFile = this.resolveAdventureFile(adventurePath);
     if (!(advFile instanceof TFile)) return;
     try {
       let content = await this.app.vault.read(advFile);
 
-      // Parse existing sessions from metadata cache (reliable regardless of YAML format)
       const cache = this.app.metadataCache.getFileCache(advFile);
-      const existingSessions: string[] = [];
-      if (cache?.frontmatter?.sessions) {
-        const raw = cache.frontmatter.sessions;
-        if (Array.isArray(raw)) {
-          for (const entry of raw) existingSessions.push(String(entry));
-        } else {
-          existingSessions.push(String(raw));
-        }
-      }
-
-      // Add new session link if not already present
-      const linkStr = `[[${sessionFilePath}]]`;
-      if (!existingSessions.some(s => s.includes(sessionFilePath))) {
-        existingSessions.push(linkStr);
-      }
-
-      // Canonicalize each entry as a wikilink and write via YAML helper.
-      const normalizedSessions = existingSessions.map((s) =>
-        s.startsWith('[[') ? s : `[[${s}]]`
-      );
       content = updateYamlFrontmatter(content, (fm) => ({
         ...fm,
-        sessions: normalizedSessions,
+        sessions: addSessionBacklink(cache?.frontmatter?.sessions, sessionFilePath),
       }));
 
       await this.app.vault.modify(advFile, content);
-    } catch (e) {
+    } catch (error) {
+      console.error("Could not add session backlink to adventure:", error);
+      throw error;
     }
   }
 
@@ -815,41 +800,54 @@ export class SessionCreationModal extends Modal {
 
   /** Append session wikilink to a scene's sessions[] frontmatter. */
   async addSessionBacklinkToScene(scenePath: string, sessionFilePath: string) {
-    const sceneFile = this.app.vault.getAbstractFileByPath(scenePath);
+    const sceneFile = this.resolveSceneFile(scenePath, sessionFilePath);
     if (!(sceneFile instanceof TFile)) return;
     try {
       let content = await this.app.vault.read(sceneFile);
 
-      // Parse existing sessions from metadata cache (reliable regardless of YAML format)
       const cache = this.app.metadataCache.getFileCache(sceneFile);
-      const existingSessions: string[] = [];
-      if (cache?.frontmatter?.sessions) {
-        const raw = cache.frontmatter.sessions;
-        if (Array.isArray(raw)) {
-          for (const entry of raw) existingSessions.push(String(entry));
-        } else {
-          existingSessions.push(String(raw));
-        }
-      }
-
-      // Add new session link if not already present
-      const linkStr = `[[${sessionFilePath}]]`;
-      if (!existingSessions.some(s => s.includes(sessionFilePath))) {
-        existingSessions.push(linkStr);
-      }
-
-      // Canonicalize each entry as a wikilink and write via YAML helper.
-      const normalizedSessions = existingSessions.map((s) =>
-        s.startsWith('[[') ? s : `[[${s}]]`
-      );
       content = updateYamlFrontmatter(content, (fm) => ({
         ...fm,
-        sessions: normalizedSessions,
+        sessions: addSessionBacklink(cache?.frontmatter?.sessions, sessionFilePath),
       }));
 
       await this.app.vault.modify(sceneFile, content);
-    } catch (e) {
+    } catch (error) {
+      console.error("Could not add session backlink to scene:", error);
+      throw error;
     }
+  }
+
+  async removeSessionBacklinkFromScene(scenePath: string, sessionFilePath: string) {
+    const sceneFile = this.resolveSceneFile(scenePath, sessionFilePath);
+    if (!(sceneFile instanceof TFile)) return;
+    const content = await this.app.vault.read(sceneFile);
+    const raw = this.app.metadataCache.getFileCache(sceneFile)?.frontmatter?.sessions;
+    const updated = updateYamlFrontmatter(content, fm => ({
+      ...fm,
+      sessions: removeSessionBacklink(raw, sessionFilePath),
+    }));
+    await this.app.vault.modify(sceneFile, updated);
+  }
+
+  private resolveSceneFile(scenePath: string, sourcePath: string): TFile | null {
+    const direct = this.app.vault.getAbstractFileByPath(scenePath);
+    if (direct instanceof TFile) return direct;
+    const withExtension = this.app.vault.getAbstractFileByPath(`${scenePath}.md`);
+    if (withExtension instanceof TFile) return withExtension;
+    return this.app.metadataCache.getFirstLinkpathDest(scenePath.replace(/\.md$/i, ""), sourcePath);
+  }
+
+  private async reconcileStartingSceneBacklink(sessionFilePath: string): Promise<void> {
+    // Establish the new relationship before removing the old one, so a failed write
+    // cannot leave the edited session without any scene backlink.
+    if (this.startingScenePath) {
+      await this.addSessionBacklinkToScene(this.startingScenePath, sessionFilePath);
+    }
+    if (this.originalStartingScenePath && this.originalStartingScenePath !== this.startingScenePath) {
+      await this.removeSessionBacklinkFromScene(this.originalStartingScenePath, sessionFilePath);
+    }
+    this.originalStartingScenePath = this.startingScenePath;
   }
 
   /** Set scenes before startIdx to 'completed', scene at startIdx to 'in-progress'. */
