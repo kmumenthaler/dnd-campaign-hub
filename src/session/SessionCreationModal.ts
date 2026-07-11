@@ -338,6 +338,8 @@ export class SessionCreationModal extends Modal {
 
     // Adventure Selection
     const adventures = await this.getAllAdventures();
+    const adventureSelectionContainer = contentEl.createDiv({ cls: "dnd-session-adventure-selection" });
+    const primaryAdventureContainer = contentEl.createDiv();
     const scenePickerContainer = contentEl.createDiv();
 
     const refreshScenePicker = async (adventurePath: string) => {
@@ -368,7 +370,6 @@ export class SessionCreationModal extends Modal {
     };
 
     if (adventures.length > 0) {
-      const primaryAdventureContainer = contentEl.createDiv();
       const renderPrimaryAdventurePicker = () => {
         primaryAdventureContainer.empty();
         if (this.adventurePaths.length === 0) {
@@ -398,12 +399,17 @@ export class SessionCreationModal extends Modal {
         void refreshScenePicker(this.adventurePath);
       };
 
-      const adventureSetting = new Setting(contentEl)
-        .setName("Adventures")
-        .setDesc("Link this session to one or more adventures (optional)");
+      adventureSelectionContainer.createEl("h3", { text: "Adventures" });
+      adventureSelectionContainer.createEl("p", {
+        text: "Link this session to one or more adventures.",
+        cls: "setting-item-description",
+      });
       for (const adventure of adventures) {
-        adventureSetting.addToggle(toggle => toggle
-          .setTooltip(adventure.name)
+        new Setting(adventureSelectionContainer)
+          .setName(adventure.name)
+          .setDesc("Include this adventure in the session")
+          .addToggle(toggle => toggle
+          .setTooltip(`Link ${adventure.name}`)
           .setValue(this.adventurePaths.includes(adventure.path))
           .onChange(value => {
             if (value && !this.adventurePaths.includes(adventure.path)) {
@@ -413,7 +419,6 @@ export class SessionCreationModal extends Modal {
             }
             renderPrimaryAdventurePicker();
           }));
-        adventureSetting.controlEl.createSpan({ text: adventure.name, cls: "setting-item-description" });
       }
       renderPrimaryAdventurePicker();
       await refreshScenePicker(this.adventurePath);
