@@ -52,7 +52,10 @@ export class EndSessionModal extends Modal {
 
       if (adventures.length === 0) {
         contentEl.createEl('p', { text: 'No adventures found.' });
-        contentEl.createEl('button', { text: 'Close' }).onclick = () => this.close();
+        contentEl.createEl('button', { text: '🏁 Complete Session', cls: 'mod-cta' }).onclick = async () => {
+          this.close();
+          await this.saveEndingScene('');
+        };
         return;
       }
 
@@ -84,7 +87,10 @@ export class EndSessionModal extends Modal {
 
     if (this.scenes.length === 0) {
       container.createEl('p', { text: `No scenes found for this adventure. Check that scene notes have type: scene in their frontmatter.` });
-      container.createEl('button', { text: 'Close' }).onclick = () => this.close();
+      container.createEl('button', { text: '🏁 Complete Session', cls: 'mod-cta' }).onclick = async () => {
+        this.close();
+        await this.saveEndingScene(adventurePath);
+      };
       return;
     }
 
@@ -117,16 +123,16 @@ export class EndSessionModal extends Modal {
   }
 
   async saveEndingScene(resolvedAdventurePath: string) {
-    if (!this.endingScenePath) return;
     try {
       // Write ending_scene (and adventure if missing) to session frontmatter
       let content = await this.app.vault.read(this.sessionFile);
-      const endingSceneWiki = `[[${this.endingScenePath}]]`;
+      const endingSceneWiki = this.endingScenePath ? `[[${this.endingScenePath}]]` : "";
 
       content = updateYamlFrontmatter(content, (fm) => {
         const updated: Record<string, unknown> = {
           ...fm,
           ending_scene: endingSceneWiki,
+          status: "completed",
         };
 
         const existingAdventure = String(updated.adventure ?? '').trim();
@@ -142,7 +148,7 @@ export class EndSessionModal extends Modal {
       // Add session backlink to scene
       const tmp = new SessionCreationModal(this.app, this.plugin);
       tmp.adventurePath = resolvedAdventurePath;
-      await tmp.addSessionBacklinkToScene(this.endingScenePath, this.sessionFile.path);
+      if (this.endingScenePath) await tmp.addSessionBacklinkToScene(this.endingScenePath, this.sessionFile.path);
 
       // Optionally update scene statuses
       const endIdx = this.scenes.findIndex(s => s.path === this.endingScenePath);
@@ -164,7 +170,20 @@ export class EndSessionModal extends Modal {
         }
       }
 
-      new Notice('🏁 Ending scene recorded!');
+      new Notice(this.endingScenePath ? '🏁 Session completed and ending scene recorded!' : '🏁 Session completed!');
+      const openPrep = await new Promise<boolean>(resolve => {
+        new ConfirmModal(
+          this.app,
+          'Prepare the next session?',
+          'This session is complete. Open the Prep Dashboard to review and prepare what comes next? No new notes will be created automatically.',
+          resolve,
+        ).open();
+      });
+      if (openPrep) {
+        const parent = this.sessionFile.parent;
+        const campaignPath = parent?.name === "Sessions" ? parent.parent?.path : parent?.path;
+        await this.plugin.openSessionPrepDashboard(campaignPath);
+      }
     } catch (e) {
       new Notice(`❌ Could not save ending scene: ${e instanceof Error ? e.message : String(e)}`);
       console.error('EndSessionModal.saveEndingScene error:', e);

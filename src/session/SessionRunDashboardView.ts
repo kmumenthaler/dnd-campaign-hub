@@ -7,6 +7,7 @@ import type { SoundEffectConfig } from '../music/SoundEffectBlock';
 import { parseSoundEffectCodeblockMarkdown } from '../music/SoundEffectBlock';
 import type { HandoutContentType } from '../projection/types';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
+import { selectCurrentSession } from './sessionLifecycle';
 
 type RunScene = {
   path: string;
@@ -62,6 +63,17 @@ export class SessionRunDashboardView extends ItemView {
     if (this.campaignPath === campaignPath) return;
     this.campaignPath = campaignPath;
     void this.detectCurrentSession().then(() => this.loadQuickNotes()).then(() => this.render());
+  }
+
+  async setSession(sessionPath: string | undefined) {
+    if (!sessionPath) {
+      await this.detectCurrentSession();
+    } else {
+      const file = this.app.vault.getAbstractFileByPath(sessionPath);
+      this.currentSessionFile = file instanceof TFile ? file : null;
+    }
+    await this.loadQuickNotes();
+    await this.render();
   }
 
   private renderCampaignPicker(container: HTMLElement) {
@@ -175,19 +187,14 @@ export class SessionRunDashboardView extends ItemView {
       }
     }
 
-    // Get the most recent session
-    sessionFiles.sort((a, b) => {
-      // Try to get session number from frontmatter first
-      const cacheA = this.app.metadataCache.getFileCache(a);
-      const cacheB = this.app.metadataCache.getFileCache(b);
-      
-      const aNum = cacheA?.frontmatter?.sessionNum || this.extractSessionNumber(a.basename);
-      const bNum = cacheB?.frontmatter?.sessionNum || this.extractSessionNumber(b.basename);
-      
-      return bNum - aNum;
-    });
-
-    this.currentSessionFile = sessionFiles[0] || null;
+    this.currentSessionFile = selectCurrentSession(sessionFiles.map((file) => {
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      return {
+        value: file,
+        status: fm?.status,
+        sessionNumber: Number(fm?.sessionNum) || this.extractSessionNumber(file.basename),
+      };
+    }));
   }
 
   extractSessionNumber(filename: string): number {

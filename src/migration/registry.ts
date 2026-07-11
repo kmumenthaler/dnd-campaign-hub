@@ -815,6 +815,21 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "session-1.8.0",
+      entityTypes: ["session"],
+      targetVersion: "1.8.0",
+      description: "Add the planned/in-progress/completed session lifecycle",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        if (!/^status:/m.test(out)) {
+          out = addFrontmatterFieldAfter(out, "type", "status", "planned");
+          if (out === ctx.content) out = addFrontmatterField(out, "status", "planned");
+        }
+        return setFrontmatterField(out, "template_version", "1.8.0");
+      },
+    },
+
     // ── Adventure ────────────────────────────────────────────────────────
 
     {
