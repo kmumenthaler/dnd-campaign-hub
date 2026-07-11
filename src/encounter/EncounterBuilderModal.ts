@@ -1191,7 +1191,7 @@ export class EncounterBuilderModal extends Modal {
       : '';
     const xpInfo = xp
       ? `<div style="margin-bottom: 8px; padding: 8px; background: var(--background-secondary); border-radius: 4px;">
-          <strong>DMG XP Budget:</strong> ${xp.rating}
+          <strong>D&D 5e DMG XP Budget:</strong> ${xp.rating}
           (${xp.adjustedXp.toLocaleString()} adjusted XP; ${xp.baseXp.toLocaleString()} base XP ×${xp.multiplier})
         </div>`
       : '';
@@ -1212,8 +1212,8 @@ export class EncounterBuilderModal extends Modal {
     const partyMembers = await this.getPartyForDifficulty();
     if (result.partyStats.memberCount === 0 || partyMembers.length === 0) {
       const warningEl = difficultyCard.createDiv({ cls: "dnd-difficulty-warning" });
-      warningEl.innerHTML = `⚠️ <strong>No party registered!</strong> Using default estimates for 4 Level-3 PCs.
-        <br>Register PCs via "Create PC" to get accurate calculations.`;
+      warningEl.innerHTML = `⚠️ <strong>No party registered!</strong> Using D&D 5e default estimates for four level-3 characters.
+        <br>Register characters via "Create PC" to get accurate calculations.`;
     }
   }
 

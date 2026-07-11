@@ -1,6 +1,7 @@
 import { ItemView, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { CAMPAIGN_HOME_VIEW_TYPE } from "../constants";
+import { renderActionableEmptyState } from "../utils/ActionableEmptyState";
 
 type HomeNote = {
   file: TFile;
@@ -103,10 +104,12 @@ export class CampaignHomeView extends ItemView {
   private renderNoCampaign(container: HTMLElement) {
     const empty = container.createDiv({ cls: "campaign-home-empty" });
     empty.createEl("h2", { text: "Campaign Home" });
-    empty.createEl("p", {
-      text: "No campaign folder was found yet. Create a campaign to unlock sessions, scenes, maps, party tools, and audio workflows.",
-    });
-    this.createActionButton(empty, "Create Campaign", "mod-cta", () => this.plugin.createCampaign());
+    renderActionableEmptyState(
+      empty,
+      "No campaign found",
+      "Create a campaign to unlock sessions, scenes, maps, party tools, and audio workflows.",
+      [{ label: "Create Campaign", onClick: () => this.plugin.createCampaign(), cta: true }],
+    );
   }
 
   private renderHeader(container: HTMLElement, data: HomeData, campaigns: Array<{ path: string; name: string }>) {

@@ -11,7 +11,7 @@ export class SetupWizardModal extends Modal {
 
   onOpen() {
     this.modalEl.addClass("dnd-setup-wizard-modal");
-    this.titleEl.setText("D&D Campaign Hub Setup");
+    this.titleEl.setText("TTRPG Campaign Hub Setup");
     this.render();
   }
 

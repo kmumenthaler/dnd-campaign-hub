@@ -47,10 +47,10 @@ export class CampaignCreationModal extends Modal {
     // Role Selection
     new Setting(contentEl)
       .setName("Your Role")
-      .setDesc("Are you the GM/DM or a player?")
+      .setDesc("Are you the game facilitator or a player?")
       .addDropdown((dropdown) => {
         dropdown
-          .addOption("GM", "Game Master / DM")
+          .addOption("GM", "Game Facilitator / GM")
           .addOption("player", "Player")
           .setValue(this.role)
           .onChange((value) => {
@@ -59,10 +59,10 @@ export class CampaignCreationModal extends Modal {
           });
       });
 
-    // DM Name (shown only if player)
+    // Facilitator name (shown only if player)
     const dmSetting = new Setting(contentEl)
-      .setName("DM Name")
-      .setDesc("Name of the Dungeon Master")
+      .setName("Game Facilitator Name")
+      .setDesc("Name of the person running the game")
       .addText((text) =>
         text
           .setPlaceholder("e.g., John Smith")

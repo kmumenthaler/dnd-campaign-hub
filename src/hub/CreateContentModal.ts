@@ -1,6 +1,7 @@
 import { Modal } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import type { CreationNextStepKind } from "./CreationNextStepsModal";
+import { renderActionableEmptyState } from "../utils/ActionableEmptyState";
 
 type CreateAction = {
   label: string;
@@ -40,6 +41,15 @@ export class CreateContentModal extends Modal {
     contentEl.empty();
 
     const campaignPath = this.campaignPath || this.plugin.getActiveCampaignPath();
+    if (!campaignPath) {
+      renderActionableEmptyState(
+        contentEl,
+        "No campaign selected",
+        "Create or select a campaign before adding sessions, characters, encounters, or reference material.",
+        [{ label: "Create Campaign", onClick: () => { this.close(); this.plugin.createCampaign(); }, cta: true }],
+      );
+      return;
+    }
     const campaignName = campaignPath.split("/").pop() || "No campaign selected";
 
     const intro = contentEl.createDiv({ cls: "dnd-create-content-intro" });
