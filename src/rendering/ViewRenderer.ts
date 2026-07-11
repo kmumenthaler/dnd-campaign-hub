@@ -113,8 +113,8 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
     .map((value: unknown) => parseLink(value))
     .filter((value: string | null): value is string => Boolean(value));
   const primaryAdventureLink = parseLink(fm.adventure);
-  if (primaryAdventureLink && !adventureLinks.includes(primaryAdventureLink)) {
-    adventureLinks.unshift(primaryAdventureLink);
+  if (adventureLinks.length === 0 && primaryAdventureLink) {
+    adventureLinks.push(primaryAdventureLink);
   }
   const startPath = parseLink(fm.starting_scene);
   const endPath = parseLink(fm.ending_scene);
@@ -130,12 +130,17 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
   }
 
   const adventureGroups: Array<{ name: string; scenes: FileMeta[] }> = [];
+  const seenAdventurePaths = new Set<string>();
   for (const adventureLink of adventureLinks) {
     const adventureFile = resolveFile(app, adventureLink);
     if (!adventureFile) {
+      if (seenAdventurePaths.has(adventureLink)) continue;
+      seenAdventurePaths.add(adventureLink);
       adventureGroups.push({ name: adventureLink, scenes: [] });
       continue;
     }
+    if (seenAdventurePaths.has(adventureFile.path)) continue;
+    seenAdventurePaths.add(adventureFile.path);
     const adventureFm = app.metadataCache.getFileCache(adventureFile)?.frontmatter;
     const adventureName = adventureFm?.name || adventureFile.basename;
     adventureGroups.push({
