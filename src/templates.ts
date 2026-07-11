@@ -83,10 +83,11 @@ type: adventure
 
 export const SESSION_GM_TEMPLATE = `---
 type: session
-template_version: 1.6.1
+template_version: 1.7.0
 campaign: 
 world: 
-adventure: 
+adventure:
+adventures: []
 starting_scene: ""
 ending_scene: ""
 party_id: ""
@@ -152,9 +153,11 @@ scene-navigator
 
 export const SESSION_PLAYER_TEMPLATE = `---
 type: session
-template_version: 1.6.1
+template_version: 1.7.0
 campaign: 
 world: 
+adventure:
+adventures: []
 sessionNum: 
 location: 
 date: 

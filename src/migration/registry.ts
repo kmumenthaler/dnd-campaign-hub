@@ -798,6 +798,23 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "session-1.7.0",
+      entityTypes: ["session"],
+      targetVersion: "1.7.0",
+      description: "Add support for linking multiple adventures",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        if (!/^adventures:/m.test(out)) {
+          const adventure = (out.match(/^adventure:[ \t]*([^\r\n]*)$/m)?.[1] ?? "").trim();
+          const value = adventure ? `\n  - ${adventure}` : " []";
+          out = out.replace(/^(adventure:.*)$/m, `$1\nadventures:${value}`);
+          if (out === ctx.content) out = addFrontmatterField(out, "adventures", "[]");
+        }
+        return setFrontmatterField(out, "template_version", "1.7.0");
+      },
+    },
+
     // ── Adventure ────────────────────────────────────────────────────────
 
     {

@@ -66,7 +66,7 @@ export interface MigrationScanResult {
 /** Current target versions for all entity types */
 export const TEMPLATE_VERSIONS: Record<string, string> = {
   world: "1.3.0",
-  session: "1.6.1",
+  session: "1.7.0",
   npc: "1.4.0",
   pc: "1.5.0",
   player: "1.5.0",

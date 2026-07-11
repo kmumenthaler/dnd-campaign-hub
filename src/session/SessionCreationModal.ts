@@ -13,6 +13,7 @@ export class SessionCreationModal extends Modal {
   sessionDate: string;
   location = "";
   adventurePath = "";
+  adventurePaths: string[] = [];
   startingScenePath = "";
   useCustomDate = false;
   calendar = "";
@@ -34,6 +35,7 @@ export class SessionCreationModal extends Modal {
     this.sessionDate = new Date().toISOString().split('T')[0] || "";
     if (adventurePath) {
       this.adventurePath = adventurePath;
+      this.adventurePaths = [adventurePath];
     }
   }
 
@@ -307,21 +309,54 @@ export class SessionCreationModal extends Modal {
     };
 
     if (adventures.length > 0) {
-      new Setting(contentEl)
-        .setName("Adventure")
-        .setDesc("Link this session to an adventure (optional)")
-        .addDropdown(dropdown => {
-          dropdown.addOption("", "-- None --");
-          adventures.forEach(adv => {
-            dropdown.addOption(adv.path, adv.name);
+      const primaryAdventureContainer = contentEl.createDiv();
+      const renderPrimaryAdventurePicker = () => {
+        primaryAdventureContainer.empty();
+        if (this.adventurePaths.length === 0) {
+          this.adventurePath = "";
+          this.startingScenePath = "";
+          scenePickerContainer.empty();
+          return;
+        }
+        if (!this.adventurePaths.includes(this.adventurePath)) {
+          this.adventurePath = this.adventurePaths[0] ?? "";
+        }
+        new Setting(primaryAdventureContainer)
+          .setName("Primary Adventure")
+          .setDesc("Used to choose the starting scene for this session")
+          .addDropdown(dropdown => {
+            for (const path of this.adventurePaths) {
+              const adventure = adventures.find(candidate => candidate.path === path);
+              if (adventure) dropdown.addOption(adventure.path, adventure.name);
+            }
+            dropdown.setValue(this.adventurePath);
+            dropdown.onChange(async value => {
+              this.adventurePath = value;
+              this.startingScenePath = "";
+              await refreshScenePicker(value);
+            });
           });
-          dropdown.setValue(this.adventurePath);
-          dropdown.onChange(async value => {
-            this.adventurePath = value;
-            this.startingScenePath = "";
-            await refreshScenePicker(value);
-          });
-        });
+        void refreshScenePicker(this.adventurePath);
+      };
+
+      const adventureSetting = new Setting(contentEl)
+        .setName("Adventures")
+        .setDesc("Link this session to one or more adventures (optional)");
+      for (const adventure of adventures) {
+        adventureSetting.addToggle(toggle => toggle
+          .setTooltip(adventure.name)
+          .setValue(this.adventurePaths.includes(adventure.path))
+          .onChange(value => {
+            if (value && !this.adventurePaths.includes(adventure.path)) {
+              this.adventurePaths.push(adventure.path);
+            } else if (!value) {
+              this.adventurePaths = this.adventurePaths.filter(path => path !== adventure.path);
+            }
+            renderPrimaryAdventurePicker();
+          }));
+        adventureSetting.controlEl.createSpan({ text: adventure.name, cls: "setting-item-description" });
+      }
+      renderPrimaryAdventurePicker();
       await refreshScenePicker(this.adventurePath);
     }
 
@@ -538,6 +573,7 @@ export class SessionCreationModal extends Modal {
       }
 
       const adventureLink = this.adventurePath ? `[[${this.adventurePath}]]` : "";
+      const adventureLinks = this.adventurePaths.map(path => `[[${path}]]`);
       const startingSceneLink = this.startingScenePath ? `[[${this.startingScenePath}]]` : "";
 
       sessionContent = updateYamlFrontmatter(sessionContent, (fm) => ({
@@ -545,6 +581,7 @@ export class SessionCreationModal extends Modal {
         campaign: campaignName,
         world: campaignName,
         adventure: adventureLink,
+        adventures: adventureLinks,
         starting_scene: startingSceneLink,
         ending_scene: "",
         party_id: this.selectedPartyId,
@@ -573,8 +610,8 @@ export class SessionCreationModal extends Modal {
       await this.app.vault.create(filePath, sessionContent);
 
       // Link this session to the adventure's sessions[] frontmatter
-      if (this.adventurePath) {
-        await this.linkSessionToAdventure(this.adventurePath, filePath);
+      for (const adventurePath of this.adventurePaths) {
+        await this.linkSessionToAdventure(adventurePath, filePath);
       }
 
       // Handle starting scene backlink + optional status update
