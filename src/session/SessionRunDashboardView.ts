@@ -9,6 +9,7 @@ import type { HandoutContentType } from '../projection/types';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 import { selectCurrentSession } from './sessionLifecycle';
 import { extractQuickNotes, updateQuickNotesSection } from './quickNotes';
+import { renderActionableEmptyState } from '../utils/ActionableEmptyState';
 
 type RunScene = {
   path: string;
@@ -86,7 +87,7 @@ export class SessionRunDashboardView extends ItemView {
 
     const campaigns = this.plugin.getAllCampaigns();
     if (campaigns.length === 0) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         wrapper,
         "No campaigns found",
         "Create a campaign before using the live session controls.",
@@ -109,32 +110,6 @@ export class SessionRunDashboardView extends ItemView {
       await this.detectCurrentSession();
       this.render();
     });
-  }
-
-  private renderEmptyState(
-    container: HTMLElement,
-    title: string,
-    description: string,
-    actions: Array<{ label: string; onClick: () => void | Promise<void>; cta?: boolean }> = []
-  ): HTMLElement {
-    const empty = container.createEl("div", { cls: "dashboard-empty-state" });
-    empty.createEl("strong", { text: title });
-    empty.createEl("p", { text: description });
-    if (actions.length > 0) {
-      const actionRow = empty.createEl("div", { cls: "dashboard-empty-actions" });
-      for (const action of actions) {
-        const button = actionRow.createEl("button", {
-          text: action.label,
-          cls: action.cta ? "mod-cta" : "",
-        });
-        button.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          void action.onClick();
-        });
-      }
-    }
-    return empty;
   }
 
   async onOpen() {
@@ -704,7 +679,7 @@ export class SessionRunDashboardView extends ItemView {
     section.createEl("h3", { text: "🎬 Live Scene" });
 
     if (!context.current) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         section,
         "No runnable scene found",
         "Create or prepare a scene to make the live dashboard useful during play.",

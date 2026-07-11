@@ -83,7 +83,7 @@ export class CreatureCreationModal extends Modal {
     // Import section
     contentEl.createEl("h3", { text: "Import from Text" });
     contentEl.createEl("p", { 
-      text: "Paste a statblock below to auto-fill the form. Supports both 2014 (D&D Beyond classic) and 2024 (new Monster Manual) formats:",
+      text: "Optional D&D 5e import: paste a 2014 (D&D Beyond classic) or 2024 (Monster Manual) statblock to auto-fill the form:",
       cls: "setting-item-description"
     });
 

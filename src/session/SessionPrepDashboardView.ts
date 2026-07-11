@@ -2,6 +2,7 @@ import { App, ItemView, TAbstractFile, TFile, TFolder, WorkspaceLeaf } from "obs
 import type DndCampaignHubPlugin from "../main";
 import { SESSION_PREP_VIEW_TYPE } from "../constants";
 import { SessionCreationModal } from "./SessionCreationModal";
+import { renderActionableEmptyState } from "../utils/ActionableEmptyState";
 
 export class SessionPrepDashboardView extends ItemView {
   private static readonly AUTO_REFRESH_MS = 30000;
@@ -147,7 +148,7 @@ export class SessionPrepDashboardView extends ItemView {
 
     const campaigns = this.plugin.getAllCampaigns();
     if (campaigns.length === 0) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         wrapper,
         "No campaigns found",
         "Create a campaign to unlock prep, sessions, scenes, party tools, maps, and audio.",
@@ -457,32 +458,6 @@ export class SessionPrepDashboardView extends ItemView {
     commands?.executeCommandById(`dnd-campaign-hub:${commandId}`);
   }
 
-  private renderEmptyState(
-    container: HTMLElement,
-    title: string,
-    description: string,
-    actions: Array<{ label: string; onClick: () => void | Promise<void>; cta?: boolean }> = []
-  ): HTMLElement {
-    const empty = container.createEl("div", { cls: "dashboard-empty-state" });
-    empty.createEl("strong", { text: title });
-    empty.createEl("p", { text: description });
-    if (actions.length > 0) {
-      const actionRow = empty.createEl("div", { cls: "dashboard-empty-actions" });
-      for (const action of actions) {
-        const button = actionRow.createEl("button", {
-          text: action.label,
-          cls: action.cta ? "mod-cta" : "",
-        });
-        button.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          void action.onClick();
-        });
-      }
-    }
-    return empty;
-  }
-
   async renderReadinessCard(container: HTMLElement) {
     const readiness = await this.getReadinessData();
     const section = container.createEl("div", { cls: "dashboard-section" });
@@ -642,7 +617,7 @@ export class SessionPrepDashboardView extends ItemView {
     const npcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/NPCs`);
     
     if (!(npcsFolder instanceof TFolder)) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         content,
         "No NPCs found",
         "NPCs give the prep dashboard quick access to recurring characters.",
@@ -660,7 +635,7 @@ export class SessionPrepDashboardView extends ItemView {
       const recentNPCs = npcFiles.slice(0, 8);
 
       if (recentNPCs.length === 0) {
-        this.renderEmptyState(
+        renderActionableEmptyState(
           content,
           "No NPCs yet",
           "Create important NPCs here so they are easy to pull up while preparing.",
@@ -724,7 +699,7 @@ export class SessionPrepDashboardView extends ItemView {
     const adventures = this.getTargetSessionAdventures();
 
     if (adventures.length === 0) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         section,
         this.getTargetSession() ? "No adventures linked to this session" : "No session selected",
         this.getTargetSession()
@@ -764,7 +739,7 @@ export class SessionPrepDashboardView extends ItemView {
       const scenes = await this.getScenesForAdventure(adventure.path);
       
       if (scenes.length === 0) {
-        this.renderEmptyState(
+        renderActionableEmptyState(
           adventureCard,
           "No scenes yet",
           "Scenes are the moments you can prepare, run, and connect to maps, music, and encounters.",
@@ -980,7 +955,7 @@ export class SessionPrepDashboardView extends ItemView {
     const party = this.plugin.partyManager.resolveParty(undefined, campaignName);
 
     if (!party || party.members.length === 0) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         content,
         "No party members found",
         "Link a party to this campaign so encounters and session prep use the right characters.",
@@ -991,7 +966,7 @@ export class SessionPrepDashboardView extends ItemView {
       const presentMembers = resolved.filter((m) => m.enabled && !m.absent);
 
       if (presentMembers.length === 0) {
-        this.renderEmptyState(
+        renderActionableEmptyState(
           content,
           resolved.length === 0 ? "No PCs yet" : "No present PCs",
           resolved.length === 0
@@ -1090,7 +1065,7 @@ export class SessionPrepDashboardView extends ItemView {
       : null;
     const lastSession = targeted instanceof TFile ? targeted : sessionFiles[0];
     if (!lastSession) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         container,
         "No sessions yet",
         "Create your first session note to track prep, recap, scenes, and follow-up.",
@@ -1252,7 +1227,7 @@ export class SessionPrepDashboardView extends ItemView {
     const sessionFiles = this.getSessionFiles();
 
     if (sessionFiles.length === 0) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         content,
         "No previous sessions yet",
         "Create a session note now; future prep will show the latest recap here.",
