@@ -54,6 +54,11 @@ function openNote(app: App, path: string): void {
   app.workspace.openLinkText(path, "", false);
 }
 
+function openNoteInNewTab(app: App, path: string): void {
+  const file = app.vault.getAbstractFileByPath(path);
+  if (file instanceof TFile) void app.workspace.getLeaf("tab").openFile(file);
+}
+
 function parseLink(val: any): string | null {
   if (!val || val === '""' || val === "") return null;
   if (typeof val === "string") {
@@ -108,11 +113,18 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
   const fm = cache?.frontmatter;
   if (!fm) return;
 
-  const adventureLink = parseLink(fm.adventure);
+  const configuredAdventures = Array.isArray(fm.adventures) ? fm.adventures : [];
+  const adventureLinks = configuredAdventures
+    .map((value: unknown) => parseLink(value))
+    .filter((value: string | null): value is string => Boolean(value));
+  const primaryAdventureLink = parseLink(fm.adventure);
+  if (adventureLinks.length === 0 && primaryAdventureLink) {
+    adventureLinks.push(primaryAdventureLink);
+  }
   const startPath = parseLink(fm.starting_scene);
   const endPath = parseLink(fm.ending_scene);
 
-  if (!adventureLink) {
+  if (adventureLinks.length === 0) {
     el.createEl("p", { text: "No adventure linked to this session.", cls: "dnd-hub-empty" });
     const createBtn = el.createEl("button", { text: "🗺️ Create Adventure", cls: "mod-cta" });
     createBtn.style.marginTop = "10px";
@@ -122,24 +134,29 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
     return;
   }
 
-  // Find the adventure note
-  const adventureFile = resolveFile(app, adventureLink);
-  if (!adventureFile) {
-    el.createEl("p", { text: `Adventure note not found: ${adventureLink}`, cls: "dnd-hub-empty" });
-    return;
+  const adventureGroups: Array<{ name: string; scenes: FileMeta[] }> = [];
+  const seenAdventurePaths = new Set<string>();
+  for (const adventureLink of adventureLinks) {
+    const adventureFile = resolveFile(app, adventureLink);
+    if (!adventureFile) {
+      if (seenAdventurePaths.has(adventureLink)) continue;
+      seenAdventurePaths.add(adventureLink);
+      adventureGroups.push({ name: adventureLink, scenes: [] });
+      continue;
+    }
+    if (seenAdventurePaths.has(adventureFile.path)) continue;
+    seenAdventurePaths.add(adventureFile.path);
+    const adventureFm = app.metadataCache.getFileCache(adventureFile)?.frontmatter;
+    const adventureName = adventureFm?.name || adventureFile.basename;
+    adventureGroups.push({
+      name: adventureName,
+      scenes: collectScenes(app, adventureFile.parent?.path || "", adventureFm?.campaign || "", adventureName),
+    });
   }
-
-  const adventureCache = app.metadataCache.getFileCache(adventureFile);
-  const adventureFm = adventureCache?.frontmatter;
-  const adventureName = adventureFm?.name || adventureFile.basename;
-  const adventureFolder = adventureFile.parent?.path || "";
-  const campaignFolder = adventureFm?.campaign || "";
-
-  // Collect scenes from all folder structures
-  const allScenes = collectScenes(app, adventureFolder, campaignFolder, adventureName);
+  const allScenes = adventureGroups.flatMap(group => group.scenes);
 
   if (allScenes.length === 0) {
-    el.createEl("p", { text: "No scenes found for this adventure. Create a scene from the adventure note.", cls: "dnd-hub-empty" });
+    el.createEl("p", { text: "No scenes found for the linked adventures. Create scenes from the adventure notes.", cls: "dnd-hub-empty" });
     return;
   }
 
@@ -163,7 +180,7 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
     const a = c.createEl("a", { text: allScenes[startIdx]!.file.basename, cls: "internal-link" });
     a.addEventListener("click", (e) => {
       e.preventDefault();
-      openNote(app, allScenes[startIdx]!.file.path);
+      openNoteInNewTab(app, allScenes[startIdx]!.file.path);
     });
   }
 
@@ -174,7 +191,7 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
     const a = c.createEl("a", { text: allScenes[endIdx]!.file.basename, cls: "internal-link" });
     a.addEventListener("click", (e) => {
       e.preventDefault();
-      openNote(app, allScenes[endIdx]!.file.path);
+      openNoteInNewTab(app, allScenes[endIdx]!.file.path);
     });
   }
 
@@ -189,8 +206,14 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
 
   // Scene list
   el.createEl("h4", { text: "Adventure Scenes" });
-  for (let i = 0; i < allScenes.length; i++) {
-    const scene = allScenes[i]!;
+  for (const group of adventureGroups) {
+    el.createEl("h5", { text: group.name });
+    if (group.scenes.length === 0) {
+      el.createEl("p", { text: "No scenes found for this adventure.", cls: "dnd-hub-empty" });
+      continue;
+    }
+    for (const scene of group.scenes) {
+    const i = allScenes.indexOf(scene);
     const isStart = i === startIdx;
     const isEnd = i === endIdx;
     let currentStatus = scene.fm.status || "not-started";
@@ -220,7 +243,7 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
     const link = nameEl.createEl("a", { text: scene.file.basename, cls: "internal-link" });
     link.addEventListener("click", (e) => {
       e.preventDefault();
-      openNote(app, scene.file.path);
+      openNoteInNewTab(app, scene.file.path);
     });
 
     // Meta info
@@ -230,6 +253,7 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
 
     if (isStart) row.createEl("span", { text: " 📍", attr: { title: "Session start" } });
     if (isEnd) row.createEl("span", { text: " 🏁", attr: { title: "Session end" } });
+    }
   }
 }
 

@@ -13,6 +13,7 @@ export class SessionCreationModal extends Modal {
   sessionDate: string;
   location = "";
   adventurePath = "";
+  adventurePaths: string[] = [];
   startingScenePath = "";
   useCustomDate = false;
   calendar = "";
@@ -26,15 +27,67 @@ export class SessionCreationModal extends Modal {
   endDayDropdown: any = null;
   private selectedPartyId = "";
   private selectedPartyName = "";
+  isEdit = false;
+  originalSessionPath = "";
+  private originalAdventurePaths: string[] = [];
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, campaignPath?: string) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, campaignPath?: string, sessionPath?: string) {
     super(app);
     this.plugin = plugin;
     this.campaignPath = campaignPath || plugin.resolveCampaign();
     this.sessionDate = new Date().toISOString().split('T')[0] || "";
     if (adventurePath) {
       this.adventurePath = adventurePath;
+      this.adventurePaths = [adventurePath];
     }
+    if (sessionPath) {
+      this.isEdit = true;
+      this.originalSessionPath = sessionPath;
+      const sessionFile = this.app.vault.getAbstractFileByPath(sessionPath);
+      if (sessionFile instanceof TFile && sessionFile.parent) this.campaignPath = sessionFile.parent.path;
+    }
+  }
+
+  private parseFrontmatterLink(value: unknown): string {
+    if (!value) return "";
+    if (typeof value === "object" && value !== null && "path" in value) {
+      return String((value as { path?: unknown }).path ?? "");
+    }
+    const text = String(value).trim();
+    return text.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/)?.[1] ?? text;
+  }
+
+  async loadSessionData() {
+    const file = this.app.vault.getAbstractFileByPath(this.originalSessionPath);
+    if (!(file instanceof TFile)) {
+      new Notice("Session file not found!");
+      return;
+    }
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    if (!fm) {
+      new Notice("Could not read session data!");
+      return;
+    }
+
+    const allAdventureValues = Array.isArray(fm.adventures) ? fm.adventures : [];
+    this.adventurePaths = allAdventureValues.map((value: unknown) => this.parseFrontmatterLink(value)).filter(Boolean);
+    this.adventurePath = this.parseFrontmatterLink(fm.adventure);
+    if (this.adventurePath && !this.adventurePaths.includes(this.adventurePath)) this.adventurePaths.unshift(this.adventurePath);
+    this.originalAdventurePaths = [...this.adventurePaths];
+    this.startingScenePath = this.parseFrontmatterLink(fm.starting_scene);
+    this.location = String(fm.location ?? "");
+    this.sessionDate = String(fm.date ?? this.sessionDate);
+    this.calendar = String(fm["fc-calendar"] ?? this.calendar);
+    this.startYear = String(fm["fc-date"]?.year ?? this.startYear);
+    this.startMonth = String(fm["fc-date"]?.month ?? this.startMonth);
+    this.startDay = String(fm["fc-date"]?.day ?? this.startDay);
+    this.endYear = String(fm["fc-end"]?.year ?? this.endYear);
+    this.endMonth = String(fm["fc-end"]?.month ?? this.endMonth);
+    this.endDay = String(fm["fc-end"]?.day ?? this.endDay);
+    this.selectedPartyId = String(fm.party_id ?? "");
+
+    const content = await this.app.vault.read(file);
+    this.sessionTitle = content.match(/^# Session(?:\s+\d+)?(?:\s+-\s+(.+))?$/m)?.[1]?.trim() ?? "";
   }
 
   async getAllAdventures(): Promise<Array<{ path: string; name: string }>> {
@@ -242,10 +295,11 @@ export class SessionCreationModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
 
-    contentEl.createEl("h2", { text: "📜 Create New Session" });
+    contentEl.createEl("h2", { text: this.isEdit ? "✏️ Edit Session" : "📜 Create New Session" });
 
     // Wait for calendar data to load
     await this.loadCalendarData();
+    if (this.isEdit) await this.loadSessionData();
 
     // Get campaign info
     const campaignPath = this.campaignPath;
@@ -257,7 +311,9 @@ export class SessionCreationModal extends Modal {
     });
 
     // Calculate next session number
-    const nextSessionNum = this.getNextSessionNumber();
+    const nextSessionNum = this.isEdit
+      ? Number(this.app.metadataCache.getFileCache(this.app.vault.getAbstractFileByPath(this.originalSessionPath) as TFile)?.frontmatter?.sessionNum) || this.getNextSessionNumber()
+      : this.getNextSessionNumber();
     contentEl.createEl("p", { 
       text: `Session Number: ${nextSessionNum}`,
       cls: "setting-item-description"
@@ -270,10 +326,11 @@ export class SessionCreationModal extends Modal {
       .addText((text) => {
         text
           .setPlaceholder("e.g., The Goblin Ambush")
+          .setValue(this.sessionTitle)
           .onChange((value) => {
             this.sessionTitle = value;
           });
-        text.inputEl.focus();
+        if (!this.isEdit) text.inputEl.focus();
       });
 
     // Adventure Selection
@@ -287,7 +344,8 @@ export class SessionCreationModal extends Modal {
       if (scenes.length === 0) return;
 
       // Pre-select first in-progress, then first not-started, then first overall
-      const preferred = scenes.find(s => s.status === 'in-progress')
+      const preferred = scenes.find(s => s.path === this.startingScenePath)
+        ?? scenes.find(s => s.status === 'in-progress')
         ?? scenes.find(s => s.status === 'not-started')
         ?? scenes[0];
       this.startingScenePath = preferred?.path ?? '';
@@ -307,21 +365,54 @@ export class SessionCreationModal extends Modal {
     };
 
     if (adventures.length > 0) {
-      new Setting(contentEl)
-        .setName("Adventure")
-        .setDesc("Link this session to an adventure (optional)")
-        .addDropdown(dropdown => {
-          dropdown.addOption("", "-- None --");
-          adventures.forEach(adv => {
-            dropdown.addOption(adv.path, adv.name);
+      const primaryAdventureContainer = contentEl.createDiv();
+      const renderPrimaryAdventurePicker = () => {
+        primaryAdventureContainer.empty();
+        if (this.adventurePaths.length === 0) {
+          this.adventurePath = "";
+          this.startingScenePath = "";
+          scenePickerContainer.empty();
+          return;
+        }
+        if (!this.adventurePaths.includes(this.adventurePath)) {
+          this.adventurePath = this.adventurePaths[0] ?? "";
+        }
+        new Setting(primaryAdventureContainer)
+          .setName("Primary Adventure")
+          .setDesc("Used to choose the starting scene for this session")
+          .addDropdown(dropdown => {
+            for (const path of this.adventurePaths) {
+              const adventure = adventures.find(candidate => candidate.path === path);
+              if (adventure) dropdown.addOption(adventure.path, adventure.name);
+            }
+            dropdown.setValue(this.adventurePath);
+            dropdown.onChange(async value => {
+              this.adventurePath = value;
+              this.startingScenePath = "";
+              await refreshScenePicker(value);
+            });
           });
-          dropdown.setValue(this.adventurePath);
-          dropdown.onChange(async value => {
-            this.adventurePath = value;
-            this.startingScenePath = "";
-            await refreshScenePicker(value);
-          });
-        });
+        void refreshScenePicker(this.adventurePath);
+      };
+
+      const adventureSetting = new Setting(contentEl)
+        .setName("Adventures")
+        .setDesc("Link this session to one or more adventures (optional)");
+      for (const adventure of adventures) {
+        adventureSetting.addToggle(toggle => toggle
+          .setTooltip(adventure.name)
+          .setValue(this.adventurePaths.includes(adventure.path))
+          .onChange(value => {
+            if (value && !this.adventurePaths.includes(adventure.path)) {
+              this.adventurePaths.push(adventure.path);
+            } else if (!value) {
+              this.adventurePaths = this.adventurePaths.filter(path => path !== adventure.path);
+            }
+            renderPrimaryAdventurePicker();
+          }));
+        adventureSetting.controlEl.createSpan({ text: adventure.name, cls: "setting-item-description" });
+      }
+      renderPrimaryAdventurePicker();
       await refreshScenePicker(this.adventurePath);
     }
 
@@ -392,6 +483,7 @@ export class SessionCreationModal extends Modal {
       .addText((text) =>
         text
           .setPlaceholder("e.g., Phandalin")
+          .setValue(this.location)
           .onChange((value) => {
             this.location = value;
           })
@@ -402,7 +494,7 @@ export class SessionCreationModal extends Modal {
 
     // Auto-resolve the campaign party as default
     const defaultParty = this.plugin.partyManager.resolveParty(undefined, campaignName);
-    if (defaultParty) {
+    if (defaultParty && !this.selectedPartyId) {
       this.selectedPartyId = defaultParty.id;
       this.selectedPartyName = defaultParty.name;
     }
@@ -434,14 +526,71 @@ export class SessionCreationModal extends Modal {
     });
 
     const createButton = buttonContainer.createEl("button", {
-      text: "Create Session",
+      text: this.isEdit ? "Save Changes" : "Create Session",
       cls: "mod-cta",
     });
 
     createButton.addEventListener("click", async () => {
       this.close();
-      await this.createSessionFile();
+      if (this.isEdit) await this.updateSessionFile();
+      else await this.createSessionFile();
     });
+  }
+
+  async updateSessionFile() {
+    const file = this.app.vault.getAbstractFileByPath(this.originalSessionPath);
+    if (!(file instanceof TFile)) {
+      new Notice("❌ Session file not found!");
+      return;
+    }
+    try {
+      const existing = await this.app.vault.read(file);
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      const sessionNumber = Number(fm?.sessionNum ?? fm?.session_number) || this.getSessionNumberFromFile(file);
+      const adventureLinks = this.adventurePaths.map(path => `[[${path}]]`);
+      let updated = updateYamlFrontmatter(existing, current => ({
+        ...current,
+        adventure: this.adventurePath ? `[[${this.adventurePath}]]` : "",
+        adventures: adventureLinks,
+        starting_scene: this.startingScenePath ? `[[${this.startingScenePath}]]` : "",
+        party_id: this.selectedPartyId,
+        location: this.location,
+        date: this.sessionDate,
+        "fc-calendar": this.calendar,
+        "fc-date": { year: this.startYear, month: this.startMonth, day: this.startDay },
+        "fc-end": { year: this.endYear, month: this.endMonth, day: this.endDay },
+      }));
+      updated = updated.replace(
+        /^# Session.*$/m,
+        `# Session ${sessionNumber}${this.sessionTitle ? ` - ${this.sessionTitle}` : ""}`,
+      );
+      await this.app.vault.modify(file, updated);
+
+      for (const path of this.adventurePaths) await this.linkSessionToAdventure(path, file.path);
+      for (const path of this.originalAdventurePaths.filter(oldPath => !this.adventurePaths.includes(oldPath))) {
+        await this.unlinkSessionFromAdventure(path, file.path);
+      }
+      new Notice(`✅ Session ${sessionNumber} updated!`);
+    } catch (error) {
+      new Notice(`❌ Error updating session: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("Session update error:", error);
+    }
+  }
+
+  private getSessionNumberFromFile(file: TFile): number {
+    return Number(file.basename.match(/^(\d{3})_/)?.[1] ?? 0);
+  }
+
+  async unlinkSessionFromAdventure(adventurePath: string, sessionFilePath: string) {
+    const adventureFile = this.resolveAdventureFile(adventurePath);
+    if (!(adventureFile instanceof TFile)) return;
+    const content = await this.app.vault.read(adventureFile);
+    const raw = this.app.metadataCache.getFileCache(adventureFile)?.frontmatter?.sessions;
+    const sessions = (Array.isArray(raw) ? raw : raw ? [raw] : [])
+      .map(value => String(value))
+      .filter(value => !value.includes(sessionFilePath));
+    const updated = updateYamlFrontmatter(content, fm => ({ ...fm, sessions }));
+    await this.app.vault.modify(adventureFile, updated);
   }
 
   getNextSessionNumber(): number {
@@ -538,6 +687,7 @@ export class SessionCreationModal extends Modal {
       }
 
       const adventureLink = this.adventurePath ? `[[${this.adventurePath}]]` : "";
+      const adventureLinks = this.adventurePaths.map(path => `[[${path}]]`);
       const startingSceneLink = this.startingScenePath ? `[[${this.startingScenePath}]]` : "";
 
       sessionContent = updateYamlFrontmatter(sessionContent, (fm) => ({
@@ -545,6 +695,7 @@ export class SessionCreationModal extends Modal {
         campaign: campaignName,
         world: campaignName,
         adventure: adventureLink,
+        adventures: adventureLinks,
         starting_scene: startingSceneLink,
         ending_scene: "",
         party_id: this.selectedPartyId,
@@ -573,8 +724,8 @@ export class SessionCreationModal extends Modal {
       await this.app.vault.create(filePath, sessionContent);
 
       // Link this session to the adventure's sessions[] frontmatter
-      if (this.adventurePath) {
-        await this.linkSessionToAdventure(this.adventurePath, filePath);
+      for (const adventurePath of this.adventurePaths) {
+        await this.linkSessionToAdventure(adventurePath, filePath);
       }
 
       // Handle starting scene backlink + optional status update

@@ -674,6 +674,19 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "edit-session",
+      name: "Edit Session",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || this.app.metadataCache.getFileCache(file)?.frontmatter?.type !== "session") {
+          new Notice("Open a session note first.");
+          return;
+        }
+        new SessionCreationModal(this.app, this, undefined, file.parent?.path, file.path).open();
+      },
+    });
+
+    this.addCommand({
       id: "end-session-here",
       name: "End Session Here (record ending scene)",
       callback: () => {
@@ -2138,6 +2151,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				break;
 
 			case "session":
+				createBtn("✏️ Edit Session", "dnd-hub-btn-edit", cmd("edit-session"));
 				createBtn("▶️ Start Session", "dnd-hub-btn-extra", () => this.openSessionRunDashboard(campaignPathForNote()), "Open the session run dashboard");
 				createBtn("🧭 Prep Dashboard", "dnd-hub-btn-extra", () => this.openSessionPrepDashboard(campaignPathForNote()), "Open the preparation dashboard");
 				createBtn("🏠 Campaign Home", "dnd-hub-btn-extra", () => this.openCampaignHome(campaignPathForNote()), "Open this campaign in Campaign Home");
