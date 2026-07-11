@@ -7,6 +7,7 @@ import type { SoundEffectConfig } from '../music/SoundEffectBlock';
 import { parseSoundEffectCodeblockMarkdown } from '../music/SoundEffectBlock';
 import type { HandoutContentType } from '../projection/types';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
+import { extractQuickNotes, updateQuickNotesSection } from './quickNotes';
 
 type RunScene = {
   path: string;
@@ -39,6 +40,8 @@ export class SessionRunDashboardView extends ItemView {
   quickNotesContent: string = "";
   autoSaveInterval: number | null = null;
   timerUpdateInterval: number | null = null;
+  private readonly managedLeaves = new Set<WorkspaceLeaf>();
+  private readonly priorLeafModes = new Map<WorkspaceLeaf, string>();
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -202,46 +205,51 @@ export class SessionRunDashboardView extends ItemView {
     return 0;
   }
 
-  /** Detect whether any open markdown leaves are currently in source/edit mode. */
+  /** Detect whether a dashboard-managed markdown leaf is currently editable. */
   private detectActualEditMode(): boolean {
-    let anyEditable = false;
-    this.app.workspace.iterateAllLeaves((leaf) => {
+    for (const leaf of this.managedLeaves) {
       if (leaf.view.getViewType() === "markdown") {
         const view = leaf.view as any;
         if (typeof view.getMode === 'function' && view.getMode() === 'source') {
-          anyEditable = true;
+          return true;
         }
       }
-    });
-    return anyEditable;
+    }
+    return false;
+  }
+
+  private manageLeaf(leaf: WorkspaceLeaf): void {
+    this.managedLeaves.add(leaf);
   }
 
   enableReadOnlyMode() {
     this.readOnlyMode = true;
-    // Set all markdown views to read/preview mode
-    this.app.workspace.iterateAllLeaves((leaf) => {
+    for (const leaf of this.managedLeaves) {
       if (leaf.view.getViewType() === "markdown") {
         const view = leaf.view as any;
-        if (typeof view.getMode === 'function' && view.getMode() === 'source') {
+        if (typeof view.getMode === 'function') {
+          if (!this.priorLeafModes.has(leaf)) this.priorLeafModes.set(leaf, view.getMode());
+        }
+        if (typeof view.getMode === 'function' && view.getMode() !== 'preview') {
           const state = view.getState();
           view.setState({ ...state, mode: "preview" }, {});
         }
       }
-    });
+    }
   }
 
   disableReadOnlyMode() {
     this.readOnlyMode = false;
-    // Switch all markdown views back to source/edit mode
-    this.app.workspace.iterateAllLeaves((leaf) => {
+    for (const [leaf, priorMode] of this.priorLeafModes) {
       if (leaf.view.getViewType() === "markdown") {
         const view = leaf.view as any;
-        if (typeof view.getMode === 'function' && view.getMode() === 'preview') {
+        if (typeof view.getMode === 'function' && view.getMode() !== priorMode) {
           const state = view.getState();
-          view.setState({ ...state, mode: "source" }, {});
+          view.setState({ ...state, mode: priorMode }, {});
         }
       }
-    });
+    }
+    this.priorLeafModes.clear();
   }
 
   startAutoSave() {
@@ -254,25 +262,13 @@ export class SessionRunDashboardView extends ItemView {
   }
 
   async saveQuickNotes() {
-    if (!this.currentSessionFile || !this.quickNotesContent.trim()) return;
+    if (!this.currentSessionFile) return;
 
     try {
       const content = await this.app.vault.read(this.currentSessionFile);
       
-      // Check if Quick Notes section exists
-      const quickNotesMarker = "## Quick Notes (During Session)";
-      
-      if (content.includes(quickNotesMarker)) {
-        // Update existing section — match until next heading or end of file
-        const regex = /(## Quick Notes \(During Session\)\s*\n)[\s\S]*?(?=\n## |$)/;
-        const newContent = content.replace(
-          regex,
-          `## Quick Notes (During Session)\n\n${this.quickNotesContent}\n`
-        );
-        await this.app.vault.modify(this.currentSessionFile, newContent);
-      } else {
-        // Add new section at the end
-        const newContent = content.trimEnd() + `\n\n${quickNotesMarker}\n\n${this.quickNotesContent}\n`;
+      const newContent = updateQuickNotesSection(content, this.quickNotesContent);
+      if (newContent !== content) {
         await this.app.vault.modify(this.currentSessionFile, newContent);
       }
     } catch (error) {
@@ -286,15 +282,7 @@ export class SessionRunDashboardView extends ItemView {
 
     try {
       const content = await this.app.vault.read(this.currentSessionFile);
-      const marker = "## Quick Notes (During Session)";
-      const idx = content.indexOf(marker);
-      if (idx === -1) return;
-
-      // Extract text between the marker and the next heading or end of file
-      const afterMarker = content.slice(idx + marker.length);
-      const nextHeading = afterMarker.search(/\n## /);
-      const section = nextHeading === -1 ? afterMarker : afterMarker.slice(0, nextHeading);
-      this.quickNotesContent = section.trim();
+      this.quickNotesContent = extractQuickNotes(content);
     } catch (error) {
       console.error("Error loading quick notes:", error);
     }
@@ -482,6 +470,7 @@ export class SessionRunDashboardView extends ItemView {
       new Notice("Could not set up layout - no workspace available");
       return;
     }
+    this.manageLeaf(mainLeaf);
 
 
     // Get active adventure and scene
@@ -504,6 +493,7 @@ export class SessionRunDashboardView extends ItemView {
         
         // Split right for adventure
         const adventureLeaf = this.app.workspace.getLeaf('split', 'vertical');
+        this.manageLeaf(adventureLeaf);
         const adventureFile = this.app.vault.getAbstractFileByPath(adventure.path);
         if (adventureFile instanceof TFile) {
           await adventureLeaf.openFile(adventureFile);
@@ -514,6 +504,7 @@ export class SessionRunDashboardView extends ItemView {
         // Split bottom of adventure pane for session notes
         if (this.currentSessionFile) {
           const sessionLeaf = this.app.workspace.getLeaf('split', 'horizontal');
+          this.manageLeaf(sessionLeaf);
           await sessionLeaf.openFile(this.currentSessionFile);
           // Collapse properties for session
           await this.collapseProperties(sessionLeaf);
@@ -529,6 +520,7 @@ export class SessionRunDashboardView extends ItemView {
         // Open session in split if available
         if (this.currentSessionFile) {
           const sessionLeaf = this.app.workspace.getLeaf('split', 'vertical');
+          this.manageLeaf(sessionLeaf);
           await sessionLeaf.openFile(this.currentSessionFile);
           await this.collapseProperties(sessionLeaf);
         }
@@ -1615,8 +1607,7 @@ export class SessionRunDashboardView extends ItemView {
     await this.saveQuickNotes();
     
     // Disable read-only mode
-    if (this.readOnlyMode) {
-      this.disableReadOnlyMode();
-    }
+    this.disableReadOnlyMode();
+    this.managedLeaves.clear();
   }
 }
