@@ -3,6 +3,7 @@ import type DndCampaignHubPlugin from "../main";
 import { ADVENTURE_TEMPLATE } from "../templates";
 import { TEMPLATE_VERSIONS } from "../migration";
 import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
+import { UnsavedChangesGuard } from "../utils/UnsavedChangesGuard";
 
 export class AdventureCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -18,15 +19,28 @@ export class AdventureCreationModal extends Modal {
   isEdit = false;
   originalPath = "";
   originalStatus = "planning";
+  private readonly unsavedGuard: UnsavedChangesGuard;
 
   constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, campaignPath?: string) {
     super(app);
+    this.unsavedGuard = new UnsavedChangesGuard(app, () => this.getUnsavedState());
     this.plugin = plugin;
     this.campaign = campaignPath || plugin.resolveCampaign();
     if (adventurePath) {
       this.isEdit = true;
       this.originalPath = adventurePath;
     }
+  }
+
+  private getUnsavedState() {
+    return {
+      adventureName: this.adventureName, campaign: this.campaign, theProblem: this.theProblem,
+      levelFrom: this.levelFrom, levelTo: this.levelTo, expectedSessions: this.expectedSessions,
+    };
+  }
+
+  close(): void {
+    this.unsavedGuard.requestClose(() => super.close());
   }
 
   async loadAdventureData() {
@@ -99,6 +113,7 @@ export class AdventureCreationModal extends Modal {
       
       const closeBtn = contentEl.createEl("button", { text: "Close" });
       closeBtn.addEventListener("click", () => this.close());
+      this.unsavedGuard.captureInitialState();
       return;
     }
 
@@ -210,6 +225,7 @@ export class AdventureCreationModal extends Modal {
 
     const cancelButton = buttonContainer.createEl("button", { text: "Cancel" });
     cancelButton.addEventListener("click", () => {
+      this.unsavedGuard.allowClose();
       this.close();
     });
 
@@ -231,6 +247,7 @@ export class AdventureCreationModal extends Modal {
         await this.createAdventureFile();
       }
     });
+    this.unsavedGuard.captureInitialState();
   }
 
   async updateAdventureFile() {
