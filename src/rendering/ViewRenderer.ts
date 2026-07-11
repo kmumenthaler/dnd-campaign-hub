@@ -54,6 +54,11 @@ function openNote(app: App, path: string): void {
   app.workspace.openLinkText(path, "", false);
 }
 
+function openNoteInNewTab(app: App, path: string): void {
+  const file = app.vault.getAbstractFileByPath(path);
+  if (file instanceof TFile) void app.workspace.getLeaf("tab").openFile(file);
+}
+
 function parseLink(val: any): string | null {
   if (!val || val === '""' || val === "") return null;
   if (typeof val === "string") {
@@ -175,7 +180,7 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
     const a = c.createEl("a", { text: allScenes[startIdx]!.file.basename, cls: "internal-link" });
     a.addEventListener("click", (e) => {
       e.preventDefault();
-      openNote(app, allScenes[startIdx]!.file.path);
+      openNoteInNewTab(app, allScenes[startIdx]!.file.path);
     });
   }
 
@@ -186,7 +191,7 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
     const a = c.createEl("a", { text: allScenes[endIdx]!.file.basename, cls: "internal-link" });
     a.addEventListener("click", (e) => {
       e.preventDefault();
-      openNote(app, allScenes[endIdx]!.file.path);
+      openNoteInNewTab(app, allScenes[endIdx]!.file.path);
     });
   }
 
@@ -238,7 +243,7 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
     const link = nameEl.createEl("a", { text: scene.file.basename, cls: "internal-link" });
     link.addEventListener("click", (e) => {
       e.preventDefault();
-      openNote(app, scene.file.path);
+      openNoteInNewTab(app, scene.file.path);
     });
 
     // Meta info
