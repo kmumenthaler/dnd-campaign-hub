@@ -58,6 +58,7 @@ export class SessionCreationModal extends Modal {
     return {
       sessionTitle: this.sessionTitle, sessionDate: this.sessionDate, location: this.location,
       adventurePath: this.adventurePath, adventurePaths: this.adventurePaths,
+      plannedScenePaths: this.plannedScenePaths,
       startingScenePath: this.startingScenePath, useCustomDate: this.useCustomDate,
       calendar: this.calendar, startYear: this.startYear, startMonth: this.startMonth,
       startDay: this.startDay, endYear: this.endYear, endMonth: this.endMonth,
