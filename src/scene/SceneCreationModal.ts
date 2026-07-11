@@ -6,6 +6,7 @@ import { MarkerDefinition } from "../marker/MarkerTypes";
 import { SCENE_TEMPLATE } from '../templates';
 import { PartySelector } from '../party/PartySelector';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
+import { UnsavedChangesGuard } from '../utils/UnsavedChangesGuard';
 
 export class SceneCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -50,9 +51,11 @@ export class SceneCreationModal extends Modal {
   // For editing existing scenes
   isEdit = false;
   originalScenePath = "";
+  private readonly unsavedGuard: UnsavedChangesGuard;
 
   constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, scenePath?: string, campaignPath?: string) {
     super(app);
+    this.unsavedGuard = new UnsavedChangesGuard(app, () => this.getUnsavedState());
     this.plugin = plugin;
     this.encounterBuilder = new EncounterBuilder(app, plugin);
     this.campaignPath = campaignPath || "";
@@ -63,6 +66,21 @@ export class SceneCreationModal extends Modal {
       this.isEdit = true;
       this.originalScenePath = scenePath;
     }
+  }
+
+  private getUnsavedState() {
+    return {
+      adventurePath: this.adventurePath, sceneName: this.sceneName, act: this.act,
+      sceneNumber: this.sceneNumber, duration: this.duration, type: this.type,
+      difficulty: this.difficulty, createEncounter: this.createEncounter,
+      encounterName: this.encounterName, useColorNames: this.useColorNames,
+      includeParty: this.includeParty, selectedPartyMembers: this.selectedPartyMembers,
+      selectedPartyId: this.selectedPartyId, creatures: this.creatures,
+    };
+  }
+
+  close(): void {
+    this.unsavedGuard.requestClose(() => super.close());
   }
 
   async loadSceneData() {
@@ -220,6 +238,7 @@ export class SceneCreationModal extends Modal {
       
       const closeBtn = contentEl.createEl("button", { text: "Close" });
       closeBtn.addEventListener("click", () => this.close());
+      this.unsavedGuard.captureInitialState();
       return;
     }
 
@@ -340,9 +359,11 @@ export class SceneCreationModal extends Modal {
             return;
           }
 
+          this.unsavedGuard.allowClose();
           this.close();
           await this.createSceneFile();
         }));
+    this.unsavedGuard.captureInitialState();
   }
 
   async updateSceneNumberSuggestion() {

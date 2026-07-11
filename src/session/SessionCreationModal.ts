@@ -6,6 +6,7 @@ import { ConfirmModal } from '../utils/ConfirmModal';
 import { PartySelector } from '../party/PartySelector';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 import { addSessionBacklink, removeSessionBacklink } from './SessionBacklinks';
+import { UnsavedChangesGuard } from '../utils/UnsavedChangesGuard';
 
 export class SessionCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -33,9 +34,11 @@ export class SessionCreationModal extends Modal {
   originalSessionPath = "";
   private originalAdventurePaths: string[] = [];
   private originalStartingScenePath = "";
+  private readonly unsavedGuard: UnsavedChangesGuard;
 
   constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, campaignPath?: string, sessionPath?: string) {
     super(app);
+    this.unsavedGuard = new UnsavedChangesGuard(app, () => this.getUnsavedState());
     this.plugin = plugin;
     this.campaignPath = campaignPath || plugin.resolveCampaign();
     this.sessionDate = new Date().toISOString().split('T')[0] || "";
@@ -49,6 +52,21 @@ export class SessionCreationModal extends Modal {
       const sessionFile = this.app.vault.getAbstractFileByPath(sessionPath);
       if (sessionFile instanceof TFile && sessionFile.parent) this.campaignPath = sessionFile.parent.path;
     }
+  }
+
+  private getUnsavedState() {
+    return {
+      sessionTitle: this.sessionTitle, sessionDate: this.sessionDate, location: this.location,
+      adventurePath: this.adventurePath, adventurePaths: this.adventurePaths,
+      startingScenePath: this.startingScenePath, useCustomDate: this.useCustomDate,
+      calendar: this.calendar, startYear: this.startYear, startMonth: this.startMonth,
+      startDay: this.startDay, endYear: this.endYear, endMonth: this.endMonth,
+      endDay: this.endDay, selectedPartyId: this.selectedPartyId,
+    };
+  }
+
+  close(): void {
+    this.unsavedGuard.requestClose(() => super.close());
   }
 
   private parseFrontmatterLink(value: unknown): string {
@@ -577,10 +595,12 @@ export class SessionCreationModal extends Modal {
     });
 
     createButton.addEventListener("click", async () => {
+      this.unsavedGuard.allowClose();
       this.close();
       if (this.isEdit) await this.updateSessionFile();
       else await this.createSessionFile();
     });
+    this.unsavedGuard.captureInitialState();
   }
 
   async updateSessionFile() {
