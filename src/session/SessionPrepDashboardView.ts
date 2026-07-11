@@ -1,6 +1,7 @@
 import { App, ItemView, TAbstractFile, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { SESSION_PREP_VIEW_TYPE } from "../constants";
+import { SessionCreationModal } from "./SessionCreationModal";
 
 export class SessionPrepDashboardView extends ItemView {
   private static readonly AUTO_REFRESH_MS = 30000;
@@ -38,6 +39,7 @@ export class SessionPrepDashboardView extends ItemView {
 
   setCampaign(campaignPath: string) {
     this.campaignPath = campaignPath;
+    this.targetSessionPath = "";
     void this.plugin.setActiveCampaignPath(campaignPath);
     this.requestRefresh("campaign changed", 0);
   }
@@ -262,6 +264,8 @@ export class SessionPrepDashboardView extends ItemView {
         });
       }
 
+      await this.renderSessionPicker(headerTitle);
+
       // Main action button
       const mainAction = container.createEl("button", {
         text: "📝 New Session",
@@ -294,30 +298,93 @@ export class SessionPrepDashboardView extends ItemView {
   }
 
   private getSessionFiles(): TFile[] {
-    const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
     const sessionFiles: TFile[] = [];
-
-    if (sessionsFolder instanceof TFolder) {
-      for (const item of sessionsFolder.children) {
-        if (item instanceof TFile && item.extension === "md") {
-          sessionFiles.push(item);
-        }
-      }
-      return sessionFiles;
-    }
-
-    const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
-    if (!(campaignFolder instanceof TFolder)) return sessionFiles;
-
-    for (const item of campaignFolder.children) {
-      if (!(item instanceof TFile) || item.extension !== "md") continue;
-      const cache = this.app.metadataCache.getFileCache(item);
-      if (cache?.frontmatter?.type === "session") {
-        sessionFiles.push(item);
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!this.isPathInCampaign(file.path)) continue;
+      if (this.app.metadataCache.getFileCache(file)?.frontmatter?.type === "session") {
+        sessionFiles.push(file);
       }
     }
-
     return sessionFiles;
+  }
+
+  private getSessionStatus(file: TFile): string {
+    return String(this.app.metadataCache.getFileCache(file)?.frontmatter?.status || "").toLowerCase();
+  }
+
+  private getSessionNumber(file: TFile): number {
+    const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    return Number(fm?.sessionNum ?? fm?.session_number ?? file.basename.match(/^(\d+)/)?.[1] ?? 0);
+  }
+
+  private getOrderedSessions(): TFile[] {
+    return this.getSessionFiles().sort((a, b) => {
+      const preferred = (file: TFile) => ["in-progress", "active", "planned", "planning"].indexOf(this.getSessionStatus(file));
+      const aRank = preferred(a);
+      const bRank = preferred(b);
+      if (aRank >= 0 || bRank >= 0) {
+        if (aRank < 0) return 1;
+        if (bRank < 0) return -1;
+        if (aRank !== bRank) return aRank - bRank;
+      }
+      return this.getSessionNumber(b) - this.getSessionNumber(a) || b.stat.mtime - a.stat.mtime;
+    });
+  }
+
+  private getTargetSession(): TFile | null {
+    const sessions = this.getOrderedSessions();
+    const selected = sessions.find((file) => file.path === this.targetSessionPath);
+    const target = selected || sessions[0] || null;
+    this.targetSessionPath = target?.path || "";
+    return target;
+  }
+
+  private async renderSessionPicker(container: HTMLElement): Promise<void> {
+    const sessions = this.getOrderedSessions();
+    if (sessions.length === 0) {
+      container.createEl("span", { cls: "dashboard-session-name", text: "No session selected" });
+      return;
+    }
+    const target = this.getTargetSession();
+    const select = container.createEl("select", { cls: "dashboard-session-select" });
+    select.setAttribute("aria-label", "Session to prepare");
+    for (const session of sessions) {
+      const status = this.getSessionStatus(session);
+      const option = select.createEl("option", {
+        value: session.path,
+        text: `Prepare: ${session.basename}${status ? ` (${status})` : ""}`,
+      });
+      option.selected = session.path === target?.path;
+    }
+    select.addEventListener("change", () => {
+      this.targetSessionPath = select.value;
+      this.requestRefresh("target session changed", 0);
+    });
+  }
+
+  private extractLinkPath(raw: unknown): string {
+    const match = String(raw || "").match(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/);
+    return (match?.[1] || String(raw || "")).replace(/\.md$/i, "").trim();
+  }
+
+  private getTargetSessionAdventures(): Array<{ path: string; name: string; status: string }> {
+    const session = this.getTargetSession();
+    if (!session) return [];
+    const fm = this.app.metadataCache.getFileCache(session)?.frontmatter;
+    const rawValues = Array.isArray(fm?.adventures) && fm.adventures.length > 0
+      ? fm.adventures
+      : (fm?.adventure ? [fm.adventure] : []);
+    const seen = new Set<string>();
+    const adventures: Array<{ path: string; name: string; status: string }> = [];
+    for (const raw of rawValues) {
+      const linkpath = this.extractLinkPath(raw);
+      const file = this.app.metadataCache.getFirstLinkpathDest(linkpath, session.path);
+      if (!(file instanceof TFile) || seen.has(file.path)) continue;
+      seen.add(file.path);
+      const adventureFm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      adventures.push({ path: file.path, name: file.basename, status: adventureFm?.status || "planning" });
+    }
+    return adventures;
   }
 
   private getNpcCount(): number {
@@ -330,53 +397,55 @@ export class SessionPrepDashboardView extends ItemView {
     score: number;
     hasAdventure: boolean;
     hasParty: boolean;
-    hasSessions: boolean;
-    hasNpcs: boolean;
+    hasSession: boolean;
+    hasScenes: boolean;
     nextSceneHasGoal: boolean;
     nextScenePath: string;
     details: string;
   }> {
-    const adventures = await this.getActiveAdventures();
+    const targetSession = this.getTargetSession();
+    const adventures = this.getTargetSessionAdventures();
     const hasAdventure = adventures.length > 0;
 
     let nextSceneHasGoal = false;
+    let hasScenes = false;
     let nextScenePath = "";
-    const firstAdventure = adventures[0];
-    if (firstAdventure) {
-      const scenes = await this.getScenesForAdventure(firstAdventure.path);
-      const nextScene = scenes.find((s) => s.status !== "completed") || scenes[0];
-      nextScenePath = nextScene?.path || "";
-      nextSceneHasGoal = !!nextScene?.goal?.trim();
-    }
+    const sessionScenes = (await Promise.all(adventures.map((adventure) => this.getScenesForAdventure(adventure.path)))).flat();
+    hasScenes = sessionScenes.length > 0;
+    const nextScene = sessionScenes.find((s) => s.status !== "completed") || sessionScenes[0];
+    nextScenePath = nextScene?.path || "";
+    nextSceneHasGoal = !!nextScene?.goal?.trim();
 
     const campaignName = this.campaignPath?.split("/").pop() || "";
-    const party = this.plugin.partyManager.resolveParty(undefined, campaignName);
+    const sessionPartyId = targetSession
+      ? String(this.app.metadataCache.getFileCache(targetSession)?.frontmatter?.party_id || "")
+      : "";
+    const party = this.plugin.partyManager.resolveParty(sessionPartyId || undefined, campaignName);
     let hasParty = false;
     if (party?.id) {
       const members = await this.plugin.partyManager.resolveMembers(party.id);
       hasParty = members.some((m) => m.enabled && !m.absent);
     }
 
-    const hasSessions = this.getSessionFiles().length > 0;
-    const hasNpcs = this.getNpcCount() > 0;
+    const hasSession = !!targetSession;
 
     let score = 0;
-    if (hasAdventure) score += 30;
-    if (hasParty) score += 25;
-    if (hasSessions) score += 20;
-    if (hasNpcs) score += 10;
-    if (nextSceneHasGoal) score += 15;
+    if (hasSession) score += 15;
+    if (hasAdventure) score += 25;
+    if (hasScenes) score += 25;
+    if (hasParty) score += 15;
+    if (nextSceneHasGoal) score += 20;
 
     const details = hasAdventure
-      ? (nextSceneHasGoal ? "Your next scene has a clear goal." : "Add a goal to your next scene for a smoother run.")
-      : "Create or activate an adventure to prepare your next session.";
+      ? (nextSceneHasGoal ? "The selected session has a clear next scene goal." : "Add a goal to the selected session's next scene for a smoother run.")
+      : (hasSession ? "Link an adventure to this session to begin focused prep." : "Create a session to begin focused prep.");
 
     return {
       score,
       hasAdventure,
       hasParty,
-      hasSessions,
-      hasNpcs,
+      hasSession,
+      hasScenes,
       nextSceneHasGoal,
       nextScenePath,
       details
@@ -443,28 +512,35 @@ export class SessionPrepDashboardView extends ItemView {
       runAction: () => void;
     }> = [
       {
-        ok: readiness.hasAdventure,
-        label: "Active adventure selected",
-        actionLabel: "Create",
-        runAction: () => this.runCommand("create-adventure")
-      },
-      {
-        ok: readiness.hasParty,
-        label: "Party members available",
-        actionLabel: "Manage",
-        runAction: () => this.runCommand("manage-parties")
-      },
-      {
-        ok: readiness.hasSessions,
-        label: "Previous session notes exist",
+        ok: readiness.hasSession,
+        label: "Session selected for prep",
         actionLabel: "Create",
         runAction: () => this.runCommand("create-session")
       },
       {
-        ok: readiness.hasNpcs,
-        label: "NPC roster available",
+        ok: readiness.hasAdventure,
+        label: "Adventure linked to this session",
+        actionLabel: readiness.hasSession ? "Edit Session" : "Create",
+        runAction: () => {
+          const session = this.getTargetSession();
+          if (session) {
+            new SessionCreationModal(this.app, this.plugin, undefined, this.campaignPath, session.path).open();
+            return;
+          }
+          this.runCommand("create-session");
+        }
+      },
+      {
+        ok: readiness.hasScenes,
+        label: "Linked adventure has scenes",
         actionLabel: "Create",
-        runAction: () => this.runCommand("create-npc")
+        runAction: () => this.runCommand("create-scene")
+      },
+      {
+        ok: readiness.hasParty,
+        label: "Session party members available",
+        actionLabel: "Manage",
+        runAction: () => this.runCommand("manage-parties")
       },
       {
         ok: readiness.nextSceneHasGoal,
@@ -644,17 +720,21 @@ export class SessionPrepDashboardView extends ItemView {
       this.requestRefresh("scene filter changed", 0);
     });
 
-    // Get all adventures in this campaign
-    const adventures = await this.getActiveAdventures();
+    // Only adventures linked to the selected session belong in focused prep.
+    const adventures = this.getTargetSessionAdventures();
 
     if (adventures.length === 0) {
       this.renderEmptyState(
-        container,
-        "No active adventures found",
-        "Adventures organize scenes into a runnable sequence for session prep.",
+        section,
+        this.getTargetSession() ? "No adventures linked to this session" : "No session selected",
+        this.getTargetSession()
+          ? "Edit the selected session and link the adventures you intend to run."
+          : "Create a session note to focus readiness, adventures, and scenes on the game you are preparing.",
         [
-          { label: "Create Adventure", onClick: () => this.plugin.createAdventure(this.campaignPath), cta: true },
-          { label: "Create Content", onClick: () => this.plugin.openCreateContent(this.campaignPath) },
+          ...(this.getTargetSession()
+            ? [{ label: "Edit Session", onClick: () => new SessionCreationModal(this.app, this.plugin, undefined, this.campaignPath, this.getTargetSession()!.path).open(), cta: true }]
+            : [{ label: "New Session", onClick: () => this.plugin.createSession(this.campaignPath), cta: true }]),
+          { label: "Create Adventure", onClick: () => this.plugin.createAdventure(this.campaignPath) },
         ]
       );
       return;
