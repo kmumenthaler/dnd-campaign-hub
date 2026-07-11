@@ -123,6 +123,9 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
   }
   const startPath = parseLink(fm.starting_scene);
   const endPath = parseLink(fm.ending_scene);
+  const plannedLinks = (Array.isArray(fm.planned_scenes) ? fm.planned_scenes : [])
+    .map((value: unknown) => parseLink(value))
+    .filter((value: string | null): value is string => Boolean(value));
 
   if (adventureLinks.length === 0) {
     el.createEl("p", { text: "No adventure linked to this session.", cls: "dnd-hub-empty" });
@@ -154,6 +157,25 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
     });
   }
   const allScenes = adventureGroups.flatMap(group => group.scenes);
+  if (plannedLinks.length > 0) {
+    const byPath = new Map<string, FileMeta>();
+    for (const scene of allScenes) {
+      byPath.set(scene.file.path, scene);
+      byPath.set(scene.file.basename, scene);
+      byPath.set(scene.file.path.replace(/\.md$/i, ""), scene);
+    }
+    const plannedScenes: FileMeta[] = [];
+    const seen = new Set<string>();
+    for (const link of plannedLinks) {
+      const resolved = resolveFile(app, link);
+      const scene = (resolved && byPath.get(resolved.path)) || byPath.get(link) || byPath.get(link.replace(/\.md$/i, ""));
+      if (scene && !seen.has(scene.file.path)) {
+        seen.add(scene.file.path);
+        plannedScenes.push(scene);
+      }
+    }
+    adventureGroups.splice(0, adventureGroups.length, { name: "Planned Scenes", scenes: plannedScenes });
+  }
 
   if (allScenes.length === 0) {
     el.createEl("p", { text: "No scenes found for the linked adventures. Create scenes from the adventure notes.", cls: "dnd-hub-empty" });
