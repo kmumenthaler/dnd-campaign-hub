@@ -628,7 +628,7 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.addCommand({
       id: "workflow-start-session",
       name: "D&D Hub: Start Session",
-      callback: () => this.openSessionRunDashboard(),
+      callback: () => this.openSessionRunDashboard(undefined, undefined, true),
     });
 
     this.addCommand({
@@ -2152,8 +2152,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 
 			case "session":
 				createBtn("✏️ Edit Session", "dnd-hub-btn-edit", cmd("edit-session"));
-				createBtn("▶️ Start Session", "dnd-hub-btn-extra", () => this.openSessionRunDashboard(campaignPathForNote()), "Open the session run dashboard");
-				createBtn("🧭 Prep Dashboard", "dnd-hub-btn-extra", () => this.openSessionPrepDashboard(campaignPathForNote()), "Open the preparation dashboard");
+				createBtn("▶️ Start Session", "dnd-hub-btn-extra", () => this.openSessionRunDashboard(campaignPathForNote(), file.path, true), "Mark this session in progress and open the run dashboard");
+				createBtn("🧭 Prep Dashboard", "dnd-hub-btn-extra", () => this.openSessionPrepDashboard(campaignPathForNote(), file.path), "Open preparation for this session");
 				createBtn("🏠 Campaign Home", "dnd-hub-btn-extra", () => this.openCampaignHome(campaignPathForNote()), "Open this campaign in Campaign Home");
 				createBtn("🏁 End Session", "dnd-hub-btn-extra", () => new EndSessionModal(this.app, this, file).open(), "Record the ending scene for this session");
 				break;
@@ -3234,8 +3234,12 @@ export default class DndCampaignHubPlugin extends Plugin {
 		return trimmed.replace(/^["']|["']$/g, "");
 	}
 
-	async openSessionPrepDashboard(campaignPathOverride?: string) {
+	async openSessionPrepDashboard(campaignPathOverride?: string, sessionPath?: string) {
 		const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
+		if (!sessionPath) {
+			const active = this.app.workspace.getActiveFile();
+			if (active && this.app.metadataCache.getFileCache(active)?.frontmatter?.type === "session") sessionPath = active.path;
+		}
 		
 		// Check if view is already open
 		const existing = this.app.workspace.getLeavesOfType(SESSION_PREP_VIEW_TYPE);
@@ -3244,6 +3248,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			this.app.workspace.revealLeaf(existing[0]);
 			const view = existing[0].view as SessionPrepDashboardView;
 			view.setCampaign(campaignPath);
+			view.setSession(sessionPath);
 			return;
 		}
 
@@ -3256,12 +3261,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 			});
 			const view = leaf.view as SessionPrepDashboardView;
 			view.setCampaign(campaignPath);
+			view.setSession(sessionPath);
 			this.app.workspace.revealLeaf(leaf);
 		}
 	}
 
-	async openSessionRunDashboard(campaignPathOverride?: string) {
+	async openSessionRunDashboard(campaignPathOverride?: string, sessionPath?: string, markInProgress = false) {
 		const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
+		if (!sessionPath) {
+			const active = this.app.workspace.getActiveFile();
+			if (active && this.app.metadataCache.getFileCache(active)?.frontmatter?.type === "session") sessionPath = active.path;
+		}
+		if (markInProgress && sessionPath) await this.updateSessionLifecycleStatus(sessionPath, "in-progress");
 		
 		// Check if dashboard view is already open
 		const existing = this.app.workspace.getLeavesOfType(SESSION_RUN_VIEW_TYPE);
@@ -3269,6 +3280,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			this.app.workspace.revealLeaf(existing[0]);
 			const view = existing[0].view as SessionRunDashboardView;
 			view.setCampaign(campaignPath);
+			await view.setSession(sessionPath);
+			if (markInProgress && view.currentSessionFile) await this.updateSessionLifecycleStatus(view.currentSessionFile.path, "in-progress");
 			// Setup the session layout even if already open
 			await view.setupSessionLayout();
 			
@@ -3286,6 +3299,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 			});
 			const view = dashboardLeaf.view as SessionRunDashboardView;
 			view.setCampaign(campaignPath);
+			await view.setSession(sessionPath);
+			if (markInProgress && view.currentSessionFile) await this.updateSessionLifecycleStatus(view.currentSessionFile.path, "in-progress");
 			this.app.workspace.revealLeaf(dashboardLeaf);
 			
 			// Setup the session layout with multiple panes
@@ -3294,6 +3309,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 			// Open DM Screen in right sidebar
 			await this.openDMScreen();
 		}
+	}
+
+	async updateSessionLifecycleStatus(sessionPath: string, status: "planned" | "in-progress" | "completed"): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(sessionPath);
+		if (!(file instanceof TFile)) return;
+		const content = await this.app.vault.read(file);
+		const updated = updateYamlFrontmatter(content, (fm) => ({ ...fm, status }));
+		if (updated !== content) await this.app.vault.modify(file, updated);
 	}
 
 	async openDMScreen() {

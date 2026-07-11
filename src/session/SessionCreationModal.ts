@@ -700,6 +700,7 @@ export class SessionCreationModal extends Modal {
         ending_scene: "",
         party_id: this.selectedPartyId,
         sessionNum: nextNumber,
+        status: "planned",
         location: this.location,
         date: this.sessionDate,
         "fc-calendar": this.calendar,

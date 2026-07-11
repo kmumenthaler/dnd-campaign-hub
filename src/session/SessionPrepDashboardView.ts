@@ -16,6 +16,7 @@ export class SessionPrepDashboardView extends ItemView {
   private lastRenderedAt = 0;
   private lastRefreshReason = "initial";
   private sceneFilter: "session" | "all" = "session";
+  private targetSessionPath = "";
 
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
@@ -39,6 +40,11 @@ export class SessionPrepDashboardView extends ItemView {
     this.campaignPath = campaignPath;
     void this.plugin.setActiveCampaignPath(campaignPath);
     this.requestRefresh("campaign changed", 0);
+  }
+
+  setSession(sessionPath: string | undefined): void {
+    this.targetSessionPath = sessionPath ?? "";
+    this.requestRefresh("session changed", 0);
   }
 
   private isPathInCampaign(path: string): boolean {
@@ -999,7 +1005,10 @@ export class SessionPrepDashboardView extends ItemView {
       return bNum - aNum;
     });
 
-    const lastSession = sessionFiles[0];
+    const targeted = this.targetSessionPath
+      ? this.app.vault.getAbstractFileByPath(this.targetSessionPath)
+      : null;
+    const lastSession = targeted instanceof TFile ? targeted : sessionFiles[0];
     if (!lastSession) {
       this.renderEmptyState(
         container,
@@ -1013,7 +1022,9 @@ export class SessionPrepDashboardView extends ItemView {
     // Show last session summary
     const sessionCard = container.createEl("div", { cls: "session-card" });
     const sessionLink = sessionCard.createEl("a", { href: lastSession.path });
-    sessionLink.textContent = `Last Session: ${lastSession.basename}`;
+    sessionLink.textContent = this.targetSessionPath
+      ? `Preparing: ${lastSession.basename}`
+      : `Last Session: ${lastSession.basename}`;
     sessionLink.addEventListener("click", async (e) => {
       e.preventDefault();
       await this.app.workspace.openLinkText(lastSession.path, "", false);
